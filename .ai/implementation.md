@@ -595,3 +595,90 @@ Left untouched (hard constraints / others' in-flight work — NOT staged):
 `app/apps/`, `app/services/`, `tests/`, `.vscode/`, `AUDIT_FINDINGS.md`,
 `FABLE.md`, `Claude_Rules.md`, `supabase/serviceden*.sql`, and the other `.ai/*`
 files.
+
+---
+
+# Waitlist removal + early-access trial notice (finch-onboarding)
+
+Status: **complete**. Verified against `.ai/plan_remove-waitlist-add-trial-notice.md`.
+
+## What was done
+
+1. **Reverted Phase B cleanly** via `git revert --no-edit 6cfd0ef` (commit
+   `cf12699`). Deleted `components/marketing/WaitlistModal.tsx`,
+   `components/marketing/WaitlistCtaButton.tsx`, `app/api/waitlist/route.ts`;
+   restored `components/Navbar.tsx` (desktop CTA back to "Contact us" →
+   `/contact`, mega-menu "Talk to Vyso", mobile "Contact us →"),
+   `components/marketing/PublicMarketing.tsx` (`MarketingCta` default +
+   `primaryHref` prop restored) and its 7 callers (`app/south-africa`,
+   `app/platform/finch`, `app/platform/page`, `app/industries/[slug]`,
+   `app/platform/vyso-for-smes`, `app/case-studies/turn-n-slice`,
+   `app/founding-client`), and `components/sections/PricingSection.tsx` (audit
+   banner + 3 tier CTAs back to `<Link href="/contact">`). The only revert
+   conflict was in `.ai/implementation.md` (later phases had appended to it
+   after Phase B) — resolved by keeping all later phase sections and dropping
+   only the Phase B ("Join Waitlist" CTA sweep) section, since that section
+   documented the now-reverted feature.
+2. **Stripped the waitlist DB objects from `supabase/onboarding.sql`**: removed
+   the `waitlist_signups` table (+ its unique index + RLS enable) and the
+   `waitlist_join(...)` function/grant, replacing them with a short comment
+   noting the feature was removed and that the already-applied live
+   table/function are harmless and can be dropped manually. No `DROP`
+   statement was added (migration stays idempotent/re-runnable); rest of the
+   file (org columns, backfill, `org_features` CHECK widen, the three
+   onboarding RPCs) untouched.
+3. **Added the early-access trial notice**:
+   - `app/login/page.tsx` — a second muted fine-print line under the existing
+     terms/no-card line in the signup pane, same `text-[11.5px] text-[#a7a099]`
+     styling: *"Vyso is in early access — we're still polishing things, so you
+     may hit the occasional rough edge. You're one of the first to use it, and
+     your feedback helps us make it better."*
+   - `components/platform/onboarding/OnboardingFlow.tsx` — appended one short
+     sentence to the `profile`-stage Finch intro body (the first thing a new
+     user sees in `/onboarding`): *"We're in early access, so thanks for being
+     one of the first here."* Left the `modules`/`data` stage intros
+     untouched per "keep it one short sentence."
+
+## Verification
+
+```
+rm -rf .next && npx tsc --noEmit
+# 0 errors (stale .next/types referencing the deleted /api/waitlist route
+# needed a cache clear first — expected after deleting a route file)
+
+npx eslint app/login/page.tsx components/platform/onboarding/OnboardingFlow.tsx \
+  app/case-studies/turn-n-slice/page.tsx app/founding-client/page.tsx \
+  "app/industries/[slug]/page.tsx" app/platform/finch/page.tsx app/platform/page.tsx \
+  app/platform/vyso-for-smes/page.tsx app/south-africa/page.tsx components/Navbar.tsx \
+  components/marketing/PublicMarketing.tsx components/sections/PricingSection.tsx
+# clean, exit 0
+
+grep -rin waitlist app components
+# only app/founding-client/page.tsx:143, the restored pre-Phase-B "This is not
+# a waitlist or a speculative beta" line — expected, not a stray reference
+
+npm run build
+# succeeds; no /api/waitlist route in the output route list
+```
+
+Navbar CTA before → after this change: "Join Waitlist" (opens `WaitlistModal`)
+→ "Contact us" (`<Link href="/contact">`), for the desktop `LiquidButton`, the
+"Explore" mega-menu item, and the mobile dropdown — all three restored to their
+pre-Phase-B state.
+
+## Deviations / notes
+
+- None from the plan. The `.ai/implementation.md` revert conflict (only
+  conflicting file) was resolved by hand as described above rather than via
+  `git revert --continue` picking a side automatically, since neither side
+  alone was correct (HEAD had the Phase B section to remove; the revert's
+  "ours" side predated Phases D and later entirely).
+- Working tree's unrelated ServiceDen/OrderFlow-CRM uncommitted changes
+  (`app/app/serviceden/*`, `components/platform/serviceden/*`,
+  `lib/platform/serviceden*`, `components/platform/orderflow/*.tsx`,
+  `package.json`, `tsconfig.json`, `.vscode/`, `AUDIT_FINDINGS.md`, `.ai/plan.md`,
+  `.ai/lead_email_agent.md`, `Claude_Rules.md`, `FABLE.md`, `tests/`,
+  `supabase/serviceden*.sql`, untracked `app/api/serviceden/*`,
+  `app/app/serviceden/templates/`, `app/apps/`, `app/services/`) were left
+  untouched throughout and excluded from both commits via explicit-path
+  staging (no `git add -A`).

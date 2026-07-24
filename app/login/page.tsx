@@ -473,6 +473,12 @@ export default function LoginPage() {
                 By continuing you agree to Vyso&apos;s terms. No card required to start your trial.
               </p>
 
+              <p className="mt-2 text-center text-[11.5px] leading-[1.5] text-[#a7a099]">
+                Vyso is in early access — we&apos;re still polishing things, so you may hit the
+                occasional rough edge. You&apos;re one of the first to use it, and your feedback
+                helps us make it better.
+              </p>
+
               <p className="mt-4 text-center text-[12.5px] text-[#6b645c]">
                 Already have an account?{' '}
                 <button
