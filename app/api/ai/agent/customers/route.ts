@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { resolveUser, AI_CORS_HEADERS } from '@/lib/ai/auth';
-import { isVysoAiAllowed } from '@/lib/ai/vyso-agent/config';
+import { isFinchAllowed } from '@/lib/ai/finch/config';
+import { rateLimitAllowed } from '@/lib/platform/rate-limit';
 
 /**
- * The caller's customer names, for Vyso AI's "/" order-workflow picker. Gated to
+ * The caller's customer names, for Finch's "/" order-workflow picker. Gated to
  * the preview allowlist and scoped to the caller's own org via their RLS client
  * (id + name only — no financials).
  */
@@ -16,8 +17,16 @@ export async function GET(req: Request) {
   if (!auth) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: AI_CORS_HEADERS });
   }
-  if (!isVysoAiAllowed(auth.email)) {
-    return NextResponse.json({ error: 'Vyso AI is not enabled for your account.' }, { status: 403, headers: AI_CORS_HEADERS });
+  if (!isFinchAllowed(auth.email)) {
+    return NextResponse.json({ error: 'Finch is not enabled for your account.' }, { status: 403, headers: AI_CORS_HEADERS });
+  }
+
+  // Per-user hourly cap on Finch customer lookups.
+  if (!(await rateLimitAllowed(`ai-agent-customers:${auth.userId}`, 120, 3600))) {
+    return NextResponse.json(
+      { error: "You've hit the hourly Finch limit. Try again soon." },
+      { status: 429, headers: AI_CORS_HEADERS },
+    );
   }
 
   const { data: profile } = await auth.supabase

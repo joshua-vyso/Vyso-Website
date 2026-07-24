@@ -7,7 +7,7 @@ import { MODULES } from '@/lib/platform/modules';
 import { SERVICEDEN_ACCOUNT_EMAIL } from '@/lib/platform/serviceden';
 import { usePlatform } from '@/lib/platform/session';
 import { createClient } from '@/lib/platform/supabase-browser';
-import { clearParsedOrder } from '@/lib/ai/vyso-agent/order-handoff';
+import { clearParsedOrder } from '@/lib/ai/finch/order-handoff';
 import { FeedbackModal } from './FeedbackModal';
 import { ModuleLockNotice } from './ModuleLockNotice';
 import { ModulesOverlay } from './ModulesOverlay';
@@ -17,6 +17,15 @@ function initials(name: string | null | undefined): string {
   if (!name) return 'V';
   const parts = name.trim().split(/\s+/);
   return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+}
+
+/** "Trial · N days left" copy, singular/zero-aware. Callers only render this
+ *  when `trial` is non-null and not expired — the TrialGate owns the expired
+ *  state (see components/platform/TrialGate.tsx). */
+function trialPillLabel(daysLeft: number | null): string {
+  if (daysLeft === 0) return 'Trial ends today';
+  if (daysLeft === 1) return 'Trial · 1 day left';
+  return `Trial · ${daysLeft} days left`;
 }
 
 /** Name of the module the current route belongs to, for the "you are here" label. */
@@ -36,7 +45,7 @@ function useCurrentModuleLabel(): string | null {
  * right of this bar.
  */
 export function TopBar() {
-  const { org, email } = usePlatform();
+  const { org, email, trial } = usePlatform();
   const pathname = usePathname() ?? '';
   const router = useRouter();
   const moduleLabel = useCurrentModuleLabel();
@@ -103,6 +112,15 @@ export function TopBar() {
         <span className="hidden border-l border-[#E4E9F0] pl-4 text-[13px] text-[#8A8E86] sm:block">
           {moduleLabel ?? 'Operations platform'}
         </span>
+
+        {trial && !trial.expired ? (
+          <Link
+            href="/app/settings"
+            className="hidden shrink-0 items-center rounded-full bg-[#EAF2FC] px-3 py-1 text-[12px] font-medium text-[#174C87] transition-colors hover:bg-[#DCEBFB] sm:inline-flex"
+          >
+            {trialPillLabel(trial.daysLeft)}
+          </Link>
+        ) : null}
 
         <div className="ml-auto flex items-center gap-2">
           <button type="button" onClick={() => setFeedbackOpen(true)} aria-label="Send feedback" title="Feedback" className={iconBtn}>

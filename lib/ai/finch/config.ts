@@ -1,5 +1,5 @@
 /**
- * Vyso AI agent — shared configuration.
+ * Finch agent — shared configuration.
  *
  * The agent is intentionally small and composable: a set of *modules* it can
  * assist with, a two-tier model policy (a fast Haiku tier for Q&A / analytics /
@@ -9,41 +9,42 @@
  * the plumbing changes.
  */
 
-/** Modules the agent can currently assist with. Extend as coverage grows. */
-export type AgentModule = 'orderflow' | 'docu';
+/** Modules the agent can currently assist with. Extend as coverage grows.
+ *  'onboarding' is the guided first-run experience (see /onboarding). */
+export type AgentModule = 'orderflow' | 'docu' | 'onboarding';
 
-export const AGENT_MODULES: readonly AgentModule[] = ['orderflow', 'docu'];
+export const AGENT_MODULES: readonly AgentModule[] = ['orderflow', 'docu', 'onboarding'];
 
 export function isAgentModule(value: unknown): value is AgentModule {
   return typeof value === 'string' && (AGENT_MODULES as readonly string[]).includes(value);
 }
 
 /**
- * Platform-wide kill switch for Vyso AI. Defaults ON — every authenticated user
- * gets it. Set `VYSO_AI_ENABLED` to a falsy value ('false' | '0' | 'off' | 'no')
- * to turn the whole feature off (UI hidden + every /api/ai/agent/* route rejects)
- * without a redeploy.
+ * Platform-wide kill switch for Finch. Defaults ON — every authenticated user
+ * gets it. Set `FINCH_ENABLED` (or the legacy `VYSO_AI_ENABLED`) to a falsy value
+ * ('false' | '0' | 'off' | 'no') to turn the whole feature off (UI hidden + every
+ * /api/ai/agent/* route rejects) without a redeploy.
  *
  * SERVER-ONLY: reads a non-`NEXT_PUBLIC_` var, so it is `undefined` in the browser
  * (→ treated as ON). Never call this from a client component to decide UI
  * visibility — during a kill the browser can't see the var and would keep showing
- * the button. Client components read the server-resolved `vysoAiEnabled` flag off
+ * the button. Client components read the server-resolved `finchEnabled` flag off
  * the platform session instead (see lib/platform/supabase-server.ts).
  */
-export function isVysoAiEnabled(): boolean {
-  const flag = process.env.VYSO_AI_ENABLED;
+export function isFinchEnabled(): boolean {
+  const flag = process.env.FINCH_ENABLED ?? process.env.VYSO_AI_ENABLED;
   if (flag == null || flag.trim() === '') return true; // default ON
   return !['false', '0', 'off', 'no'].includes(flag.trim().toLowerCase());
 }
 
 /**
- * Server-side access gate for the /api/ai/agent/* routes: Vyso AI is available to
+ * Server-side access gate for the /api/ai/agent/* routes: Finch is available to
  * every authenticated user while the feature is enabled. Enforced on the server
  * (the routes reject everyone else); the client hides the affordance via the
  * session flag. Never trust the client alone.
  */
-export function isVysoAiAllowed(email: string | null | undefined): boolean {
-  return isVysoAiEnabled() && !!email;
+export function isFinchAllowed(email: string | null | undefined): boolean {
+  return isFinchEnabled() && !!email;
 }
 
 /**

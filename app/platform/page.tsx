@@ -365,7 +365,7 @@ export default function PlatformPage() {
             <span className={styles.cardIcon} style={{ marginTop: "1.35rem" }}>
               <Bot aria-hidden="true" size={20} strokeWidth={1.8} />
             </span>
-            <h3 className={styles.cardTitle}>Vyso AI</h3>
+            <h3 className={styles.cardTitle}>Finch</h3>
             <p className={styles.cardCopy}>
               An operations assistant being built into Vyso. The current preview can
               answer product questions, read authorised OrderFlow data and prepare a
@@ -373,7 +373,7 @@ export default function PlatformPage() {
               on its own.
             </p>
             <div className={styles.cardFoot}>
-              <Link className={styles.textLink} href="/platform/vyso-ai">
+              <Link className={styles.textLink} href="/platform/finch">
                 See what is on track to launch <span aria-hidden="true">→</span>
               </Link>
             </div>
@@ -492,7 +492,6 @@ export default function PlatformPage() {
         eyebrow="A practical first step"
         title="Bring us the workflow that keeps breaking."
         copy="We will map the process, test whether Vyso fits and recommend the smallest useful starting point before a larger implementation begins."
-        primaryLabel="Talk to Vyso"
         secondaryLabel="View pricing"
         secondaryHref="/pricing"
       />

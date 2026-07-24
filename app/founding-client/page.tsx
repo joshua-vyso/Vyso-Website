@@ -140,9 +140,9 @@ export default function FoundingClientPage() {
               </h2>
             </div>
             <p className={styles.sectionCopy}>
-              This is not a waitlist or a speculative beta. The engagement starts
-              with a defined operational problem and produces a system your team can
-              use in the day-to-day business.
+              This is not a speculative beta. Founding-client status is a structured
+              commitment — the engagement starts with a defined operational problem
+              and produces a system your team can use in the day-to-day business.
             </p>
           </div>
 
@@ -161,7 +161,7 @@ export default function FoundingClientPage() {
               {
                 icon: Rocket,
                 title: "Early capability access",
-                copy: "Where it is appropriate and safe, founding clients can test selected platform and Vyso AI preview capabilities.",
+                copy: "Where it is appropriate and safe, founding clients can test selected platform and Finch preview capabilities.",
               },
             ].map(({ icon: Icon, title: featureTitle, copy }) => (
               <article key={featureTitle} className={styles.glassCard}>
@@ -249,8 +249,6 @@ export default function FoundingClientPage() {
         eyebrow="Founding client applications"
         title="Bring us one operational problem worth fixing properly."
         copy="Tell us what the team repeats, where information gets lost and what the owner cannot see soon enough. We will test whether Vyso is the right fit."
-        primaryLabel="Start the conversation"
-        primaryHref="/contact"
         secondaryLabel="Read the Turn ’n Slice story"
         secondaryHref="/case-studies/turn-n-slice"
       />

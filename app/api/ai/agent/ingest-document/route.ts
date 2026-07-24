@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { resolveUser, AI_CORS_HEADERS } from '@/lib/ai/auth';
-import { isVysoAiAllowed } from '@/lib/ai/vyso-agent/config';
+import { isFinchAllowed } from '@/lib/ai/finch/config';
 import { aiConfigured } from '@/lib/ai/anthropic';
 import { ingestDocument } from '@/lib/platform/document-ingest';
+import { rateLimitAllowed } from '@/lib/platform/rate-limit';
 
 // Classification + extraction + (for orders) invoicing can chain a few calls.
 export const maxDuration = 60;
@@ -15,11 +16,11 @@ export async function OPTIONS() {
 }
 
 /**
- * Vyso AI — ingest a document uploaded in the chat: classify it (order / invoice /
+ * Finch — ingest a document uploaded in the chat: classify it (order / invoice /
  * statement / delivery note / price list), FILE it into Doc-U, and — when it's a
  * customer order — build the OrderFlow order, auto-invoicing when the customer is
  * confidently matched (else holding a draft for review, exactly like the "Upload
- * order" button). Gated by the VYSO_AI_ENABLED kill switch.
+ * order" button). Gated by the FINCH_ENABLED kill switch.
  *
  * The pipeline itself lives in lib/platform/document-ingest so the chat and the
  * inbound-email worker share ONE audited write path. This route owns auth: all
@@ -35,8 +36,16 @@ export async function POST(req: Request) {
   if (!auth) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: AI_CORS_HEADERS });
   }
-  if (!isVysoAiAllowed(auth.email)) {
-    return NextResponse.json({ error: 'Vyso AI is not enabled for your account.' }, { status: 403, headers: AI_CORS_HEADERS });
+  if (!isFinchAllowed(auth.email)) {
+    return NextResponse.json({ error: 'Finch is not enabled for your account.' }, { status: 403, headers: AI_CORS_HEADERS });
+  }
+
+  // Per-user hourly cap on Finch document ingestion.
+  if (!(await rateLimitAllowed(`ai-agent-ingest:${auth.userId}`, 20, 3600))) {
+    return NextResponse.json(
+      { error: "You've hit the hourly Finch limit. Try again soon." },
+      { status: 429, headers: AI_CORS_HEADERS },
+    );
   }
 
   const body = (await req.json().catch(() => ({}))) as {
