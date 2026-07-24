@@ -1,9 +1,9 @@
 -- ============================================================================
 -- Self-serve signup + Finch-guided onboarding
 -- ----------------------------------------------------------------------------
--- Adds the onboarding/trial columns to `organisations`, a `waitlist_signups`
--- capture table, and the SECURITY DEFINER RPCs the web app calls to provision a
--- brand-new org for the signing-up user (no service-role key in the browser).
+-- Adds the onboarding/trial columns to `organisations` and the SECURITY
+-- DEFINER RPCs the web app calls to provision a brand-new org for the
+-- signing-up user (no service-role key in the browser).
 --
 -- HOW TO APPLY: paste into the Supabase dashboard SQL editor and run once, in
 -- the SAME project the app points at (NEXT_PUBLIC_SUPABASE_URL). Idempotent —
@@ -46,53 +46,9 @@ alter table org_features add constraint org_features_feature_key_check
     'shiftboard','suppliers','orderflow','reportgen'
   ));
 
--- ── waitlist_signups: marketing "Join Waitlist" capture ─────────────────────
-create table if not exists waitlist_signups (
-  id          uuid primary key default gen_random_uuid(),
-  name        text not null,
-  email       text not null,
-  company     text,
-  source_path text,
-  created_at  timestamptz not null default now()
-);
--- One lead per email (case-insensitive). Lets waitlist_join() be idempotent.
-create unique index if not exists idx_waitlist_signups_email_lower
-  on waitlist_signups (lower(email));
-
--- Reached ONLY through the SECURITY DEFINER function below, never directly by a
--- client. RLS on + no policy = deny all direct access; the definer function
--- (owned by the migration role) still writes it.
-alter table waitlist_signups enable row level security;
-
--- Public waitlist capture. Anonymous marketing visitors call this (no service
--- key needed). Idempotent: a repeat email is silently ignored.
-create or replace function waitlist_join(
-  p_name text,
-  p_email text,
-  p_company text,
-  p_source_path text
-) returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  if coalesce(trim(p_email), '') = '' then
-    raise exception 'email is required';
-  end if;
-
-  insert into waitlist_signups (name, email, company, source_path)
-  values (
-    coalesce(nullif(trim(p_name), ''), ''),
-    lower(trim(p_email)),
-    nullif(trim(coalesce(p_company, '')), ''),
-    nullif(trim(coalesce(p_source_path, '')), '')
-  )
-  on conflict do nothing;   -- duplicate email → no-op (unique index above)
-end;
-$$;
-
-grant execute on function waitlist_join(text, text, text, text) to anon, authenticated;
+-- The "Join Waitlist" feature (and its `waitlist_signups` table + `waitlist_join()`
+-- RPC, previously defined here) has been removed from the app; the already-applied
+-- live table/function are harmless and can be dropped manually if desired.
 
 -- ── RPC 1: create the org for the signing-up user (onboarding stage 1) ──────
 -- Guards: caller authenticated AND has no org yet. Creates the organisations

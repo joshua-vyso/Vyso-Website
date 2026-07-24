@@ -493,146 +493,6 @@ calls for and it is clean.
   `TopBar.tsx` was left untouched per §5 (touch only the four files named for
   this phase; don't fix unrelated issues in-scope files beyond the assigned
   change).
-
----
-
-# Phase B — "Join Waitlist" CTA sweep + waitlist capture (finch-onboarding)
-
-Status: **complete**. `npx tsc --noEmit` clean repo-wide. `eslint` clean on all
-Phase B files (created + modified). Verified against
-`.ai/plan_finch-onboarding.md` §2 (Q1), §3 (waitlist endpoint), §4 Phase B,
-§5, §6 (verbatim CTA inventory), §8, §9.
-
-## What was built
-
-- **`components/marketing/WaitlistModal.tsx`** (new) — the capture dialog:
-  name / email / company(optional), posts to `/api/waitlist` with
-  `usePathname()` as `source_path`, success state ("You're on the list"),
-  inline error surface. Styled with the marketing orange system
-  (`hsl(22,69%,44%)`, pill buttons, translucent card) matching
-  `components/ContactForm.tsx`'s idiom — explicitly NOT the platform blue
-  system. `role="dialog"` + `aria-modal`, Escape-to-close, body-scroll lock,
-  autofocus on the name field, backdrop click to close, rendered via
-  `createPortal` to `document.body`. No SSR "mounted" gate needed/used (see
-  deviation below).
-- **`components/marketing/WaitlistCtaButton.tsx`** (new) — the client
-  boundary: a `forwardRef<HTMLButtonElement>` button that opens
-  `WaitlistModal` on click, forwarding all `ButtonHTMLAttributes` (className,
-  style, onMouseEnter/Leave, etc.) so it drops into every existing CTA slot's
-  styling untouched — including composing through `LiquidButton`'s `asChild`
-  clone and Radix `DropdownMenuItem`'s `asChild` Slot, both of which require a
-  ref-forwarding, prop-spreading child.
-- **`app/api/waitlist/route.ts`** (new) — POST `{name, email, company?,
-  sourcePath?}`. Validates required fields, per-field length caps, email
-  regex (mirrors `app/api/contact/route.ts`'s hostile-input posture:
-  HTML-escaped interpolation, CRLF-stripped subject line). Rate-limited via
-  `rateLimitAllowed('waitlist:<ip>', 5, 3600)` from `lib/platform/rate-limit.ts`
-  (same IP-derivation idiom as the contact route). Writes via
-  `supabase.rpc('waitlist_join', {p_name, p_email, p_company, p_source_path})`
-  on the anon client (matches the exact signature in `supabase/onboarding.sql`,
-  written by Phase C) — and unconditionally also sends a Resend notification
-  to joshua@vyso.co.za. The DB write and the email are independent best-effort
-  paths; the route only returns an error if **both** fail (confirmed live: with
-  the migration not yet pasted, `waitlist_join` was absent from the schema
-  cache, logged, and the route still returned 200 because the email path
-  succeeded — see Verification).
-
-## CTA sweep (§6 — all 13 rows)
-
-- `components/marketing/PublicMarketing.tsx` — `MarketingCta`'s primary is now
-  a `WaitlistCtaButton` (default label `"Join Waitlist"`); the `primaryHref`
-  prop was removed (no longer meaningful — the primary action never navigates).
-  Every one of its 7 callers had its `primaryLabel` override deleted so they
-  fall through to the new default; the two that also passed `primaryHref`
-  (`app/platform/finch/page.tsx`, `app/founding-client/page.tsx`) had that
-  removed too. Secondary label/href left untouched everywhere, per plan.
-- `components/Navbar.tsx` — desktop `LiquidButton` CTA ("Contact us" →
-  "Join Waitlist", `GradientText` child swapped from `<Link>` to
-  `WaitlistCtaButton`); the "Explore" mega-menu list item ("Talk to Vyso" →
-  "Join Waitlist", branched to render `WaitlistCtaButton` instead of `<Link>`
-  since the array was otherwise shared with two real nav links); mobile
-  dropdown "Contact us →" → "Join Waitlist →" (same `WaitlistCtaButton` swap
-  inside `DropdownMenuItem asChild`).
-- `components/sections/PricingSection.tsx` — audit-banner CTA ("Discuss the
-  audit" → "Join Waitlist"), and all three `TIERS[].cta` strings ("Get
-  started"/"Talk to us"×2 → "Join Waitlist"), all converted from `<Link
-  href="/contact">` to `WaitlistCtaButton` with identical inline
-  style/hover-handler props. The file's `Link` import became unused after the
-  swap and was removed.
-- `app/founding-client/page.tsx:143` — reworded "This is not a waitlist or a
-  speculative beta" → "This is not a speculative beta. Founding-client status
-  is a structured commitment…" (keeps the founding-client framing, removes the
-  contradiction with the new site-wide waitlist positioning). The page's own
-  hero CTA ("Apply to become a founding client") and its `AUDIENCE_LINKS`
-  Navbar entry (also literally "Become a founding client") were left alone —
-  neither is one of the 13 §6 rows.
-
-## Verification
-
-```
-npx tsc --noEmit
-# 0 errors
-
-npx eslint components/marketing/WaitlistModal.tsx components/marketing/WaitlistCtaButton.tsx \
-  components/marketing/PublicMarketing.tsx app/api/waitlist/route.ts components/Navbar.tsx \
-  components/sections/PricingSection.tsx app/south-africa/page.tsx app/platform/finch/page.tsx \
-  app/platform/vyso-for-smes/page.tsx app/platform/page.tsx app/case-studies/turn-n-slice/page.tsx \
-  "app/industries/[slug]/page.tsx" app/founding-client/page.tsx
-# clean, exit 0
-
-grep -rn "Join Waitlist" app components --include="*.tsx"
-# all 13 §6 CTAs confirmed present (7 via MarketingCta's shared default, not
-# literal per-file text)
-```
-
-Manual, via dev server + browser tools: opened `/pricing`, clicked the Navbar
-"Join Waitlist" button — modal opened, styled correctly (orange accent, not
-platform blue), name field autofocused. Submitted a real form (name + test
-email) → `POST /api/waitlist` returned `200`; server log showed
-`waitlist_join RPC error: Could not find the function public.waitlist_join(...)
-in the schema cache` (expected — `supabase/onboarding.sql` has not been pasted
-into the dashboard yet) with no email-send error logged, and the UI still
-rendered the "You're on the list" success state — confirming the
-never-fail-the-user degrade path works end-to-end. No console errors.
-Confirmed `/founding-client`'s CTA renders "Join Waitlist" and the reworded
-copy renders correctly.
-
-## Deviations / notes
-
-- **`primaryHref` removed from `MarketingCta`'s props**, not just unused —
-  the plan's §4 Phase B bullet says "default `primaryLabel` → 'Join
-  Waitlist'" without mentioning `primaryHref`, but since the primary action is
-  now a button that opens a modal (never navigates), keeping a dead `href`
-  prop around would be misleading. All 8 usages (component default + 7
-  call-sites) were audited — no caller needs it kept for a non-waitlist
-  primary action, since every `MarketingCta` instance in the codebase is one
-  of the swept 13.
-- **`WaitlistModal` has no SSR "mounted" gate**, unlike `FinchModal`'s
-  precedent (`components/platform/finch/FinchModal.tsx`) which uses
-  `useEffect(() => setMounted(true), [])` before calling `createPortal`. That
-  pattern exists because `FinchModal` is always mounted (an `open` prop
-  toggles visibility) and could in principle render during hydration.
-  `WaitlistModal` is only ever mounted by `WaitlistCtaButton` via `{open &&
-  <WaitlistModal .../>}`, which only becomes true after a user click — so
-  `document` is always available when it mounts, and skipping the gate also
-  sidesteps an eslint `react-hooks/set-state-in-effect` error the mounted-flag
-  idiom triggers on this repo's ruleset (Phase A's report notes the same rule
-  as pre-existing debt elsewhere; here it was avoidable outright rather than
-  carried over).
-- **Navbar's "Explore" list item required a small branch**, not a straight
-  swap: `{label, href}` was mapped generically over three items (Pricing,
-  FAQ, and the waitlist CTA) into `<Link>`s; since two of the three still
-  navigate, the map body now branches on `href === null` to render
-  `WaitlistCtaButton` instead of `<Link>`, sharing one `itemStyle` object so
-  visual output is byte-identical to before for the two untouched items.
-- No new npm dependencies; no changes to `next.config.ts`, `lib/ai/`,
-  `components/platform/`, or any file under `app/app/`; strays in the working
-  tree (`app/app/serviceden/*`, `components/platform/serviceden/*`,
-  `lib/platform/serviceden*`, `components/platform/orderflow/*.tsx`,
-  `package.json`, `tsconfig.json`, `.vscode/`, `AUDIT_FINDINGS.md`, `.ai/*`
-  other than this file, `tests/`, `supabase/serviceden*`) were left untouched
-  and excluded from staging (`git add` used explicit paths, not `-A`).
-
 ---
 
 # Phase D — Finch-guided onboarding flow `/onboarding` (finch-onboarding)
@@ -735,3 +595,90 @@ Left untouched (hard constraints / others' in-flight work — NOT staged):
 `app/apps/`, `app/services/`, `tests/`, `.vscode/`, `AUDIT_FINDINGS.md`,
 `FABLE.md`, `Claude_Rules.md`, `supabase/serviceden*.sql`, and the other `.ai/*`
 files.
+
+---
+
+# Waitlist removal + early-access trial notice (finch-onboarding)
+
+Status: **complete**. Verified against `.ai/plan_remove-waitlist-add-trial-notice.md`.
+
+## What was done
+
+1. **Reverted Phase B cleanly** via `git revert --no-edit 6cfd0ef` (commit
+   `cf12699`). Deleted `components/marketing/WaitlistModal.tsx`,
+   `components/marketing/WaitlistCtaButton.tsx`, `app/api/waitlist/route.ts`;
+   restored `components/Navbar.tsx` (desktop CTA back to "Contact us" →
+   `/contact`, mega-menu "Talk to Vyso", mobile "Contact us →"),
+   `components/marketing/PublicMarketing.tsx` (`MarketingCta` default +
+   `primaryHref` prop restored) and its 7 callers (`app/south-africa`,
+   `app/platform/finch`, `app/platform/page`, `app/industries/[slug]`,
+   `app/platform/vyso-for-smes`, `app/case-studies/turn-n-slice`,
+   `app/founding-client`), and `components/sections/PricingSection.tsx` (audit
+   banner + 3 tier CTAs back to `<Link href="/contact">`). The only revert
+   conflict was in `.ai/implementation.md` (later phases had appended to it
+   after Phase B) — resolved by keeping all later phase sections and dropping
+   only the Phase B ("Join Waitlist" CTA sweep) section, since that section
+   documented the now-reverted feature.
+2. **Stripped the waitlist DB objects from `supabase/onboarding.sql`**: removed
+   the `waitlist_signups` table (+ its unique index + RLS enable) and the
+   `waitlist_join(...)` function/grant, replacing them with a short comment
+   noting the feature was removed and that the already-applied live
+   table/function are harmless and can be dropped manually. No `DROP`
+   statement was added (migration stays idempotent/re-runnable); rest of the
+   file (org columns, backfill, `org_features` CHECK widen, the three
+   onboarding RPCs) untouched.
+3. **Added the early-access trial notice**:
+   - `app/login/page.tsx` — a second muted fine-print line under the existing
+     terms/no-card line in the signup pane, same `text-[11.5px] text-[#a7a099]`
+     styling: *"Vyso is in early access — we're still polishing things, so you
+     may hit the occasional rough edge. You're one of the first to use it, and
+     your feedback helps us make it better."*
+   - `components/platform/onboarding/OnboardingFlow.tsx` — appended one short
+     sentence to the `profile`-stage Finch intro body (the first thing a new
+     user sees in `/onboarding`): *"We're in early access, so thanks for being
+     one of the first here."* Left the `modules`/`data` stage intros
+     untouched per "keep it one short sentence."
+
+## Verification
+
+```
+rm -rf .next && npx tsc --noEmit
+# 0 errors (stale .next/types referencing the deleted /api/waitlist route
+# needed a cache clear first — expected after deleting a route file)
+
+npx eslint app/login/page.tsx components/platform/onboarding/OnboardingFlow.tsx \
+  app/case-studies/turn-n-slice/page.tsx app/founding-client/page.tsx \
+  "app/industries/[slug]/page.tsx" app/platform/finch/page.tsx app/platform/page.tsx \
+  app/platform/vyso-for-smes/page.tsx app/south-africa/page.tsx components/Navbar.tsx \
+  components/marketing/PublicMarketing.tsx components/sections/PricingSection.tsx
+# clean, exit 0
+
+grep -rin waitlist app components
+# only app/founding-client/page.tsx:143, the restored pre-Phase-B "This is not
+# a waitlist or a speculative beta" line — expected, not a stray reference
+
+npm run build
+# succeeds; no /api/waitlist route in the output route list
+```
+
+Navbar CTA before → after this change: "Join Waitlist" (opens `WaitlistModal`)
+→ "Contact us" (`<Link href="/contact">`), for the desktop `LiquidButton`, the
+"Explore" mega-menu item, and the mobile dropdown — all three restored to their
+pre-Phase-B state.
+
+## Deviations / notes
+
+- None from the plan. The `.ai/implementation.md` revert conflict (only
+  conflicting file) was resolved by hand as described above rather than via
+  `git revert --continue` picking a side automatically, since neither side
+  alone was correct (HEAD had the Phase B section to remove; the revert's
+  "ours" side predated Phases D and later entirely).
+- Working tree's unrelated ServiceDen/OrderFlow-CRM uncommitted changes
+  (`app/app/serviceden/*`, `components/platform/serviceden/*`,
+  `lib/platform/serviceden*`, `components/platform/orderflow/*.tsx`,
+  `package.json`, `tsconfig.json`, `.vscode/`, `AUDIT_FINDINGS.md`, `.ai/plan.md`,
+  `.ai/lead_email_agent.md`, `Claude_Rules.md`, `FABLE.md`, `tests/`,
+  `supabase/serviceden*.sql`, untracked `app/api/serviceden/*`,
+  `app/app/serviceden/templates/`, `app/apps/`, `app/services/`) were left
+  untouched throughout and excluded from both commits via explicit-path
+  staging (no `git add -A`).

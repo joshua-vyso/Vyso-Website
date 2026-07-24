@@ -22,7 +22,7 @@ const ACCENT = '#1F5FA8';
 const INTRO: Record<OnboardingStage, { title: string; body: string }> = {
   profile: {
     title: "Hi, I'm Finch.",
-    body: "I'll help you get Vyso set up in a few minutes. First, tell me a little about your business so I can tailor everything to you.",
+    body: "I'll help you get Vyso set up in a few minutes. First, tell me a little about your business so I can tailor everything to you. We're in early access, so thanks for being one of the first here.",
   },
   modules: {
     title: 'Pick your toolkit.',
