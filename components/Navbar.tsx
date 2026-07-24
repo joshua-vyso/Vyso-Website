@@ -23,7 +23,6 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { NavLoginLink } from "./platform/MarketingAuth";
-import { WaitlistCtaButton } from "./marketing/WaitlistCtaButton";
 
 export const LOGO_LEFT_PAD = 40;
 export const NAV_LOGO_W    = 120;
@@ -441,42 +440,31 @@ export function Navbar({ visible = true }: NavbarProps) {
                 {[
                   { label: "Pricing", href: "/pricing" },
                   { label: "Frequently asked questions", href: "/faq" },
-                  { label: "Join Waitlist", href: null },
-                ].map(({ label, href }) => {
-                  const itemStyle: React.CSSProperties = {
-                    display:       "flex",
-                    alignItems:    "center",
-                    justifyContent:"space-between",
-                    width:         "100%",
-                    minHeight:     40,
-                    padding:       "0.5rem 0.7rem",
-                    borderRadius:  10,
-                    color:         "#555",
-                    textDecoration:"none",
-                    fontFamily:    "var(--font-body, var(--font-sans))",
-                    fontSize:      "0.8rem",
-                    fontWeight:    550,
-                    border:        "none",
-                    background:    "transparent",
-                    cursor:        "pointer",
-                    textAlign:     "left",
-                  };
-                  return (
-                    <DropdownMenuItem key={label} asChild className="cursor-pointer p-0 focus:bg-transparent">
-                      {href ? (
-                        <Link href={href} className="hover:bg-white/50 focus:bg-white/60" style={itemStyle}>
-                          {label}
-                          <ChevronRight size={12} strokeWidth={1.8} color="#aaa" aria-hidden="true" />
-                        </Link>
-                      ) : (
-                        <WaitlistCtaButton className="hover:bg-white/50 focus:bg-white/60" style={itemStyle}>
-                          {label}
-                          <ChevronRight size={12} strokeWidth={1.8} color="#aaa" aria-hidden="true" />
-                        </WaitlistCtaButton>
-                      )}
-                    </DropdownMenuItem>
-                  );
-                })}
+                  { label: "Talk to Vyso", href: "/contact" },
+                ].map(({ label, href }) => (
+                  <DropdownMenuItem key={href} asChild className="cursor-pointer p-0 focus:bg-transparent">
+                    <Link
+                      href={href}
+                      className="hover:bg-white/50 focus:bg-white/60"
+                      style={{
+                        display:       "flex",
+                        alignItems:    "center",
+                        justifyContent:"space-between",
+                        minHeight:     40,
+                        padding:       "0.5rem 0.7rem",
+                        borderRadius:  10,
+                        color:         "#555",
+                        textDecoration:"none",
+                        fontFamily:    "var(--font-body, var(--font-sans))",
+                        fontSize:      "0.8rem",
+                        fontWeight:    550,
+                      }}
+                    >
+                      {label}
+                      <ChevronRight size={12} strokeWidth={1.8} color="#aaa" aria-hidden="true" />
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
               </div>
             </div>
           </DropdownMenuContent>
@@ -499,7 +487,8 @@ export function Navbar({ visible = true }: NavbarProps) {
       <div className="hidden md:flex md:items-center md:gap-6">
         <NavLoginLink />
         <LiquidButton asChild variant="default" size="md">
-          <WaitlistCtaButton
+          <Link
+            href="/contact"
             style={{
               textDecoration: "none",
               fontFamily:     "var(--font-sans)",
@@ -508,8 +497,8 @@ export function Navbar({ visible = true }: NavbarProps) {
               flexShrink:     0,
             }}
           >
-            <GradientText as="span">Join Waitlist</GradientText>
-          </WaitlistCtaButton>
+            <GradientText as="span">Contact us</GradientText>
+          </Link>
         </LiquidButton>
       </div>
 
@@ -626,19 +615,16 @@ export function Navbar({ visible = true }: NavbarProps) {
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild className="cursor-pointer p-0">
-              <WaitlistCtaButton
+              <Link
+                href="/contact"
                 style={{
                   ...MOBILE_LINK_STYLE,
                   fontWeight:     600,
                   color:          "hsl(22,69%,44%)",
-                  border:         "none",
-                  background:     "transparent",
-                  cursor:         "pointer",
-                  textAlign:      "left",
                 }}
               >
-                Join Waitlist →
-              </WaitlistCtaButton>
+                Contact us →
+              </Link>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
