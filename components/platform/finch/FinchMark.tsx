@@ -1,110 +1,78 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useId } from 'react';
 
 /**
- * The Finch mark — a minimalist single-line bird in profile, facing right.
- * Stroked (never filled) with a cornflower-blue → warm-orange gradient running
- * top-left to bottom-right, so the head/tail read cooler and the beak/belly/leg
- * read warmer. Reused at small size next to the Finch name (button, modal
- * header) and larger with `animate="draw"` in the onboarding panel.
+ * The Finch mark — the perched, right-facing bird from the brand icon, traced
+ * from the source artwork as a single filled contour (body) plus the eye. The
+ * fill is a white -> warm-orange gradient (top-left to bottom-right) so it reads
+ * on the blue Finch pill; pass `chip` to sit it on a blue-gradient disc against
+ * light backgrounds (onboarding, modal header).
  *
- * `animate="draw"` plays a one-time stroke draw-in on mount (~0.9s ease-out)
- * followed by a gentle settle pop, then goes static — never loops. Honours
- * `prefers-reduced-motion` by skipping straight to the final frame. The idle
- * (`animate="none"`, the default) state is always static.
+ * `animate="draw"` plays a one-time gentle pop/fade on mount (honours
+ * prefers-reduced-motion via the .finch-mark-pop rule in globals.css). Default
+ * is static.
  */
+const FINCH_BODY_PATH =
+  'M3295 4690 c-85 -13 -200 -48 -289 -89 -289 -133 -485 -356 -624 -706 -105 -264 -191 -415 -456 -799 -239 -347 -860 -1249 -986 -1431 -585 -847 -600 -871 -600 -906 0 -21 10 -40 30 -61 27 -27 36 -30 73 -26 23 3 256 75 517 161 862 283 818 273 1155 270 l260 -2 49 -53 c27 -29 130 -143 227 -253 l178 -200 -333 -5 c-305 -5 -336 -7 -354 -23 -27 -25 -36 -64 -21 -99 25 -60 -8 -58 878 -58 l809 0 31 26 c41 34 44 92 6 129 l-24 25 -378 0 -378 0 -229 257 -228 257 119 22 c346 63 631 212 879 459 348 347 517 777 539 1375 13 358 31 484 83 586 43 85 62 98 255 179 100 42 204 86 230 97 74 32 96 99 50 150 -8 9 -114 56 -234 104 l-218 87 -36 61 c-121 207 -296 354 -508 427 -45 15 -111 33 -147 38 -73 12 -248 12 -325 1z m333 -186 c229 -47 408 -187 520 -405 l37 -73 138 -55 c75 -30 137 -57 137 -60 0 -3 -33 -19 -73 -35 -182 -74 -247 -127 -312 -256 -68 -136 -89 -248 -100 -555 -16 -443 -66 -678 -201 -950 -79 -159 -165 -282 -282 -400 -212 -215 -504 -363 -827 -420 -80 -14 -142 -17 -310 -14 -383 6 -485 3 -575 -15 -135 -28 -433 -117 -804 -239 l-342 -114 111 161 c61 89 128 186 149 217 l37 56 107 13 c506 58 959 182 1337 365 237 115 380 213 524 358 138 140 226 284 277 454 34 114 39 300 10 403 -54 187 -186 351 -347 429 -117 56 -206 74 -339 68 -58 -3 -115 -9 -128 -13 -21 -6 -17 6 41 122 36 71 89 185 117 254 97 232 149 319 259 434 135 141 328 244 513 275 88 14 243 12 326 -5z m-959 -1259 c85 -22 161 -66 221 -126 99 -100 143 -215 143 -369 -1 -248 -158 -501 -428 -692 -280 -196 -707 -363 -1164 -453 -201 -40 -371 -64 -364 -51 6 11 38 57 475 691 122 176 295 428 386 560 239 346 233 339 306 380 121 68 301 93 425 60z';
+const FINCH_EYE_PATH =
+  'M3653 4124 c-88 -44 -104 -166 -29 -232 47 -41 94 -48 151 -23 62 27 87 70 82 139 -7 103 -111 162 -204 116z';
+
 export function FinchMark({
   size = 20,
   title = 'Finch',
   animate = 'none',
+  chip = false,
 }: {
   size?: number;
   title?: string;
   animate?: 'draw' | 'none';
+  chip?: boolean;
 }) {
   const gradientId = `finch-mark-gradient-${useId()}`;
-  const pathRef = useRef<SVGPathElement>(null);
-  // Settled immediately for the static (default) case; the draw case flips
-  // this on once the draw-in animation has run so the settle pop can play.
-  const [settled, setSettled] = useState(animate !== 'draw');
-
-  useEffect(() => {
-    if (animate !== 'draw') return;
-    const path = pathRef.current;
-    if (!path) return;
-
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduceMotion) {
-      setSettled(true);
-      return;
-    }
-
-    const length = path.getTotalLength();
-    path.style.transition = 'none';
-    path.style.strokeDasharray = String(length);
-    path.style.strokeDashoffset = String(length);
-    // Force a reflow so the browser registers the starting offset before the
-    // transition is enabled — otherwise it can jump straight to the end.
-    void path.getBoundingClientRect();
-    path.style.transition = 'stroke-dashoffset 0.9s ease-out';
-    path.style.strokeDashoffset = '0';
-
-    const t = window.setTimeout(() => setSettled(true), 900);
-    return () => window.clearTimeout(t);
-  }, [animate]);
-
-  // Decorative when there's no title (e.g. sitting inside an already-labelled
-  // button) — hide it from the accessibility tree instead of announcing nothing.
   const decorative = !title;
 
-  return (
+  const svg = (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 100 100"
+      viewBox="0 0 512 512"
       fill="none"
       role={decorative ? undefined : 'img'}
       aria-hidden={decorative || undefined}
       aria-label={decorative ? undefined : title}
-      className={animate === 'draw' && settled ? 'finch-mark-settle' : undefined}
+      className={animate === 'draw' ? 'finch-mark-pop' : undefined}
     >
       {decorative ? null : <title>{title}</title>}
       <defs>
-        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#6C9BE0" />
+        <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1="0" y1="5120" x2="5120" y2="0">
+          <stop offset="0%" stopColor="#FFFFFF" />
           <stop offset="100%" stopColor="#F0873C" />
         </linearGradient>
       </defs>
-      {/* Head, beak, back and the long, pointed tail — one continuous contour. */}
-      <path
-        ref={pathRef}
-        d="M94,36 C86,24 78,18 74,24 C68,14 56,8 46,18 C32,26 18,36 8,66 C15,75 22,79 31,71 C40,64 44,55 45,46 C46,38 52,32 60,28 C66,25 71,25 74,24"
-        stroke={`url(#${gradientId})`}
-        strokeWidth={2.2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      {/* Leaf-shaped wing curve, inside the body. */}
-      <path
-        d="M60,32 C50,34 42,42 38,52 C46,46 56,40 60,32"
-        stroke={`url(#${gradientId})`}
-        strokeWidth={2.2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      {/* One short leg. */}
-      <path
-        d="M46,64 L44,80"
-        stroke={`url(#${gradientId})`}
-        strokeWidth={2.2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      {/* A detached horizontal base line beneath the body. */}
-      <line x1="26" y1="86" x2="62" y2="86" stroke={`url(#${gradientId})`} strokeWidth={2.2} strokeLinecap="round" />
-      {/* Dot eye — filled, not stroked. */}
-      <circle cx="70" cy="20" r="2.2" fill="#7E93B8" />
+      <g transform="translate(0,512) scale(0.1,-0.1)" fill={`url(#${gradientId})`} stroke="none">
+        <path d={FINCH_BODY_PATH} />
+        <path d={FINCH_EYE_PATH} />
+      </g>
     </svg>
+  );
+
+  if (!chip) return svg;
+
+  const pad = Math.max(5, Math.round(size * 0.4));
+  return (
+    <span
+      className="finch-gradient"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: '9999px',
+        padding: pad,
+        boxShadow: '0 2px 10px -2px rgba(62,143,224,0.6)',
+      }}
+    >
+      {svg}
+    </span>
   );
 }

@@ -32,7 +32,7 @@ export default async function OnboardingLayout({ children }: { children: React.R
       <header className="flex items-center justify-between border-b border-[#E9EEF4] bg-white/85 px-6 py-3.5 backdrop-blur-[10px]">
         <div className="flex items-center gap-2.5">
           <span className="finch-gradient flex h-7 w-7 items-center justify-center rounded-full">
-            <FinchMark size={15} title="" />
+            <FinchMark size={15} title="" chip />
           </span>
           <span className="of-display text-[15px] font-semibold text-[#171A17]">Set up your workspace</span>
         </div>

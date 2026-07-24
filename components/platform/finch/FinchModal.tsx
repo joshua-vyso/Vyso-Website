@@ -548,7 +548,7 @@ export function FinchModal({
         <div className="flex items-center justify-between gap-3 border-b border-[#EEF1F5] px-5 py-3.5">
           <div className="flex items-center gap-2">
             <span className="finch-gradient flex h-6 w-6 items-center justify-center rounded-full">
-              <FinchMark size={13} title="" />
+              <FinchMark size={13} title="" chip />
             </span>
             <span className="of-display text-[15px] font-semibold text-[#171A17]">Finch</span>
           </div>
