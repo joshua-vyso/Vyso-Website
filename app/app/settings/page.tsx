@@ -8,27 +8,37 @@ import {
   type IngestEvent,
   type IngestSender,
 } from '@/components/platform/settings/EmailIngestCard';
+import {
+  XeroIntegrationCard,
+  type XeroConnectionSummary,
+} from '@/components/platform/settings/XeroIntegrationCard';
 import { INGEST_DOMAIN, addressFor } from '@/lib/platform/email-ingest-policy';
+import { serviceRoleConfigured } from '@/lib/platform/supabase-service';
+import { xeroOAuthConfigured } from '@/lib/platform/xero';
 
 /**
  * Workspace settings — organisation-wide preferences reached from the profile
  * chip. Owns the organisation's units of measurement (used by Doc-U review +
  * ProcurePulse) and its email-ingestion address, plus a link to the team hub.
  */
-export default async function WorkspaceSettings() {
+export default async function WorkspaceSettings({
+  searchParams,
+}: {
+  searchParams: Promise<{ xero_connected?: string; xero_error?: string }>;
+}) {
   const session = await getPlatformSession();
   if (!session) redirect('/login');
   const orgId = session.org?.id ?? '';
 
   const db = await createServerSupabase();
-  const settings = await fetchSettings(db, orgId);
+  const [settings, query] = await Promise.all([fetchSettings(db, orgId), searchParams]);
 
   // Email ingestion. RLS scopes all three reads to the caller's org.
   //
   // Two addresses, two independent secrets: 'documents' goes to your suppliers,
   // 'quotes' goes into your website's contact form. Rows written before the purpose
   // column existed default to 'documents', which is the stricter lane.
-  const [addressRows, senderRows, eventRows] = await Promise.all([
+  const [addressRows, senderRows, eventRows, xeroConnectionRow] = await Promise.all([
     db
       .from('email_ingest_addresses')
       .select('local_part, purpose')
@@ -41,6 +51,11 @@ export default async function WorkspaceSettings() {
       .eq('org_id', orgId)
       .order('created_at', { ascending: false })
       .limit(8),
+    db
+      .from('xero_connections')
+      .select('id, tenant_name, status, last_synced_at')
+      .eq('org_id', orgId)
+      .maybeSingle(),
   ]);
 
   const addresses = (addressRows.data ?? []) as { local_part: string; purpose: string | null }[];
@@ -69,6 +84,14 @@ export default async function WorkspaceSettings() {
           quotesAddress={quotesLocalPart ? addressFor(quotesLocalPart) : null}
           senders={(senderRows.data ?? []) as IngestSender[]}
           events={(eventRows.data ?? []) as IngestEvent[]}
+        />
+
+        <XeroIntegrationCard
+          configured={xeroOAuthConfigured && serviceRoleConfigured}
+          canManage={canManage}
+          connection={(xeroConnectionRow.data as XeroConnectionSummary | null) ?? null}
+          notice={query.xero_connected ? `Connected ${query.xero_connected}` : null}
+          initialError={query.xero_error ?? null}
         />
 
         <Link
