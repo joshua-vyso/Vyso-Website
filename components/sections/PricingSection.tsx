@@ -158,11 +158,9 @@ const TIERS = [
     features: [
       { text: "Workflow automation in your existing stack", sub: "WhatsApp, Google Sheets, Outlook, etc." },
       { text: "Up to 5 automations included",              sub: "" },
-      { text: "Maintenance — breakages fixed proactively", sub: "" },
+      { text: "Breakages fixed proactively",                sub: "" },
       { text: "New automations on a monthly delivery cycle", sub: "" },
-      { text: "30-day support period post-setup",          sub: "" },
-      { text: "Basic workflow documentation",               sub: "" },
-      { text: "Monthly automation health check",            sub: "" },
+      { text: "Finch available from Create",                sub: "" },
     ],
     pricing: [
       { label: "Setup (once-off)", value: "R10,000", unit: "" },
@@ -176,13 +174,10 @@ const TIERS = [
     tagline:  "We replace those tools with a module that owns your data.",
     features: [
       { text: "One productised Vyso module of your choice", sub: "" },
-      { text: "Migration of Start automations into the module", sub: "" },
-      { text: "Finch companion app included for that module", sub: "" },
+      { text: "Start automations migrated into your module", sub: "" },
+      { text: "Finch companion app included for your module", sub: "" },
       { text: "Team onboarding and 60-day support",         sub: "" },
-      { text: "One round of post-launch revisions",         sub: "" },
-      { text: "Basic dashboard and reporting view",         sub: "" },
-      { text: "User roles and access setup",                sub: "" },
-      { text: "Workflow documentation and handover",        sub: "" },
+      { text: "Dashboard, user roles and handover included", sub: "" },
     ],
     pricing: [
       { label: "Setup (once-off)", value: "R30,000", unit: "" },
@@ -197,14 +192,9 @@ const TIERS = [
     features: [
       { text: "Everything in Create",                       sub: "" },
       { text: "Add modules as your operation grows",        sub: "" },
-      { text: "Finch companion app across modules",         sub: "" },
+      { text: "Finch companion app across all modules",     sub: "" },
       { text: "Two-way integrations with outside systems",  sub: "accounting, POS, banking, CRMs, supplier systems" },
-      { text: "Ongoing support for agreed workflows",       sub: "" },
-      { text: "Monthly ops reports",                        sub: "" },
-      { text: "Priority development",                       sub: "" },
-      { text: "Cross-module dashboard and reporting",       sub: "" },
-      { text: "Advanced permissions and team workflows",    sub: "" },
-      { text: "Quarterly optimisation session",             sub: "" },
+      { text: "Monthly ops reports and quarterly optimisation", sub: "" },
     ],
     pricing: [
       { label: "Setup (once-off)", value: "R50,000", unit: "" },

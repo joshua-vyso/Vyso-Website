@@ -66,10 +66,27 @@
   line-height: 0.84;
 }
 
+/*
+  .blendPlain is reserved for the hero title, which always sits over the
+  dark WebGL canvas near the top of the page — mix-blend-mode: difference
+  is safe there because there's a guaranteed dark backdrop to blend against.
+*/
 .blendPlain {
   display: block;
   color: white;
   mix-blend-mode: difference;
+}
+
+/*
+  .plainInk is for headings/labels that sit on the plain white page body
+  (group headings, question titles, comparison heading, CTA heading).
+  mix-blend-mode doesn't reliably composite against the white body — it
+  isn't guaranteed a dark backdrop to blend against there — so these use a
+  flat ink colour instead, matching the rest of the FAQ page's text.
+*/
+.plainInk {
+  display: block;
+  color: var(--faq-ink);
 }
 
 .blendOrange {
