@@ -25,7 +25,7 @@ function createWindow() {
     },
   });
 
-  win.setWindowOpenHandler(({ url }) => {
+  win.webContents.setWindowOpenHandler(({ url }) => {
     if (isAllowedHost(url)) {
       return { action: 'allow' };
     }
