@@ -18,7 +18,6 @@
     "mac": {
       "category": "public.app-category.business",
       "icon": "build/icon.icns",
-      "identity": null,
       "target": [
         {
           "target": "dmg",

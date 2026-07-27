@@ -371,7 +371,7 @@ export default function FaqPage() {
                         <p className={styles.groupEyebrow}>{group.eyebrow}</p>
                         <h2
                           id={`${group.id}-heading`}
-                          className={`blend-h-plain ${styles.blendPlain}`}
+                          className={styles.plainInk}
                         >
                           {group.title}
                         </h2>
@@ -383,7 +383,7 @@ export default function FaqPage() {
                       {group.questions.map(({ question, answer }) => (
                         <details key={question} className={styles.question}>
                           <summary>
-                            <span className={`blend-h-plain ${styles.blendPlain}`}>
+                            <span className={styles.plainInk}>
                               {question}
                             </span>
                             <span className={styles.questionControl} aria-hidden="true" />
@@ -409,7 +409,7 @@ export default function FaqPage() {
                   <p className={styles.eyebrow}>A fair comparison</p>
                   <h2
                     id="comparison-heading"
-                    className={`blend-h-plain ${styles.blendPlain}`}
+                    className={styles.plainInk}
                   >
                     Different tools suit different jobs.
                   </h2>
@@ -465,7 +465,7 @@ export default function FaqPage() {
               <p className={styles.eyebrow}>Still deciding?</p>
               <h2
                 id="faq-cta-heading"
-                className={`blend-h-plain ${styles.blendPlain}`}
+                className={styles.plainInk}
               >
                 Bring us the messy workflow.
               </h2>
