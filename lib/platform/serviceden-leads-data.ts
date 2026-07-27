@@ -31,6 +31,7 @@ export function mapSdLead(r: any): SdLead {
     contactName: r.contact_name ?? '',
     company: r.company ?? null,
     email: r.email ?? '',
+    websiteUrl: r.website_url ?? null,
     phone: r.phone ?? null,
     source: (r.source as SdLeadSource) ?? 'manual',
     stage: (r.stage as SdLeadStage) ?? 'new',
@@ -114,7 +115,7 @@ export async function getServiceDenLeadDetail(orgId: string, leadId: string): Pr
   const { data: messageRows } = threadIds.length
     ? await sb
         .from('sd_mail_messages')
-        .select('id,thread_id,direction,from_address,to_addresses,cc_addresses,subject,sent_at,snippet,body_text')
+        .select('id,thread_id,direction,from_address,to_addresses,cc_addresses,subject,sent_at,snippet,body_text,internet_message_id')
         .eq('org_id', orgId)
         .in('thread_id', threadIds)
         .order('sent_at', { ascending: true })
@@ -132,6 +133,7 @@ export async function getServiceDenLeadDetail(orgId: string, leadId: string): Pr
       sentAt: r.sent_at ?? '',
       snippet: r.snippet ?? null,
       bodyText: r.body_text ?? null,
+      internetMessageId: r.internet_message_id ?? null,
     };
     const list = byThread.get(String(r.thread_id)) ?? [];
     list.push(message);

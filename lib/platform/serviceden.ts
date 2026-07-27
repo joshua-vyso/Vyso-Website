@@ -21,6 +21,99 @@ export type SdLeadStage =
   | 'lost';
 export type SdLeadReviewStatus = 'suggested' | 'accepted' | 'rejected';
 export type SdLeadSource = 'manual' | 'gmail_agent' | 'gmail_label' | 'referral' | 'website' | 'other';
+/**
+ * Gmail send scope. It lives in this pure file (rather than serviceden-gmail.ts,
+ * which is server-only) because the lead UI has to warn about connections that
+ * predate it and therefore cannot send.
+ */
+export const GMAIL_SEND_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
+export function connectionHasSendScope(scopes: string[]): boolean {
+  return scopes.includes(GMAIL_SEND_SCOPE);
+}
+
+export type SdResearchStatus = 'pending' | 'running' | 'complete' | 'no_website' | 'needs_confirmation' | 'error';
+export type SdResearchConfidence = 'low' | 'medium' | 'high';
+export interface SdResearchSource {
+  id: string;
+  url: string;
+  title: string | null;
+  scrapedAt: string;
+}
+export interface SdResearchSignal {
+  claim: string;
+  sourceId: string;
+  kind: 'fact' | 'hypothesis';
+}
+export interface SdCompanyResearch {
+  id: string;
+  leadId: string;
+  status: SdResearchStatus;
+  websiteUrl: string | null;
+  domain: string | null;
+  candidates: { url: string; title: string | null; reason: string }[];
+  companyName: string | null;
+  industry: string | null;
+  location: string | null;
+  productsServices: string | null;
+  customerType: string | null;
+  operationalSignals: SdResearchSignal[];
+  summary: string | null;
+  sources: SdResearchSource[];
+  confidence: SdResearchConfidence;
+  contentHash: string | null;
+  excludedSourceIds: string[];
+  lastError: string | null;
+  researchedAt: string | null;
+}
+export interface SdEmailTemplate {
+  id: string;
+  name: string;
+  stages: SdLeadStage[];
+  purpose: string | null;
+  toneNotes: string | null;
+  preferredCta: string | null;
+  industryTags: string[];
+  visibility: 'personal' | 'org';
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  examples: SdEmailTemplateExample[];
+}
+export interface SdEmailTemplateExample {
+  id: string;
+  templateId: string;
+  subjectExample: string;
+  bodyExample: string;
+  active: boolean;
+  source: 'manual' | 'sent_email';
+}
+export type SdDraftStatus = 'draft' | 'approved' | 'sending' | 'sent' | 'failed' | 'cancelled';
+export interface SdEmailDraft {
+  id: string;
+  leadId: string;
+  recipientEmail: string;
+  subject: string;
+  body: string;
+  pipelineStageSnapshot: SdLeadStage;
+  templateIds: string[];
+  exampleIds: string[];
+  researchId: string | null;
+  researchRevision: string | null;
+  usedSourceIds: string[];
+  reasoningSummary: string | null;
+  suggestedFollowUpDays: number | null;
+  sourceThreadId: string | null;
+  status: SdDraftStatus;
+  staleResearch: boolean;
+  model: string | null;
+  approvedAt: string | null;
+  sentAt: string | null;
+  gmailMessageId: string | null;
+  gmailThreadId: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export const LEAD_STAGE_META: Record<SdLeadStage, { label: string; tone: 'neutral' | 'positive' | 'warning' | 'info' }> = {
   new: { label: 'New', tone: 'neutral' },
@@ -122,6 +215,7 @@ export interface SdLead {
   contactName: string;
   company: string | null;
   email: string;
+  websiteUrl: string | null;
   phone: string | null;
   source: SdLeadSource;
   stage: SdLeadStage;
@@ -168,6 +262,7 @@ export interface SdMailMessage {
   sentAt: string;
   snippet: string | null;
   bodyText: string | null;
+  internetMessageId: string | null;
 }
 
 export interface SdMailThread {
