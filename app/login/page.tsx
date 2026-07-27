@@ -19,6 +19,10 @@ type Pane = 'login' | 'signup' | 'verify';
 // Email OTP length — env-overridable, defaults to 8 to match the current Supabase setting.
 const CODE_LENGTH = Number(process.env.NEXT_PUBLIC_OTP_LENGTH) || 8;
 
+// Self-serve signup is hidden from the public login pane while marketing CTAs point
+// at the waitlist. Signup/verify pane logic stays intact — set true to restore it.
+const SIGNUP_ENABLED = false;
+
 export default function LoginPage() {
   const router = useRouter();
   const [pane, setPane] = useState<Pane>('login');
@@ -375,16 +379,18 @@ export default function LoginPage() {
                 Continue with Google
               </button>
 
-              <p className="mt-5 text-center text-[12.5px] text-[#6b645c]">
-                New to Vyso?{' '}
-                <button
-                  type="button"
-                  onClick={() => goTo('signup')}
-                  className="cursor-pointer font-semibold text-[#BE5D23] transition hover:text-[#9c4a1a]"
-                >
-                  Create an account
-                </button>
-              </p>
+              {SIGNUP_ENABLED ? (
+                <p className="mt-5 text-center text-[12.5px] text-[#6b645c]">
+                  New to Vyso?{' '}
+                  <button
+                    type="button"
+                    onClick={() => goTo('signup')}
+                    className="cursor-pointer font-semibold text-[#BE5D23] transition hover:text-[#9c4a1a]"
+                  >
+                    Create an account
+                  </button>
+                </p>
+              ) : null}
             </>
           ) : null}
 

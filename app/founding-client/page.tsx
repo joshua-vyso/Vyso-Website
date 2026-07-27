@@ -123,7 +123,7 @@ export default function FoundingClientPage() {
           </p>
           <div className={styles.actions}>
             <Link className={styles.primaryButton} href="/contact">
-              Apply to become a founding client <span aria-hidden="true">→</span>
+              Join Waitlist <span aria-hidden="true">→</span>
             </Link>
             <Link className={styles.glassButton} href="/platform">Explore the platform</Link>
           </div>
@@ -249,7 +249,7 @@ export default function FoundingClientPage() {
         eyebrow="Founding client applications"
         title="Bring us one operational problem worth fixing properly."
         copy="Tell us what the team repeats, where information gets lost and what the owner cannot see soon enough. We will test whether Vyso is the right fit."
-        primaryLabel="Start the conversation"
+        primaryLabel="Join Waitlist"
         primaryHref="/contact"
         secondaryLabel="Read the Turn ’n Slice story"
         secondaryHref="/case-studies/turn-n-slice"

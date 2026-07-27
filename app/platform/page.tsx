@@ -492,7 +492,7 @@ export default function PlatformPage() {
         eyebrow="A practical first step"
         title="Bring us the workflow that keeps breaking."
         copy="We will map the process, test whether Vyso fits and recommend the smallest useful starting point before a larger implementation begins."
-        primaryLabel="Talk to Vyso"
+        primaryLabel="Join Waitlist"
         secondaryLabel="View pricing"
         secondaryHref="/pricing"
       />

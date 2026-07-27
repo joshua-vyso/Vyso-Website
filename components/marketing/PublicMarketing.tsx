@@ -69,7 +69,7 @@ export function MarketingCta({
   eyebrow,
   title,
   copy,
-  primaryLabel = "Talk to Vyso",
+  primaryLabel = "Join Waitlist",
   primaryHref = "/contact",
   secondaryLabel,
   secondaryHref,

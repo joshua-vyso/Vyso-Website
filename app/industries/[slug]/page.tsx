@@ -254,7 +254,7 @@ export default async function IndustryPage({
           <p className={styles.compactLead}>{industry.lead}</p>
           <div className={styles.actions}>
             <Link className={styles.primaryButton} href="/contact">
-              Discuss your operation <span aria-hidden="true">→</span>
+              Join Waitlist <span aria-hidden="true">→</span>
             </Link>
             <Link className={styles.glassButton} href="/founding-client">
               Founding-client programme
@@ -361,7 +361,7 @@ export default async function IndustryPage({
         eyebrow="Start with the operation"
         title={`Show us how ${industry.shortName.toLowerCase()} handle the work today.`}
         copy="We will map the actual workflow, identify the highest-value gap and tell you honestly whether Vyso is the right system to address it."
-        primaryLabel="Talk to Vyso"
+        primaryLabel="Join Waitlist"
         secondaryLabel="View the platform"
         secondaryHref="/platform"
       />

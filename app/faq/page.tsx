@@ -127,12 +127,57 @@ const FAQ_GROUPS: readonly FaqGroup[] = [
       {
         question: "How much does Vyso cost?",
         answer:
-          "The one-week audit is R2,000 once-off. Start is R5,000 once-off plus R3,000 per month. Create is R20,000 once-off plus R6,000 per month. Scale is R30,000 once-off plus R8,000 per month. Your recommended tier depends on the workflow and implementation scope.",
+          "The one-week audit is R2,000 once-off. Start is R10,000 once-off plus R8,000 per month. Create is R30,000 once-off plus R10,000 per month. Scale is R50,000 once-off plus R15,000 per month, with additional modules on Scale at R3,000 per month each. Your recommended tier depends on the workflow and implementation scope.",
       },
       {
-        question: "How are additional modules priced?",
+        question: "What's included in the Start tier?",
         answer:
-          "Each additional Vyso module costs R3,000 per month. We recommend adding a module only when it solves a defined operational need and fits the rest of the workflow.",
+          "Start focuses on automating the tools you already use — WhatsApp, Google Sheets, Outlook and similar. It includes up to five automations, proactive maintenance, new automations on a monthly delivery cycle, basic workflow documentation, a monthly automation health check and a 30-day support period after setup. Start doesn't include Vyso modules or Finch — it's about making your existing stack work harder.",
+      },
+      {
+        question: "What's included in the Create tier?",
+        answer:
+          "Create moves a key workflow out of scattered tools and into one productised Vyso module of your choice. Your Start automations are migrated into the module, and Finch — our companion app — is included for that module. You also get team onboarding, a 60-day support period, one round of post-launch revisions, a basic dashboard and reporting view, user roles and access setup, and full documentation and handover.",
+      },
+      {
+        question: "What's included in the Scale tier?",
+        answer:
+          "Scale is the full operating platform. It includes everything in Create, plus the ability to add modules as your operation grows, Finch across all your modules, two-way integrations with outside systems such as accounting, POS, banking, CRMs and supplier systems, cross-module dashboards and reporting, advanced permissions and team workflows, monthly ops reports, priority development and a quarterly optimisation session. Additional modules are R3,000 per month each.",
+      },
+      {
+        question: "What counts as an additional module, and how are they priced?",
+        answer:
+          "Each Vyso module covers one operational area — orders, suppliers, shifts, wastage and so on. Create includes one module; Scale lets you add more at R3,000 per month each. A new operational area handled by its own module counts as an additional module.",
+      },
+      {
+        question: "Is Finch included?",
+        answer:
+          "Finch is the companion app that helps your team interact with their workflows — capture updates, approve actions, receive notifications and use Vyso from a lighter, mobile-friendly interface. It's included in Create for your chosen module, and works across all your modules in Scale. It isn't part of Start, because Start automates your existing tools rather than running on Vyso modules — and Finch is built to work on top of those modules.",
+      },
+      {
+        question: "What does the monthly retainer cover?",
+        answer:
+          "The retainer keeps your setup running and improving: proactive maintenance and fixes, support for the agreed workflows, new automations on the monthly cycle in Start, and ongoing reporting and optimisation in the higher tiers. It isn't a general development budget — larger additions are scoped separately.",
+      },
+      {
+        question: "What happens after setup?",
+        answer:
+          "Every tier includes a support period after setup — 30 days on Start, 60 days on Create, and ongoing support on Scale. From there the monthly retainer takes over: we keep things running, fix breakages proactively and keep delivering improvements on the agreed cycle.",
+      },
+      {
+        question: "What if we need more than what's included?",
+        answer:
+          "Additional modules, major new workflows, or third-party systems outside the agreed setup are scoped separately. We'll always agree the scope with you before anything new is built, so there are no surprise invoices.",
+      },
+      {
+        question: "Are third-party integrations included?",
+        answer:
+          "Scale includes two-way integrations with outside systems such as accounting, POS, banking, CRMs and supplier systems. In Start and Create your existing tools are part of the automation work, but new third-party integrations outside the agreed setup are scoped separately.",
+      },
+      {
+        question: "Can we start with Start and upgrade later?",
+        answer:
+          "Yes — that's the intended path for many teams. Start proves the value inside your current tools; when you're ready, Create migrates those automations into a Vyso module so nothing you've invested is lost, and Scale adds modules from there.",
       },
       {
         question: "Which plan should we choose?",
@@ -430,7 +475,7 @@ export default function FaqPage() {
               </p>
               <div className={styles.ctaActions}>
                 <Link href="/contact" className={styles.primaryButton}>
-                  Contact us <ArrowRight aria-hidden="true" size={16} />
+                  Join Waitlist <ArrowRight aria-hidden="true" size={16} />
                 </Link>
                 <Link href="/pricing" className={styles.secondaryButton}>
                   View pricing

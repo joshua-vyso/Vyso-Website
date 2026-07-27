@@ -1,0 +1,36 @@
+{
+  "name": "vyso-desktop",
+  "private": true,
+  "productName": "Vyso",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --mac dmg"
+  },
+  "devDependencies": {
+    "electron": "latest",
+    "electron-builder": "latest"
+  },
+  "build": {
+    "appId": "za.co.vyso.desktop",
+    "productName": "Vyso",
+    "mac": {
+      "category": "public.app-category.business",
+      "icon": "build/icon.icns",
+      "identity": null,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["arm64"]
+        }
+      ]
+    },
+    "artifactName": "Vyso-Desktop.dmg",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": ["main.js"]
+  }
+}

@@ -440,7 +440,7 @@ export function Navbar({ visible = true }: NavbarProps) {
                 {[
                   { label: "Pricing", href: "/pricing" },
                   { label: "Frequently asked questions", href: "/faq" },
-                  { label: "Talk to Vyso", href: "/contact" },
+                  { label: "Join Waitlist", href: "/contact" },
                 ].map(({ label, href }) => (
                   <DropdownMenuItem key={href} asChild className="cursor-pointer p-0 focus:bg-transparent">
                     <Link
@@ -497,7 +497,7 @@ export function Navbar({ visible = true }: NavbarProps) {
               flexShrink:     0,
             }}
           >
-            <GradientText as="span">Contact us</GradientText>
+            <GradientText as="span">Join Waitlist</GradientText>
           </Link>
         </LiquidButton>
       </div>
@@ -623,7 +623,7 @@ export function Navbar({ visible = true }: NavbarProps) {
                   color:          "hsl(22,69%,44%)",
                 }}
               >
-                Contact us →
+                Join Waitlist →
               </Link>
             </DropdownMenuItem>
           </DropdownMenuContent>
