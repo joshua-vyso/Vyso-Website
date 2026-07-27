@@ -8,17 +8,39 @@ import { Drawer, RowActionsMenu, useToast } from '@/components/platform/orderflo
 import {
   LEAD_STAGE_META,
   LEAD_STAGES,
+  connectionHasSendScope,
   type SdLead,
   type SdLeadDetail,
   type SdLeadPageData,
   type SdLeadStage,
 } from '@/lib/platform/serviceden';
+import { DraftComposer } from './DraftComposer';
+import { ResearchCard } from './ResearchCard';
 import { Field, Modal, ModalButtons, SdPrimary, inputClass } from './ui';
 
 type LeadView = 'inbox' | 'pipeline' | 'followups' | 'all';
 
 const BLANK_LEAD = { contactName: '', company: '', email: '', phone: '', notes: '' };
 const CLOSED = new Set<SdLeadStage>(['won', 'lost']);
+
+/**
+ * Cosmetic check for the website field. The authoritative normalisation and the
+ * private-host safety rules live in normalizeWebsiteUrl/isSafeResearchUrl, which
+ * the research route applies server-side before anything is fetched.
+ */
+function tidyWebsite(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return '';
+  const withScheme = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const url = new URL(withScheme);
+    if (!/^https?:$/.test(url.protocol) || !url.hostname.includes('.')) return null;
+    url.hash = '';
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return null;
+  }
+}
 
 function displayDate(iso: string | null, includeTime = false): string {
   if (!iso) return '—';
@@ -112,6 +134,7 @@ export function LeadsView({
   const [detail, setDetail] = useState<SdLeadDetail | null>(null);
   const [detailBusy, setDetailBusy] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
   const autoSyncAttempted = useRef(false);
 
   useEffect(() => {
@@ -472,6 +495,16 @@ export function LeadsView({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <a href={`mailto:${selectedLive.email}`} className="inline-flex h-[42px] items-center rounded-[11px] border border-[#E2E6EC] bg-white px-[18px] text-[14px] font-medium text-[#3E4A57] transition-all hover:border-[#C9DEF7] hover:bg-[#EAF2FC] hover:text-[#174C87]">Email contact</a>
             <div className="flex gap-2">
+              <SecondaryButton
+                onClick={() => {
+                  if (!selectedLive.email) { show('Add an email address for this lead first.'); return; }
+                  if (selectedLive.stage === 'lost' && !confirm(`${selectedLive.contactName} is marked lost. Draft an email anyway?`)) return;
+                  setComposerOpen(true);
+                }}
+                disabled={actionBusy || !selectedLive.email}
+              >
+                Draft email
+              </SecondaryButton>
               {selectedLive.reviewStatus === 'suggested' ? <SecondaryButton onClick={() => void rejectLead(selectedLive)} disabled={actionBusy} danger>Dismiss</SecondaryButton> : null}
               {selectedLive.reviewStatus === 'suggested' ? <SdPrimary onClick={() => void acceptLead(selectedLive)} disabled={actionBusy}>Accept lead</SdPrimary> : null}
               {selectedLive.reviewStatus === 'accepted' && !selectedLive.convertedCustomerId ? <SdPrimary onClick={() => void convertLead(selectedLive)} disabled={actionBusy}>Convert to customer</SdPrimary> : null}
@@ -481,15 +514,30 @@ export function LeadsView({
       >
         {selectedLive ? (
           <LeadDrawerBody
+            key={selectedLive.id}
             lead={selectedLive}
             detail={detail}
             busy={detailBusy}
             actionBusy={actionBusy}
             onStage={(stage) => void patchLead(selectedLive, { stage, ...(CLOSED.has(stage) ? { next_follow_up_at: null } : {}) }, 'Stage updated')}
             onFollowUp={(date) => void patchLead(selectedLive, { next_follow_up_at: date ? new Date(`${date}T08:00:00.000Z`).toISOString() : null }, 'Follow-up updated')}
+            onWebsite={(url) => void patchLead(selectedLive, { website_url: url || null }, 'Website saved')}
           />
         ) : null}
       </Drawer>
+
+      {selectedLive ? (
+        <DraftComposer
+          open={composerOpen}
+          lead={selectedLive}
+          threadId={detail?.threads[0]?.id ?? null}
+          connection={initialData.gmailConnection}
+          orgId={orgId}
+          onClose={() => setComposerOpen(false)}
+          onSent={() => { void openLead(selectedLive); router.refresh(); }}
+          show={show}
+        />
+      ) : null}
     </div>
   );
 }
@@ -551,6 +599,12 @@ function GmailConnectionCard({
           <SecondaryButton onClick={onDisconnect} disabled={syncing || actionBusy} danger>Disconnect</SecondaryButton>
         </div>
       </div>
+      {!needsReconnect && !connectionHasSendScope(connection.scopes) ? (
+        <p className="mt-3 flex flex-wrap items-center gap-2 rounded-[10px] bg-[#FBEEDA] px-3.5 py-2.5 text-[13px] text-[#854F0B]">
+          Sending requires reconnecting Gmail to grant the new send permission.
+          <a href="/api/serviceden/gmail/connect" className="font-semibold underline">Reconnect Gmail</a>
+        </p>
+      ) : null}
       {syncError || connection.lastError ? <p className="mt-3 rounded-[10px] bg-[#FCEBEB] px-3.5 py-2.5 text-[13px] text-[#A32D2D]">{syncError || connection.lastError}</p> : null}
     </div>
   );
@@ -563,6 +617,7 @@ function LeadDrawerBody({
   actionBusy,
   onStage,
   onFollowUp,
+  onWebsite,
 }: {
   lead: SdLead;
   detail: SdLeadDetail | null;
@@ -570,7 +625,21 @@ function LeadDrawerBody({
   actionBusy: boolean;
   onStage: (stage: SdLeadStage) => void;
   onFollowUp: (date: string) => void;
+  onWebsite: (url: string) => void;
 }) {
+  // Keyed on the lead id by the caller, so switching leads remounts this with
+  // the right starting value instead of syncing state in an effect.
+  const [website, setWebsite] = useState(lead.websiteUrl ?? '');
+  const [websiteError, setWebsiteError] = useState<string | null>(null);
+
+  function commitWebsite() {
+    const tidy = tidyWebsite(website);
+    if (tidy === null) { setWebsiteError('Enter a full website address, e.g. acme.co.za'); return; }
+    setWebsiteError(null);
+    setWebsite(tidy);
+    if (tidy !== (lead.websiteUrl ?? '')) onWebsite(tidy);
+  }
+
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -583,6 +652,20 @@ function LeadDrawerBody({
           <input type="date" value={inputDate(lead.nextFollowUpAt)} disabled={actionBusy} onChange={(event) => onFollowUp(event.target.value)} className={inputClass} />
         </Field>
       </div>
+
+      <Field label="Company website" hint="(optional)">
+        <input
+          value={website}
+          disabled={actionBusy}
+          onChange={(event) => setWebsite(event.target.value)}
+          onBlur={commitWebsite}
+          placeholder="acme.co.za"
+          className={inputClass}
+        />
+        {websiteError ? <p className="mt-1.5 text-[12px] text-[#A32D2D]">{websiteError}</p> : null}
+      </Field>
+
+      <ResearchCard leadId={lead.id} />
 
       <div className="rounded-[14px] border border-[#DCE9F8] bg-[#F5F9FE] p-4">
         <div className="flex items-center justify-between gap-3">
@@ -638,5 +721,6 @@ function clientPatch(patch: Record<string, unknown>): Partial<SdLead> {
   if ('review_status' in patch) out.reviewStatus = patch.review_status as SdLead['reviewStatus'];
   if ('stage' in patch) out.stage = patch.stage as SdLeadStage;
   if ('next_follow_up_at' in patch) out.nextFollowUpAt = patch.next_follow_up_at as string | null;
+  if ('website_url' in patch) out.websiteUrl = (patch.website_url as string | null) || null;
   return out;
 }

@@ -177,6 +177,26 @@ export function ModulesOverlay({
             </Link>
           ) : null}
         </div>
+
+        <div className="mt-6 flex flex-col items-start justify-between gap-4 border-t border-[#EEF1F5] pt-5 text-left sm:flex-row sm:items-center">
+          <div>
+            <h3 className="text-[13px] font-semibold text-[#171A17]">Vyso for desktop</h3>
+            <p className="mt-0.5 text-[12px] text-[#9BA0A8]">
+              Run your modules in a dedicated app on your Mac.
+            </p>
+          </div>
+          <a
+            href="https://github.com/joshua-vyso/Vyso-Website/releases/latest/download/Vyso-Desktop.dmg"
+            className="inline-flex items-center gap-2 rounded-[11px] bg-[#1F5FA8] px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-[#174C87]"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M12 3v12" />
+              <path d="M7 10l5 5 5-5" />
+              <path d="M5 21h14" />
+            </svg>
+            Download Desktop App
+          </a>
+        </div>
       </div>
     </div>
   );

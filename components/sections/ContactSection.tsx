@@ -71,7 +71,7 @@ export function ContactSection() {
           mixBlendMode:  "difference",
           marginBottom:  "1.2rem",
         }}>
-          Get in touch
+          Join the waitlist
         </p>
 
         {/* Headline — same blend trick as HeroSection */}
@@ -98,7 +98,7 @@ export function ContactSection() {
           maxWidth:     520,
           margin:       "0 auto 1.6rem",
         }}>
-          Send an enquiry and we&apos;ll get back within 24 hours.
+          Add your details and we&apos;ll get back within 24 hours.
         </p>
 
         {/* Free discovery call badge */}
@@ -136,7 +136,7 @@ export function ContactSection() {
             margin:        "0 0 1.8rem",
             letterSpacing: "-0.015em",
           }}>
-            Send an enquiry
+            Join the waitlist
           </h3>
           <ContactForm />
         </div>

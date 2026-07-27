@@ -182,7 +182,7 @@ export default function VysoForSmesPage() {
           </p>
           <div className={styles.actions}>
             <Link className={styles.primaryButton} href="/contact">
-              Discuss your workflow <span aria-hidden="true">→</span>
+              Join Waitlist <span aria-hidden="true">→</span>
             </Link>
             <Link className={styles.glassButton} href="/pricing">View pricing</Link>
           </div>
@@ -283,7 +283,7 @@ export default function VysoForSmesPage() {
         eyebrow="Choose the first problem"
         title="You do not need to implement everything at once."
         copy="Start with the one-week audit, define the highest-value workflow and build outward only when the operation is ready."
-        primaryLabel="Book an audit conversation"
+        primaryLabel="Join Waitlist"
         secondaryLabel="Become a founding client"
         secondaryHref="/founding-client"
       />

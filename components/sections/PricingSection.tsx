@@ -136,7 +136,7 @@ function AuditBanner() {
           onMouseEnter={e => { const el = e.currentTarget; el.style.background = "hsl(22,69%,44%)"; el.style.color = "#fff"; }}
           onMouseLeave={e => { const el = e.currentTarget; el.style.background = "transparent"; el.style.color = "hsl(22,69%,44%)"; }}
         >
-          Discuss the audit
+          Join Waitlist
           <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor"
             strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="M2.5 7h9M8 3.5L11.5 7 8 10.5"/>
@@ -161,12 +161,14 @@ const TIERS = [
       { text: "Maintenance — breakages fixed proactively", sub: "" },
       { text: "New automations on a monthly delivery cycle", sub: "" },
       { text: "30-day support period post-setup",          sub: "" },
+      { text: "Basic workflow documentation",               sub: "" },
+      { text: "Monthly automation health check",            sub: "" },
     ],
     pricing: [
-      { label: "Setup (once-off)", value: "R5,000", unit: "" },
-      { label: "Retainer", value: "R3,000", unit: "/month" },
+      { label: "Setup (once-off)", value: "R10,000", unit: "" },
+      { label: "Retainer", value: "R8,000", unit: "/month" },
     ],
-    cta: "Get started",
+    cta: "Join Waitlist",
   },
   {
     num:      "Tier 2",
@@ -175,14 +177,18 @@ const TIERS = [
     features: [
       { text: "One productised Vyso module of your choice", sub: "" },
       { text: "Migration of Start automations into the module", sub: "" },
+      { text: "Finch companion app included for that module", sub: "" },
       { text: "Team onboarding and 60-day support",         sub: "" },
       { text: "One round of post-launch revisions",         sub: "" },
+      { text: "Basic dashboard and reporting view",         sub: "" },
+      { text: "User roles and access setup",                sub: "" },
+      { text: "Workflow documentation and handover",        sub: "" },
     ],
     pricing: [
-      { label: "Setup (once-off)", value: "R20,000", unit: "" },
-      { label: "Retainer", value: "R6,000", unit: "/month", note: "+R3,000/month per additional module" },
+      { label: "Setup (once-off)", value: "R30,000", unit: "" },
+      { label: "Retainer", value: "R10,000", unit: "/month" },
     ],
-    cta: "Talk to us",
+    cta: "Join Waitlist",
   },
   {
     num:      "Tier 3",
@@ -191,16 +197,20 @@ const TIERS = [
     features: [
       { text: "Everything in Create",                       sub: "" },
       { text: "Add modules as your operation grows",        sub: "" },
-      { text: "Two-way integrations with outside systems",  sub: "accounting, POS, banking" },
+      { text: "Finch companion app across modules",         sub: "" },
+      { text: "Two-way integrations with outside systems",  sub: "accounting, POS, banking, CRMs, supplier systems" },
       { text: "Ongoing support for agreed workflows",       sub: "" },
       { text: "Monthly ops reports",                        sub: "" },
       { text: "Priority development",                       sub: "" },
+      { text: "Cross-module dashboard and reporting",       sub: "" },
+      { text: "Advanced permissions and team workflows",    sub: "" },
+      { text: "Quarterly optimisation session",             sub: "" },
     ],
     pricing: [
-      { label: "Setup (once-off)", value: "R30,000", unit: "" },
-      { label: "Retainer", value: "R8,000", unit: "/month", note: "+R3,000/month per additional module" },
+      { label: "Setup (once-off)", value: "R50,000", unit: "" },
+      { label: "Retainer", value: "R15,000", unit: "/month", note: "+R3,000/month per additional module" },
     ],
-    cta: "Talk to us",
+    cta: "Join Waitlist",
   },
 ];
 
@@ -516,6 +526,15 @@ export function PricingSection({ headingLevel = "h2" }: PricingSectionProps) {
               }} />
           ))}
         </div>
+
+        {/* ── Scope guard ── */}
+        <p style={{
+          fontFamily: "var(--font-body, var(--font-sans))", fontSize: "13px",
+          color: "#aaa", textAlign: "center", maxWidth: 560,
+          margin: "1.8rem auto 0", lineHeight: 1.6,
+        }}>
+          Additional modules, major new workflows, or third-party systems outside the agreed setup are scoped separately — we&apos;ll always agree scope before anything new is built.
+        </p>
       </div>
 
       <style>{`

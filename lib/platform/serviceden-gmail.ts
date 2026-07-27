@@ -3,7 +3,9 @@ import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { SdLeadStage } from './serviceden';
+import { GMAIL_SEND_SCOPE, type SdLeadStage } from './serviceden';
+
+export { GMAIL_SEND_SCOPE, connectionHasSendScope } from './serviceden';
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -201,7 +203,7 @@ export async function createGmailAuthorizationUrl(
   url.searchParams.set('client_id', clientId);
   url.searchParams.set('redirect_uri', redirectUri);
   url.searchParams.set('response_type', 'code');
-  url.searchParams.set('scope', `openid email ${GMAIL_READONLY_SCOPE}`);
+  url.searchParams.set('scope', `openid email ${GMAIL_READONLY_SCOPE} ${GMAIL_SEND_SCOPE}`);
   url.searchParams.set('access_type', 'offline');
   url.searchParams.set('include_granted_scopes', 'true');
   url.searchParams.set('prompt', 'consent');
@@ -273,8 +275,53 @@ async function gmailFetch<T>(accessToken: string, path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+export async function sendGmailMessage(accessToken: string, raw: string, threadId?: string | null): Promise<{ id: string; threadId: string }> {
+  const response = await fetch(`${GMAIL_API}/messages/send`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ raw, ...(threadId ? { threadId } : {}) }),
+    cache: 'no-store',
+  });
+  const data = (await response.json().catch(() => ({}))) as { id?: string; threadId?: string; error?: { message?: string } };
+  if (!response.ok || !data.id || !data.threadId) throw new Error(data.error?.message || `Gmail API ${response.status}: ${response.statusText}`);
+  return { id: data.id, threadId: data.threadId };
+}
+
 async function gmailProfile(accessToken: string): Promise<GmailProfile> {
   return gmailFetch<GmailProfile>(accessToken, '/profile');
+}
+
+/**
+ * Stored refresh token → live access token, for both sync and send. The error
+ * strings are the ones the callers' reauth detection (`invalid_grant|expired|
+ * revoked|reconnect`) already keys on, so a revoked grant still flips the
+ * connection to `reauth_required` wherever it surfaces.
+ */
+export async function getGmailAccessToken(
+  ctx: ServiceDenWorkerContext,
+  connectionId: string,
+): Promise<{ accessToken: string; connection: Record<string, unknown> }> {
+  requireGoogleConfig();
+  const { data: connection, error: connectionError } = await ctx.service
+    .from('sd_gmail_connections')
+    .select('*')
+    .eq('id', connectionId)
+    .eq('org_id', ctx.orgId)
+    .eq('user_id', ctx.userId)
+    .maybeSingle();
+  if (connectionError || !connection) throw new Error('Gmail connection not found.');
+
+  const { data: credential, error: credentialError } = await ctx.service
+    .from('sd_gmail_credentials')
+    .select('encrypted_refresh_token')
+    .eq('connection_id', connectionId)
+    .maybeSingle();
+  if (credentialError) throw new Error(`Could not read Gmail credentials: ${credentialError.message}`);
+  if (!credential) throw new Error('Gmail needs to be reconnected.');
+
+  const aad = `sd-gmail:${connectionId}:${ctx.orgId}:${ctx.userId}`;
+  const refreshToken = decryptSecret(String(credential.encrypted_refresh_token), aad);
+  return { accessToken: await refreshAccessToken(refreshToken), connection: connection as Record<string, unknown> };
 }
 
 async function threadIdsForQuery(accessToken: string, q: string): Promise<Set<string>> {
@@ -738,7 +785,7 @@ Confidence must be an integer from 0 to 100. Be conservative. Use the externally
   return result;
 }
 
-function addBusinessDays(iso: string, days: number): string {
+export function addBusinessDays(iso: string, days: number): string {
   const date = new Date(iso);
   let remaining = days;
   while (remaining > 0) {
@@ -825,17 +872,16 @@ export async function syncServiceDenGmail(
   if (claimError) throw new Error(`Could not start Gmail sync: ${claimError.message}`);
   if (!claimed) throw new Error(connection.status === 'syncing' ? 'Gmail sync is already in progress.' : 'Gmail connection is not active.');
 
-  const { data: credential, error: credentialError } = await service
-    .from('sd_gmail_credentials')
-    .select('encrypted_refresh_token')
-    .eq('connection_id', connectionId)
-    .maybeSingle();
-  if (credentialError || !credential) {
-    const message = credentialError?.message || 'Gmail needs to be reconnected.';
+  let accessToken: string;
+  try {
+    ({ accessToken } = await getGmailAccessToken(ctx, connectionId));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Gmail needs to be reconnected.';
+    const reauth = /reconnect|invalid_grant|expired|revoked/i.test(message);
     await service
       .from('sd_gmail_connections')
       .update({
-        status: credentialError ? 'error' : 'reauth_required',
+        status: reauth ? 'reauth_required' : 'error',
         last_error: message.slice(0, 1_000),
         updated_at: new Date().toISOString(),
       })
@@ -848,10 +894,6 @@ export async function syncServiceDenGmail(
   }
 
   try {
-    const aad = `sd-gmail:${connectionId}:${orgId}:${userId}`;
-    const refreshToken = decryptSecret(String(credential.encrypted_refresh_token), aad);
-    const accessToken = await refreshAccessToken(refreshToken);
-
     // Capture a cursor BEFORE reading threads. We never advance to a cursor
     // taken after the reads, because a message arriving in that gap would then
     // be skipped by the next history sync.

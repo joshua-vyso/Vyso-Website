@@ -196,7 +196,7 @@ export default function SouthAfricaPage() {
           </p>
           <div className={styles.actions}>
             <Link className={styles.primaryButton} href="/contact">
-              Discuss your workflow <span aria-hidden="true">→</span>
+              Join Waitlist <span aria-hidden="true">→</span>
             </Link>
             <Link className={styles.glassButton} href="/platform#orderflow">
               Explore OrderFlow
@@ -393,7 +393,7 @@ export default function SouthAfricaPage() {
         eyebrow="Start with the South African workflow you already have"
         title="Bring us the WhatsApp messages, spreadsheets and account admin."
         copy="We will map the current process, identify the highest-value starting point and show you what should move into Vyso first."
-        primaryLabel="Discuss your workflow"
+        primaryLabel="Join Waitlist"
         secondaryLabel="View South African pricing"
         secondaryHref="/pricing"
       />

@@ -125,7 +125,7 @@ export default function ContactPage() {
             color:         "hsl(22,69%,44%)",
             marginBottom:  "1.1rem",
           }}>
-            Get in touch
+            Join the waitlist
           </p>
 
           <h1 className="contact-headline" style={{
@@ -186,7 +186,7 @@ export default function ContactPage() {
                 margin:        "0 0 1.8rem",
                 letterSpacing: "-0.015em",
               }}>
-                Send an enquiry
+                Join the waitlist
               </h2>
               <ContactForm />
             </div>

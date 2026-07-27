@@ -95,7 +95,7 @@ export default function ContactForm() {
             fontSize: "0.9rem", fontWeight: 600, border: "none", cursor: "pointer",
           }}
         >
-          Send in another enquiry <ArrowRight size={16} />
+          Send another enquiry <ArrowRight size={16} />
         </button>
       </div>
     );
@@ -183,9 +183,9 @@ export default function ContactForm() {
         >
           <option value="" disabled>Select a tier (optional)</option>
           <option value="Audit">One-week audit — R2,000 once-off</option>
-          <option value="Start">Start — R5,000 setup + R3,000/month</option>
-          <option value="Create">Create — R20,000 setup + R6,000/month</option>
-          <option value="Scale">Scale — R30,000 setup + R8,000/month</option>
+          <option value="Start">Start — R10,000 setup + R8,000/month</option>
+          <option value="Create">Create — R30,000 setup + R10,000/month</option>
+          <option value="Scale">Scale — R50,000 setup + R15,000/month</option>
           <option value="Not sure">Not sure yet</option>
         </select>
       </div>
@@ -248,11 +248,11 @@ export default function ContactForm() {
         {status === "loading" ? (
           <>
             <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />
-            Sending...
+            Joining...
           </>
         ) : (
           <>
-            Send Enquiry <ArrowRight size={16} />
+            Join Waitlist <ArrowRight size={16} />
           </>
         )}
       </button>

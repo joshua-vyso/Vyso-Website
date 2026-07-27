@@ -6,7 +6,7 @@ import { SiteFooter } from "@/components/sections/SiteFooter";
 
 const title = "Vyso Pricing | Audit, Start, Create & Scale";
 const description =
-  "View Vyso pricing: a one-week operations audit for R2,000, plus Start, Create and Scale plans with hands-on implementation and ongoing support.";
+  "View Vyso pricing: a one-week operations audit for R2,000, plus Start, Create and Scale plans from R10,000 setup and R8,000 per month.";
 
 export const metadata: Metadata = {
   title,
@@ -57,24 +57,24 @@ const pricingSchema = {
           "@type": "Offer",
           name: "Start",
           priceSpecification: [
-            { "@type": "UnitPriceSpecification", name: "Once-off setup", price: 5000, priceCurrency: "ZAR" },
-            { "@type": "UnitPriceSpecification", name: "Monthly retainer", price: 3000, priceCurrency: "ZAR", referenceQuantity: { "@type": "QuantitativeValue", value: 1, unitText: "month" } },
+            { "@type": "UnitPriceSpecification", name: "Once-off setup", price: 10000, priceCurrency: "ZAR" },
+            { "@type": "UnitPriceSpecification", name: "Monthly retainer", price: 8000, priceCurrency: "ZAR", referenceQuantity: { "@type": "QuantitativeValue", value: 1, unitText: "month" } },
           ],
         },
         {
           "@type": "Offer",
           name: "Create",
           priceSpecification: [
-            { "@type": "UnitPriceSpecification", name: "Once-off setup", price: 20000, priceCurrency: "ZAR" },
-            { "@type": "UnitPriceSpecification", name: "Monthly retainer", price: 6000, priceCurrency: "ZAR", referenceQuantity: { "@type": "QuantitativeValue", value: 1, unitText: "month" } },
+            { "@type": "UnitPriceSpecification", name: "Once-off setup", price: 30000, priceCurrency: "ZAR" },
+            { "@type": "UnitPriceSpecification", name: "Monthly retainer", price: 10000, priceCurrency: "ZAR", referenceQuantity: { "@type": "QuantitativeValue", value: 1, unitText: "month" } },
           ],
         },
         {
           "@type": "Offer",
           name: "Scale",
           priceSpecification: [
-            { "@type": "UnitPriceSpecification", name: "Once-off setup", price: 30000, priceCurrency: "ZAR" },
-            { "@type": "UnitPriceSpecification", name: "Monthly retainer", price: 8000, priceCurrency: "ZAR", referenceQuantity: { "@type": "QuantitativeValue", value: 1, unitText: "month" } },
+            { "@type": "UnitPriceSpecification", name: "Once-off setup", price: 50000, priceCurrency: "ZAR" },
+            { "@type": "UnitPriceSpecification", name: "Monthly retainer", price: 15000, priceCurrency: "ZAR", referenceQuantity: { "@type": "QuantitativeValue", value: 1, unitText: "month" } },
           ],
         },
         {
