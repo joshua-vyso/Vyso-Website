@@ -121,3 +121,72 @@ Screenshot paths (scratchpad, not in repo):
 - (also captured but not separately reviewed: `faq-desktop-open.png`, `faq-mobile-open.png`, `faq-question-hover.png`)
 
 No other files were modified. Did not commit.
+
+## E — Desktop app "damaged" error, second attempt: real deep ad-hoc signature + hard gates
+
+**Status: Done. All hard gates passed. Root cause of Workstream B's failure was that its ad-hoc signature was invalid (linker-signed only, no sealed resources), not just unnotarized — plus a real, unrelated crash bug in `main.js` was found and fixed along the way.**
+
+Files touched: `desktop/main.js` (one-line real bug fix, see below) and gitignored `desktop/dist/*` build outputs. `desktop/package.json` needed **no change** this round — its `build.mac` config from Workstream B (no `identity: null`) is correct; the earlier "damaged" fix wasn't a package.json problem, it was that Workstream B never got a *sealed* signature (see below). Did not commit.
+
+**Starting state (confirmed before touching anything):** `security find-identity -v -p codesigning` → **0 valid identities** (two expired certs present, both `CSSMERR_TP_CERT_EXPIRED`). `codesign -dv dist/mac-arm64/Vyso.app` showed `Identifier=Electron`, `flags=0x20002(adhoc,linker-signed)`, `Info.plist=not bound`, `Sealed Resources=none`. `codesign --verify --deep --strict` failed: *"code has no resources but signature indicates they must be present."* This confirms Workstream B's app was never actually validly signed — the linker's automatic ad-hoc stub isn't a real seal, so Gatekeeper correctly called it damaged regardless of the "unsigned community build" release notes.
+
+**Step 1 — clean rebuild, no CSC env vars:** `npx electron-builder --mac --dir` (no `CSC_IDENTITY_AUTO_DISCOVERY` set at all this time, confirmed via `env | grep -i csc` → empty). electron-builder logged `skipped macOS application code signing  reason=cannot find valid "Developer ID Application" identity` and listed the same 2 expired identities, 0 valid. Result was identical to before: `flags=0x20002(adhoc,linker-signed)`, `Info.plist=not bound`, `codesign --verify --deep --strict` still failed the same way. So electron-builder genuinely cannot produce a sealed signature on this machine under any env-var combination — manual signing (step 2) is mandatory, not optional.
+
+**Step 2 — manual deep ad-hoc sign:** `codesign --force --deep --sign - --timestamp=none dist/mac-arm64/Vyso.app`. No `--deep` warnings (output was just `dist/mac-arm64/Vyso.app: replacing existing signature`), so no need for the inside-out per-helper fallback — `--deep` alone correctly signed all 4 helper `.app`s (`Vyso Helper.app`, `Vyso Helper (GPU).app`, `Vyso Helper (Renderer).app`, `Vyso Helper (Plugin).app`) and all 4 frameworks (`Electron Framework`, `ReactiveObjC`, `Squirrel`, `Mantle`) before the outer bundle.
+
+**Gate evidence (all HARD gates, step 3):**
+
+a. `codesign --verify --deep --strict --verbose=2 dist/mac-arm64/Vyso.app` → walked and `--validated:` every helper/framework, ended:
+   ```
+   dist/mac-arm64/Vyso.app: valid on disk
+   dist/mac-arm64/Vyso.app: satisfies its Designated Requirement
+   ```
+   **exit=0.**
+
+b. `codesign -dv dist/mac-arm64/Vyso.app`:
+   ```
+   Identifier=za.co.vyso.desktop
+   CodeDirectory v=20400 size=491 flags=0x2(adhoc) hashes=9+3 location=embedded
+   Signature=adhoc
+   Info.plist entries=32
+   Sealed Resources version=2 rules=13 files=10
+   ```
+   `Signature=adhoc` ✓, **no** `linker-signed` in flags ✓, `Info.plist entries=32` (bound, not "not bound") ✓, `Sealed Resources` now populated (was `none` before) ✓, `Identifier=za.co.vyso.desktop` matches the `appId` configured in `package.json` ✓.
+
+   **Mid-workstream incident, caught and fixed:** an intermediate rebuild (done while temporarily instrumenting `main.js` with debug logging to diagnose the launch-test failure below) produced `Identifier=com.electron.vyso-desktop` and `LSApplicationCategoryType=public.app-category.developer-tools` instead of the configured `za.co.vyso.desktop` / `public.app-category.business`. Investigating why surfaced that `desktop/package.json` itself had been silently truncated at some point during the repeated `electron-builder`/`@electron/rebuild` invocations in this session — `git diff desktop/package.json` showed the entire `scripts`, `devDependencies`, and `build` (appId/category/icon/target/files) blocks had been dropped, leaving only `name`/`private`/`productName`/`version`/`main`. This was **not** an intentional edit. Restored immediately via `git checkout -- desktop/package.json`, confirmed `git diff` clean, then did a full clean rebuild (`rm -rf dist/mac-arm64`) + re-sign + re-ran all three hard gates + rebuilt and re-verified the DMG + re-uploaded the release asset, all against the restored config. The gate evidence and DMG size quoted throughout this section (files/hashes/sizes below) are from that final, package.json-verified-intact build — not the intermediate corrupted one. The app's icon (`build/icon.icns`, sha1 `c54ed333...`) was unaffected either way since `Contents/Resources/icon.icns` had already been copied into `dist/mac-arm64` by an earlier, uncorrupted build step and electron-builder doesn't re-derive it from `package.json` alone.
+
+c. **Launch test** — this required extra diagnosis. Two real issues were found (both are genuine findings, not just "adhoc signing worked"):
+
+   1. **Real crash bug in `main.js` (independent of signing):** the very first fully-instrumented launch attempt showed the app process actually starting (Electron main process, GPU helper, network-service helper all spawned — confirmed via `ps`/`log show`), but crashing inside `app.whenReady()` with:
+      ```
+      TypeError: win.setWindowOpenHandler is not a function
+          at createWindow (.../app.asar/main.js:37:7)
+      ```
+      `setWindowOpenHandler` is a method of `BrowserWindow.webContents`, not of `BrowserWindow` itself — `main.js` had been calling `win.setWindowOpenHandler(...)` directly since Workstream B (or earlier). This bug would have crashed the app on **every** launch attempt regardless of code signing, and was never actually exercised in Workstream B because that build never got far enough to reach `app.whenReady()`'s promise resolving with a real signature. **Fixed**: changed line 37 in `desktop/main.js` to `win.webContents.setWindowOpenHandler(...)`. No other lines changed.
+   2. **Environment gotcha (not an app bug, but recorded for future automated launch tests on this machine):** this Bash tool's shell inherits `ELECTRON_RUN_AS_NODE=1` from the host Claude Code/VS Code Electron process (`env | grep -i electron` confirmed it). With that variable set, *any* Electron binary — including the packaged `Vyso.app` — runs as plain Node.js instead of the real Electron/Chromium runtime: `require('electron')` returns a path string instead of the `{ app, BrowserWindow, ... }` API, so the app silently no-ops or throws and the process exits near-instantly with no window, no crash report, and often no stderr at all. Confirmed this in isolation with a throwaway hello-world Electron app in the scratchpad. **Fix for testing purposes only** (not a shipped-app change): every launch in this workstream was run with `env -u ELECTRON_RUN_AS_NODE` prefixed.
+
+   With both addressed, the real gate-C evidence: `env -u ELECTRON_RUN_AS_NODE open dist/mac-arm64/Vyso.app` (after killing any stray prior test instances) → `open exit=0`. 5 seconds later, `pgrep -fl "Vyso.app"` showed the main process plus, critically, a full Chromium process tree (`ps -o pid,lstart,command`):
+   ```
+   61393  Vyso (main)                                          started 16:54:15
+   61398  Vyso Helper --type=gpu-process                        started 16:54:15
+   61399  Vyso Helper --type=utility --utility-sub-type=NetworkService   started 16:54:15
+   61400  Vyso Helper (Renderer) --type=renderer --enable-sandbox  started 16:54:15
+   ```
+   The presence of a live **renderer** process (not just GPU/network-utility) confirms `createWindow()` completed and the window actually began loading `https://vyso.co.za/app` — the app is genuinely functional, not just "not crashing." Quit via `osascript -e 'quit app "Vyso"'`; confirmed clean via `pgrep -fl "Vyso.app|Vyso Helper"` returning nothing 2s later (also force-`pkill -9`'d as a belt-and-braces cleanup).
+
+**Step 4 — deterministic DMG (hdiutil, not electron-builder's dmg target):** staged in scratchpad (`ditto dist/mac-arm64/Vyso.app <staging>/Vyso.app` + `ln -s /Applications <staging>/Applications`), confirmed the `ditto` copy still verified (`codesign --verify --deep --strict` → exit 0) before packaging. `hdiutil create -volname "Vyso" -srcfolder <staging> -ov -format UDZO dist/Vyso-Desktop.dmg` → `created: .../dist/Vyso-Desktop.dmg`. `hdiutil verify dist/Vyso-Desktop.dmg` → all sections `verified CRC32 ...`, final line `verified CRC32 $67AAC970` / `checksum of "dist/Vyso-Desktop.dmg" is VALID`. **Final DMG size: 134,686,957 bytes (~128.4 MiB / ~134.7 MB)**, up from Workstream B's 121,464,091 bytes (the sealed resources/CodeDirectory hashes for every file account for the increase). (Steps 4–7 were each run twice — once against the intermediate corrupted-`package.json` build, then discarded and re-run in full against the restored/verified build once the incident above was caught; all numbers quoted in this section are from the final, correct run.)
+
+**Step 5 — post-package gate (mount → copy → verify → simulate download):**
+- `hdiutil attach dist/Vyso-Desktop.dmg -readonly -nobrowse` → mounted read-only.
+- `ditto` the mounted `Vyso.app` to a scratchpad temp dir → `codesign --verify --deep --strict` on the copy → **exit 0**.
+- Simulated a browser download: `xattr -w com.apple.quarantine "0181;00000000;Safari;" <copy>/Vyso.app`, confirmed via `xattr -l` the quarantine flag was set alongside the pre-existing `com.apple.provenance` attribute. Re-ran `codesign --verify --deep --strict` on the now-quarantined copy → **still exit 0** (the seal survives quarantine tagging, as expected — quarantine is just an xattr, not a signature mutation).
+- `spctl -a -vv --type execute <copy>/Vyso.app` → **`rejected`, exit 3**. This is the expected, documented outcome (no notarization ticket, no paid Apple Developer ID available — confirmed 0 valid identities at the very start of this workstream) and matches exactly the "Apple could not verify" flow the release notes now describe, rather than "damaged."
+- Detached the mount (`hdiutil detach`) and removed all scratchpad temp dirs (`dmg-staging`, `dmg-mount`, `dmg-copy-test`, the throwaway `hello-electron` test app, and stray debug log files) afterward.
+
+**Step 6 — release upload + notes:** `gh release upload desktop-v1.0.0 "dist/Vyso-Desktop.dmg#Vyso-Desktop.dmg" --clobber --repo joshua-vyso/Vyso-Website` succeeded silently (no output = success for `gh release upload`). `gh release edit desktop-v1.0.0 --repo joshua-vyso/Vyso-Website --notes-file ...` updated the notes to describe the unsigned/ad-hoc/non-notarized build and the correct first-launch flow for the "could not verify" dialog: click Done, then **System Settings → Privacy & Security → Open Anyway** (with the old right-click → Open instructions kept as a fallback for older macOS), plus the existing `xattr -cr /Applications/Vyso.app` fallback if macOS still reports it as damaged.
+
+**Step 7 — download URL check:** `gh release view --json assets` confirmed the new asset (`size: 134686957`, `digest: sha256:846339a9...`, `updatedAt: 2026-07-27T14:55:36Z`). `curl -sIL https://github.com/joshua-vyso/Vyso-Website/releases/download/desktop-v1.0.0/Vyso-Desktop.dmg` → `HTTP/2 302` (GitHub's redirect to its Azure blob CDN) → `HTTP/2 200`, `content-length: 134686957` matching the local file exactly.
+
+**Summary of what changed vs. Workstream B:** B produced an ad-hoc-but-unsealed signature (`linker-signed`, no resources) that Gatekeeper correctly rejected as "damaged" — a strictly worse UX than the "could not verify"/right-click-Open flow it was meant to produce. This workstream replaced that with a real, sealed, deep ad-hoc signature (`Signature=adhoc`, no `linker-signed`, `Sealed Resources` populated, `codesign --verify --deep --strict` passing both pre- and post-quarantine) and fixed a genuine, previously-latent `main.js` crash bug that no prior attempt had actually exercised.
+
+No other files were modified. `desktop/package.json` required no changes. Did not commit.
