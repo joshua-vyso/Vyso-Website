@@ -2,8 +2,9 @@
 
 import { useToast } from '@/components/platform/orderflow/ui';
 import { SectionCard } from '@/components/platform/module-ui';
-import { departmentSnapshots } from '@/lib/platform/shiftboard';
-import { DeptBadge, StatusBadge, CoverageBadge } from './shared';
+import { departmentSnapshots, eligibleForOpenShift, openShiftKey } from '@/lib/platform/shiftboard';
+import { DeptBadge, StatusBadge, CoverageBadge, EmptyState } from './shared';
+import { activeSwaps } from './Swaps';
 import { useShiftBoard } from './context';
 
 const QUICK_ACTIONS = ['Assign staff', 'Reassign department', 'Mark on break', 'Mark absent', 'Add replacement'];
@@ -13,6 +14,8 @@ export function LiveOps() {
   const sb = useShiftBoard();
   const snapshots = departmentSnapshots(sb.employees, sb.departments);
   const active = sb.employees.filter((e) => e.status === 'Working' || e.status === 'On break');
+  const openShifts = sb.roster.openShifts;
+  const swapsWaiting = activeSwaps(sb.swaps).filter((s) => s.status === 'accepted').length;
 
   return (
     <div className="space-y-5">
@@ -23,7 +26,7 @@ export function LiveOps() {
             Live operations
             <span className="inline-flex items-center gap-1.5 rounded-full bg-[#E1F5EE] px-2.5 py-1 text-[11px] font-medium text-[#0F6E56]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#0F6E56]" />Live</span>
           </h1>
-          <p className="mt-1.5 text-[14px] text-[#8A8E86]">Who's working right now, where they are, and what they're doing</p>
+          <p className="mt-1.5 text-[14px] text-[#8A8E86]">Who&rsquo;s working right now, where they are, and what they&rsquo;re doing</p>
         </div>
       </div>
 
@@ -33,6 +36,67 @@ export function LiveOps() {
           <button key={a} type="button" onClick={() => show(`${a} (demo)`)} className="inline-flex h-[42px] items-center rounded-[11px] border border-[#E2E6EC] bg-white px-[18px] text-[14px] font-medium text-[#3E4A57] transition-all hover:border-[#C9DEF7] hover:bg-[#EAF2FC] hover:text-[#174C87]">{a}</button>
         ))}
       </div>
+
+      {/* Cover needed — call-outs and unfilled shifts, with a matched shortlist */}
+      <SectionCard
+        title="Cover needed"
+        right={
+          <span className="flex items-center gap-2 text-[12px] text-[#A0A49C]">
+            <span><span className="of-num">{openShifts.length}</span> open</span>
+            {swapsWaiting ? (
+              <button type="button" onClick={sb.openSwaps} className="rounded-full bg-[#FBEEDA] px-2 py-0.5 text-[11px] font-medium text-[#854F0B] hover:brightness-95">
+                <span className="of-num">{swapsWaiting}</span> swap{swapsWaiting === 1 ? '' : 's'} to approve
+              </button>
+            ) : null}
+          </span>
+        }
+      >
+        {openShifts.length === 0 ? (
+          <EmptyState
+            title="Nothing needs covering"
+            hint="If someone calls out, release their shift from the Roster tab — it lands here with a ranked list of who can actually work it."
+          />
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {openShifts.map((o) => {
+              const shortlist = eligibleForOpenShift(o, { employees: sb.employees, roster: sb.roster }).filter((c) => c.available);
+              const top = shortlist.slice(0, 2);
+              const isCallOut = o.reason === 'call-out';
+              return (
+                <div key={openShiftKey(o)} className={`rounded-[14px] border border-dashed p-3.5 ${isCallOut ? 'border-[#E4A6A6] bg-[#FDF6F6]' : 'border-[#E2E6EC] bg-[#FBFCFE]'}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="flex items-center gap-2 text-[13px] font-semibold text-[#171A17]">
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: sb.deptColor(o.department) }} />
+                      {o.department}
+                    </span>
+                    {isCallOut ? <span className="rounded-full bg-[#FCEBEB] px-2 py-0.5 text-[10px] font-medium text-[#A32D2D]">Call-out</span> : null}
+                  </div>
+                  <div className="mt-1 text-[12px] text-[#A0A49C]">{o.day} · <span className="of-num">{o.time}</span></div>
+                  {isCallOut && o.fromName ? <div className="mt-1 text-[12px] text-[#6B6F68]">{o.fromName} is out{o.note ? ` — ${o.note}` : ''}</div> : null}
+                  <div className="mt-2 text-[12px] text-[#6B6F68]">
+                    {top.length === 0 ? (
+                      <span className="text-[#A32D2D]">No eligible staff free</span>
+                    ) : (
+                      <>
+                        <span className="text-[#A0A49C]">Best match{top.length > 1 ? 'es' : ''}: </span>
+                        {top.map((c) => c.employee.name).join(', ')}
+                        {shortlist.length > top.length ? <span className="text-[#A0A49C]"> +{shortlist.length - top.length} more</span> : null}
+                      </>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => sb.openCover(openShiftKey(o))}
+                    className="mt-2.5 inline-flex h-[34px] w-full items-center justify-center rounded-[10px] bg-[#1F5FA8] px-3 text-[13px] font-semibold text-white transition-colors hover:bg-[#174C87]"
+                  >
+                    Find cover
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </SectionCard>
 
       {/* Live department map */}
       <div>

@@ -4,6 +4,8 @@ import {
   pickBaseList,
   productMargins,
   computeOpportunities,
+  computeRepriceAlerts,
+  detectCostSpikes,
   priceListValidity,
   computeNotifications,
   DEFAULT_TARGET_MARGIN,
@@ -65,21 +67,20 @@ export default async function PricePilotNotificationsPage() {
       expired: v.status === 'expired',
     }));
 
-  const costSpikes = priceItems
-    .map((p) => {
-      const h = (p.price_history ?? []).map(Number).filter((n) => Number.isFinite(n));
-      if (h.length < 2) return null;
-      const prev = h[h.length - 2];
-      const last = h[h.length - 1];
-      if (!(prev > 0)) return null;
-      const pctUp = ((last - prev) / prev) * 100;
-      return pctUp >= 15 ? { id: p.id, name: p.name, pctUp } : null;
-    })
-    .filter(Boolean)
-    .sort((a, b) => b!.pctUp - a!.pctUp)
-    .slice(0, 5) as { id: string; name: string; pctUp: number }[];
+  // Cost movements on what we buy — a sudden step against the last observation, or
+  // a sustained creep across the whole recorded series (the quieter, costlier one).
+  const costSpikes = detectCostSpikes(priceItems, { limit: 8, unitsByItem: units30d });
+  // Products that crossed below target AND still sell, with the price that fixes it.
+  const repriceAlerts = computeRepriceAlerts(pms, target, units30d, { limit: 8 });
 
-  const notifications = computeNotifications({ expiringContracts, belowTargetCount, marginOpportunity, target, costSpikes });
+  const notifications = computeNotifications({
+    expiringContracts,
+    belowTargetCount,
+    marginOpportunity,
+    target,
+    costSpikes,
+    repriceAlerts,
+  });
   const high = notifications.filter((n) => n.severity === 'high').length;
 
   return (

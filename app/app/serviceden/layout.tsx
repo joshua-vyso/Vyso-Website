@@ -1,7 +1,5 @@
-import { redirect } from 'next/navigation';
-import { getPlatformSession } from '@/lib/platform/supabase-server';
 import { getServiceDenData, EMPTY_SERVICEDEN } from '@/lib/platform/serviceden-data';
-import { SERVICEDEN_ACCOUNT_EMAIL } from '@/lib/platform/serviceden';
+import { requireServiceDenSession } from '@/lib/platform/serviceden-access';
 import { SubNav } from '@/components/platform/SubNav';
 import { ServiceDenProvider } from '@/components/platform/serviceden/context';
 
@@ -20,9 +18,7 @@ const TABS = [
  * once and shared with every tab via the ServiceDen provider.
  */
 export default async function ServiceDenLayout({ children }: { children: React.ReactNode }) {
-  const session = await getPlatformSession();
-  if (!session) redirect('/login');
-  if (session.email.trim().toLowerCase() !== SERVICEDEN_ACCOUNT_EMAIL) redirect('/app');
+  const session = await requireServiceDenSession();
 
   const data = session.org ? await getServiceDenData(session.org.id) : EMPTY_SERVICEDEN;
 

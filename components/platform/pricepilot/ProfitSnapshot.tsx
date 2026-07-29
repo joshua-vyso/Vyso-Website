@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { LockedTile } from '@/components/platform/RoleGate';
 import { zar, zar2 } from '@/lib/platform/pricepilot';
 
 export interface BreakdownOrder {
@@ -29,6 +30,8 @@ export interface ProfitSnapshotProps {
   revenueTarget: number | null;
   gpTarget: number | null;
   orders: BreakdownOrder[];
+  /** False for member-role users: the money tiles lock and no figures are passed in. */
+  canSeeFinance?: boolean;
 }
 
 function Meter({ pct, color = '#3E7BC4' }: { pct: number; color?: string }) {
@@ -45,8 +48,12 @@ function Meter({ pct, color = '#3E7BC4' }: { pct: number; color?: string }) {
  * exact per-order maths behind each number.
  */
 export function ProfitSnapshot(props: ProfitSnapshotProps) {
-  const { revenue, grossProfit, realizedMargin, netProfit, opex, target, revenueTarget, gpTarget, orders } = props;
+  const { revenue, grossProfit, realizedMargin, netProfit, opex, target, revenueTarget, gpTarget } = props;
+  const canSeeFinance = props.canSeeFinance !== false;
   const [open, setOpen] = useState<MetricKey | null>(null);
+  // Members see the margin % (an operational number) but no rand figures — the
+  // server already withheld them, so there is nothing to un-blur in the DOM.
+  const LOCKED: MetricKey[] = ['revenue', 'gross_profit', 'net'];
 
   const revPct = revenueTarget ? (revenue / revenueTarget) * 100 : null;
   const gpPct = gpTarget ? (grossProfit / gpTarget) * 100 : null;
@@ -112,21 +119,26 @@ export function ProfitSnapshot(props: ProfitSnapshotProps) {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {tiles.map((t) => {
           const active = open === t.key;
+          if (!canSeeFinance && LOCKED.includes(t.key)) return <LockedTile key={t.key} label={t.label} />;
           return (
             <button
               key={t.key}
               type="button"
-              onClick={() => setOpen(active ? null : t.key)}
-              aria-expanded={active}
-              className={`rounded-2xl border bg-white p-4 text-left shadow-[0_1px_2px_rgba(20,24,20,0.03)] transition-all hover:border-[#C9DEF7] ${
-                active ? 'border-[#3E7BC4] ring-1 ring-[#3E7BC4]/20' : 'border-[#EAEDF2]'
-              }`}
+              // The per-order breakdown is money detail — members get the summary tile only.
+              onClick={canSeeFinance ? () => setOpen(active ? null : t.key) : undefined}
+              aria-expanded={canSeeFinance ? active : undefined}
+              disabled={!canSeeFinance}
+              className={`rounded-2xl border bg-white p-4 text-left shadow-[0_1px_2px_rgba(20,24,20,0.03)] transition-all ${
+                canSeeFinance ? 'hover:border-[#C9DEF7]' : 'cursor-default'
+              } ${active ? 'border-[#3E7BC4] ring-1 ring-[#3E7BC4]/20' : 'border-[#EAEDF2]'}`}
             >
               <div className="flex items-center justify-between">
                 <span className="text-[12px] font-medium uppercase tracking-[0.05em] text-[#8A8E86]">{t.label}</span>
-                <span className={`text-[#C7C9C5] transition-transform ${active ? 'rotate-180' : ''}`} aria-hidden>
-                  ⌄
-                </span>
+                {canSeeFinance ? (
+                  <span className={`text-[#C7C9C5] transition-transform ${active ? 'rotate-180' : ''}`} aria-hidden>
+                    ⌄
+                  </span>
+                ) : null}
               </div>
               <div className="of-num mt-2 text-[30px] font-semibold leading-none tracking-[-0.02em] text-[#171A17]">{t.value}</div>
               <div className="of-num mt-2 text-[12px]" style={{ color: t.subColor ?? '#A0A49C' }}>

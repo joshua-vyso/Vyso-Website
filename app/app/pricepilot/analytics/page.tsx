@@ -1,23 +1,38 @@
 import { getPlatformSession, createServerSupabase } from '@/lib/platform/supabase-server';
 import { AnalyticsView, type DimensionData } from '@/components/platform/pricepilot/AnalyticsView';
-import { finalizeAggs, DEFAULT_TARGET_MARGIN, type SalesAgg, type PlTargets } from '@/lib/platform/pricepilot';
+import type { VarianceWindowKey } from '@/components/platform/pricepilot/VariancePanel';
+import {
+  finalizeAggs,
+  attributeVariance,
+  DEFAULT_TARGET_MARGIN,
+  type SalesAgg,
+  type PlTargets,
+  type VarianceAttribution,
+  type VarianceItem,
+} from '@/lib/platform/pricepilot';
 import type { OfOrder } from '@/lib/platform/orderflow';
 
 type ItemRow = { order_id: string; stock_item_id: string | null; qty: number; unit_price: number };
 type WindowKey = '30d' | '90d' | 'all';
+type WasteRow = { event_date: string; cost: number | null };
+
+const DAY = 86_400_000;
 
 export default async function PricePilotAnalyticsPage() {
   const session = await getPlatformSession();
   const orgId = session?.org?.id ?? '';
   const db = await createServerSupabase();
 
-  const [{ data: orders }, { data: orderItems }, { data: items }, { data: customers }, { data: targetsRow }] =
+  const [{ data: orders }, { data: orderItems }, { data: items }, { data: customers }, { data: targetsRow }, wasteRes] =
     await Promise.all([
       db.from('of_orders').select('id, created_at, customer_id').eq('org_id', orgId).in('status', ['invoiced', 'paid']),
       db.from('of_order_items').select('order_id, stock_item_id, qty, unit_price').eq('org_id', orgId),
       db.from('pp_stock_items').select('id, name, category, avg_unit_price').eq('org_id', orgId).limit(5000),
       db.from('of_customers').select('id, name').eq('org_id', orgId),
       db.from('pl_targets').select('*').eq('org_id', orgId).maybeSingle(),
+      // Cross-module read: WasteWatch's log is the food cost that never reaches an
+      // invoice line. Absent/unreadable (module not set up) degrades to "no waste data".
+      db.from('ww_waste_events').select('event_date, cost').eq('org_id', orgId).limit(20000),
     ]);
 
   const targets = (targetsRow ?? null) as PlTargets | null;
@@ -87,5 +102,66 @@ export default async function PricePilotAnalyticsPage() {
 
   const windows = { '30d': build('30d'), '90d': build('90d'), all: build('all') };
 
-  return <AnalyticsView windows={windows} target={target} />;
+  // -------------------------------------------------------------------------
+  // Variance attribution — each window compared against the equal-length window
+  // immediately before it, on COSTED lines only so the two margins are like for
+  // like. Waste comes from WasteWatch and is reported alongside, not folded in.
+  // -------------------------------------------------------------------------
+  const vRanges: Record<VarianceWindowKey, { curStart: number; baseStart: number }> = {
+    '30d': { curStart: now - 30 * DAY, baseStart: now - 60 * DAY },
+    '90d': { curStart: now - 90 * DAY, baseStart: now - 180 * DAY },
+  };
+  const V_WINDOWS: VarianceWindowKey[] = ['30d', '90d'];
+  const vAcc: Record<VarianceWindowKey, { cur: Map<string, VarianceItem>; base: Map<string, VarianceItem> }> = {
+    '30d': { cur: new Map(), base: new Map() },
+    '90d': { cur: new Map(), base: new Map() },
+  };
+  const addV = (m: Map<string, VarianceItem>, key: string, label: string, units: number, revenue: number, cost: number) => {
+    const a = m.get(key) ?? { key, label, units: 0, revenue: 0, cost: 0 };
+    a.units += units;
+    a.revenue += revenue;
+    a.cost += cost;
+    m.set(key, a);
+  };
+
+  for (const it of (orderItems ?? []) as ItemRow[]) {
+    const info = orderInfo.get(it.order_id);
+    if (!info || !it.stock_item_id) continue;
+    const unitCost = costByItem.get(it.stock_item_id) ?? null;
+    if (unitCost == null) continue; // uncosted lines can't carry a margin
+    const qty = Number(it.qty) || 0;
+    if (qty <= 0) continue;
+    const rev = qty * (Number(it.unit_price) || 0);
+    const cost = qty * unitCost;
+    const label = nameByItem.get(it.stock_item_id) ?? 'Unknown product';
+    for (const w of V_WINDOWS) {
+      const r = vRanges[w];
+      if (info.ts >= r.curStart) addV(vAcc[w].cur, it.stock_item_id, label, qty, rev, cost);
+      else if (info.ts >= r.baseStart) addV(vAcc[w].base, it.stock_item_id, label, qty, rev, cost);
+    }
+  }
+
+  const wasteRows = (wasteRes.data ?? []) as WasteRow[];
+  const hasWasteData = !wasteRes.error && wasteRows.length > 0;
+  const dayTs = (s: string) => {
+    const [y, m, d] = String(s).split('-').map(Number);
+    return y && m && d ? new Date(y, m - 1, d).getTime() : NaN;
+  };
+  const wasteBetween = (start: number, end: number) =>
+    wasteRows.reduce((s, r) => {
+      const ts = dayTs(r.event_date);
+      return Number.isFinite(ts) && ts >= start && ts < end ? s + (Number(r.cost) || 0) : s;
+    }, 0);
+
+  const varianceWindows = {} as Record<VarianceWindowKey, VarianceAttribution>;
+  for (const w of V_WINDOWS) {
+    const r = vRanges[w];
+    varianceWindows[w] = attributeVariance(
+      [...vAcc[w].base.values()],
+      [...vAcc[w].cur.values()],
+      { baseCost: wasteBetween(r.baseStart, r.curStart), currentCost: wasteBetween(r.curStart, now + DAY) },
+    );
+  }
+
+  return <AnalyticsView windows={windows} target={target} variance={{ windows: varianceWindows, hasWasteData }} />;
 }

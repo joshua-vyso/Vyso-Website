@@ -1,12 +1,14 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/platform/orderflow/ui';
 import { ModuleHeader, PrimaryAction, Kpi, SectionCard, DataTable } from '@/components/platform/module-ui';
 import { MODULE_META } from '@/lib/platform/module-meta';
 import { zar } from '@/lib/platform/orderflow';
-import { DAYS, departmentSnapshots, overviewStats, operationalAlerts, type Shift } from '@/lib/platform/shiftboard';
-import { DeptBadge, StatusBadge, CoverageBadge, MobileSnapshotCards } from './shared';
+import { DAYS, departmentSnapshots, overviewStats, operationalAlerts, openShiftKey, type RosterRow, type Shift } from '@/lib/platform/shiftboard';
+import { DeptBadge, StatusBadge, CoverageBadge, EmptyState, MobileSnapshotCards } from './shared';
+import { SwapsPanel } from './Swaps';
 import { useShiftBoard } from './context';
 
 const M = MODULE_META.shiftboard;
@@ -14,24 +16,26 @@ const M = MODULE_META.shiftboard;
 function cellTone(s: Shift) {
   if (s.status === 'off') return { bg: '#EEF1F5', fg: '#8A8E86' };
   if (s.status === 'leave') return { bg: '#FBEEDA', fg: '#854F0B' };
+  if (s.status === 'open') return { bg: '#FCEBEB', fg: '#A32D2D' };
   return { bg: '#EAF2FC', fg: '#1F5FA8' };
 }
 
 export function ShiftBoardOverview() {
   const { node, show } = useToast();
   const sb = useShiftBoard();
+  const router = useRouter();
 
-  const header = <ModuleHeader icon={M.icon} title={M.name} description="Who's working, where, on what — and whether you're properly staffed today." actions={<PrimaryAction onClick={() => show('Create shift (demo)')}>+ Create shift</PrimaryAction>} />;
+  const header = <ModuleHeader icon={M.icon} title={M.name} description="Who's working, where, on what — and whether you're properly staffed today." actions={<PrimaryAction onClick={() => router.push('/app/shiftboard/roster')}>+ Create shift</PrimaryAction>} />;
 
   if (sb.isEmpty) {
     return (
       <div className="space-y-5">
         {node}
         {header}
-        <div className="rounded-2xl border border-dashed border-[#E2E6EC] bg-[#FBFCFE] px-6 py-12 text-center">
-          <p className="of-display text-[16px] font-semibold text-[#171A17]">No people set up yet</p>
-          <p className="mx-auto mt-1.5 max-w-md text-[13px] text-[#6B6F68]">Add employees and departments to see who&rsquo;s on shift, staffing coverage and labour cost here.</p>
-        </div>
+        <EmptyState
+          title="No people set up yet"
+          hint="Add employees and departments to see who’s on shift, staffing coverage and labour cost here."
+        />
       </div>
     );
   }
@@ -39,6 +43,10 @@ export function ShiftBoardOverview() {
   const s = overviewStats(sb);
   const snapshots = departmentSnapshots(sb.employees, sb.departments);
   const alerts = operationalAlerts(sb);
+  const openShifts = sb.roster.openShifts;
+
+  /** Roster rows can predate the sb_employees link, so fall back to the name. */
+  const idFor = (r: RosterRow) => r.employeeId || sb.employees.find((e) => e.name === r.name)?.id || '';
 
   return (
     <div className="space-y-5">
@@ -48,8 +56,8 @@ export function ShiftBoardOverview() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Kpi label="Staff on shift today" value={String(s.rostered)} sub="rostered" />
         <Kpi label="Currently working" value={String(s.working)} accent="#0F6E56" sub="clocked in" />
-        <Kpi label="Open shifts" value={String(s.openShifts)} accent="#854F0B" sub="this week" />
-        <Kpi label="Labour cost today" value={zar(s.labourCost)} sub="projected" />
+        <Kpi label="Open shifts" value={String(s.openShifts)} accent={s.openShifts > 0 ? '#854F0B' : undefined} sub={s.callOuts > 0 ? `${s.callOuts} from call-outs` : 'this week'} />
+        <Kpi label="Labour cost today" value={zar(s.labourCost)} sub={s.labourPct != null ? `${s.labourPct.toFixed(1)}% of sales this week` : 'rate × rostered hours'} />
         <Kpi label="Overtime risk" value={String(s.overtimeRisk)} accent={s.overtimeRisk > 0 ? '#854F0B' : undefined} sub="over contracted" />
         <Kpi label="Attendance issues" value={String(s.attendanceIssues)} accent={s.attendanceIssues > 0 ? '#A32D2D' : undefined} sub="late or absent" />
       </div>
@@ -72,9 +80,17 @@ export function ShiftBoardOverview() {
                   </td>
                   {r.days.map((sh, i) => {
                     const t = cellTone(sh);
+                    const id = idFor(r);
                     return (
                       <td key={i} className="px-1.5 py-2 text-center">
-                        <span className="of-num inline-flex w-full justify-center rounded-[8px] px-1.5 py-1 text-[11px] font-medium" style={{ backgroundColor: t.bg, color: t.fg }}>{sh.status === 'off' ? 'Off' : sh.status === 'leave' ? 'Leave' : sh.time}</span>
+                        <button
+                          type="button"
+                          onClick={() => (id ? sb.openEditor(id, i) : show(`${r.name} is not linked to a staff record yet.`))}
+                          className="of-num inline-flex w-full justify-center rounded-[8px] px-1.5 py-1 text-[11px] font-medium transition-[filter] hover:brightness-95"
+                          style={{ backgroundColor: t.bg, color: t.fg }}
+                        >
+                          {sh.status === 'off' ? 'Off' : sh.status === 'leave' ? 'Leave' : sh.status === 'open' ? 'Open' : sh.time}
+                        </button>
                       </td>
                     );
                   })}
@@ -84,6 +100,38 @@ export function ShiftBoardOverview() {
           </table>
         </div>
       </SectionCard>
+
+      {/* Coverage gaps — the call-out queue, one click from a matched shortlist */}
+      {openShifts.length ? (
+        <SectionCard
+          title="Open shifts & call-outs"
+          right={
+            <Link href="/app/shiftboard/roster" className="text-[12px] font-semibold text-[#1F5FA8] hover:underline">
+              Roster →
+            </Link>
+          }
+        >
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {openShifts.slice(0, 6).map((o) => (
+              <button
+                key={openShiftKey(o)}
+                type="button"
+                onClick={() => sb.openCover(openShiftKey(o))}
+                className={`rounded-[14px] border border-dashed p-3.5 text-left transition-colors ${o.reason === 'call-out' ? 'border-[#E4A6A6] bg-[#FDF6F6] hover:border-[#A32D2D]' : 'border-[#E2E6EC] bg-[#FBFCFE] hover:border-[#3E7BC4]'}`}
+              >
+                <span className="flex items-center gap-2 text-[13px] font-semibold text-[#171A17]">
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: sb.deptColor(o.department) }} />
+                  {o.department}
+                </span>
+                <span className="mt-1 block text-[12px] text-[#A0A49C]">
+                  {o.day} · <span className="of-num">{o.time}</span>
+                </span>
+                <span className="mt-1 block text-[12px] font-medium text-[#1F5FA8]">Find cover →</span>
+              </button>
+            ))}
+          </div>
+        </SectionCard>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_360px]">
         <SectionCard title="Staff">
@@ -130,6 +178,8 @@ export function ShiftBoardOverview() {
               ))}
             </div>
           </SectionCard>
+
+          <SwapsPanel />
         </div>
       </div>
 

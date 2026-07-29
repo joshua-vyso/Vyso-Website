@@ -1,10 +1,10 @@
 import { redirect } from 'next/navigation';
 import { getPlatformSession } from '@/lib/platform/supabase-server';
 import { getShiftBoardData } from '@/lib/platform/shiftboard-data';
+import { EMPTY_SHIFTBOARD } from '@/lib/platform/shiftboard';
 import { SubNav } from '@/components/platform/SubNav';
 import { ShiftBoardProvider } from '@/components/platform/shiftboard/context';
-
-const EMPTY = { employees: [], departments: [], roster: { label: '', rows: [], openShifts: [] }, attendance: [], leave: [] };
+import { ShiftBoardChrome } from '@/components/platform/shiftboard/Chrome';
 
 const TABS = [
   { label: 'Overview', href: '/app/shiftboard' },
@@ -21,13 +21,15 @@ export default async function ShiftBoardLayout({ children }: { children: React.R
   const session = await getPlatformSession();
   if (!session) redirect('/login');
 
-  const data = session.org ? await getShiftBoardData(session.org.id) : EMPTY;
+  const data = session.org ? await getShiftBoardData(session.org.id) : EMPTY_SHIFTBOARD;
 
   return (
     <div className="px-8 py-7">
       <SubNav tabs={TABS} rootHref="/app/shiftboard" />
       <ShiftBoardProvider data={data}>
-        <div className="mt-6">{children}</div>
+        <ShiftBoardChrome>
+          <div className="mt-6">{children}</div>
+        </ShiftBoardChrome>
       </ShiftBoardProvider>
     </div>
   );

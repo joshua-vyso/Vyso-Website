@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getPlatformSession } from '@/lib/platform/supabase-server';
 import { SubNav } from '@/components/platform/SubNav';
+import { PricePilotLive } from '@/components/platform/pricepilot/Live';
 
 const TABS = [
   { label: 'Dashboard', href: '/app/pricepilot' },
@@ -22,6 +23,7 @@ export default async function PricePilotLayout({ children }: { children: React.R
 
   return (
     <div className="px-8 py-7">
+      <PricePilotLive />
       <SubNav tabs={TABS} rootHref="/app/pricepilot" />
       <div className="mt-6">{children}</div>
     </div>

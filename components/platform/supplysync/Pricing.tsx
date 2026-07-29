@@ -15,12 +15,15 @@ import {
   SupplierNameButton,
   POSITION_META,
   marketDiffColor,
+  changeColor,
+  signedPct,
   EmptyState,
   GREEN,
   RED,
   MUTE,
   INK,
 } from './shared';
+import { CrossSupplierTable, PriceChangeTable, summarisePriceChanges } from './PriceAlerts';
 
 // ---------------------------------------------------------------------------
 // Small helpers (local — no new shared utilities)
@@ -28,18 +31,6 @@ import {
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
-}
-
-/** Colour a period-over-period change: rising price = red, falling = green. */
-function changeColor(changePct: number): string {
-  if (changePct > 0.4) return RED;
-  if (changePct < -0.4) return GREEN;
-  return MUTE;
-}
-
-function signed(pct: number): string {
-  const v = Math.round(pct * 10) / 10;
-  return `${v > 0 ? '+' : ''}${v}%`;
 }
 
 /** Short buy/hold/negotiate recommendation from a pricing record's market gap. */
@@ -76,7 +67,8 @@ const OPP_ORDER: OpportunityKind[] = ['buy_now', 'negotiate', 'review', 'watch']
 // ---------------------------------------------------------------------------
 
 export function PricingTab() {
-  const { pricing, opportunities, suppliers, supplierById, openProfile } = useSupplySync();
+  const { pricing, opportunities, suppliers, priceChanges, crossSupplierItems, supplierById, openProfile } =
+    useSupplySync();
 
   // Distinct pricing categories for the comparison selector.
   const categories = useMemo(() => {
@@ -118,19 +110,67 @@ export function PricingTab() {
     return OPP_ORDER.map((kind) => ({ kind, items: groups.get(kind) ?? [] })).filter((g) => g.items.length > 0);
   }, [opportunities]);
 
-  if (pricing.length === 0) {
+  // Nothing tracked AND nothing detected off documents — a true blank slate.
+  if (pricing.length === 0 && priceChanges.length === 0 && crossSupplierItems.length === 0) {
     return (
       <EmptyState
         title="No pricing data yet"
-        hint="Once supplier price lists flow in — via Doc-U extraction or ProcurePulse — SupplySync will track how each supplier's prices move versus the market and surface buying opportunities here."
+        hint="Once supplier price lists flow in — via Doc-U extraction or ProcurePulse — SupplySync will track how each supplier's prices move versus the market, flag every price change and surface buying opportunities here."
       />
     );
   }
 
   const hasSuppliers = suppliers.length > 0;
+  const priceSummary = summarisePriceChanges(priceChanges);
 
   return (
     <div className="space-y-5">
+      {/* ---------------------------------------------------------------- */}
+      {/* 0) Price-change detection                                         */}
+      {/* ---------------------------------------------------------------- */}
+      <SectionCard
+        title="Price changes detected"
+        right={
+          <div className="flex flex-wrap items-center gap-3 text-[12px] text-[#A0A49C]">
+            <span>
+              <span className="of-num font-medium" style={{ color: RED }}>{priceSummary.increases}</span> up
+              {' · '}
+              <span className="of-num font-medium" style={{ color: GREEN }}>{priceSummary.decreases}</span> down
+            </span>
+            <span>
+              net{' '}
+              <span className="of-num font-semibold" style={{ color: priceSummary.netAnnual > 0 ? RED : GREEN }}>
+                {priceSummary.netAnnual > 0 ? '+' : '−'}{zar(Math.abs(priceSummary.netAnnual))}
+              </span>{' '}
+              a year
+            </span>
+          </div>
+        }
+      >
+        <p className="mb-3 text-[12px] leading-snug text-[#6B6F68]">
+          Every material move in what a supplier charges — read off the invoices Doc-U files against them where
+          possible, and off the tracked price list otherwise. Annualised impact multiplies the per-unit move by the
+          year&apos;s volume: <span className="font-medium text-[#171A17]">measured</span> from invoiced quantities where
+          they exist, <span className="font-medium text-[#171A17]">estimated</span> from average spend where they
+          don&apos;t.
+        </p>
+        <PriceChangeTable alerts={priceChanges} />
+      </SectionCard>
+
+      {/* ---------------------------------------------------------------- */}
+      {/* 0b) Cross-supplier comparison for equivalent items                */}
+      {/* ---------------------------------------------------------------- */}
+      <SectionCard
+        title="Same item, different suppliers"
+        right={<span className="text-[12px] text-[#A0A49C]"><span className="of-num">{crossSupplierItems.length}</span> comparable line{crossSupplierItems.length === 1 ? '' : 's'}</span>}
+      >
+        <p className="mb-3 text-[12px] leading-snug text-[#6B6F68]">
+          Equivalent items matched across the supply base by name, cheapest against dearest. The saving is only claimed
+          where invoiced volume has actually been observed — otherwise the spread is the signal.
+        </p>
+        <CrossSupplierTable items={crossSupplierItems} />
+      </SectionCard>
+
       {/* ---------------------------------------------------------------- */}
       {/* 1) Price watch                                                    */}
       {/* ---------------------------------------------------------------- */}
@@ -169,11 +209,11 @@ export function PricingTab() {
               <span key="cur" className="of-num font-medium text-[#171A17]">{zar(p.currentPrice)}</span>,
               <span key="prev" className="of-num text-[#6B6F68]">{zar(p.previousPrice)}</span>,
               <span key="chg" className="of-num font-medium" style={{ color: changeColor(p.changePct) }}>
-                {signed(p.changePct)}
+                {signedPct(p.changePct)}
               </span>,
               <span key="mkt" className="of-num text-[#6B6F68]">{zar(p.marketAvg)}</span>,
               <span key="vs" className="of-num" style={{ color: marketDiffColor(p.diffVsMarketPct) }}>
-                <span className="font-medium">{signed(p.diffVsMarketPct)}</span>
+                <span className="font-medium">{signedPct(p.diffVsMarketPct)}</span>
                 <span className="ml-1 text-[11px]" style={{ color: pos.color }}>{pos.label}</span>
               </span>,
               <Badge key="rec" label={rec.label} tone={rec.tone} />,

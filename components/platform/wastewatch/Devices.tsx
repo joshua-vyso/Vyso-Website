@@ -9,7 +9,7 @@ import { MODULE_META } from '@/lib/platform/module-meta';
 import { usePlatform } from '@/lib/platform/session';
 import { createClient } from '@/lib/platform/supabase-browser';
 import { DEVICE_TYPES, type Device, type DeviceHistoryEvent } from '@/lib/platform/wastewatch';
-import { DeviceStatusBadge, BatteryPill } from './shared';
+import { DeviceStatusBadge, BatteryPill, EmptyState } from './shared';
 import { useWasteWatch } from './categories';
 
 export function WasteDevices() {
@@ -37,6 +37,14 @@ export function WasteDevices() {
         <button type="button" onClick={() => setAddOpen(true)} className="inline-flex h-[42px] items-center rounded-[11px] bg-[#1F5FA8] px-[18px] text-[14px] font-semibold text-white transition-colors hover:bg-[#174C87]">+ Add device</button>
       </div>
 
+      {devices.length === 0 ? (
+        <EmptyState
+          title="No devices connected"
+          hint="Pair a scale, sensor or camera station and it will weigh waste automatically — no typing, and every event lands in the waste log with the operator and recipe attached."
+          action={<button type="button" onClick={() => setAddOpen(true)} className="inline-flex h-[42px] items-center rounded-[11px] bg-[#1F5FA8] px-[18px] text-[14px] font-semibold text-white transition-colors hover:bg-[#174C87]">+ Add device</button>}
+        />
+      ) : (
+      <>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Kpi label="Connected devices" value={String(devices.length)} />
         <Kpi label="Online" value={String(online)} accent="#0F6E56" />
@@ -73,6 +81,8 @@ export function WasteDevices() {
           </table>
         </div>
       </div>
+      </>
+      )}
 
       {/* Device detail */}
       <Drawer open={!!open} onClose={() => setOpenId(null)} title={open?.name ?? ''} subtitle={open ? `${open.type} · ${open.location}` : undefined} right={open ? <DeviceStatusBadge status={open.status} /> : undefined} width={540}>

@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import { KpiCard } from '@/components/platform/procurepulse/ui';
-import { zar, type AnalyticsRow, type AnalyticsTotals } from '@/lib/platform/pricepilot';
+import { VariancePanel, type VarianceWindowKey } from '@/components/platform/pricepilot/VariancePanel';
+import { zar, type AnalyticsRow, type AnalyticsTotals, type VarianceAttribution } from '@/lib/platform/pricepilot';
 
 export interface DimensionData {
   customer: AnalyticsRow[];
@@ -17,6 +18,9 @@ type Dimension = 'customer' | 'category' | 'product';
 export interface AnalyticsViewProps {
   windows: Record<WindowKey, DimensionData>;
   target: number;
+  /** Margin-drift attribution (price vs cost vs mix, with waste alongside). Optional
+   *  so the view still renders if a caller can't supply it. */
+  variance?: { windows: Record<VarianceWindowKey, VarianceAttribution>; hasWasteData: boolean };
 }
 
 const WINDOWS: { key: WindowKey; label: string }[] = [
@@ -30,7 +34,7 @@ const DIMENSIONS: { key: Dimension; label: string; noun: string; singular: strin
   { key: 'product', label: 'By product', noun: 'Products', singular: 'Product' },
 ];
 
-export function AnalyticsView({ windows, target }: AnalyticsViewProps) {
+export function AnalyticsView({ windows, target, variance }: AnalyticsViewProps) {
   const [win, setWin] = useState<WindowKey>('90d');
   const [dim, setDim] = useState<Dimension>('customer');
 
@@ -92,6 +96,13 @@ export function AnalyticsView({ windows, target }: AnalyticsViewProps) {
         />
         <KpiCard label={`Active ${noun.toLowerCase()}`} value={String(activeCount)} />
       </div>
+
+      {/* Variance attribution — why the margin moved */}
+      {variance ? (
+        <div className="mt-5">
+          <VariancePanel windows={variance.windows} hasWasteData={variance.hasWasteData} />
+        </div>
+      ) : null}
 
       {/* Top / bottom performers by margin */}
       {ranked.length > 0 ? (

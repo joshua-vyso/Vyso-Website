@@ -224,7 +224,16 @@ function ProfileBody({ supplier }: { supplier: Supplier }) {
 // ---------------------------------------------------------------------------
 
 function OverviewTab({ supplier }: { supplier: Supplier }) {
+  const { credits, rebates, openCredit, openRebate } = useSupplySync();
   const sc = supplier.scorecard;
+  const m = supplier.measured;
+
+  // This supplier's money position: what is still owed on claims and rebates.
+  const supplierCredits = credits.filter((c) => c.supplierId === supplier.id);
+  const unresolvedCredits = supplierCredits.filter((c) => c.isUnresolved);
+  const unresolvedTotal = unresolvedCredits.reduce((s, c) => s + c.amount, 0);
+  const supplierRebates = rebates.filter((r) => r.supplierId === supplier.id);
+  const rebateOutstanding = supplierRebates.reduce((s, r) => s + r.outstanding, 0);
   const primary = supplier.contacts.find((c) => c.isPrimary) ?? supplier.contacts[0];
   const backup = supplier.contacts.find((c) => !c.isPrimary && c.id !== primary?.id) ?? supplier.contacts[1];
   const latestNote = supplier.notes.length ? supplier.notes[supplier.notes.length - 1] : null;
@@ -277,6 +286,76 @@ function OverviewTab({ supplier }: { supplier: Supplier }) {
           <DetailRow label="Latest note">
             {latestNote ? <span className="text-[#6B6F68]">{latestNote.body}</span> : '—'}
           </DetailRow>
+        </div>
+      </div>
+
+      <div>
+        <SectionLabel>
+          Measured record
+          <span className="ml-2 text-[11px] font-normal normal-case tracking-normal text-[#A0A49C]">
+            counted from the log · last {m.windowDays} days
+          </span>
+        </SectionLabel>
+        <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <MiniStat label="Events" value={String(m.events)} color={m.events > 0 ? INK : FAINT} />
+          <MiniStat label="Late" value={String(m.lateDeliveries)} color={m.lateDeliveries > 0 ? RED : GREEN} />
+          <MiniStat label="Issues" value={String(m.issues)} color={m.issues > 0 ? RED : GREEN} sub={`${m.issuesPer30Days}/30d`} />
+          <MiniStat
+            label="Last contact"
+            value={m.daysSinceContact === null ? '—' : `${m.daysSinceContact}d`}
+            color={m.daysSinceContact !== null && m.daysSinceContact > 30 ? AMBER : INK}
+          />
+        </div>
+        {!m.hasData ? (
+          <p className="mt-2 text-[12px] text-[#A0A49C]">
+            Nothing logged in the window — the scorecard above stays illustrative until activity is recorded.
+          </p>
+        ) : null}
+      </div>
+
+      <div>
+        <SectionLabel
+          right={
+            <span className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => openCredit(supplier.id)}
+                className="text-[12px] font-semibold text-[#1F5FA8] transition-colors hover:text-[#174C87] hover:underline"
+              >
+                Log credit
+              </button>
+              <span className="text-[#C4C4BE]">·</span>
+              <button
+                type="button"
+                onClick={() => openRebate(supplier.id)}
+                className="text-[12px] font-semibold text-[#1F5FA8] transition-colors hover:text-[#174C87] hover:underline"
+              >
+                Add rebate
+              </button>
+            </span>
+          }
+        >
+          Money owed to you
+        </SectionLabel>
+        <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <MiniStat
+            label="Unresolved credits"
+            value={zar(unresolvedTotal)}
+            color={unresolvedTotal > 0 ? RED : GREEN}
+            sub={`${unresolvedCredits.length} of ${supplierCredits.length} claim${supplierCredits.length === 1 ? '' : 's'}`}
+          />
+          <MiniStat
+            label="Rebates outstanding"
+            value={zar(rebateOutstanding)}
+            color={rebateOutstanding > 0 ? AMBER : GREEN}
+            sub={`${supplierRebates.length} agreement${supplierRebates.length === 1 ? '' : 's'}`}
+          />
+          <MiniStat
+            label="Credited to date"
+            value={zar(supplierCredits.reduce((s, c) => s + (c.amountCredited ?? 0), 0))}
+            color={GREEN}
+            sub="recovered"
+          />
         </div>
       </div>
 

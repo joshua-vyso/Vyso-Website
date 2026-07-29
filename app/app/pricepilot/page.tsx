@@ -6,6 +6,7 @@ import { ProfitSnapshot, type BreakdownOrder } from '@/components/platform/price
 import { NotificationList } from '@/components/platform/pricepilot/NotificationList';
 import {
   zar,
+  zar2,
   pickBaseList,
   productMargins,
   marginDistribution,
@@ -17,6 +18,8 @@ import {
   marginPctForLines,
   priceListValidity,
   computeNotifications,
+  computeRepriceAlerts,
+  detectCostSpikes,
   DEFAULT_TARGET_MARGIN,
   PRIORITY_STYLE,
   type PlPriceList,
@@ -28,11 +31,17 @@ import {
 import type { OfOrder } from '@/lib/platform/orderflow';
 
 type ItemRow = { order_id: string; stock_item_id: string | null; qty: number; unit_price: number };
+type ProductRow = PriceItemLite & { price_history: number[] | null };
 
 export default async function PricePilotDashboardPage() {
   const session = await getPlatformSession();
   const orgId = session?.org?.id ?? '';
   const db = await createServerSupabase();
+  // Owners/admins see money; members don't. Gated HERE rather than in the client
+  // component so the real figures never reach the browser at all (same rule the
+  // shared RoleGate documents — see components/platform/RoleGate.tsx).
+  const role = session?.profile?.role;
+  const canSeeFinance = role === 'owner' || role === 'admin';
 
   const [
     { data: items },
@@ -43,7 +52,7 @@ export default async function PricePilotDashboardPage() {
     { data: targetsRow },
     { data: customers },
   ] = await Promise.all([
-    db.from('pp_stock_items').select('id, name, category, avg_unit_price').eq('org_id', orgId).limit(5000),
+    db.from('pp_stock_items').select('id, name, category, avg_unit_price, price_history').eq('org_id', orgId).limit(5000),
     db.from('pl_price_lists').select('*').eq('org_id', orgId),
     db.from('pl_overrides').select('*').eq('org_id', orgId),
     db
@@ -58,7 +67,7 @@ export default async function PricePilotDashboardPage() {
   ]);
 
   const priceLists = (lists ?? []) as PlPriceList[];
-  const priceItems = (items ?? []) as PriceItemLite[];
+  const priceItems = (items ?? []) as ProductRow[];
   const targets = (targetsRow ?? null) as PlTargets | null;
   const sales = (orders ?? []) as OfOrder[];
   const custName = new Map(((customers ?? []) as { id: string; name: string }[]).map((c) => [c.id, c.name]));
@@ -153,12 +162,19 @@ export default async function PricePilotDashboardPage() {
       label: v.label,
       expired: v.status === 'expired',
     }));
+  // Dishes that crossed BELOW target and still sell — the actionable subset of
+  // `belowTarget`, carrying the current price, the target-margin price and the delta.
+  const repriceAlerts = computeRepriceAlerts(pms, target, monthlyUnitsByItem, { limit: 5 });
+  // Cost movements on what we actually buy: a sudden step, or a sustained creep.
+  const costSpikes = detectCostSpikes(priceItems, { limit: 5, unitsByItem: monthlyUnitsByItem });
+
   const notifications = computeNotifications({
     expiringContracts,
     belowTargetCount: belowTarget.length,
     marginOpportunity,
     target,
-    costSpikes: [], // cost-spike signals live on the full Notifications page
+    costSpikes,
+    repriceAlerts,
   });
 
   // ---- Health + insight ----
@@ -313,15 +329,16 @@ export default async function PricePilotDashboardPage() {
       </div>
       <div className="mt-3">
         <ProfitSnapshot
-          revenue={revenueThisMonth}
-          grossProfit={grossProfit}
+          canSeeFinance={canSeeFinance}
+          revenue={canSeeFinance ? revenueThisMonth : 0}
+          grossProfit={canSeeFinance ? grossProfit : 0}
           realizedMargin={realizedMargin}
-          netProfit={netProfit}
-          opex={opex}
+          netProfit={canSeeFinance ? netProfit : null}
+          opex={canSeeFinance ? opex : null}
           target={target}
-          revenueTarget={targets?.monthly_revenue_target != null ? Number(targets.monthly_revenue_target) : null}
-          gpTarget={targets?.monthly_gross_profit_target != null ? Number(targets.monthly_gross_profit_target) : null}
-          orders={monthOrders}
+          revenueTarget={canSeeFinance && targets?.monthly_revenue_target != null ? Number(targets.monthly_revenue_target) : null}
+          gpTarget={canSeeFinance && targets?.monthly_gross_profit_target != null ? Number(targets.monthly_gross_profit_target) : null}
+          orders={canSeeFinance ? monthOrders : []}
         />
       </div>
 
@@ -402,6 +419,53 @@ export default async function PricePilotDashboardPage() {
           </div>
         </Panel>
       </div>
+
+      {/* Re-price now — dishes that crossed target and are still selling */}
+      {repriceAlerts.length > 0 ? (
+        <div className="mt-5">
+          <Panel
+            title="Re-price now"
+            right={
+              <Link href="/app/pricepilot/notifications" className="text-[13px] font-semibold text-[#1F5FA8] hover:underline">
+                All alerts →
+              </Link>
+            }
+          >
+            <p className="text-[13px] text-[#6B6F68]">
+              These crossed below your <span className="of-num">{Math.round(target)}%</span> target margin and are still
+              selling — the price that puts each back on target is on the right.
+            </p>
+            <div className="mt-3 overflow-hidden rounded-[14px] border border-[#EEF1F5]">
+              <div className="grid grid-cols-[1.6fr_0.8fr_1fr_0.8fr_0.9fr] gap-2 bg-[#FBFCFE] px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.06em] text-[#A0A49C]">
+                <span>Product</span>
+                <span className="text-right">Margin</span>
+                <span className="text-right">Price → target</span>
+                <span className="text-right">Per unit</span>
+                <span className="text-right">Impact / mo</span>
+              </div>
+              {repriceAlerts.map((r) => (
+                <div
+                  key={r.id}
+                  className="grid grid-cols-[1.6fr_0.8fr_1fr_0.8fr_0.9fr] items-center gap-2 border-t border-[#F4F5F7] px-4 py-3 text-[14px]"
+                >
+                  <Link href={`/app/pricepilot/products/${r.id}`} className="min-w-0 truncate font-semibold text-[#171A17] hover:text-[#174C87]">
+                    {r.name}
+                  </Link>
+                  <span className="of-num text-right text-[#854F0B]">{Math.round(r.currentMargin)}%</span>
+                  <span className="of-num text-right text-[#6B6F68]">
+                    {zar2(r.currentSell)} <span className="text-[#A0A49C]">→</span>{' '}
+                    <span className="font-semibold text-[#0F6E56]">{zar2(r.targetSell)}</span>
+                  </span>
+                  <span className="of-num text-right font-semibold text-[#0F6E56]">+{zar2(r.deltaSell)}</span>
+                  <span className="of-num text-right font-semibold text-[#171A17]">
+                    {r.monthlyImpact >= 1 ? `+${zar(r.monthlyImpact)}` : <span className="text-[#A0A49C]">—</span>}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        </div>
+      ) : null}
 
       {/* Recent sales */}
       <div className="mt-5">

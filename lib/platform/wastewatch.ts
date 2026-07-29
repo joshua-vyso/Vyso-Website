@@ -44,7 +44,9 @@ export interface WasteEvent {
 
 export const WASTE_REASONS: WasteReason[] = ['Spoiled', 'Expired', 'Wilted', 'Day-old', 'Over-portioned', 'Damaged', 'Trim', 'Prep error', 'Other'];
 
-/** A waste category row (ww_waste_categories) — carries its own stats. */
+/** A waste category row (ww_waste_categories) — carries its own stats.
+ *  cost/pct/trend are RECOMPUTED from ww_waste_events at read time (the stored
+ *  columns are only a fallback), so the donut can never drift from the log. */
 export interface WasteCategoryRow {
   id: string;
   name: string;
@@ -52,6 +54,9 @@ export interface WasteCategoryRow {
   cost: number;
   pct: number;
   trend: number[];
+  /** True when the row was synthesised from events for a category that no longer
+   *  exists in ww_waste_categories — shown, but not editable/removable. */
+  derived?: boolean;
 }
 
 export interface CategoryStat {
@@ -182,4 +187,125 @@ export interface WasteWatchData {
   employeeStats: EmployeeStat[];
   recipeStats: RecipeStat[];
   preventable: { preventable: number; unavoidable: number };
+  /** Cost timeline per period, derived from the events (falls back to COST_TIMELINE). */
+  timeline: Record<TimePeriod, number[]>;
+  /** % change vs the previous comparable period, per period. null = no comparison. */
+  timelineDelta: Record<TimePeriod, number | null>;
+  /** True when `timeline` came from the events rather than the illustrative constant. */
+  timelineDerived: boolean;
+  foodCost: FoodCostContext;
+  weekly: WeeklyReport | null;
+  overPortion: OverPortionStat[];
+  coaching: CoachingNote[];
+  dayPatterns: DayPattern[];
+  serviceHeatmap: { period: string; values: number[] }[];
+  /** True when `serviceHeatmap` came from the events rather than HEATMAP. */
+  heatmapDerived: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Waste-in-margin loop — the number PricePilot's variance panel consumes
+// ---------------------------------------------------------------------------
+
+/** Which real numbers the food-cost denominator was built from. */
+export type FoodCostBasis = 'purchases' | 'revenue' | 'none';
+
+export interface FoodCostContext {
+  basis: FoodCostBasis;
+  /** Plain-language description of the denominator, shown next to the number. */
+  basisLabel: string;
+  /** Average waste cost per day across the logged window. */
+  wastePerDay: number;
+  /** Average food cost per day across the source window. */
+  foodCostPerDay: number;
+  /** Waste as % of food cost — null when there is no denominator to divide by. */
+  pct: number | null;
+  /** Days of waste data behind `wastePerDay`. */
+  wasteDays: number;
+  /** Days of purchase/sales data behind `foodCostPerDay`. */
+  foodCostDays: number;
+  /** Sales over the food-cost window (0 when unknown). */
+  revenue: number;
+  /** Cost-of-goods ratio applied to sales — only set when basis === 'revenue'. */
+  cogsPct: number | null;
+  /** Annualised rand value of the waste rate — the "what this costs us" figure. */
+  annualised: number;
+}
+
+// ---------------------------------------------------------------------------
+// Weekly waste report (Overview)
+// ---------------------------------------------------------------------------
+
+export interface CausePattern {
+  reason: WasteReason;
+  cost: number;
+  events: number;
+  /** Share of the window's total waste cost. */
+  pct: number;
+  preventable: boolean;
+}
+
+export interface WasteItemStat {
+  item: string;
+  cost: number;
+  events: number;
+  topReason: WasteReason;
+}
+
+export interface WeeklyReport {
+  /** 7-day window, anchored to the most recent logged event (not to "today"). */
+  start: string;
+  end: string;
+  /** True when the window ends more than a day before today — the log went quiet. */
+  stale: boolean;
+  total: number;
+  events: number;
+  preventable: number;
+  preventablePct: number;
+  prevTotal: number;
+  /** % change vs the previous 7 days — null when there is no prior week to compare. */
+  deltaPct: number | null;
+  /** Preventable causes first, biggest rand value first. */
+  topCauses: CausePattern[];
+  topItems: WasteItemStat[];
+  /** Plain-language "do this next week" lines derived from the causes above. */
+  actions: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Reason-code insights (Analytics)
+// ---------------------------------------------------------------------------
+
+/** Over-portioning measured as actual qty vs the recipe's expected qty. */
+export interface OverPortionStat {
+  recipe: string;
+  events: number;
+  expectedQty: number;
+  actualQty: number;
+  /** Mean over-portion, e.g. 24 = 24% more than the recipe expects. */
+  overPct: number;
+  /** Cost attributable to the excess only, not the whole event. */
+  excessCost: number;
+  unit: string;
+}
+
+/** Constructive coaching note — framed as support, never as a blame list. */
+export interface CoachingNote {
+  name: string;
+  events: number;
+  preventableCost: number;
+  totalCost: number;
+  topReason: WasteReason | null;
+  /** +above / −below the team average cost per person. */
+  vsTeamPct: number;
+  tone: 'coach' | 'watch' | 'praise';
+  message: string;
+}
+
+export interface DayPattern {
+  /** Mon…Sun, matching HEATMAP_DAYS. */
+  day: string;
+  cost: number;
+  events: number;
+  preventable: number;
 }

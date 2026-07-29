@@ -9,6 +9,7 @@ import { useSupplySync } from './context';
 import { SupplierProfileDrawer } from './SupplierProfileDrawer';
 import { CompareDrawer, CompareBar } from './CompareDrawer';
 import { AddSupplierWizard } from './AddSupplierWizard';
+import { LogCreditModal, RebateModal, RebateReceiptModal } from './CreditModals';
 
 const M = MODULE_META.supplysync;
 
@@ -17,6 +18,7 @@ const TABS = [
   { label: 'Suppliers', href: '/app/suppliers/list' },
   { label: 'Performance', href: '/app/suppliers/performance' },
   { label: 'Pricing Intelligence', href: '/app/suppliers/pricing' },
+  { label: 'Credits & Rebates', href: '/app/suppliers/credits' },
   { label: 'Risk & Compliance', href: '/app/suppliers/risk' },
   { label: 'Relationship History', href: '/app/suppliers/history' },
 ];
@@ -30,8 +32,16 @@ export function SupplySyncChrome({ children }: { children: ReactNode }) {
   const ss = useSupplySync();
   // A committed Doc-U document writes the profile rollups + timeline, and the
   // "From Doc-U" list reads `documents` directly — subscribe to all three so a
-  // scanned invoice appears on the profile live.
-  useRealtimeRefresh(['ss_suppliers', 'ss_supplier_history', 'documents']);
+  // scanned invoice appears on the profile live. Credits and rebates are money
+  // several people chase at once, so they ride the same channel.
+  useRealtimeRefresh([
+    'ss_suppliers',
+    'ss_supplier_history',
+    'documents',
+    'ss_supplier_credits',
+    'ss_supplier_rebates',
+    'ss_supplier_rebate_receipts',
+  ]);
 
   return (
     <>
@@ -51,6 +61,9 @@ export function SupplySyncChrome({ children }: { children: ReactNode }) {
       <CompareDrawer />
       <CompareBar />
       <AddSupplierWizard />
+      <LogCreditModal />
+      <RebateModal />
+      <RebateReceiptModal />
     </>
   );
 }

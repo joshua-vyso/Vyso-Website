@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { usePlatform } from '@/lib/platform/session';
 import { createClient } from '@/lib/platform/supabase-browser';
+import { useRealtimeRefresh } from '@/lib/platform/useRealtimeRefresh';
 import type { WasteWatchData, WasteCategoryRow } from '@/lib/platform/wastewatch';
 
 // ---------------------------------------------------------------------------
@@ -35,6 +36,12 @@ const Ctx = createContext<WasteWatchCtx | null>(null);
 export function WasteWatchProvider({ data, children }: { data: WasteWatchData; children: ReactNode }) {
   const router = useRouter();
   const { org } = usePlatform();
+
+  // Waste is logged from the floor — a scale or a phone — while a manager is
+  // looking at this screen, and every aggregate is recomputed from the events
+  // server-side, so a new row has to re-run the layout to be reflected. Devices
+  // are here too so a scale going offline surfaces without a manual refresh.
+  useRealtimeRefresh(['ww_waste_events', 'ww_devices']);
 
   const value = useMemo<WasteWatchCtx>(() => {
     const cats = data.categories;

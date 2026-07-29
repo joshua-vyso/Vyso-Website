@@ -25,6 +25,20 @@ interface SupplySyncCtx extends SupplySyncData {
   addOpen: boolean;
   openAdd: () => void;
   closeAdd: () => void;
+  // Log-a-credit modal (openable from any tab, optionally pre-filled with a supplier).
+  creditOpen: boolean;
+  creditSupplierId: string | null;
+  openCredit: (supplierId?: string | null) => void;
+  closeCredit: () => void;
+  // Rebate-agreement modal.
+  rebateOpen: boolean;
+  rebateSupplierId: string | null;
+  openRebate: (supplierId?: string | null) => void;
+  closeRebate: () => void;
+  // Record-a-receipt modal, keyed by the agreement it belongs to.
+  receiptRebateId: string | null;
+  openReceipt: (rebateId: string) => void;
+  closeReceipt: () => void;
 }
 
 const Ctx = createContext<SupplySyncCtx | null>(null);
@@ -34,6 +48,11 @@ export function SupplySyncProvider({ data, children }: { data: SupplySyncData; c
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [creditOpen, setCreditOpen] = useState(false);
+  const [creditSupplierId, setCreditSupplierId] = useState<string | null>(null);
+  const [rebateOpen, setRebateOpen] = useState(false);
+  const [rebateSupplierId, setRebateSupplierId] = useState<string | null>(null);
+  const [receiptRebateId, setReceiptRebateId] = useState<string | null>(null);
 
   const byId = useMemo(() => new Map(data.suppliers.map((s) => [s.id, s])), [data.suppliers]);
 
@@ -63,8 +82,38 @@ export function SupplySyncProvider({ data, children }: { data: SupplySyncData; c
       addOpen,
       openAdd: () => setAddOpen(true),
       closeAdd: () => setAddOpen(false),
+      creditOpen,
+      creditSupplierId,
+      openCredit: (supplierId = null) => {
+        setCreditSupplierId(supplierId);
+        setCreditOpen(true);
+      },
+      closeCredit: () => setCreditOpen(false),
+      rebateOpen,
+      rebateSupplierId,
+      openRebate: (supplierId = null) => {
+        setRebateSupplierId(supplierId);
+        setRebateOpen(true);
+      },
+      closeRebate: () => setRebateOpen(false),
+      receiptRebateId,
+      openReceipt: (rebateId: string) => setReceiptRebateId(rebateId),
+      closeReceipt: () => setReceiptRebateId(null),
     }),
-    [data, byId, profileId, compareIds, compareOpen, addOpen, toggleCompare],
+    [
+      data,
+      byId,
+      profileId,
+      compareIds,
+      compareOpen,
+      addOpen,
+      toggleCompare,
+      creditOpen,
+      creditSupplierId,
+      rebateOpen,
+      rebateSupplierId,
+      receiptRebateId,
+    ],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

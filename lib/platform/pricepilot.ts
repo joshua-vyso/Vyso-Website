@@ -505,7 +505,7 @@ export function priceListValidity(
 // Smart notifications — deterministic alerts across the pricing surface
 // ---------------------------------------------------------------------------
 
-export type NotificationKind = 'contract_expired' | 'contract_expiring' | 'below_target' | 'cost_spike';
+export type NotificationKind = 'contract_expired' | 'contract_expiring' | 'below_target' | 'cost_spike' | 'reprice';
 export type NotificationSeverity = 'high' | 'medium' | 'low';
 
 export interface PpNotification {
@@ -523,12 +523,184 @@ export const NOTIF_SEVERITY_STYLE: Record<NotificationSeverity, { dot: string; b
   low: { dot: '#6B6F68', bg: '#EEF1F5', fg: '#6B6F68', label: 'Note' },
 };
 
+// ---------------------------------------------------------------------------
+// Cost-spike detection — reads the pp_stock_items cost series (price_history,
+// most-recent last) plus the live avg_unit_price, and flags two distinct shapes:
+//
+//   step  — a sudden jump against the previous observation (a supplier increase)
+//   creep — a smaller-per-step but sustained climb across the whole series
+//           (the "price creep" pain: no single alarming jump, a squeezed margin)
+//
+// Both are honest derivations from recorded costs; nothing is invented.
+// ---------------------------------------------------------------------------
+
+export type CostSpikeKind = 'step' | 'creep';
+
+/** A product's observed cost movement, big enough to matter. */
+export interface CostSpike {
+  id: string;
+  name: string;
+  kind: CostSpikeKind;
+  /** Baseline unit cost the movement is measured from. */
+  from: number;
+  /** Latest known unit cost. */
+  to: number;
+  /** % increase from → to (always positive; only rises are reported). */
+  pctUp: number;
+  /** Observations in the series the call was made on. */
+  points: number;
+  /** Units sold in the caller's window (0 when unknown). */
+  monthlyUnits: number;
+  /** Extra cost a month at the current run rate — 0 when units are unknown. */
+  monthlyCostImpact: number;
+}
+
+/** The shape `detectCostSpikes` reads (a `pp_stock_items` row subset). */
+export interface CostHistoryItem {
+  id: string;
+  name: string;
+  avg_unit_price?: number | null;
+  price_history?: number[] | null;
+}
+
+/** A sudden jump vs the previous observation at/above this % is a `step` spike. */
+export const COST_SPIKE_STEP_PCT = 10;
+/** A sustained rise across the whole series at/above this % is a `creep` spike. */
+export const COST_CREEP_PCT = 8;
+
+/**
+ * Detect cost spikes across the catalogue. `unitsByItem` (units sold in the
+ * caller's window) is optional and only used to price the impact.
+ */
+export function detectCostSpikes(
+  items: CostHistoryItem[],
+  opts: { stepPct?: number; creepPct?: number; limit?: number; unitsByItem?: Map<string, number> } = {},
+): CostSpike[] {
+  const stepPct = opts.stepPct ?? COST_SPIKE_STEP_PCT;
+  const creepPct = opts.creepPct ?? COST_CREEP_PCT;
+  const out: CostSpike[] = [];
+
+  for (const it of items) {
+    const history = (it.price_history ?? []).map(Number).filter((n) => Number.isFinite(n) && n > 0);
+    const live = Number(it.avg_unit_price);
+    // The live average cost supersedes the last sparkline point when it differs
+    // (the seeded/synced series ends at the live cost, so this is usually a no-op).
+    const series =
+      Number.isFinite(live) && live > 0
+        ? history.length === 0
+          ? [live]
+          : Math.abs(history[history.length - 1] - live) < 1e-9
+            ? history
+            : [...history, live]
+        : history;
+    if (series.length < 2) continue;
+
+    const to = series[series.length - 1];
+    const prev = series[series.length - 2];
+    const first = series[0];
+
+    const stepUp = prev > 0 ? ((to - prev) / prev) * 100 : 0;
+    const creepUp = first > 0 ? ((to - first) / first) * 100 : 0;
+
+    let kind: CostSpikeKind | null = null;
+    let from = 0;
+    let pctUp = 0;
+    if (stepUp >= stepPct) {
+      kind = 'step';
+      from = prev;
+      pctUp = stepUp;
+    } else if (creepUp >= creepPct) {
+      kind = 'creep';
+      from = first;
+      pctUp = creepUp;
+    }
+    if (!kind) continue;
+
+    const monthlyUnits = opts.unitsByItem?.get(it.id) ?? 0;
+    out.push({
+      id: it.id,
+      name: it.name,
+      kind,
+      from,
+      to,
+      pctUp,
+      points: series.length,
+      monthlyUnits,
+      monthlyCostImpact: monthlyUnits * (to - from),
+    });
+  }
+
+  // Biggest money first where we know it, then biggest % — a 3% rise on a
+  // high-volume line matters more than 20% on something nobody buys.
+  out.sort((a, b) => b.monthlyCostImpact - a.monthlyCostImpact || b.pctUp - a.pctUp);
+  return opts.limit != null ? out.slice(0, opts.limit) : out;
+}
+
+// ---------------------------------------------------------------------------
+// Re-price alerts — a product that has crossed BELOW the target margin and is
+// still selling. Same maths as an Opportunity, framed as "what should this cost
+// the customer now" (current price → target-margin price → per-unit delta).
+// ---------------------------------------------------------------------------
+
+export interface RepriceAlert {
+  id: string;
+  name: string;
+  currentMargin: number;
+  targetMargin: number;
+  currentSell: number;
+  targetSell: number;
+  /** Per-unit price increase needed to land on target. */
+  deltaSell: number;
+  monthlyUnits: number;
+  monthlyImpact: number;
+  severity: NotificationSeverity;
+}
+
+/**
+ * Products that crossed the target margin AND still sell — the ones worth an
+ * alert rather than a line on a report. `unitsByItem` is the caller's window
+ * (30d everywhere in PricePilot today).
+ */
+export function computeRepriceAlerts(
+  pms: ProductMargin[],
+  target: number,
+  unitsByItem: Map<string, number>,
+  opts: { limit?: number } = {},
+): RepriceAlert[] {
+  const out: RepriceAlert[] = [];
+  for (const p of pms) {
+    if (p.cost == null || p.marginPct >= target) continue;
+    const units = unitsByItem.get(p.item.id) ?? 0;
+    if (units <= 0) continue; // no sales → it's an opportunity, not an alert
+    const targetSell = sellPrice(p.cost, target);
+    const deltaSell = targetSell - p.sell;
+    const monthlyImpact = deltaSell * units;
+    const gap = target - p.marginPct;
+    out.push({
+      id: p.item.id,
+      name: p.item.name,
+      currentMargin: p.marginPct,
+      targetMargin: target,
+      currentSell: p.sell,
+      targetSell,
+      deltaSell,
+      monthlyUnits: units,
+      monthlyImpact,
+      severity: gap >= 10 || monthlyImpact >= 1000 ? 'high' : 'medium',
+    });
+  }
+  out.sort((a, b) => b.monthlyImpact - a.monthlyImpact);
+  return opts.limit != null ? out.slice(0, opts.limit) : out;
+}
+
 export interface NotificationInput {
   expiringContracts: { customer: string; listName: string; listId: string; label: string; expired: boolean }[];
   belowTargetCount: number;
   marginOpportunity: number;
   target: number;
-  costSpikes: { id: string; name: string; pctUp: number }[];
+  costSpikes: { id: string; name: string; pctUp: number; kind?: CostSpikeKind; from?: number; to?: number; monthlyCostImpact?: number }[];
+  /** Dishes that crossed below target and still sell (see computeRepriceAlerts). */
+  repriceAlerts?: RepriceAlert[];
 }
 
 /** Build the pricing notification feed from already-computed signals. Sorted by severity. */
@@ -568,13 +740,31 @@ export function computeNotifications(i: NotificationInput): PpNotification[] {
       href: '/app/pricepilot/recommendations',
     });
   }
+  for (const r of i.repriceAlerts ?? []) {
+    out.push({
+      id: `reprice-${r.id}`,
+      kind: 'reprice',
+      severity: r.severity,
+      title: `Re-price ${r.name} — ${Math.round(r.currentMargin)}% vs your ${Math.round(r.targetMargin)}% target`,
+      body:
+        `Selling at ${zar2(r.currentSell)}; ${zar2(r.targetSell)} would hit target ` +
+        `(+${zar2(r.deltaSell)} a unit). ${Math.round(r.monthlyUnits)} sold in the last 30 days` +
+        (r.monthlyImpact >= 1 ? ` — about ${zar(r.monthlyImpact)} a month.` : '.'),
+      href: `/app/pricepilot/products/${r.id}`,
+    });
+  }
   for (const s of i.costSpikes) {
+    const movement = s.from != null && s.to != null ? `${zar2(s.from)} → ${zar2(s.to)}. ` : '';
+    const impact = s.monthlyCostImpact != null && s.monthlyCostImpact >= 1 ? `That's about ${zar(s.monthlyCostImpact)} more a month at current volumes. ` : '';
     out.push({
       id: `spike-${s.id}`,
       kind: 'cost_spike',
       severity: s.pctUp >= 30 ? 'high' : 'medium',
-      title: `Cost up ${Math.round(s.pctUp)}% on ${s.name}`,
-      body: 'Your margin on this product has been squeezed — review its selling price.',
+      title:
+        s.kind === 'creep'
+          ? `Cost creeping up ${Math.round(s.pctUp)}% on ${s.name}`
+          : `Cost up ${Math.round(s.pctUp)}% on ${s.name}`,
+      body: `${movement}${impact}Your margin on this product has been squeezed — review its selling price.`,
       href: `/app/pricepilot/products/${s.id}`,
     });
   }
@@ -593,4 +783,223 @@ export function zar(n: number | null | undefined): string {
 export function zar2(n: number | null | undefined): string {
   if (n == null) return '—';
   return `R ${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/,/g, ' ')}`;
+}
+
+// ---------------------------------------------------------------------------
+// Variance attribution — "I know food cost is high, I don't know WHY"
+//
+// Decomposes the change in realized gross margin between a baseline window and
+// the current window into three effects that sum EXACTLY to the drift:
+//
+//   mix   — you sold a different blend of products (each at its OLD economics)
+//   cost  — what you pay per unit moved (selling prices held at baseline)
+//   price — what you charge per unit moved
+//
+// Formally, over the current window's quantities q₁ with baseline unit price p₀
+// / unit cost c₀ and current p₁ / c₁ (new products fall back to p₀=p₁, c₀=c₁ so
+// they only ever land in `mix`):
+//
+//   m_mix  = Σq₁(p₀−c₀) / Σq₁p₀      mix   = m_mix  − m₀
+//   m_cost = Σq₁(p₀−c₁) / Σq₁p₀      cost  = m_cost − m_mix
+//   m₁     = Σq₁(p₁−c₁) / Σq₁p₁      price = m₁     − m_cost
+//                                    ────────────────────────
+//                                    total = m₁ − m₀   (exact)
+//
+// Waste sits OUTSIDE that identity on purpose: WasteWatch cost is not in the
+// invoice-line COGS above, so it is reported as its own drag on margin
+// (waste ÷ revenue, in points) rather than folded into the decomposition.
+// ---------------------------------------------------------------------------
+
+/** One product's costed-sales aggregate within a window. */
+export interface VarianceItem {
+  key: string;
+  label: string;
+  units: number;
+  /** Revenue of the costed lines only (so margins are comparable window to window). */
+  revenue: number;
+  cost: number;
+}
+
+export type VarianceComponentKey = 'mix' | 'cost' | 'price';
+
+export interface VarianceComponent {
+  key: VarianceComponentKey;
+  label: string;
+  /** Margin points contributed (signed: negative = margin lost). */
+  pts: number;
+  note: string;
+}
+
+export interface VarianceContributor {
+  key: string;
+  label: string;
+  /** Margin points this product's unit-cost move contributed (negative = lost). */
+  pts: number;
+  /** Rand of extra cost in the current window from the unit-cost move. */
+  costDelta: number;
+  fromUnitCost: number;
+  toUnitCost: number;
+  units: number;
+}
+
+export interface VarianceWaste {
+  baseCost: number;
+  currentCost: number;
+  /** Waste as a % of costed revenue in each window. */
+  basePts: number | null;
+  currentPts: number | null;
+  /** currentPts − basePts (positive = waste is eating more margin than before). */
+  driftPts: number | null;
+}
+
+export interface VarianceAttribution {
+  hasData: boolean;
+  baseMarginPct: number | null;
+  currentMarginPct: number | null;
+  /** currentMarginPct − baseMarginPct, in margin points. */
+  driftPts: number;
+  components: VarianceComponent[];
+  waste: VarianceWaste;
+  /** Current margin once WasteWatch cost is charged against revenue. */
+  marginAfterWastePct: number | null;
+  /** Products whose unit cost moved most, worst first. */
+  topCostDrivers: VarianceContributor[];
+  /** Share of current costed revenue from products that also sold in the baseline. */
+  coveragePct: number;
+  baseRevenue: number;
+  currentRevenue: number;
+  baseUnits: number;
+  currentUnits: number;
+}
+
+const EMPTY_VARIANCE: VarianceAttribution = {
+  hasData: false,
+  baseMarginPct: null,
+  currentMarginPct: null,
+  driftPts: 0,
+  components: [],
+  waste: { baseCost: 0, currentCost: 0, basePts: null, currentPts: null, driftPts: null },
+  marginAfterWastePct: null,
+  topCostDrivers: [],
+  coveragePct: 0,
+  baseRevenue: 0,
+  currentRevenue: 0,
+  baseUnits: 0,
+  currentUnits: 0,
+};
+
+/** Decompose margin drift between two windows. Returns `hasData: false` when either window is empty. */
+export function attributeVariance(
+  base: VarianceItem[],
+  current: VarianceItem[],
+  waste: { baseCost: number; currentCost: number } = { baseCost: 0, currentCost: 0 },
+  opts: { driverLimit?: number } = {},
+): VarianceAttribution {
+  const baseByKey = new Map(base.map((b) => [b.key, b]));
+
+  const R0 = base.reduce((s, b) => s + b.revenue, 0);
+  const C0 = base.reduce((s, b) => s + b.cost, 0);
+  const baseUnits = base.reduce((s, b) => s + b.units, 0);
+  const m0 = R0 > 0 ? ((R0 - C0) / R0) * 100 : null;
+
+  let revAtBase = 0; // Σ q₁p₀
+  let costAtBase = 0; // Σ q₁c₀
+  let costAtCurrent = 0; // Σ q₁c₁
+  let revAtCurrent = 0; // Σ q₁p₁
+  let coveredRev = 0;
+  let currentUnits = 0;
+  const drivers: Omit<VarianceContributor, 'pts'>[] = [];
+
+  for (const c of current) {
+    if (!(c.units > 0) || !(c.revenue > 0)) continue;
+    currentUnits += c.units;
+    const p1 = c.revenue / c.units;
+    const c1 = c.cost / c.units;
+    const b = baseByKey.get(c.key);
+    const covered = !!b && b.units > 0 && b.revenue > 0;
+    const p0 = covered ? b!.revenue / b!.units : p1;
+    const c0 = covered ? b!.cost / b!.units : c1;
+
+    revAtBase += c.units * p0;
+    costAtBase += c.units * c0;
+    costAtCurrent += c.units * c1;
+    revAtCurrent += c.units * p1;
+    if (covered) coveredRev += c.revenue;
+
+    if (covered && Math.abs(c1 - c0) > 1e-9) {
+      drivers.push({ key: c.key, label: c.label, costDelta: c.units * (c1 - c0), fromUnitCost: c0, toUnitCost: c1, units: c.units });
+    }
+  }
+
+  if (m0 == null || revAtBase <= 0 || revAtCurrent <= 0) {
+    return { ...EMPTY_VARIANCE, baseMarginPct: m0, baseRevenue: R0, baseUnits, currentRevenue: revAtCurrent, currentUnits };
+  }
+
+  const mMix = ((revAtBase - costAtBase) / revAtBase) * 100;
+  const mCost = ((revAtBase - costAtCurrent) / revAtBase) * 100;
+  const m1 = ((revAtCurrent - costAtCurrent) / revAtCurrent) * 100;
+
+  const mixPts = mMix - m0;
+  const costPts = mCost - mMix;
+  const pricePts = m1 - mCost;
+
+  const components: VarianceComponent[] = [
+    {
+      key: 'cost',
+      label: 'Cost inflation',
+      pts: costPts,
+      note: 'What you pay per unit, on the same products at the same selling prices.',
+    },
+    {
+      key: 'price',
+      label: 'Selling price',
+      pts: pricePts,
+      note: 'What you charged per unit versus the baseline window.',
+    },
+    {
+      key: 'mix',
+      label: 'Sales mix',
+      pts: mixPts,
+      note: 'A different blend of products sold, each valued at its baseline economics.',
+    },
+  ];
+
+  const topCostDrivers: VarianceContributor[] = drivers
+    .map((d) => ({ ...d, pts: -(d.costDelta / revAtBase) * 100 }))
+    .filter((d) => d.costDelta > 0)
+    .sort((a, b) => b.costDelta - a.costDelta)
+    .slice(0, opts.driverLimit ?? 5);
+
+  const basePts = R0 > 0 ? (waste.baseCost / R0) * 100 : null;
+  const currentPts = revAtCurrent > 0 ? (waste.currentCost / revAtCurrent) * 100 : null;
+
+  return {
+    hasData: true,
+    baseMarginPct: m0,
+    currentMarginPct: m1,
+    driftPts: m1 - m0,
+    components,
+    waste: {
+      baseCost: waste.baseCost,
+      currentCost: waste.currentCost,
+      basePts,
+      currentPts,
+      driftPts: basePts != null && currentPts != null ? currentPts - basePts : null,
+    },
+    marginAfterWastePct: currentPts != null ? m1 - currentPts : m1,
+    topCostDrivers,
+    coveragePct: revAtCurrent > 0 ? (coveredRev / revAtCurrent) * 100 : 0,
+    baseRevenue: R0,
+    currentRevenue: revAtCurrent,
+    baseUnits,
+    currentUnits,
+  };
+}
+
+/** Signed margin-point figure, e.g. "+1.4 pts" / "−0.8 pts". */
+export function pts(n: number | null | undefined, digits = 1): string {
+  if (n == null || !Number.isFinite(n)) return '—';
+  const v = Number(n.toFixed(digits));
+  const sign = v > 0 ? '+' : v < 0 ? '−' : '';
+  return `${sign}${Math.abs(v).toFixed(digits)} pts`;
 }

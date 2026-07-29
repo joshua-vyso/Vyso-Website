@@ -1,8 +1,11 @@
 'use client';
 
 import { Badge, type Tone } from '@/components/platform/module-ui';
-import { zar } from '@/lib/platform/orderflow';
+import { zar, zar2 } from '@/lib/platform/orderflow';
 import { useSupplySync } from './context';
+import type { CreditStatus, RebateStatus } from '@/lib/platform/supplysync-credits';
+import type { ExpiryUrgency } from '@/lib/platform/supplysync-insights';
+import type { ImpactBasis, PriceChangeSeverity, PriceChangeSource } from '@/lib/platform/supplysync-pricing';
 import type {
   Supplier,
   SupplierStatus,
@@ -14,7 +17,7 @@ import type {
   SupplierComparison,
 } from '@/lib/platform/supplysync-data';
 
-export { zar };
+export { zar, zar2 };
 
 // ---------------------------------------------------------------------------
 // Palette + score colours (calm blue/amber/red bands)
@@ -162,6 +165,110 @@ export function SupplierNameButton({ id, name, className = '' }: { id: string; n
       {name}
     </button>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Price-change alerts (Overview + Pricing)
+// ---------------------------------------------------------------------------
+
+export const PRICE_SEVERITY_META: Record<PriceChangeSeverity, { label: string; tone: Tone; color: string }> = {
+  high: { label: 'High impact', tone: 'critical', color: RED },
+  medium: { label: 'Watch', tone: 'warning', color: AMBER },
+  low: { label: 'Minor', tone: 'neutral', color: MUTE },
+};
+
+export const PRICE_SOURCE_META: Record<PriceChangeSource, { label: string; hint: string }> = {
+  invoice: { label: 'Invoice', hint: 'Read off a filed invoice — the price actually paid.' },
+  price_list: { label: 'Price list', hint: 'From the tracked supplier price list.' },
+};
+
+export const IMPACT_BASIS_META: Record<ImpactBasis, { label: string; tone: Tone }> = {
+  measured: { label: 'measured volume', tone: 'positive' },
+  estimated: { label: 'estimated volume', tone: 'neutral' },
+};
+
+/** Rising price = red, falling = green, flat = muted. */
+export function changeColor(changePct: number): string {
+  if (changePct > 0.4) return RED;
+  if (changePct < -0.4) return GREEN;
+  return MUTE;
+}
+
+/** Signed percentage, one decimal — "+4.2%", "−1.5%". */
+export function signedPct(value: number): string {
+  const v = Math.round(value * 10) / 10;
+  return `${v > 0 ? '+' : ''}${v}%`;
+}
+
+/** old → new, with the arrow tinted by direction. Cents matter on unit prices. */
+export function PriceDelta({ from, to }: { from: number; to: number }) {
+  const color = changeColor(from === 0 ? 0 : ((to - from) / from) * 100);
+  return (
+    <span className="of-num inline-flex items-center gap-1.5 whitespace-nowrap">
+      <span className="text-[#8A8E86] line-through">{zar2(from)}</span>
+      <span style={{ color }}>→</span>
+      <span className="font-semibold" style={{ color }}>{zar2(to)}</span>
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Credits, rebates and document expiry
+// ---------------------------------------------------------------------------
+
+export const CREDIT_STATUS_META: Record<CreditStatus, { label: string; tone: Tone; color: string }> = {
+  claimed: { label: 'Claimed', tone: 'warning', color: AMBER },
+  acknowledged: { label: 'Acknowledged', tone: 'info', color: ACCENT },
+  credited: { label: 'Credited', tone: 'positive', color: GREEN },
+  written_off: { label: 'Written off', tone: 'neutral', color: MUTE },
+};
+export function CreditStatusBadge({ status }: { status: CreditStatus }) {
+  const m = CREDIT_STATUS_META[status];
+  return <Badge label={m.label} tone={m.tone} />;
+}
+
+export const REBATE_STATUS_META: Record<RebateStatus, { label: string; tone: Tone; color: string }> = {
+  agreed: { label: 'Agreed', tone: 'neutral', color: MUTE },
+  accruing: { label: 'Accruing', tone: 'info', color: ACCENT },
+  claimed: { label: 'Part received', tone: 'warning', color: AMBER },
+  received: { label: 'Received', tone: 'positive', color: GREEN },
+  missed: { label: 'Missed', tone: 'critical', color: RED },
+};
+export function RebateStatusBadge({ status }: { status: RebateStatus }) {
+  const m = REBATE_STATUS_META[status];
+  return <Badge label={m.label} tone={m.tone} />;
+}
+
+export const EXPIRY_META: Record<ExpiryUrgency, { label: string; tone: Tone; color: string }> = {
+  missing: { label: 'Missing', tone: 'critical', color: RED },
+  expired: { label: 'Expired', tone: 'critical', color: RED },
+  critical: { label: 'Expires soon', tone: 'warning', color: AMBER },
+  soon: { label: 'Renewal due', tone: 'info', color: ACCENT },
+};
+export function ExpiryBadge({ urgency }: { urgency: ExpiryUrgency }) {
+  const m = EXPIRY_META[urgency];
+  return <Badge label={m.label} tone={m.tone} />;
+}
+
+/** Slim expected-vs-received bar used by the rebate tracker. */
+export function ProgressBar({ pct, color }: { pct: number; color: string }) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  return (
+    <div className="h-2 w-full overflow-hidden rounded-full bg-[#EEF1F5]">
+      <div
+        className="h-full rounded-full"
+        style={{ width: `${clamped}%`, backgroundColor: color, transition: 'width 0.6s cubic-bezier(0.22,1,0.36,1)' }}
+      />
+    </div>
+  );
+}
+
+/** Short, calm date rendering — "3 Jul 2026" — or an em-dash. */
+export function fmtDate(iso: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 // ---------------------------------------------------------------------------

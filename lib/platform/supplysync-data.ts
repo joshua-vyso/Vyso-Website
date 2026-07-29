@@ -12,6 +12,37 @@
 
 import { createServerSupabase } from './supabase-server';
 import { docTotal } from '@/lib/platform/docu/extract';
+import {
+  buildCrossSupplierItems,
+  buildPriceChanges,
+  groupObservations,
+  readPriceObservations,
+  type CrossSupplierItem,
+  type PriceChangeAlert,
+  type PricedDocument,
+  type PricingSupplierMeta,
+} from './supplysync-pricing';
+import {
+  buildDocExpiries,
+  measureEvents,
+  EMPTY_MEASURED,
+  type DocExpiryItem,
+  type MeasuredPerformance,
+} from './supplysync-insights';
+import {
+  mapCreditRow,
+  mapRebateRow,
+  mapReceiptRow,
+  rollupCredits,
+  rollupRebates,
+  EMPTY_CREDIT_ROLLUP,
+  EMPTY_REBATE_ROLLUP,
+  type CreditRollup,
+  type RebateReceipt,
+  type RebateRollup,
+  type SupplierCredit,
+  type SupplierRebate,
+} from './supplysync-credits';
 
 export type SupplierStatus = 'preferred' | 'active' | 'review';
 export type SupplierRisk = 'low' | 'medium' | 'high';
@@ -180,6 +211,9 @@ export interface Supplier {
   pricing: SupplierPricingRecord[];
   risks: SupplierRiskItem[];
   history: SupplierHistoryEvent[];
+  /** Counted off the relationship log — facts, as opposed to the illustrative
+   *  scorecard above. `hasData: false` means nothing has been logged yet. */
+  measured: MeasuredPerformance;
   // derived counts
   docsToAction: number;
   openRisks: number;
@@ -206,9 +240,34 @@ export interface SupplySyncData {
   history: SupplierHistoryEvent[];
   pricing: SupplierPricingRecord[];
   opportunities: SupplierOpportunity[];
+  /** Detected price moves (invoice-derived first, tracked price list second). */
+  priceChanges: PriceChangeAlert[];
+  /** Equivalent items priced by more than one supplier. */
+  crossSupplierItems: CrossSupplierItem[];
+  /** Credit & dispute register + its money rollup. */
+  credits: SupplierCredit[];
+  creditRollup: CreditRollup;
+  /** Rebate agreements: expected vs received. */
+  rebates: SupplierRebate[];
+  rebateRollup: RebateRollup;
+  /** Compliance documents needing action, most urgent first. */
+  docExpiries: DocExpiryItem[];
 }
 
-export const EMPTY_SUPPLYSYNC: SupplySyncData = { suppliers: [], risks: [], history: [], pricing: [], opportunities: [] };
+export const EMPTY_SUPPLYSYNC: SupplySyncData = {
+  suppliers: [],
+  risks: [],
+  history: [],
+  pricing: [],
+  opportunities: [],
+  priceChanges: [],
+  crossSupplierItems: [],
+  credits: [],
+  creditRollup: EMPTY_CREDIT_ROLLUP,
+  rebates: [],
+  rebateRollup: EMPTY_REBATE_ROLLUP,
+  docExpiries: [],
+};
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function num(v: any, d = 0): number {
@@ -253,7 +312,7 @@ function deriveOverall(s: { reliability: number; quality: number; deliveryConsis
 
 export async function getSupplySyncData(orgId: string): Promise<SupplySyncData> {
   const sb = await createServerSupabase();
-  const [sup, con, doc, pri, rsk, his, dcs] = await Promise.all([
+  const [sup, con, doc, pri, rsk, his, dcs, crd, reb, rcp] = await Promise.all([
     sb.from('ss_suppliers').select('*').eq('org_id', orgId).order('name'),
     sb.from('ss_supplier_contacts').select('*').eq('org_id', orgId).order('sort_order'),
     sb.from('ss_supplier_documents').select('*').eq('org_id', orgId),
@@ -270,6 +329,13 @@ export async function getSupplySyncData(orgId: string): Promise<SupplySyncData> 
       .not('status', 'in', '(rejected,archived,error)')
       .order('created_at', { ascending: false })
       .limit(400),
+    // Credits & rebates (supabase/ss-supplier-credits.sql, ss-supplier-rebates.sql).
+    // An org whose database hasn't run those migrations yet simply gets no rows:
+    // the error is swallowed by the `?? []` below and the tabs render their
+    // empty states rather than failing the whole module.
+    sb.from('ss_supplier_credits').select('*').eq('org_id', orgId).order('claimed_on', { ascending: false }),
+    sb.from('ss_supplier_rebates').select('*').eq('org_id', orgId).order('period_end', { ascending: false }),
+    sb.from('ss_supplier_rebate_receipts').select('*').eq('org_id', orgId).order('received_on', { ascending: false }),
   ]);
 
   const nameById = new Map<string, string>();
@@ -406,6 +472,7 @@ export async function getSupplySyncData(orgId: string): Promise<SupplySyncData> 
     const docs = docsBy.get(r.id) ?? [];
     const risks = risksBy.get(r.id) ?? [];
     const supPricing = pricingBy.get(r.id) ?? [];
+    const supHistory = historyBy.get(r.id) ?? [];
     // Prefer the position implied by this supplier's real pricing rows; fall
     // back to the stored column only when it has no pricing history yet.
     const marketPosition: MarketPosition = aggregatePosition(supPricing) ?? (r.market_position as MarketPosition) ?? 'at';
@@ -448,7 +515,8 @@ export async function getSupplySyncData(orgId: string): Promise<SupplySyncData> 
       linkedDocs: r.supplier_id ? linkedBy.get(r.supplier_id) ?? [] : [],
       pricing: supPricing,
       risks,
-      history: historyBy.get(r.id) ?? [],
+      history: supHistory,
+      measured: supHistory.length > 0 ? measureEvents(supHistory) : EMPTY_MEASURED,
       docsToAction: docs.filter((d) => d.status !== 'valid').length,
       openRisks: risks.filter((rk) => rk.status === 'open' || rk.status === 'in_progress').length,
     };
@@ -457,7 +525,63 @@ export async function getSupplySyncData(orgId: string): Promise<SupplySyncData> 
   const byId = new Map(suppliers.map((s) => [s.id, s]));
   const opportunities = deriveOpportunities(allPricing, byId);
 
-  return { suppliers, risks: allRisks, history: allHistory, pricing: allPricing, opportunities };
+  // ---- Price-change detection -------------------------------------------
+  // documents.supplier_id is a CORE supplier; the ss profile is the extension.
+  const bridge = new Map<string, string>();
+  for (const r of (sup.data as any[]) ?? []) if (r.supplier_id) bridge.set(r.supplier_id, r.id);
+
+  const pricingMeta = new Map<string, PricingSupplierMeta>();
+  for (const s of suppliers) {
+    pricingMeta.set(s.id, {
+      name: s.name,
+      avgMonthlySpend: s.avgMonthlySpend,
+      pricingLines: Math.max(1, s.pricing.length),
+    });
+  }
+
+  const grouped = groupObservations(
+    readPriceObservations(((dcs.data as any[]) ?? []) as PricedDocument[], bridge),
+  );
+  const priceChanges = buildPriceChanges(allPricing, grouped, pricingMeta);
+  const crossSupplierItems = buildCrossSupplierItems(allPricing, grouped, pricingMeta);
+
+  // ---- Credits & rebates -------------------------------------------------
+  const credits: SupplierCredit[] = ((crd.data as any[]) ?? []).map((r) =>
+    mapCreditRow(r, r.supplier_id ? nameById.get(r.supplier_id) ?? '' : ''),
+  );
+  const creditRollup = rollupCredits(credits);
+
+  const receiptsBy = new Map<string, RebateReceipt[]>();
+  for (const r of (rcp.data as any[]) ?? []) {
+    const receipt = mapReceiptRow(r);
+    const arr = receiptsBy.get(receipt.rebateId) ?? [];
+    arr.push(receipt);
+    receiptsBy.set(receipt.rebateId, arr);
+  }
+  const rebates: SupplierRebate[] = ((reb.data as any[]) ?? []).map((r) =>
+    mapRebateRow(
+      r,
+      r.supplier_id ? nameById.get(r.supplier_id) ?? '' : '',
+      receiptsBy.get(r.id) ?? [],
+      (r.supplier_id ? byId.get(r.supplier_id)?.avgMonthlySpend : 0) ?? 0,
+    ),
+  );
+  const rebateRollup = rollupRebates(rebates);
+
+  return {
+    suppliers,
+    risks: allRisks,
+    history: allHistory,
+    pricing: allPricing,
+    opportunities,
+    priceChanges,
+    crossSupplierItems,
+    credits,
+    creditRollup,
+    rebates,
+    rebateRollup,
+    docExpiries: buildDocExpiries(suppliers),
+  };
 }
 
 /**

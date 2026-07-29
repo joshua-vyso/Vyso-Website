@@ -1,13 +1,26 @@
 /**
- * PlanWise — the strategic planning layer ("business GPS"). Types + mock data
- * for goals, budget, forecast, scenarios, financial flow and cross-module
- * decisions. Recommendations reference the module RESPONSIBLE for closing each
- * gap, so the UI is ready to later consume live data from PricePilot / OrderFlow
- * / WasteWatch / ProcurePulse / Doc-U. Real persisted targets live in
- * `pl_targets` (edited via the Goals tab); everything else here is illustrative.
+ * PlanWise — the strategic planning layer ("business GPS"). Types and structural
+ * constants for goals, budget, forecast, scenarios, financial flow and
+ * cross-module decisions. Every recommendation names the module RESPONSIBLE for
+ * closing the gap, so the UI stays a routing surface rather than a dead-end
+ * report.
+ *
+ * Where the numbers come from:
+ *  - persisted plan   → `pw_budget_lines`, `pw_goals`, `pw_forecast`,
+ *                       `pw_scenarios`, `pw_decisions`, plus shared `pl_targets`
+ *  - measured reality → derived per request in `planwise-actuals.ts` from
+ *                       OrderFlow sales, PricePilot unit costs, WasteWatch
+ *                       events and receivables (see `planwise-data.ts`)
+ *
+ * The constants that remain here (`RECOMMENDATIONS`, `FORECAST_DRIVERS`,
+ * `FORECAST_COMMENTARY`, `AI_SCENARIO`, `GOAL_TIMELINE`, `MOBILE_SNAPSHOT`) are
+ * FALLBACKS only: each view prefers the measured equivalent and labels the
+ * difference, so an org with nothing measurable yet still sees a populated
+ * screen that is honestly marked as illustrative.
  */
 
 import type { VysoModuleKey } from './module-meta';
+import type { PlanWiseActuals } from './planwise-actuals';
 
 // ---------------------------------------------------------------------------
 // Budget
@@ -22,6 +35,8 @@ export interface BudgetRow {
   /** Module that can act on this category (for "Review →"). */
   module?: VysoModuleKey;
   color: string;
+  /** `pw_budget_lines.id` — present for persisted rows, needed to edit them. */
+  rowId?: string;
 }
 
 export function budgetStatus(b: { budgeted: number; actual: number }): { label: string; tone: 'positive' | 'warning' | 'critical' | 'neutral' } {
@@ -49,6 +64,10 @@ export interface GoalSummary {
   module?: VysoModuleKey;
   /** Recent trend for a sparkline. */
   trend: number[];
+  /** `pw_goals.id` — present for persisted rows, needed to edit them. */
+  rowId?: string;
+  /** True when `current` was measured from live module data this request. */
+  derived?: boolean;
 }
 /** Position markers (0–100) for the goal timeline: where we are vs forecast-finish vs the month. */
 export const GOAL_TIMELINE = { monthProgress: 70, forecastFinish: 95, goal: 100 };
@@ -87,6 +106,41 @@ export const RECOMMENDATIONS: PlanRecommendation[] = [
   { id: 'r6', module: 'docu', action: 'Add 3 missing expense documents', impact: 'Cleaner forecast', impactValue: 0, priority: 'low', status: 'open' },
 ];
 export const REC_STATUS_LABEL: Record<RecStatus, string> = { open: 'Open', in_progress: 'In progress', done: 'Done' };
+export const REC_STATUSES: readonly RecStatus[] = ['open', 'in_progress', 'done'];
+/** Clicking the status chip walks open → in progress → done → open. */
+export function nextRecStatus(s: RecStatus): RecStatus {
+  return s === 'open' ? 'in_progress' : s === 'in_progress' ? 'done' : 'open';
+}
+
+/**
+ * A decision the org is actually tracking (`pw_decisions`) — or a live
+ * suggestion PlanWise derived this request and is offering to start tracking.
+ * `rowId` is the discriminator: persisted rows have one, suggestions do not.
+ */
+export interface PlanDecision {
+  /** `pw_decisions.id`, or null for an untracked suggestion. */
+  rowId: string | null;
+  /** Stable key — matches the suggestion it came from, so adopting one twice is idempotent. */
+  key: string;
+  module: VysoModuleKey;
+  action: string;
+  impact: string;
+  impactValue: number;
+  priority: Priority;
+  status: RecStatus;
+  /** Why PlanWise raised it (measured evidence), when known. */
+  because: string | null;
+  note: string | null;
+}
+
+/** Highest priority + biggest rand impact first. */
+export function sortDecisions(list: PlanDecision[]): PlanDecision[] {
+  const rank: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
+  const done: Record<RecStatus, number> = { open: 0, in_progress: 0, done: 1 };
+  return [...list].sort(
+    (a, b) => done[a.status] - done[b.status] || rank[a.priority] - rank[b.priority] || b.impactValue - a.impactValue,
+  );
+}
 export const PRIORITY_STYLE: Record<Priority, { bg: string; fg: string; label: string }> = {
   high: { bg: '#FCEBEB', fg: '#A32D2D', label: 'High' },
   medium: { bg: '#FBEEDA', fg: '#854F0B', label: 'Medium' },
@@ -108,6 +162,28 @@ export interface ForecastLine {
   trend: 'up' | 'down' | 'flat';
   tone: 'positive' | 'warning' | 'critical' | 'neutral';
   data: number[];
+  /** `pw_forecast.id` — present for persisted rows, needed to edit them. */
+  rowId?: string;
+  /** Measured month-to-date value for this line, when a live feed covers it. */
+  measured?: number | null;
+}
+
+/** Expense-style lines are "good when low"; every other line is good when high. */
+export function forecastLowerIsBetter(id: string): boolean {
+  return id === 'exp' || id === 'expenses';
+}
+
+/** Re-derive tone + trend after an edit so the card colouring stays honest. */
+export function forecastTone(line: { id: string; value: number; target: number }): {
+  tone: ForecastLine['tone'];
+  trend: ForecastLine['trend'];
+} {
+  if (line.target === 0) return { tone: 'neutral', trend: 'flat' };
+  const diff = (line.value - line.target) / line.target;
+  const good = forecastLowerIsBetter(line.id) ? -diff : diff;
+  const tone: ForecastLine['tone'] = good >= 0 ? 'positive' : good >= -0.05 ? 'warning' : 'critical';
+  const trend: ForecastLine['trend'] = Math.abs(diff) < 0.01 ? 'flat' : diff > 0 ? 'up' : 'down';
+  return { tone, trend };
 }
 export interface ForecastDriver {
   label: string;
@@ -273,4 +349,12 @@ export interface PlanWiseData {
   scenarioBase: ScenarioBase;
   monthlyGoal: MonthlyGoal;
   financialFlow: FlowNode[];
+  /** Month-to-date measurements from OrderFlow / PricePilot / WasteWatch. */
+  actuals: PlanWiseActuals;
+  /** Tracked decisions (pw_decisions) plus live untracked suggestions. */
+  decisions: PlanDecision[];
+  /** True when `pw_decisions` has not been created yet (surface the setup hint). */
+  decisionsNeedSetup: boolean;
+  /** The org's target gross margin from `pl_targets`, when set. */
+  targetMarginPct: number | null;
 }

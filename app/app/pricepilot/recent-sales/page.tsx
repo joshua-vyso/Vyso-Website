@@ -1,68 +1,81 @@
-import Link from 'next/link';
 import { getPlatformSession, createServerSupabase } from '@/lib/platform/supabase-server';
-import { ORDER_STATUS_STYLE, zar, type OfOrder } from '@/lib/platform/orderflow';
+import { RecentSalesView, type SaleRow } from '@/components/platform/pricepilot/RecentSalesView';
+import { DEFAULT_TARGET_MARGIN, type PlTargets, type PriceItemLite } from '@/lib/platform/pricepilot';
+import type { OfOrder } from '@/lib/platform/orderflow';
 
-type ItemAgg = { order_id: string; qty: number; unit_price: number };
-
-function fmtDate(iso: string) {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-}
+type ItemRow = { order_id: string; stock_item_id: string | null; qty: number; unit_price: number };
 
 export default async function PricePilotRecentSalesPage() {
   const session = await getPlatformSession();
   const orgId = session?.org?.id ?? '';
   const db = await createServerSupabase();
 
-  const [{ data: orders }, { data: items }, { data: customers }] = await Promise.all([
-    db.from('of_orders').select('*').eq('org_id', orgId).in('status', ['invoiced', 'paid']).order('created_at', { ascending: false }).limit(50),
-    db.from('of_order_items').select('order_id, qty, unit_price').eq('org_id', orgId),
-    db.from('of_customers').select('id, name').eq('org_id', orgId),
-  ]);
+  const [{ data: orders }, { data: items }, { data: customers }, { data: stockItems }, { data: targetsRow }] =
+    await Promise.all([
+      db.from('of_orders').select('*').eq('org_id', orgId).in('status', ['invoiced', 'paid']).order('created_at', { ascending: false }).limit(500),
+      db.from('of_order_items').select('order_id, stock_item_id, qty, unit_price').eq('org_id', orgId),
+      db.from('of_customers').select('id, name').eq('org_id', orgId),
+      db.from('pp_stock_items').select('id, name, category, avg_unit_price').eq('org_id', orgId).limit(5000),
+      db.from('pl_targets').select('*').eq('org_id', orgId).maybeSingle(),
+    ]);
 
-  const byOrder = new Map<string, number>();
-  for (const it of (items ?? []) as ItemAgg[]) {
-    byOrder.set(it.order_id, (byOrder.get(it.order_id) ?? 0) + (Number(it.qty) || 0) * (Number(it.unit_price) || 0));
-  }
+  const targets = (targetsRow ?? null) as PlTargets | null;
+  const target = targets?.target_margin_pct != null ? Number(targets.target_margin_pct) : DEFAULT_TARGET_MARGIN;
+
+  const costByItem = new Map(
+    ((stockItems ?? []) as PriceItemLite[]).map((it) => [it.id, it.avg_unit_price != null ? Number(it.avg_unit_price) : null]),
+  );
   const custName = new Map(((customers ?? []) as { id: string; name: string }[]).map((c) => [c.id, c.name]));
   const sales = (orders ?? []) as OfOrder[];
+  const known = new Set(sales.map((o) => o.id));
 
-  return (
-    <div>
-      <div>
-        <h1 className="of-display text-[28px] font-semibold tracking-[-0.015em] text-[#171A17]">Recent sales</h1>
-        <p className="mt-1 text-[14px] text-[#8A8E86]">Every recent sale, linked to its OrderFlow invoice</p>
-      </div>
+  // Per-order revenue / costed revenue / cost, so each row carries a real margin.
+  const agg = new Map<string, { rev: number; costableRev: number; cost: number; lines: number }>();
+  for (const it of (items ?? []) as ItemRow[]) {
+    if (!known.has(it.order_id)) continue;
+    const qty = Number(it.qty) || 0;
+    const revenue = qty * (Number(it.unit_price) || 0);
+    const unitCost = it.stock_item_id ? costByItem.get(it.stock_item_id) ?? null : null;
+    const a = agg.get(it.order_id) ?? { rev: 0, costableRev: 0, cost: 0, lines: 0 };
+    a.rev += revenue;
+    a.lines += 1;
+    if (unitCost != null) {
+      a.costableRev += revenue;
+      a.cost += qty * unitCost;
+    }
+    agg.set(it.order_id, a);
+  }
 
-      <div className="mt-6 overflow-hidden rounded-2xl border border-[#EAEDF2] bg-white shadow-[0_1px_2px_rgba(20,24,20,0.03)]">
-        <div className="flex items-center border-b border-[#EEF1F5] bg-[#FBFCFE] px-5 py-2.5 text-[11px] font-medium uppercase tracking-[0.06em] text-[#A0A49C]">
-          <div className="w-[130px]">Invoice</div>
-          <div className="flex-1">Customer</div>
-          <div className="w-[110px]">Status</div>
-          <div className="w-[120px] text-right">Total</div>
-          <div className="w-[150px] text-right">Date</div>
-        </div>
-        {sales.length === 0 ? (
-          <div className="px-5 py-12 text-center text-[14px] text-[#8A8E86]">
-            No sales yet. Invoice an order in OrderFlow and it'll appear here.
-          </div>
-        ) : (
-          sales.map((o) => {
-            const s = ORDER_STATUS_STYLE[o.status] ?? ORDER_STATUS_STYLE.invoiced;
-            return (
-              <Link key={o.id} href={`/app/orderflow/orders/${o.id}`} className="flex items-center border-t border-[#F4F5F7] px-5 py-3.5 text-[14px] text-[#171A17] transition-colors hover:bg-[#F5F9FE]">
-                <div className="of-num w-[130px] font-semibold">{o.invoice_number ?? '—'}</div>
-                <div className="flex-1 text-[#2C333B]">{(o.customer_id && custName.get(o.customer_id)) || 'No customer'}</div>
-                <div className="w-[110px]">
-                  <span className="rounded-full px-2.5 py-1 text-[11px] font-medium" style={{ backgroundColor: s.bg, color: s.fg }}>{s.label}</span>
-                </div>
-                <div className="of-num w-[120px] text-right font-semibold">{zar(byOrder.get(o.id) ?? 0)}</div>
-                <div className="of-num w-[150px] text-right text-[#A0A49C]">{fmtDate(o.created_at)}</div>
-              </Link>
-            );
-          })
-        )}
-      </div>
-    </div>
-  );
+  const rows: SaleRow[] = sales.map((o) => {
+    const a = agg.get(o.id) ?? { rev: 0, costableRev: 0, cost: 0, lines: 0 };
+    const profit = a.costableRev - a.cost;
+    return {
+      id: o.id,
+      invoice: o.invoice_number ?? 'Invoice',
+      customerId: o.customer_id,
+      customer: (o.customer_id && custName.get(o.customer_id)) || 'No customer',
+      status: o.status,
+      date: o.created_at,
+      revenue: a.rev,
+      costableRev: a.costableRev,
+      cost: a.cost,
+      profit,
+      margin: a.costableRev > 0 ? (profit / a.costableRev) * 100 : null,
+      uncosted: a.rev - a.costableRev > 0.005,
+      lines: a.lines,
+    };
+  });
+
+  // Only offer customers who actually appear in the list — a filter that can
+  // return nothing is noise.
+  const used = new Set(rows.map((r) => r.customerId).filter((id): id is string => !!id));
+  const customerOptions = ((customers ?? []) as { id: string; name: string }[])
+    .filter((c) => used.has(c.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Render time, resolved once on the server so the client's relative windows
+  // ("last 30 days") stay stable while the user types in the filters.
+  const now = new Date().getTime();
+
+  return <RecentSalesView sales={rows} customers={customerOptions} target={target} now={now} />;
 }

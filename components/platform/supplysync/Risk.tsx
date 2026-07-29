@@ -9,12 +9,14 @@ import {
   RiskStatusBadge,
   DocStatusBadge,
   SupplierNameButton,
+  fmtDate,
   RED,
   AMBER,
   GREEN,
   MUTE,
 } from './shared';
-import { KpiStrip, Kpi, SectionCard, DataTable } from '@/components/platform/module-ui';
+import { DocExpiryPanel } from './DocExpiry';
+import { KpiStrip, Kpi, SectionCard, DataTable, Badge } from '@/components/platform/module-ui';
 import { RowActionsMenu, useToast } from '@/components/platform/orderflow/ui';
 import { usePlatform } from '@/lib/platform/session';
 import { createClient } from '@/lib/platform/supabase-browser';
@@ -27,14 +29,6 @@ import type {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Short, calm date rendering (e.g. "3 Jul 2026") or an em-dash for null. */
-function fmtDate(iso: string | null): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' });
-}
 
 /** Documents that are not yet valid (need attention) rank above valid ones. */
 const DOC_ORDER: Record<SupplierDocumentStatus, number> = {
@@ -64,6 +58,8 @@ export function RiskTab() {
   // Optimistic status overrides for the risk register, keyed by risk id.
   const [statusOverride, setStatusOverride] = useState<Record<string, SupplierRiskStatus>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  /** Document id whose "Request" write is in flight. */
+  const [requestingDoc, setRequestingDoc] = useState<string | null>(null);
 
   // Effective status = server value merged with any optimistic override.
   const effectiveStatus = (id: string, base: SupplierRiskStatus): SupplierRiskStatus =>
@@ -156,6 +152,39 @@ export function RiskTab() {
     router.refresh(); // reconcile with server truth
   }
 
+  // --- Real write: log a document request onto the supplier's timeline -----
+  async function requestDocument(supplierId: string, supplierName: string, doc: SupplierDocument) {
+    if (requestingDoc) return;
+    setRequestingDoc(doc.id);
+
+    const supabase = createClient();
+    if (!supabase || !org) {
+      setRequestingDoc(null);
+      show('Not connected — the request was not logged.');
+      return;
+    }
+
+    const today = new Date();
+    const { error } = await supabase.from('ss_supplier_history').insert({
+      org_id: org.id,
+      supplier_id: supplierId,
+      event_type: 'document_request',
+      channel: 'Document Request',
+      summary: `Requested ${doc.label}${doc.expiry ? ` — expiry ${fmtDate(doc.expiry)}` : ''}`,
+      follow_up: `Chase ${doc.label} from ${supplierName}`,
+      follow_up_date: new Date(today.getTime() + 7 * 86_400_000).toISOString().slice(0, 10),
+      event_date: today.toISOString().slice(0, 10),
+    });
+
+    setRequestingDoc(null);
+    if (error) {
+      show(error.message);
+      return;
+    }
+    show(`${doc.label} requested from ${supplierName}`);
+    router.refresh();
+  }
+
   // Action set depends on the current (effective) status.
   function riskActions(id: string, status: SupplierRiskStatus) {
     const busy = savingId === id;
@@ -197,18 +226,18 @@ export function RiskTab() {
     const status = effectiveStatus(r.id, r.status);
     return [
       r.supplierId ? (
-        <SupplierNameButton id={r.supplierId} name={r.supplierName || 'Supplier'} />
+        <SupplierNameButton key="sup" id={r.supplierId} name={r.supplierName || 'Supplier'} />
       ) : (
-        <span className="text-[#6B6F68]">{r.supplierName || 'General'}</span>
+        <span key="sup" className="text-[#6B6F68]">{r.supplierName || 'General'}</span>
       ),
-      <span className="text-[#171A17]">{r.riskType || '—'}</span>,
-      <SeverityBadge severity={r.severity} />,
-      <span className="text-[#6B6F68]">{r.description || '—'}</span>,
-      <span className="text-[#6B6F68]">{r.suggestedAction ?? '—'}</span>,
-      <span className="text-[#6B6F68]">{r.owner ?? 'Unassigned'}</span>,
-      <RiskStatusBadge status={status} />,
-      <span className="of-num text-[#6B6F68]">{fmtDate(r.dueDate)}</span>,
-      <div className="flex justify-end">
+      <span key="type" className="text-[#171A17]">{r.riskType || '—'}</span>,
+      <SeverityBadge key="sev" severity={r.severity} />,
+      <span key="desc" className="text-[#6B6F68]">{r.description || '—'}</span>,
+      <span key="action" className="text-[#6B6F68]">{r.suggestedAction ?? '—'}</span>,
+      <span key="owner" className="text-[#6B6F68]">{r.owner ?? 'Unassigned'}</span>,
+      <RiskStatusBadge key="status" status={status} />,
+      <span key="due" className="of-num text-[#6B6F68]">{fmtDate(r.dueDate)}</span>,
+      <div key="act" className="flex justify-end">
         <RowActionsMenu actions={riskActions(r.id, status)} />
       </div>,
     ];
@@ -236,18 +265,19 @@ export function RiskTab() {
     }
 
     return [
-      <SupplierNameButton id={supplierId} name={supplierName} />,
-      <span className="text-[#171A17]">{doc.label}</span>,
-      <DocStatusBadge status={doc.status} />,
-      <span className="of-num text-[#6B6F68]">{fmtDate(doc.expiry)}</span>,
-      <span className="of-num font-medium" style={{ color: drColor }}>{drText}</span>,
-      <div className="flex flex-wrap justify-end gap-1.5">
+      <SupplierNameButton key="sup" id={supplierId} name={supplierName} />,
+      <span key="label" className="text-[#171A17]">{doc.label}</span>,
+      <DocStatusBadge key="status" status={doc.status} />,
+      <span key="expiry" className="of-num text-[#6B6F68]">{fmtDate(doc.expiry)}</span>,
+      <span key="left" className="of-num font-medium" style={{ color: drColor }}>{drText}</span>,
+      <div key="act" className="flex flex-wrap justify-end gap-1.5">
         <button
           type="button"
-          onClick={() => show(`Document requested from ${supplierName} (demo)`)}
-          className="inline-flex h-9 items-center rounded-[10px] border border-[#E2E6EC] bg-white px-3.5 text-[13px] font-medium text-[#3E4A57] transition-all hover:border-[#C9DEF7] hover:bg-[#EAF2FC] hover:text-[#174C87]"
+          disabled={requestingDoc === doc.id}
+          onClick={() => requestDocument(supplierId, supplierName, doc)}
+          className="inline-flex h-9 items-center rounded-[10px] border border-[#E2E6EC] bg-white px-3.5 text-[13px] font-medium text-[#3E4A57] transition-all hover:border-[#C9DEF7] hover:bg-[#EAF2FC] hover:text-[#174C87] disabled:cursor-not-allowed disabled:opacity-55"
         >
-          Request
+          {requestingDoc === doc.id ? 'Logging…' : 'Request'}
         </button>
         <button
           type="button"
@@ -312,7 +342,25 @@ export function RiskTab() {
         />
       </KpiStrip>
 
-      {/* 2) Risk register */}
+      {/* 2) Document expiry worklist — the actionable half of compliance */}
+      <SectionCard
+        title="Document expiry — action required"
+        right={
+          <Badge
+            label={`${ss.docExpiries.length} to action`}
+            tone={ss.docExpiries.length > 0 ? 'warning' : 'positive'}
+          />
+        }
+      >
+        <p className="mb-3 text-[12px] leading-snug text-[#6B6F68]">
+          Missing, expired and soon-to-expire documents, most urgent first. Requesting one logs a
+          <span className="font-medium text-[#171A17]"> document request</span> on that supplier&apos;s timeline with a
+          week&apos;s follow-up, so the chase is on the record.
+        </p>
+        <DocExpiryPanel />
+      </SectionCard>
+
+      {/* 3) Risk register */}
       <SectionCard title="Risk register">
         <DataTable
           columns={[
