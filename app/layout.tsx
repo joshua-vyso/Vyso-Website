@@ -36,10 +36,13 @@ const instrumentSans = Instrument_Sans({
   display:  "swap",
 });
 
+// Space Grotesk only ever renders through `.of-num` / `.of-display` (globals.css).
+// Every call site there is plain, font-medium or font-semibold — nothing bold —
+// so 700 was downloaded on every page for no glyphs.
 const spaceGrotesk = Space_Grotesk({
   variable: "--font-grotesk",
   subsets:  ["latin"],
-  weight:   ["400", "500", "600", "700"],
+  weight:   ["400", "500", "600"],
   display:  "swap",
 });
 

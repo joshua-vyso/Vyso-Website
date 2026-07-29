@@ -4,6 +4,19 @@ import { InboxView } from '@/components/platform/InboxView';
 import type { DocumentFolder, DocumentWithSupplier } from '@/lib/platform/types';
 
 /**
+ * List projection for the inbox views. Omits `ai_summary` (only the detail
+ * panel reads it) plus the lifecycle columns nothing in the InboxView tree
+ * touches, so the RSC payload no longer ships whole documents.
+ *
+ * `extracted_data` STAYS: the tree genuinely reads it — documentTypeLabel()
+ * (custom type column), deriveFlags() (credit-note / duplicate / spend flags)
+ * and applySearch()/docTotal() (free-text + "above R50k" search) all walk
+ * `fields` / `line_items`. Dropping it would silently change rendered values.
+ */
+const DOC_INBOX_COLS =
+  'id, org_id, supplier_id, folder_id, filename, document_type, status, confidence, extracted_data, created_at, supplier:suppliers(id,name,initials)';
+
+/**
  * Recent documents — added today / earlier this week (by created_at). Renders the
  * inbox in 'recent' grouping mode, so it carries the same Upload / Select /
  * Filter / Sort controls; the full archive lives on the Documents tab.
@@ -33,7 +46,7 @@ export default async function DocuRecentPage() {
   const [{ data }, { data: folderData }] = await Promise.all([
     supabase
       .from('documents')
-      .select('*, supplier:suppliers(id,name,initials)')
+      .select(DOC_INBOX_COLS)
       .eq('org_id', orgId)
       .gte('created_at', since)
       .order('created_at', { ascending: false }),
@@ -44,7 +57,9 @@ export default async function DocuRecentPage() {
       .order('name', { ascending: true }),
   ]);
 
-  const docs = (data ?? []) as DocumentWithSupplier[];
+  // Narrowed by DOC_INBOX_COLS — a superset of every field the InboxView tree
+  // reads, so the widened cast stays safe while the payload stays small.
+  const docs = (data ?? []) as unknown as DocumentWithSupplier[];
   const folders = (folderData ?? []) as DocumentFolder[];
 
   return (

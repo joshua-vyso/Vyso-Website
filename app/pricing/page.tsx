@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Navbar } from "@/components/Navbar";
-import { WebGLShaderBackground } from "@/components/WebGLShaderBackground";
+import { LazyShaderBackground } from "@/components/marketing/LazyShaderBackground";
 import { PricingSection } from "@/components/sections/PricingSection";
 import { SiteFooter } from "@/components/sections/SiteFooter";
 
@@ -103,7 +103,7 @@ export default function PricingPage() {
           __html: JSON.stringify(pricingSchema).replace(/</g, "\\u003c"),
         }}
       />
-      <WebGLShaderBackground global />
+      <LazyShaderBackground global />
       <Navbar visible />
 
       <main style={{ paddingTop: 64 }}>

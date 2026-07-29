@@ -1,6 +1,6 @@
 import { Mail, MessageCircle } from "lucide-react";
 import ContactForm from "@/components/ContactForm";
-import { WebGLShaderBackground } from "@/components/WebGLShaderBackground";
+import { LazyShaderBackground } from "@/components/marketing/LazyShaderBackground";
 import { Navbar } from "@/components/Navbar";
 import { SiteFooter } from "@/components/sections/SiteFooter";
 import type { Metadata } from "next";
@@ -101,7 +101,7 @@ export default function ContactPage() {
           __html: JSON.stringify(contactSchema).replace(/</g, "\\u003c"),
         }}
       />
-      <WebGLShaderBackground global />
+      <LazyShaderBackground global />
       <Navbar visible />
 
       <main style={{ minHeight: "100vh" }}>

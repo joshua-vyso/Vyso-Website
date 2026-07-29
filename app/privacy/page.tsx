@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { Navbar } from "@/components/Navbar";
 import { SiteFooter } from "@/components/sections/SiteFooter";
-import { WebGLShaderBackground } from "@/components/WebGLShaderBackground";
+import { LazyShaderBackground } from "@/components/marketing/LazyShaderBackground";
 
 export const metadata: Metadata = {
   title: "Privacy Policy | Vyso",
@@ -57,7 +57,7 @@ function Section({ title, children }: Readonly<{ title: string; children: React.
 export default function PrivacyPage() {
   return (
     <div style={{ position: "relative", isolation: "isolate" }}>
-      <WebGLShaderBackground global />
+      <LazyShaderBackground global />
       <Navbar visible />
 
       <main

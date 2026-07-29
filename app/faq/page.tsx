@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowRight, Check, Minus } from "lucide-react";
 
 import { Navbar } from "@/components/Navbar";
-import { WebGLShaderBackground } from "@/components/WebGLShaderBackground";
+import { LazyShaderBackground } from "@/components/marketing/LazyShaderBackground";
 import { SiteFooter } from "@/components/sections/SiteFooter";
 
 import styles from "./faq.module.css";
@@ -309,7 +309,7 @@ export default function FaqPage() {
   return (
     <>
       <div style={{ position: "relative", isolation: "isolate" }}>
-        <WebGLShaderBackground global />
+        <LazyShaderBackground global />
         <Navbar visible />
 
         <main className={styles.page} style={{ minHeight: "100vh" }}>

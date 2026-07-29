@@ -4,6 +4,18 @@ import { getPlatformSession, createServerSupabase } from '@/lib/platform/supabas
 import { FolderGridView } from '@/components/platform/docu/FolderGridView';
 import type { DocumentFolder, DocumentWithSupplier } from '@/lib/platform/types';
 
+/**
+ * List projection for the folder hub. Deliberately omits the two heavy jsonb
+ * blobs (`extracted_data`, `ai_summary`) — and the lifecycle columns nothing
+ * here reads — so the RSC payload carries rows, not whole documents. The tree
+ * under FolderGridView reads exactly: `document_type` + `folder_id` (folder
+ * tiles, buildFolderTiles) and `status` + `confidence` (DocumentStatsCards →
+ * computeKpis); the rest below is headroom, not need. The detail page
+ * (app/app/docu/[id]) still selects everything.
+ */
+const DOC_HUB_COLS =
+  'id, org_id, supplier_id, folder_id, filename, document_type, status, confidence, created_at, supplier:suppliers(id,name,initials)';
+
 /** Prominent entry point into Core Data (the shared operational tables). */
 function DatabasesTile() {
   return (
@@ -66,7 +78,7 @@ export default async function DocuInboxPage() {
   const [{ data }, { data: folderData }] = await Promise.all([
     supabase
       .from('documents')
-      .select('*, supplier:suppliers(id,name,initials)')
+      .select(DOC_HUB_COLS)
       .eq('org_id', orgId)
       .order('created_at', { ascending: false }),
     supabase
@@ -76,7 +88,9 @@ export default async function DocuInboxPage() {
       .order('name', { ascending: true }),
   ]);
 
-  const docs = (data ?? []) as DocumentWithSupplier[];
+  // Narrowed by DOC_HUB_COLS — a superset of every field FolderGridView's tree
+  // reads, so the widened cast stays safe while the payload stays small.
+  const docs = (data ?? []) as unknown as DocumentWithSupplier[];
   const folders = (folderData ?? []) as DocumentFolder[];
 
   return (
