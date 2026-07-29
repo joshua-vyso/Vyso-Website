@@ -5,7 +5,20 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/platform/supabase-browser';
 import { supabaseConfigured } from '@/lib/platform/env';
+import { MODULES } from '@/lib/platform/modules';
 import { VysoMark } from '@/components/platform/VysoMark';
+
+/* Where a successful login lands. /app exists purely to resolve the first
+   enabled module and redirect, so pushing to it costs an extra server render +
+   redirect on every sign-in — go straight to the module instead.
+   Auth behaviour is untouched: this route sits under the same app/app/layout.tsx,
+   so the signed-out → /login and onboarding-incomplete → /onboarding guards (and
+   ModuleLockGuard) still run exactly as before.
+   Mirrors app/app/page.tsx's `?? MODULES[0]` fallback. While getPlatformSession
+   force-enables every feature the two always agree; if per-org feature gating is
+   restored there, point this back at '/app'. */
+const POST_LOGIN_ROUTE = (MODULES.find((m) => m.status === 'active') ?? MODULES[0]).screens
+  .desktop;
 
 /* Shared field chrome. Explicit rounded-[10px] rather than the rounded-* scale —
    globals set --radius: 0, which would square these. */
@@ -83,7 +96,7 @@ export default function LoginPage() {
       setError(signInError.message);
       return;
     }
-    router.push('/app');
+    router.push(POST_LOGIN_ROUTE);
     router.refresh();
   }
 

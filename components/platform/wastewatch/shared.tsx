@@ -16,6 +16,24 @@ const UNITS = ['kg', 'units', 'crates', 'L'];
 /** Reasons that stem from a controllable process (vs. natural spoilage). */
 const PREVENTABLE_REASONS = new Set(['Over-portioned', 'Prep error', 'Damaged']);
 
+/** Dashed no-data panel — the platform's standard empty state. */
+export function EmptyState({ title, hint, action }: { title: string; hint: string; action?: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-[#E2E6EC] bg-[#FBFCFE] px-6 py-12 text-center">
+      <p className="of-display text-[16px] font-semibold text-[#171A17]">{title}</p>
+      <p className="mx-auto mt-1.5 max-w-md text-[13px] text-[#6B6F68]">{hint}</p>
+      {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
+    </div>
+  );
+}
+
+/** Inline dashed panel for a single empty card body. */
+export function EmptyPanel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="rounded-2xl border border-dashed border-[#E2E6EC] bg-[#FBFCFE] px-4 py-8 text-center text-[13px] text-[#8A8E86]">{children}</p>
+  );
+}
+
 export function DeviceStatusBadge({ status }: { status: DeviceStatus }) {
   const s = DEVICE_STATUS_STYLE[status];
   return (

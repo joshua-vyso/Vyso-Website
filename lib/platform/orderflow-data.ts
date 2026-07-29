@@ -50,6 +50,15 @@ export interface LinkedDocument {
 
 const LINKED_DOC_COLS = 'id, filename, document_type, status, storage_path, entity_type, entity_id, customer_id, created_at';
 
+/** Row cap for attached-document lists. AttachDocuments renders the rows and only
+ *  tests `length === 0`, so a cap can't skew a displayed count — it just keeps the
+ *  newest page of attachments out of an unbounded payload. */
+const LINKED_DOC_LIMIT = 100;
+
+/** Row cap for per-entity activity feeds. ActivityFeed likewise only tests
+ *  `length === 0`; the dashboard/customer feeds are already capped at 40 / 60. */
+const ACTIVITY_LIMIT = 200;
+
 export async function getOfSettings(orgId: string): Promise<OfSettings> {
   const sb = await createServerSupabase();
   const res = await sb.from('of_settings').select('*').eq('org_id', orgId).maybeSingle();
@@ -76,6 +85,13 @@ export interface OrderFlowSnapshot {
   quoteRequestsNew: number;
 }
 
+// Deliberately UNBOUNDED (except of_activity, already capped at 40): every array
+// below is an aggregate input, not a rendered page of rows — the Dashboard sums
+// invoice items / payments / credit notes into the money tiles and counts
+// customers, quotes and orders. A row cap here would under-report those numbers,
+// which is worse than a larger payload. Same reasoning holds for the list
+// fetchers further down (their views compute the health/KPI strips the same way);
+// capping them needs a paired exact COUNT and a "showing N of M" in the view.
 export async function getOrderFlowSnapshot(orgId: string): Promise<OrderFlowSnapshot> {
   const sb = await createServerSupabase();
   const [cus, ord, qts, inv, itm, pay, cns, cni, act, set, qrq] = await Promise.all([
@@ -184,7 +200,7 @@ export async function getCustomerProfile(orgId: string, customerId: string): Pro
     sb.from('of_credit_notes').select('*').eq('org_id', orgId).eq('customer_id', customerId).order('created_at', { ascending: false }),
     sb.from('of_credit_note_items').select('*').eq('org_id', orgId),
     sb.from('of_activity').select('*').eq('org_id', orgId).eq('customer_id', customerId).order('created_at', { ascending: false }).limit(60),
-    sb.from('documents').select(LINKED_DOC_COLS).eq('org_id', orgId).eq('customer_id', customerId).order('created_at', { ascending: false }),
+    sb.from('documents').select(LINKED_DOC_COLS).eq('org_id', orgId).eq('customer_id', customerId).order('created_at', { ascending: false }).limit(LINKED_DOC_LIMIT),
     sb.from('pl_price_lists').select('*').eq('org_id', orgId),
     sb.from('pl_overrides').select('*').eq('org_id', orgId),
     sb.from('cd_payment_terms').select('*').eq('org_id', orgId).order('days'),
@@ -376,8 +392,8 @@ export async function getOrderDetail(orgId: string, id: string): Promise<OrderDe
     sb.from('of_orders').select('*').eq('org_id', orgId).eq('id', id).maybeSingle(),
     sb.from('of_order_items').select('*').eq('order_id', id),
     sb.from('of_delivery_notes').select('*').eq('order_id', id).order('created_at', { ascending: false }),
-    sb.from('documents').select(LINKED_DOC_COLS).eq('org_id', orgId).eq('entity_type', 'order').eq('entity_id', id),
-    sb.from('of_activity').select('*').eq('org_id', orgId).eq('entity_type', 'order').eq('entity_id', id).order('created_at', { ascending: false }),
+    sb.from('documents').select(LINKED_DOC_COLS).eq('org_id', orgId).eq('entity_type', 'order').eq('entity_id', id).limit(LINKED_DOC_LIMIT),
+    sb.from('of_activity').select('*').eq('org_id', orgId).eq('entity_type', 'order').eq('entity_id', id).order('created_at', { ascending: false }).limit(ACTIVITY_LIMIT),
     sb.from('of_settings').select('*').eq('org_id', orgId).maybeSingle(),
   ]);
   const order = one<OfOrder>(o);
@@ -459,8 +475,8 @@ export async function getInvoiceDetail(orgId: string, id: string): Promise<Invoi
     sb.from('of_payments').select('*').eq('invoice_id', id).order('paid_on'),
     sb.from('of_credit_notes').select('*').eq('invoice_id', id),
     sb.from('cd_company_profile').select('*').eq('org_id', orgId).maybeSingle(),
-    sb.from('documents').select(LINKED_DOC_COLS).eq('org_id', orgId).eq('entity_type', 'invoice').eq('entity_id', id),
-    sb.from('of_activity').select('*').eq('org_id', orgId).eq('entity_type', 'invoice').eq('entity_id', id).order('created_at', { ascending: false }),
+    sb.from('documents').select(LINKED_DOC_COLS).eq('org_id', orgId).eq('entity_type', 'invoice').eq('entity_id', id).limit(LINKED_DOC_LIMIT),
+    sb.from('of_activity').select('*').eq('org_id', orgId).eq('entity_type', 'invoice').eq('entity_id', id).order('created_at', { ascending: false }).limit(ACTIVITY_LIMIT),
   ]);
   const invoice = one<OfInvoice>(i);
   const creditNotes = rows<OfCreditNote>(cns);

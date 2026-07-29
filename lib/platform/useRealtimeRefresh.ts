@@ -22,6 +22,14 @@ import { usePlatform } from '@/lib/platform/session';
  * known. The refresh is debounced so a batch insert (e.g. many line items at once)
  * collapses into a single re-fetch.
  */
+
+/** A refresh newer than this is still server truth — returning to the tab changes nothing. */
+const FRESH_MS = 60_000;
+/** Away longer than this and we reconcile even if the socket claims it stayed healthy. */
+const LONG_ABSENCE_MS = 5 * 60_000;
+/** `focus` and `visibilitychange` both fire on a tab return; collapse them into one. */
+const RETURN_DEDUPE_MS = 1_000;
+
 export function useRealtimeRefresh(tables: string | readonly string[]): void {
   const router = useRouter();
   const { org } = usePlatform();
@@ -35,9 +43,14 @@ export function useRealtimeRefresh(tables: string | readonly string[]): void {
 
     const list = key.split(',').filter(Boolean);
     let timer: ReturnType<typeof setTimeout> | null = null;
+    // The route just rendered on the server, so it starts as fresh as a refresh would make it.
+    let lastRefreshAt = Date.now();
     const refresh = () => {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => router.refresh(), 400);
+      timer = setTimeout(() => {
+        lastRefreshAt = Date.now();
+        router.refresh();
+      }, 400);
     };
 
     const channel = supabase.channel(`rt:${key}:${orgId}`);
@@ -48,21 +61,47 @@ export function useRealtimeRefresh(tables: string | readonly string[]): void {
         refresh,
       );
     }
-    channel.subscribe();
+    // Only a SUBSCRIBED channel is actually delivering rows; TIMED_OUT / CLOSED /
+    // CHANNEL_ERROR all mean events may be going missing right now.
+    let socketHealthy = false;
+    channel.subscribe((status) => {
+      socketHealthy = String(status) === 'SUBSCRIBED';
+    });
 
     // Self-heal if a realtime event is ever missed — a dropped socket, a laptop waking
     // from sleep, or a spotty connection. Coming back to the tab reconciles against
     // server truth, so the list is never silently stale even when the socket isn't.
-    const reconcileOnReturn = () => {
-      if (document.visibilityState === 'visible') refresh();
+    //
+    // That only needs to happen when something could have been missed, so the reconcile
+    // is gated: skip while the data is still fresh, and skip while the socket is healthy
+    // unless the absence was long enough that a healthy-looking socket can't be trusted.
+    // A plain window refocus with a live channel — the common case — now costs nothing.
+    let hiddenSince: number | null = null;
+    let lastReturnAt = 0;
+    const onReturn = () => {
+      if (document.visibilityState !== 'visible') {
+        hiddenSince = Date.now();
+        return;
+      }
+      const now = Date.now();
+      // `focus` and `visibilitychange` both fire on a tab return — handle the first only.
+      if (now - lastReturnAt < RETURN_DEDUPE_MS) return;
+      lastReturnAt = now;
+
+      const awayFor = hiddenSince === null ? 0 : now - hiddenSince;
+      hiddenSince = null;
+
+      if (now - lastRefreshAt < FRESH_MS) return;
+      if (socketHealthy && awayFor < LONG_ABSENCE_MS) return;
+      refresh();
     };
-    document.addEventListener('visibilitychange', reconcileOnReturn);
-    window.addEventListener('focus', reconcileOnReturn);
+    document.addEventListener('visibilitychange', onReturn);
+    window.addEventListener('focus', onReturn);
 
     return () => {
       if (timer) clearTimeout(timer);
-      document.removeEventListener('visibilitychange', reconcileOnReturn);
-      window.removeEventListener('focus', reconcileOnReturn);
+      document.removeEventListener('visibilitychange', onReturn);
+      window.removeEventListener('focus', onReturn);
       void supabase.removeChannel(channel);
     };
   }, [key, orgId, router]);

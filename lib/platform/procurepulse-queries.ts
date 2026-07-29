@@ -21,6 +21,22 @@ import type {
 
 type DB = Awaited<ReturnType<typeof createServerSupabase>>;
 
+/** Row cap for plain, newest-first lists whose views render rows and never
+ *  publish a total derived from the array. Kept off the org-wide catalogue and
+ *  lookup reads (stock, prices, thresholds, units, aliases, recipes, reorder
+ *  requests): those feed KPI/alert roll-ups or per-row joins, so a cap would
+ *  quietly under-report a number the user reads as exact. */
+const LIST_LIMIT = 200;
+
+/**
+ * The org catalogue. Stays `select('*')` and uncapped ON PURPOSE: every caller
+ * rolls it up (computeKpis / computeAlerts / buildMatrix / recipe planning), so a
+ * cap would under-report tiles the user reads as exact. An explicit column list
+ * is also unsafe here — the catalogue's newer columns (kg_per_unit, sku,
+ * vat_rate, active, kind, cost) arrive via separate idempotent migrations, and
+ * PostgREST 42703s the whole read on a deployment that hasn't run one, where
+ * `*` degrades to `undefined` and the UI keeps working.
+ */
 export async function fetchStock(db: DB, orgId: string): Promise<StockItem[]> {
   const { data } = await db
     .from('pp_stock_items')
@@ -50,12 +66,15 @@ export async function fetchPricesForItem(db: DB, itemId: string): Promise<ItemSu
   return (data ?? []) as ItemSupplierPrice[];
 }
 
+/** Movement history for one item, newest first. Capped: the detail page renders
+ *  the rows and only tests `length === 0`, so no displayed total can drift. */
 export async function fetchMovements(db: DB, itemId: string): Promise<StockMovement[]> {
   const { data } = await db
     .from('pp_movements')
     .select('*')
     .eq('stock_item_id', itemId)
-    .order('occurred_at', { ascending: false });
+    .order('occurred_at', { ascending: false })
+    .limit(LIST_LIMIT);
   return (data ?? []) as StockMovement[];
 }
 
@@ -74,12 +93,16 @@ export async function fetchRecentMovements(
   return (data ?? []) as StockMovement[];
 }
 
+/** Org notifications, newest first. Capped: the dashboard shows the first 5 and
+ *  the Notifications page buckets rows into Today / Yesterday / Earlier without
+ *  ever printing a total, so the cap can't turn a rendered number into a lie. */
 export async function fetchNotifications(db: DB, orgId: string): Promise<PpNotification[]> {
   const { data } = await db
     .from('pp_notifications')
     .select('*')
     .eq('org_id', orgId)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(LIST_LIMIT);
   return (data ?? []) as PpNotification[];
 }
 

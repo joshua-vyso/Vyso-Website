@@ -3,6 +3,19 @@ import { getPlatformSession, createServerSupabase } from '@/lib/platform/supabas
 import { InboxView } from '@/components/platform/InboxView';
 import type { DocumentWithSupplier } from '@/lib/platform/types';
 
+/**
+ * List projection for the inbox views. Omits `ai_summary` (only the detail
+ * panel reads it) plus the lifecycle columns nothing in the InboxView tree
+ * touches, so the RSC payload no longer ships whole documents.
+ *
+ * `extracted_data` STAYS: the tree genuinely reads it — documentTypeLabel()
+ * (custom type column), deriveFlags() (credit-note / duplicate / spend flags)
+ * and applySearch()/docTotal() (free-text + "above R50k" search) all walk
+ * `fields` / `line_items`. Dropping it would silently change rendered values.
+ */
+const DOC_INBOX_COLS =
+  'id, org_id, supplier_id, folder_id, filename, document_type, status, confidence, extracted_data, created_at, supplier:suppliers(id,name,initials)';
+
 export default async function DocuFlaggedPage() {
   const session = await getPlatformSession();
   if (!session) redirect('/login');
@@ -23,12 +36,14 @@ export default async function DocuFlaggedPage() {
   const supabase = await createServerSupabase();
   const { data } = await supabase
     .from('documents')
-    .select('*, supplier:suppliers(id,name,initials)')
+    .select(DOC_INBOX_COLS)
     .eq('org_id', session.org?.id ?? '')
     .eq('status', 'error')
     .order('created_at', { ascending: false });
 
-  const docs = (data ?? []) as DocumentWithSupplier[];
+  // Narrowed by DOC_INBOX_COLS — a superset of every field the InboxView tree
+  // reads, so the widened cast stays safe while the payload stays small.
+  const docs = (data ?? []) as unknown as DocumentWithSupplier[];
 
   return (
     <InboxView docs={docs} title="Flagged" subtitle="Documents that need attention" />

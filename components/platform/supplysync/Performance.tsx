@@ -7,6 +7,7 @@ import {
   EmptyState,
   ScorePill,
   scoreColor,
+  fmtDate,
   GREEN,
   ACCENT,
   AMBER,
@@ -15,7 +16,8 @@ import {
   FAINT,
   SupplierNameButton,
 } from '@/components/platform/supplysync/shared';
-import { SectionCard, DataTable, InteractiveDonut } from '@/components/platform/module-ui';
+import { MEASURE_WINDOW_DAYS } from '@/lib/platform/supplysync-insights';
+import { SectionCard, DataTable, InteractiveDonut, Kpi, KpiStrip, Badge } from '@/components/platform/module-ui';
 import { AreaChart, Sparkline } from '@/components/platform/procurepulse/ui';
 
 // ---------------------------------------------------------------------------
@@ -86,7 +88,16 @@ function bandKeyFor(overall: number): (typeof SCORE_BANDS)[number]['key'] {
   return 'weak';
 }
 
-const CAPTION = 'Illustrative — from live supplier data';
+const CAPTION = 'Illustrative — shaped by live supplier data, not a measured series';
+
+/** A count that reads as an issue when non-zero and as calm when it is zero. */
+function IssueCount({ n, color = RED }: { n: number; color?: string }) {
+  return (
+    <span className="of-num font-medium" style={{ color: n > 0 ? color : MUTE }}>
+      {n}
+    </span>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Small presentational pieces
@@ -197,10 +208,121 @@ export function PerformanceTab() {
 
   const improvedDelta = mostImproved ? trendDelta(mostImproved.performance.scoreTrend) : 0;
 
+  // ---- Section 0: measured performance, straight off the relationship log --
+  const measuredSuppliers = suppliers.filter((s) => s.measured.hasData);
+  const measuredTotals = measuredSuppliers.reduce(
+    (acc, s) => ({
+      events: acc.events + s.measured.events,
+      issues: acc.issues + s.measured.issues,
+      late: acc.late + s.measured.lateDeliveries,
+      quality: acc.quality + s.measured.qualityComplaints,
+    }),
+    { events: 0, issues: 0, late: 0, quality: 0 },
+  );
+  const cleanest = [...measuredSuppliers].sort((a, b) => a.measured.issues - b.measured.issues)[0];
+  const worstMeasured = [...measuredSuppliers].sort((a, b) => b.measured.issues - a.measured.issues)[0];
+
+  const measuredRows: ReactNode[][] = [...measuredSuppliers]
+    .sort((a, b) => b.measured.issues - a.measured.issues || b.measured.events - a.measured.events)
+    .map((s) => {
+      const m = s.measured;
+      return [
+        <SupplierNameButton key="name" id={s.id} name={s.name} className="font-medium" />,
+        <span key="events" className="of-num text-[#6B6F68]">{m.events}</span>,
+        <IssueCount key="late" n={m.lateDeliveries} />,
+        <IssueCount key="del" n={m.deliveryIssues} />,
+        <IssueCount key="qual" n={m.qualityComplaints} color={AMBER} />,
+        <IssueCount key="comp" n={m.complianceIssues} />,
+        <span key="rate" className="of-num font-medium" style={{ color: m.issuesPer30Days >= 2 ? RED : m.issuesPer30Days > 0 ? AMBER : GREEN }}>
+          {m.issuesPer30Days}
+        </span>,
+        <span key="lastissue" className="of-num text-[#6B6F68]">{m.lastIssueDate ? fmtDate(m.lastIssueDate) : 'None'}</span>,
+        <span key="contact" className="of-num text-[#6B6F68]">
+          {m.daysSinceContact === null ? '—' : `${m.daysSinceContact}d ago`}
+        </span>,
+      ];
+    });
+
   return (
     <div className="space-y-5">
+      {/* 0 — Measured performance ------------------------------------------ */}
+      <KpiStrip>
+        <Kpi
+          label="Suppliers measured"
+          value={`${measuredSuppliers.length}/${suppliers.length}`}
+          sub={`logged activity in ${MEASURE_WINDOW_DAYS} days`}
+        />
+        <Kpi
+          label="Events logged"
+          value={String(measuredTotals.events)}
+          sub="calls, deliveries, documents"
+        />
+        <Kpi
+          label="Issues recorded"
+          value={String(measuredTotals.issues)}
+          accent={measuredTotals.issues > 0 ? RED : GREEN}
+          sub="late, delivery, quality, compliance"
+        />
+        <Kpi
+          label="Late deliveries"
+          value={String(measuredTotals.late)}
+          accent={measuredTotals.late > 0 ? AMBER : undefined}
+          sub={`across ${MEASURE_WINDOW_DAYS} days`}
+        />
+        <Kpi
+          label="Cleanest record"
+          value={cleanest ? cleanest.name : '—'}
+          accent={cleanest ? GREEN : undefined}
+          sub={cleanest ? `${cleanest.measured.issues} issue${cleanest.measured.issues === 1 ? '' : 's'}` : 'nothing logged yet'}
+        />
+        <Kpi
+          label="Most issues"
+          value={worstMeasured && worstMeasured.measured.issues > 0 ? worstMeasured.name : '—'}
+          accent={worstMeasured && worstMeasured.measured.issues > 0 ? RED : undefined}
+          sub={worstMeasured && worstMeasured.measured.issues > 0 ? `${worstMeasured.measured.issues} in ${MEASURE_WINDOW_DAYS} days` : 'no issues logged'}
+        />
+      </KpiStrip>
+
+      <SectionCard
+        title="Measured performance"
+        right={<Badge label={`Counted · last ${MEASURE_WINDOW_DAYS} days`} tone="info" />}
+      >
+        <p className="mb-3 text-[12px] leading-snug text-[#6B6F68]">
+          Counted straight off the relationship log — every row here has events behind it. Suppliers with nothing logged
+          in the window are left out rather than shown as perfect. The scorecards below remain illustrative.
+        </p>
+        {measuredRows.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[#E2E6EC] bg-[#FBFCFE] px-6 py-10 text-center">
+            <p className="of-display text-[16px] font-semibold text-[#171A17]">Nothing logged in the last {MEASURE_WINDOW_DAYS} days</p>
+            <p className="mx-auto mt-1 max-w-md text-[13px] text-[#6B6F68]">
+              Log late deliveries, quality issues and calls on the Relationship History tab — or file supplier documents
+              in Doc-U — and measured performance builds itself from there.
+            </p>
+          </div>
+        ) : (
+          <DataTable
+            columns={[
+              { label: 'Supplier' },
+              { label: 'Events', align: 'right' },
+              { label: 'Late', align: 'right' },
+              { label: 'Delivery issues', align: 'right' },
+              { label: 'Quality', align: 'right' },
+              { label: 'Compliance', align: 'right' },
+              { label: 'Issues / 30d', align: 'right' },
+              { label: 'Last issue' },
+              { label: 'Last contact' },
+            ]}
+            rows={measuredRows}
+            empty="No measured activity yet."
+          />
+        )}
+      </SectionCard>
+
       {/* 1 — Supplier scorecards ------------------------------------------- */}
-      <SectionCard title="Supplier scorecards">
+      <SectionCard
+        title="Supplier scorecards"
+        right={<Badge label="Illustrative" tone="neutral" />}
+      >
         <DataTable
           columns={[
             { label: 'Supplier' },

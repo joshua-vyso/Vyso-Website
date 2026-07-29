@@ -1,17 +1,21 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import Link from 'next/link';
 import type { OpportunityKind, Supplier } from '@/lib/platform/supplysync-data';
 import { useSupplySync } from './context';
 import {
   EmptyState,
   ScorePill,
   SupplierNameButton,
+  zar,
   RED,
   AMBER,
   GREEN,
   MUTE,
 } from './shared';
+import { PriceChangeList, summarisePriceChanges } from './PriceAlerts';
+import { DocExpiryPanel } from './DocExpiry';
 import { Badge, DataTable, Kpi, KpiStrip, SectionCard, type Tone } from '@/components/platform/module-ui';
 
 // ---------------------------------------------------------------------------
@@ -77,7 +81,18 @@ function SnapshotCard({ label, value, color }: { label: string; value: string; c
 // ---------------------------------------------------------------------------
 
 export function SupplySyncOverview() {
-  const { suppliers, pricing, opportunities, history, isEmpty, openProfile } = useSupplySync();
+  const {
+    suppliers,
+    pricing,
+    opportunities,
+    history,
+    priceChanges,
+    creditRollup,
+    rebateRollup,
+    docExpiries,
+    isEmpty,
+    openProfile,
+  } = useSupplySync();
 
   if (isEmpty) {
     return (
@@ -102,6 +117,10 @@ export function SupplySyncOverview() {
       return Number.isFinite(t) && Date.now() - t <= 7 * 86_400_000 && Date.now() - t >= -86_400_000;
     }),
   ).length;
+
+  // Detected price moves + what they cost over a year.
+  const priceSummary = summarisePriceChanges(priceChanges);
+  const urgentDocs = docExpiries.filter((d) => d.urgency === 'missing' || d.urgency === 'expired' || d.urgency === 'critical').length;
 
   // --- Risk alerts (up to 6) --------------------------------------------
   const alerts: Alert[] = [];
@@ -199,6 +218,22 @@ export function SupplySyncOverview() {
           sub="above-market / rising"
         />
         <Kpi label="Recently updated" value={String(recentlyUpdated)} sub="active in last 7 days" />
+        <Kpi
+          label="Unresolved credits"
+          value={zar(creditRollup.unresolvedTotal)}
+          accent={creditRollup.unresolvedTotal > 0 ? RED : undefined}
+          sub={
+            creditRollup.unresolvedCount > 0
+              ? `${creditRollup.unresolvedCount} claim${creditRollup.unresolvedCount === 1 ? '' : 's'} · oldest ${creditRollup.oldestUnresolvedDays}d`
+              : 'nothing outstanding'
+          }
+        />
+        <Kpi
+          label="Price moves detected"
+          value={String(priceChanges.length)}
+          accent={priceSummary.highCount > 0 ? RED : priceChanges.length > 0 ? AMBER : undefined}
+          sub={priceSummary.netAnnual !== 0 ? `${priceSummary.netAnnual > 0 ? '+' : '−'}${zar(Math.abs(priceSummary.netAnnual))} a year` : 'no net change'}
+        />
       </KpiStrip>
 
       {/* 2) Supplier risk alerts */}
@@ -217,6 +252,50 @@ export function SupplySyncOverview() {
             ))}
           </div>
         )}
+      </SectionCard>
+
+      {/* 2b) Price-change detection */}
+      <SectionCard
+        title="Price changes detected"
+        right={
+          <div className="flex items-center gap-2">
+            {priceSummary.annualExposure > 0 ? (
+              <span className="text-[12px] text-[#A0A49C]">
+                <span className="of-num font-medium" style={{ color: RED }}>{zar(priceSummary.annualExposure)}</span> a year on increases
+              </span>
+            ) : null}
+            <Link href="/app/suppliers/pricing" className="text-[13px] font-semibold text-[#1F5FA8] transition-colors hover:text-[#174C87] hover:underline">
+              All price moves →
+            </Link>
+          </div>
+        }
+      >
+        <PriceChangeList alerts={priceChanges} limit={5} />
+        {priceChanges.length > 0 ? (
+          <p className="mt-2.5 text-[12px] text-[#A0A49C]">
+            {priceSummary.anyMeasured
+              ? 'Annualised impact uses invoiced volume where Doc-U has read it, and an estimate from average spend elsewhere.'
+              : 'Annualised impact is estimated from each supplier’s average spend — file invoices in Doc-U to measure it from real volume.'}
+          </p>
+        ) : null}
+      </SectionCard>
+
+      {/* 2c) Documents needing action */}
+      <SectionCard
+        title="Documents to action"
+        right={
+          <div className="flex items-center gap-2">
+            <Badge
+              label={urgentDocs > 0 ? `${urgentDocs} urgent` : 'all in date'}
+              tone={urgentDocs > 0 ? 'critical' : 'positive'}
+            />
+            <Link href="/app/suppliers/risk" className="text-[13px] font-semibold text-[#1F5FA8] transition-colors hover:text-[#174C87] hover:underline">
+              Compliance →
+            </Link>
+          </div>
+        }
+      >
+        <DocExpiryPanel limit={4} />
       </SectionCard>
 
       {/* 3) Top suppliers */}
@@ -302,6 +381,16 @@ export function SupplySyncOverview() {
             label="High-risk suppliers"
             value={highRiskCount === 0 ? 'None' : String(highRiskCount)}
             color={highRiskCount > 0 ? RED : GREEN}
+          />
+          <SnapshotCard
+            label="Credits owed to you"
+            value={creditRollup.unresolvedTotal > 0 ? zar(creditRollup.unresolvedTotal) : 'None'}
+            color={creditRollup.unresolvedTotal > 0 ? RED : GREEN}
+          />
+          <SnapshotCard
+            label="Rebates outstanding"
+            value={rebateRollup.outstandingTotal > 0 ? zar(rebateRollup.outstandingTotal) : 'None'}
+            color={rebateRollup.outstandingTotal > 0 ? AMBER : GREEN}
           />
         </div>
         <p className="mt-2.5 text-[12px] text-[#A0A49C]">Values shown are live from this org — the companion app renders these as home-screen cards.</p>

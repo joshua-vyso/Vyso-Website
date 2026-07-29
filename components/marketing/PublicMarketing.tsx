@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 
 import { Navbar } from "@/components/Navbar";
-import { WebGLShaderBackground } from "@/components/WebGLShaderBackground";
+import { LazyShaderBackground } from "./LazyShaderBackground";
 import { SiteFooter } from "@/components/sections/SiteFooter";
 
 import styles from "./public-marketing.module.css";
@@ -12,7 +12,7 @@ export { styles as marketingStyles };
 export function PublicPageShell({ children }: { children: ReactNode }) {
   return (
     <div className={styles.page}>
-      <WebGLShaderBackground global />
+      <LazyShaderBackground global />
       <Navbar visible />
       <main className={styles.main}>{children}</main>
       <SiteFooter />

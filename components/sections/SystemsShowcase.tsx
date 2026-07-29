@@ -1,5 +1,6 @@
 "use client";
 import { useState, useRef, useCallback } from "react";
+import Image from "next/image";
 import { ArrowUpRight } from "lucide-react";
 
 const FONT: React.CSSProperties = { fontFamily: "var(--font-sans)" };
@@ -228,12 +229,14 @@ export function SystemsShowcase() {
                         style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                       />
                     ) : (
-                      <img
+                      <Image
                         src={mod.image}
                         alt={mod.title}
-                        loading="lazy"
-                        decoding="async"
-                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                        fill
+                        sizes={mod.span === 2
+                          ? "(max-width: 767px) 96vw, (max-width: 1140px) 64vw, 730px"
+                          : "(max-width: 767px) 96vw, (max-width: 1140px) 32vw, 360px"}
+                        style={{ objectFit: "cover", display: "block" }}
                       />
                     )}
                   </div>

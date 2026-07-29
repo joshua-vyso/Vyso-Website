@@ -1,59 +1,142 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { zar } from '@/lib/platform/orderflow';
 import { AreaChart } from '@/components/platform/procurepulse/ui';
 import { SectionCard, CountUp } from '@/components/platform/module-ui';
-import { MODULE_META } from '@/lib/platform/module-meta';
-import { FORECAST_DRIVERS, FORECAST_COMMENTARY, type ForecastLine } from '@/lib/platform/planwise';
+import { MODULE_META, type VysoModuleKey } from '@/lib/platform/module-meta';
+import { FORECAST_DRIVERS, FORECAST_COMMENTARY, forecastLowerIsBetter, type ForecastLine } from '@/lib/platform/planwise';
 import { usePlanWise } from './context';
+import { EditForecastModal } from './EditForecastModal';
 
 function toneColor(t: ForecastLine['tone']) {
   return t === 'positive' ? '#0F6E56' : t === 'critical' ? '#A32D2D' : t === 'warning' ? '#854F0B' : '#3E7BC4';
 }
 const TREND = { up: '▲', down: '▼', flat: '→' } as const;
 
-export function ForecastCardsRich() {
+export function ForecastCardsRich({ onEdited }: { onEdited?: (label: string) => void }) {
   const { forecast } = usePlanWise();
+  const [editing, setEditing] = useState<ForecastLine | null>(null);
+
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-      {forecast.map((f) => {
-        const color = toneColor(f.tone);
-        const pctDiff = f.target !== 0 ? Math.round(((f.value - f.target) / f.target) * 100) : 0;
-        const overUnder = f.id === 'exp' ? (pctDiff > 0 ? 'over ceiling' : 'under ceiling') : pctDiff >= 0 ? 'above target' : 'below target';
-        return (
-          <div key={f.id} className="rounded-2xl border border-[#EAEDF2] bg-white p-5 shadow-[0_1px_2px_rgba(20,24,20,0.03)] transition-shadow hover:shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-[12px] font-medium uppercase tracking-[0.05em] text-[#8A8E86]">{f.label}</span>
-              <span className="of-num text-[12px] font-medium" style={{ color }}>{TREND[f.trend]} {Math.abs(pctDiff)}% {overUnder}</span>
-            </div>
-            <CountUp value={f.value} format={(n) => zar(n)} className="of-num mt-2 block text-[30px] font-semibold leading-none tracking-[-0.02em] text-[#171A17]" />
-            <div className="mt-2 text-[13px] text-[#6B6F68]">Likely range <span className="of-num">{zar(f.rangeLow)}</span> – <span className="of-num">{zar(f.rangeHigh)}</span></div>
-            <div className="mt-3">
-              <AreaChart data={f.data} color={color} fill={`${color}1A`} height={64} />
-            </div>
-            <div className="mt-3 flex items-center gap-2">
-              <span className="text-[11px] uppercase tracking-[0.06em] text-[#A0A49C]">Confidence</span>
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#EEF1F5]">
-                <div className="h-full rounded-full" style={{ width: `${f.confidence}%`, backgroundColor: color, transition: 'width 0.7s ease' }} />
+    <>
+      {editing ? (
+        <EditForecastModal key={editing.id} line={editing} onClose={() => setEditing(null)} onSaved={(l) => onEdited?.(l)} />
+      ) : null}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {forecast.map((f) => {
+          const color = toneColor(f.tone);
+          const pctDiff = f.target !== 0 ? Math.round(((f.value - f.target) / f.target) * 100) : 0;
+          const overUnder = forecastLowerIsBetter(f.id)
+            ? pctDiff > 0
+              ? 'over ceiling'
+              : 'under ceiling'
+            : pctDiff >= 0
+              ? 'above target'
+              : 'below target';
+          return (
+            <div key={f.id} className="rounded-2xl border border-[#EAEDF2] bg-white p-5 shadow-[0_1px_2px_rgba(20,24,20,0.03)] transition-shadow hover:shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[12px] font-medium uppercase tracking-[0.05em] text-[#8A8E86]">{f.label}</span>
+                <div className="flex items-center gap-2.5">
+                  <span className="of-num text-[12px] font-medium" style={{ color }}>
+                    {TREND[f.trend]} {Math.abs(pctDiff)}% {overUnder}
+                  </span>
+                  {f.rowId ? (
+                    <button
+                      type="button"
+                      onClick={() => setEditing(f)}
+                      className="text-[12px] font-semibold text-[#1F5FA8] transition-colors hover:text-[#174C87] hover:underline"
+                    >
+                      Edit
+                    </button>
+                  ) : null}
+                </div>
               </div>
-              <span className="of-num text-[11px] font-medium" style={{ color }}>{f.confidence}%</span>
+              <CountUp value={f.value} format={(n) => zar(n)} className="of-num mt-2 block text-[30px] font-semibold leading-none tracking-[-0.02em] text-[#171A17]" />
+              <div className="mt-2 text-[13px] text-[#6B6F68]">
+                Likely range <span className="of-num">{zar(f.rangeLow)}</span> – <span className="of-num">{zar(f.rangeHigh)}</span>
+              </div>
+              {f.measured != null ? (
+                <div className="mt-1.5 text-[12px] text-[#A0A49C]">
+                  <span className="of-num font-medium text-[#0F6E56]">{zar(f.measured)}</span> measured so far this month
+                </div>
+              ) : null}
+              <div className="mt-3">
+                <AreaChart data={f.data} color={color} fill={`${color}1A`} height={64} />
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-[11px] uppercase tracking-[0.06em] text-[#A0A49C]">Confidence</span>
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#EEF1F5]">
+                  <div className="h-full rounded-full" style={{ width: `${f.confidence}%`, backgroundColor: color, transition: 'width 0.7s ease' }} />
+                </div>
+                <span className="of-num text-[11px] font-medium" style={{ color }}>
+                  {f.confidence}%
+                </span>
+              </div>
             </div>
-          </div>
-        );
-      })}
-    </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
+/**
+ * What is driving the forecast. Where the month has measurable cost structure,
+ * the weights are the real share of spend rather than the illustrative split —
+ * so the bar that looks biggest is the one actually moving the number.
+ */
 export function ForecastDrivers() {
+  const { actuals } = usePlanWise();
+
+  const costLines = actuals.categories.filter((c) => !c.higherIsBetter && c.mtdActual > 0);
+  const totalCost = costLines.reduce((s, c) => s + c.mtdActual, 0);
+  const measured = actuals.hasSales && totalCost > 0;
+
+  const moduleFor = (cat: string): VysoModuleKey | undefined => {
+    const c = cat.toLowerCase();
+    if (c.includes('waste')) return 'wastewatch';
+    if (c.includes('cogs') || c.includes('produce') || c.includes('cost of goods')) return 'pricepilot';
+    if (c.includes('labour') || c.includes('staff')) return 'shiftboard';
+    return 'procurepulse';
+  };
+  const PALETTE = ['#3E7BC4', '#2E7D67', '#854F0B', '#A32D2D', '#5B53C0', '#0C447C', '#A0691A', '#7C5BC0'];
+
+  const drivers = measured
+    ? costLines
+        .slice()
+        .sort((a, b) => b.mtdActual - a.mtdActual)
+        .slice(0, 6)
+        .map((c, i) => ({
+          label: c.cat,
+          pct: Math.round((c.mtdActual / totalCost) * 100),
+          module: moduleFor(c.cat),
+          color: PALETTE[i % PALETTE.length],
+        }))
+    : FORECAST_DRIVERS;
+
   return (
-    <SectionCard title="What is driving this forecast?">
+    <SectionCard
+      title="What is driving this forecast?"
+      right={
+        <span className="text-[11px] font-medium" style={{ color: measured ? '#0F6E56' : '#8A8E86' }}>
+          {measured ? 'Measured · share of spend to date' : 'Illustrative'}
+        </span>
+      }
+    >
       <div className="flex flex-col gap-3">
-        {FORECAST_DRIVERS.map((d) => (
+        {drivers.map((d) => (
           <div key={d.label} className="flex items-center gap-3">
-            <span className="w-20 shrink-0 text-[13px] text-[#6B6F68]">
-              {d.module ? <Link href={MODULE_META[d.module].route} className="hover:text-[#171A17]">{d.label}</Link> : d.label}
+            <span className="w-28 shrink-0 truncate text-[13px] text-[#6B6F68]">
+              {d.module ? (
+                <Link href={MODULE_META[d.module].route} className="hover:text-[#171A17]">
+                  {d.label}
+                </Link>
+              ) : (
+                d.label
+              )}
             </span>
             <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-[#EEF1F5]">
               <div className="h-full rounded-full" style={{ width: `${d.pct}%`, backgroundColor: d.color, transition: 'width 0.7s cubic-bezier(0.22,1,0.36,1)' }} />
@@ -66,12 +149,66 @@ export function ForecastDrivers() {
   );
 }
 
+/**
+ * Forecast commentary. Every line is generated from a measured figure, so it
+ * changes when the business changes; the seeded copy is only used for an org
+ * with nothing measurable yet.
+ */
 export function ForecastInsight() {
+  const { actuals, targetMarginPct, monthlyGoal } = usePlanWise();
+  const notes: string[] = [];
+
+  if (actuals.hasSales) {
+    const projected = actuals.pace.elapsed > 0 ? actuals.revenueMtd / actuals.pace.elapsed : 0;
+    const gap = projected - monthlyGoal.targetRevenue;
+    notes.push(
+      monthlyGoal.targetRevenue > 0
+        ? `Sales are tracking to ${zar(projected)} this month — ${gap >= 0 ? 'ahead of' : 'short of'} the ${zar(monthlyGoal.targetRevenue)} target by ${zar(Math.abs(gap))}.`
+        : `Sales are tracking to ${zar(projected)} this month on ${zar(actuals.revenueMtd)} banked so far.`,
+    );
+  }
+  if (actuals.growthPct != null) {
+    notes.push(
+      `Revenue is ${actuals.growthPct >= 0 ? 'up' : 'down'} ${Math.abs(actuals.growthPct).toFixed(1)}% on the same ${actuals.pace.day} days last month (${zar(actuals.revenuePrevSameWindow)}).`,
+    );
+  }
+  if (actuals.grossMarginPct != null) {
+    notes.push(
+      targetMarginPct != null
+        ? `Realised gross margin is ${actuals.grossMarginPct.toFixed(1)}% against your ${Math.round(targetMarginPct)}% target.`
+        : `Realised gross margin is ${actuals.grossMarginPct.toFixed(1)}% on ${zar(actuals.costedRevenueMtd)} of costed sales.`,
+    );
+  }
+  if (actuals.wasteMtd > 0) {
+    notes.push(
+      actuals.wastePctOfCogs != null
+        ? `Logged waste of ${zar(actuals.wasteMtd)} is ${actuals.wastePctOfCogs.toFixed(1)}% of food cost this month.`
+        : `Logged waste of ${zar(actuals.wasteMtd)} is coming straight off projected profit.`,
+    );
+  }
+  if (actuals.outstanding > 0) {
+    notes.push(
+      actuals.outstandingOverdue > 0
+        ? `${zar(actuals.outstanding)} sits in unpaid invoices, ${zar(actuals.outstandingOverdue)} of it past due.`
+        : `${zar(actuals.outstanding)} sits in unpaid invoices not yet due.`,
+    );
+  }
+
+  const measured = notes.length > 0;
+  const lines = measured ? notes : FORECAST_COMMENTARY;
+
   return (
-    <SectionCard title="Forecast commentary" right={<span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#1F5FA8]">✦ AI insight</span>}>
+    <SectionCard
+      title="Forecast commentary"
+      right={
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium" style={{ color: measured ? '#0F6E56' : '#1F5FA8' }}>
+          {measured ? '● Measured this month' : '✦ Illustrative'}
+        </span>
+      }
+    >
       <div className="rounded-[14px] border border-[#EEF1F5] bg-gradient-to-br from-white to-[#F5F9FE] p-4">
         <div className="flex flex-col gap-3">
-          {FORECAST_COMMENTARY.map((t, i) => (
+          {lines.map((t, i) => (
             <div key={i} className="flex items-start gap-2.5 text-[14px] leading-relaxed">
               <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#1F5FA8]" />
               <span className="text-[#171A17]">{t}</span>

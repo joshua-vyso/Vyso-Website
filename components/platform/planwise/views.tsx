@@ -13,6 +13,7 @@ import { BudgetWorkspace } from './BudgetWorkspace';
 import { ForecastCardsRich, ForecastDrivers, ForecastInsight } from './Forecast';
 import { ScenariosWorkspace } from './Scenarios';
 import { AddBudgetLineModal } from './AddBudgetLineModal';
+import { BudgetVsActual, BudgetPaceStrip } from './BudgetVsActual';
 
 const M = MODULE_META.planwise;
 
@@ -29,11 +30,18 @@ export function OverviewView() {
   const { node, show } = useToast();
   const pw = usePlanWise();
   const [budgetOpen, setBudgetOpen] = useState(false);
-  const { totalBudget, totalActual, monthlyGoal, scenarioBase, forecast } = pw;
-  const used = totalBudget > 0 ? Math.round((totalActual / totalBudget) * 100) : 0;
-  const variance = totalActual - totalBudget;
+  const { totalBudget, totalActual, monthlyGoal, scenarioBase, forecast, actuals } = pw;
   const profitLine = forecast.find((f) => f.id === 'profit');
   const forecastProfit = profitLine ? profitLine.value : scenarioBase.revenue - scenarioBase.expenses;
+
+  // Budget health is read against TODAY'S pace, not the whole month — otherwise
+  // every org looks comfortably under budget until the last day of the month.
+  const costLines = actuals.categories.filter((c) => !c.higherIsBetter);
+  const pacedBudget = costLines.reduce((s, c) => s + c.pacedBudget, 0);
+  const spentToDate = costLines.reduce((s, c) => s + c.mtdActual, 0);
+  const usedVsPace = pacedBudget > 0 ? Math.round((spentToDate / pacedBudget) * 100) : 0;
+  const used = pacedBudget > 0 ? usedVsPace : totalBudget > 0 ? Math.round((totalActual / totalBudget) * 100) : 0;
+  const variance = pacedBudget > 0 ? spentToDate - pacedBudget : totalActual - totalBudget;
 
   const header = <ModuleHeader icon={M.icon} title={M.name} description="Where are we trying to get to — and what needs to happen to get there?" actions={<PrimaryAction onClick={() => setBudgetOpen(true)}>+ Add budget line</PrimaryAction>} />;
   const budgetModal = <AddBudgetLineModal open={budgetOpen} onClose={() => setBudgetOpen(false)} onSaved={(c) => show(`${c} added to budget`)} />;
@@ -59,15 +67,26 @@ export function OverviewView() {
       {budgetModal}
 
       <KpiStrip>
-        <Kpi label="Monthly revenue target" value={zar(monthlyGoal.targetRevenue)} />
-        <Kpi label="Budget used" value={`${used}%`} accent={used > 95 ? '#A32D2D' : '#854F0B'} sub={`${zar(totalActual)} of ${zar(totalBudget)}`} />
+        <Kpi label="Monthly revenue target" value={zar(monthlyGoal.targetRevenue)} sub={actuals.hasSales ? `${zar(actuals.revenueMtd)} banked so far` : undefined} />
+        <Kpi
+          label="Budget used vs pace"
+          value={`${used}%`}
+          accent={used > 105 ? '#A32D2D' : used > 100 ? '#854F0B' : '#0F6E56'}
+          sub={pacedBudget > 0 ? `${zar(spentToDate)} of ${zar(pacedBudget)} by day ${actuals.pace.day}` : `${zar(totalActual)} of ${zar(totalBudget)}`}
+        />
         <Kpi label="Forecast profit" value={zar(forecastProfit)} accent={forecastProfit >= 0 ? '#0F6E56' : '#A32D2D'} />
-        <Kpi label="Expense variance" value={`${variance >= 0 ? '+' : '−'}${zar(Math.abs(variance))}`} accent={variance > 0 ? '#A32D2D' : '#0F6E56'} />
-        <Kpi label="Cash runway" value={`${scenarioBase.runwayMonths.toFixed(1)} mo`} />
+        <Kpi
+          label="Expense variance today"
+          value={`${variance >= 0 ? '+' : '−'}${zar(Math.abs(variance))}`}
+          accent={variance > 0 ? '#A32D2D' : '#0F6E56'}
+          sub={pacedBudget > 0 ? 'against budget pro-rated to today' : undefined}
+        />
+        <Kpi label="Cash runway" value={`${scenarioBase.runwayMonths.toFixed(1)} mo`} sub={actuals.outstanding > 0 ? `${zar(actuals.outstanding)} owed to you` : undefined} />
       </KpiStrip>
 
       <MonthlyGoalCard />
       <GoalSummaryCards />
+      <BudgetPaceStrip />
       <DecisionsPanel />
       <FinancialFlow />
       <MobileSnapshotCards />
@@ -86,12 +105,14 @@ export function BudgetView() {
         <PageTitle title="Budget" subtitle="Explore where your budget goes — hover and click to dig in" />
         <SecondaryAction onClick={() => setBudgetOpen(true)}>+ Add category</SecondaryAction>
       </div>
+      <BudgetVsActual />
       <BudgetWorkspace />
     </div>
   );
 }
 
 export function ForecastView() {
+  const { node, show } = useToast();
   const { forecast } = usePlanWise();
   if (forecast.length === 0) {
     return (
@@ -106,8 +127,9 @@ export function ForecastView() {
   }
   return (
     <div className="space-y-5">
+      {node}
       <PageTitle title="Forecast" subtitle="Where the business is expected to finish — and why" />
-      <ForecastCardsRich />
+      <ForecastCardsRich onEdited={(label) => show(`${label} forecast updated`)} />
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <ForecastDrivers />
         <ForecastInsight />

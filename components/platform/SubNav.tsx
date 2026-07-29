@@ -1,8 +1,36 @@
 'use client';
 
-import Link from 'next/link';
+import Link, { useLinkStatus } from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
+
+/**
+ * The label of a tab, dimmed with a trailing dot while its navigation is in
+ * flight. `useLinkStatus` only reports for the Link it is rendered inside, so
+ * the feedback lands on the tab the user actually clicked.
+ *
+ * Both the dim and the dot are delayed ~150ms and the dot is always in the DOM
+ * at a fixed size: a prefetched tab resolves before the delay elapses (no
+ * flicker) and nothing reflows when the indicator appears.
+ */
+function TabLabel({ label }: { label: string }) {
+  const { pending } = useLinkStatus();
+  return (
+    <span
+      className={`inline-flex items-center transition-opacity delay-150 duration-200 ${
+        pending ? 'opacity-55' : 'opacity-100'
+      }`}
+    >
+      {label}
+      <span
+        aria-hidden
+        className={`ml-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-current transition-opacity delay-150 duration-200 ${
+          pending ? 'opacity-70' : 'opacity-0'
+        }`}
+      />
+    </span>
+  );
+}
 
 /**
  * Generic horizontal sub-navigation for a module's screens — the calm underline
@@ -38,7 +66,7 @@ export function SubNav({
             }`}
             style={active ? { borderBottomColor: accent } : undefined}
           >
-            {t.label}
+            <TabLabel label={t.label} />
           </Link>
         );
       })}

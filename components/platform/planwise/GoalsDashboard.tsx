@@ -9,7 +9,21 @@ import { usePlanWise } from './context';
 import { fmtGoal } from './ui';
 
 export function GoalsDashboard() {
-  const { goals } = usePlanWise();
+  const { goals, actuals, monthlyGoal } = usePlanWise();
+
+  // The timeline used fixed literals. Where the month is measurable, "Today" is
+  // the real elapsed fraction and "Forecast finish" is the measured revenue run
+  // rate against the target — so the marker moves as the month actually runs.
+  const measurable = actuals.hasSales && monthlyGoal.targetRevenue > 0 && actuals.pace.elapsed > 0;
+  const projectedRevenue = measurable ? actuals.revenueMtd / actuals.pace.elapsed : 0;
+  const timeline = measurable
+    ? {
+        monthProgress: Math.round(actuals.pace.elapsed * 100),
+        forecastFinish: Math.max(0, Math.min(140, Math.round((projectedRevenue / monthlyGoal.targetRevenue) * 100))),
+        goal: 100,
+      }
+    : GOAL_TIMELINE;
+
   if (goals.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-[#E2E6EC] bg-[#FBFCFE] px-6 py-12 text-center">
@@ -32,7 +46,14 @@ export function GoalsDashboard() {
                 <span className="of-num text-[15px] font-semibold" style={{ color }}>{pct}%</span>
               </ProgressRing>
               <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-semibold text-[#171A17]">{g.label}</div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[13px] font-semibold text-[#171A17]">{g.label}</span>
+                  {g.derived ? (
+                    <span className="rounded-full bg-[#E1F5EE] px-1.5 py-0.5 text-[10px] font-medium text-[#0F6E56]" title="Measured from live module data">
+                      ● Live
+                    </span>
+                  ) : null}
+                </div>
                 <div className="mt-1 text-[12px] text-[#A0A49C]"><span className="of-num">{fmtGoal(g, g.current)}</span> of <span className="of-num">{fmtGoal(g, g.target)}</span></div>
                 <div className="mt-1.5 flex items-center justify-between gap-2">
                   <span className="of-num text-[12px] font-semibold" style={{ color: variance >= 0 ? '#0F6E56' : '#A32D2D' }}>{variance >= 0 ? '+' : '−'}{fmtGoal(g, Math.abs(variance))}</span>
@@ -45,14 +66,26 @@ export function GoalsDashboard() {
       </div>
 
       {/* Goal timeline */}
-      <SectionCard title="Goal timeline" right={<span className="of-num text-[12px] font-medium" style={{ color: GOAL_TIMELINE.forecastFinish >= 100 ? '#0F6E56' : '#854F0B' }}>{GOAL_TIMELINE.forecastFinish >= 100 ? 'On track' : `Tracking to ${GOAL_TIMELINE.forecastFinish}% — behind by ${100 - GOAL_TIMELINE.forecastFinish}%`}</span>}>
+      <SectionCard
+        title="Goal timeline"
+        right={
+          <div className="flex items-center gap-2">
+            <span className="of-num text-[12px] font-medium" style={{ color: timeline.forecastFinish >= 100 ? '#0F6E56' : '#854F0B' }}>
+              {timeline.forecastFinish >= 100 ? 'On track' : `Tracking to ${timeline.forecastFinish}% — behind by ${100 - timeline.forecastFinish}%`}
+            </span>
+            <span className="text-[11px] font-medium" style={{ color: measurable ? '#0F6E56' : '#A0A49C' }}>
+              {measurable ? '● Measured' : 'Illustrative'}
+            </span>
+          </div>
+        }
+      >
         <div className="relative pb-6 pt-8">
           <div className="h-2 w-full rounded-full bg-[#EEF1F5]">
-            <div className="h-full rounded-full bg-[#1F5FA8]" style={{ width: `${GOAL_TIMELINE.monthProgress}%`, transition: 'width 0.7s ease' }} />
+            <div className="h-full rounded-full bg-[#1F5FA8]" style={{ width: `${Math.min(100, timeline.monthProgress)}%`, transition: 'width 0.7s ease' }} />
           </div>
           <Marker pos={0} label="Month start" />
-          <Marker pos={GOAL_TIMELINE.monthProgress} label="Today" color="#3E7BC4" big />
-          <Marker pos={GOAL_TIMELINE.forecastFinish} label="Forecast finish" color="#854F0B" big />
+          <Marker pos={timeline.monthProgress} label="Today" color="#3E7BC4" big />
+          <Marker pos={timeline.forecastFinish} label="Forecast finish" color="#854F0B" big />
           <Marker pos={100} label="Goal" color="#0F6E56" />
         </div>
       </SectionCard>

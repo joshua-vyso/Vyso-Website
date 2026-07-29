@@ -1,12 +1,32 @@
 'use client';
 
-import { useEffect } from 'react';
-import Link from 'next/link';
+import { useEffect, useRef } from 'react';
+import Link, { useLinkStatus } from 'next/link';
 import { usePathname } from 'next/navigation';
 import { MODULES } from '@/lib/platform/modules';
 import { SERVICEDEN_ACCOUNT_EMAIL } from '@/lib/platform/serviceden';
 import { usePlatform } from '@/lib/platform/session';
 import { AppIcon } from './AppIcon';
+
+/**
+ * Spinner for the module tile whose navigation is in flight. It has to live
+ * INSIDE the `<Link>` — `useLinkStatus` only reports for its nearest Link
+ * ancestor, which is what puts the feedback on the tile the user clicked.
+ *
+ * Always rendered at a fixed size and only faded in (after a 150ms delay), so a
+ * prefetched module never flashes it and the tile's layout never shifts.
+ */
+function TilePending() {
+  const { pending } = useLinkStatus();
+  return (
+    <span
+      aria-hidden
+      className={`h-3.5 w-3.5 shrink-0 rounded-full border-2 border-[#C9DEF7] border-t-[#1F5FA8] transition-opacity delay-150 duration-200 ${
+        pending ? 'animate-spin opacity-100' : 'opacity-0'
+      }`}
+    />
+  );
+}
 
 /**
  * The module switcher, opened from the top bar's hamburger. It replaces the old
@@ -25,6 +45,7 @@ export function ModulesOverlay({
 }) {
   const { features, email, lockedModules } = usePlatform();
   const pathname = usePathname() ?? '';
+  const pendingHref = useRef<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -39,6 +60,26 @@ export function ModulesOverlay({
       document.body.style.overflow = prev;
     };
   }, [open, onClose]);
+
+  // A tile you can actually navigate to no longer closes the overlay on click:
+  // it has to stay mounted for TilePending to report that the click landed while
+  // the module renders. The overlay closes itself once the route commits. Tiles
+  // for the module you're already on close immediately instead, since their
+  // pathname never changes — and Escape / the backdrop / ✕ always work.
+  // `pendingHref` is a ref, not state: nothing renders from it (TilePending reads
+  // its own Link's status), so it must not cause a render of its own.
+  useEffect(() => {
+    const href = pendingHref.current;
+    if (!href) return;
+    if (pathname === href || pathname.startsWith(`${href}/`)) {
+      pendingHref.current = null;
+      onClose();
+    }
+  }, [pathname, onClose]);
+
+  useEffect(() => {
+    if (open) pendingHref.current = null;
+  }, [open]);
 
   if (!open) return null;
 
@@ -126,7 +167,10 @@ export function ModulesOverlay({
               <Link
                 key={m.key}
                 href={m.screens.desktop}
-                onClick={onClose}
+                onClick={() => {
+                  if (active) return onClose();
+                  pendingHref.current = m.screens.desktop;
+                }}
                 aria-current={active ? 'page' : undefined}
                 className={`${card} ${
                   active
@@ -143,6 +187,7 @@ export function ModulesOverlay({
                     {active ? `Current · ${m.description}` : m.description}
                   </span>
                 </span>
+                <TilePending />
               </Link>
             );
           })}
@@ -151,7 +196,10 @@ export function ModulesOverlay({
           {email === SERVICEDEN_ACCOUNT_EMAIL ? (
             <Link
               href="/app/serviceden"
-              onClick={onClose}
+              onClick={() => {
+                if (serviceDenActive) return onClose();
+                pendingHref.current = '/app/serviceden';
+              }}
               aria-current={serviceDenActive ? 'page' : undefined}
               className={`${card} ${
                 serviceDenActive
@@ -174,6 +222,7 @@ export function ModulesOverlay({
                   Service business
                 </span>
               </span>
+              <TilePending />
             </Link>
           ) : null}
         </div>

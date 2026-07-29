@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Image from "next/image";
 
 const FONT: React.CSSProperties = { fontFamily: "var(--font-sans)" };
 const BODY: React.CSSProperties = { fontFamily: "var(--font-body, var(--font-sans))" };
@@ -286,6 +287,7 @@ export function HowItWorks() {
 
             {/* Mockup image */}
             <div style={{
+              position:     "relative",   // required by next/image `fill`
               flex:         1,
               borderRadius: 10,
               overflow:     "hidden",
@@ -296,14 +298,12 @@ export function HowItWorks() {
             }}
               className="how-image"
             >
-              <img
+              <Image
                 src={step.image}
                 alt={`${step.title} mockup`}
-                loading="lazy"
-                decoding="async"
+                fill
+                sizes="(max-width: 767px) 92vw, 620px"
                 style={{
-                  width:          "100%",
-                  height:         "100%",
                   objectFit:      "cover",
                   objectPosition: step.imgPos,
                   display:        "block",

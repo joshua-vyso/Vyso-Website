@@ -7,11 +7,21 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: __dirname,
   },
-  // Only pull the modules actually used from these large barrel-export packages
-  // (the animation runtime is on every marketing page). No-ops for any listed
-  // package that isn't a barrel.
   experimental: {
-    optimizePackageImports: ['framer-motion', 'motion'],
+    // Only pull the modules actually used from these large barrel-export packages
+    // (the animation runtime is on every marketing page, lucide-react ships ~1.5k
+    // icon modules). Listed packages must be direct deps — `framer-motion` is only
+    // a transitive dep of `motion` and is never imported by name, so it's dropped.
+    optimizePackageImports: ['motion', 'lucide-react', '@radix-ui/react-icons'],
+    // Client-side Router Cache lifetimes, in seconds. Defaults are dynamic: 0
+    // (refetched on every navigation) and static: 300. Holding dynamic segments
+    // for 30s makes back/forth between platform routes feel instant without
+    // serving badly stale data; 180s on prefetched/static marketing pages is
+    // shorter than the default so content edits surface sooner.
+    staleTimes: {
+      dynamic: 30,
+      static: 180,
+    },
   },
   async redirects() {
     return [

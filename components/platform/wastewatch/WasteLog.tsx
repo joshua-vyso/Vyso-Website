@@ -5,7 +5,7 @@ import { zar } from '@/lib/platform/orderflow';
 import { useToast, Drawer } from '@/components/platform/orderflow/ui';
 import { Badge } from '@/components/platform/module-ui';
 import { WASTE_REASONS, type WasteEvent } from '@/lib/platform/wastewatch';
-import { CategoryBadge, LogWasteModal } from './shared';
+import { CategoryBadge, LogWasteModal, EmptyState } from './shared';
 import { useWasteWatch } from './categories';
 
 const distinct = (arr: string[]) => Array.from(new Set(arr)).sort();
@@ -64,6 +64,14 @@ export function WasteLog({ initialCategory }: { initialCategory?: string }) {
         <button type="button" onClick={() => setLogOpen(true)} className="inline-flex h-[42px] items-center rounded-[11px] bg-[#1F5FA8] px-[18px] text-[14px] font-semibold text-white transition-colors hover:bg-[#174C87]">+ Log waste</button>
       </div>
 
+      {events.length === 0 ? (
+        <EmptyState
+          title="No waste logged yet"
+          hint="Every event you log lands here — item, quantity, cost, reason code, recipe, the person and the device that measured it. Everything on the Overview and Analytics tabs is computed from this list."
+          action={<button type="button" onClick={() => setLogOpen(true)} className="inline-flex h-[42px] items-center rounded-[11px] bg-[#1F5FA8] px-[18px] text-[14px] font-semibold text-white transition-colors hover:bg-[#174C87]">+ Log waste</button>}
+        />
+      ) : (
+      <>
       <div className="flex flex-wrap items-center gap-2">
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search item, recipe, employee…" className="h-11 min-w-[220px] flex-1 rounded-[12px] border border-[#E4E9F0] bg-white px-4 text-[14px] text-[#171A17] outline-none placeholder:text-[#A0A49C] focus:border-[#3E7BC4]" />
         <select value={category} onChange={(e) => setCategory(e.target.value)} className={sel}><option value="all">All categories</option>{categories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}</select>
@@ -107,6 +115,8 @@ export function WasteLog({ initialCategory }: { initialCategory?: string }) {
           </table>
         </div>
       </div>
+      </>
+      )}
 
       <Drawer open={!!open} onClose={() => setOpenId(null)} title={open?.item ?? ''} subtitle={open ? `${open.date} · ${open.time} · ${open.location}` : undefined} right={open ? <Badge label={open.preventable ? 'Preventable' : 'Unavoidable'} tone={open.preventable ? 'warning' : 'neutral'} /> : undefined} width={520}>
         {open ? <WasteDetail e={open} /> : null}

@@ -60,6 +60,67 @@ function computeTrial(org: Organisation | null): PlatformSession['trial'] {
 const emptyFeatures = (): Record<FeatureKey, boolean> =>
   Object.fromEntries(FEATURE_KEYS.map((k) => [k, false])) as Record<FeatureKey, boolean>;
 
+type ServerSupabase = Awaited<ReturnType<typeof createServerSupabase>>;
+
+/** Row shape of the collapsed `profiles → organisations → org_features` read.
+ *  PostgREST embeds the many-to-one parent as an object and the one-to-many
+ *  child as an array; both are typed loosely and normalised defensively below
+ *  so a schema surprise degrades to `null`/`[]` rather than throwing. */
+type OrgWithFeatures = Organisation & { org_features?: OrgFeature[] | null };
+type ProfileWithOrg = Profile & { organisations?: OrgWithFeatures | OrgWithFeatures[] | null };
+
+/** Latched once per server process when this database cannot serve the nested
+ *  embed — PostgREST answers PGRST200 when the FK it needs isn't in the schema
+ *  cache. `organisations`/`profiles`/`org_features` have no checked-in DDL (see
+ *  AUDIT_FINDINGS.md), so the FKs can't be verified from supabase/*.sql; the
+ *  split fallback below keeps the old behaviour exactly if they're absent. */
+let nestedEmbedUnavailable = false;
+
+/**
+ * Fetch profile + org + org features in ONE round-trip via a nested select.
+ * Falls back to the original profile-then-(org ‖ features) pair only when the
+ * embed is unavailable, which is then remembered so it's probed once, not once
+ * per request. Both paths return identical data.
+ */
+async function loadProfileGraph(
+  supabase: ServerSupabase,
+  userId: string,
+): Promise<{ profile: Profile | null; org: Organisation | null; featureRows: OrgFeature[] }> {
+  if (!nestedEmbedUnavailable) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*, organisations(*, org_features(*))')
+      .eq('id', userId)
+      .maybeSingle<ProfileWithOrg>();
+
+    if (!error) {
+      if (!data) return { profile: null, org: null, featureRows: [] };
+      const { organisations, ...profile } = data;
+      const orgRow = Array.isArray(organisations) ? (organisations[0] ?? null) : (organisations ?? null);
+      if (!orgRow) return { profile, org: null, featureRows: [] };
+      const { org_features, ...org } = orgRow;
+      return { profile, org, featureRows: org_features ?? [] };
+    }
+    // Missing/unresolvable relationship — stop paying for the embed attempt.
+    if (error.code === 'PGRST200') nestedEmbedUnavailable = true;
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle<Profile>();
+
+  if (!profile?.org_id) return { profile: profile ?? null, org: null, featureRows: [] };
+
+  const [{ data: orgRow }, { data: featureRows }] = await Promise.all([
+    supabase.from('organisations').select('*').eq('id', profile.org_id).maybeSingle<Organisation>(),
+    supabase.from('org_features').select('*').eq('org_id', profile.org_id).returns<OrgFeature[]>(),
+  ]);
+
+  return { profile, org: orgRow ?? null, featureRows: featureRows ?? [] };
+}
+
 /**
  * Resolve the authenticated platform session (user + profile + org + features),
  * or null when unauthenticated/unconfigured. The /app layout uses this to guard.
@@ -68,6 +129,10 @@ const emptyFeatures = (): Record<FeatureKey, boolean> =>
  * SINGLE execution per request instead of each re-running the auth → profile →
  * org/features round-trips. This deduped ~8 redundant queries per ProcurePulse
  * navigation down to one set.
+ *
+ * That one set is now TWO sequential hops, not three: `auth.getUser()` (kept as
+ * hop 1 — it revalidates the JWT with the auth server, which getSession/getClaims
+ * do not) then a single nested read for profile + org + features.
  */
 export const getPlatformSession = cache(async (): Promise<PlatformSession | null> => {
   if (!supabaseConfigured) return null;
@@ -78,25 +143,12 @@ export const getPlatformSession = cache(async (): Promise<PlatformSession | null
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', user.id)
-    .maybeSingle<Profile>();
+  const { profile, org, featureRows } = await loadProfileGraph(supabase, user.id);
 
   const features = emptyFeatures();
-  let org: Organisation | null = null;
-
-  if (profile?.org_id) {
-    const [{ data: orgRow }, { data: featureRows }] = await Promise.all([
-      supabase.from('organisations').select('*').eq('id', profile.org_id).maybeSingle<Organisation>(),
-      supabase.from('org_features').select('*').eq('org_id', profile.org_id).returns<OrgFeature[]>(),
-    ]);
-    org = orgRow ?? null;
-    for (const row of featureRows ?? []) {
-      if ((FEATURE_KEYS as readonly string[]).includes(row.feature_key)) {
-        features[row.feature_key as FeatureKey] = row.enabled;
-      }
+  for (const row of featureRows) {
+    if ((FEATURE_KEYS as readonly string[]).includes(row.feature_key)) {
+      features[row.feature_key as FeatureKey] = row.enabled;
     }
   }
 
