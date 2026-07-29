@@ -1784,6 +1784,105 @@ alter table documents
   add column if not exists starred boolean not null default false;
 
 
+-- ---------------------------------------------------------------------------
+-- 1.12b  documents.status check-constraint REPAIR
+--
+-- WHY THIS EXISTS
+--   The columns above shipped without the matching widening of the status
+--   domain. `documents` has no CREATE TABLE anywhere in this repo — it predates
+--   the tracked migrations — so the live check constraint is whatever the
+--   original bootstrap wrote, and that list is STALE:
+--
+--     * demo-fresh-valley/9-docu-seed.sql applied cleanly against this same
+--       database, so 'pending' / 'extracted' / 'reviewed' / 'error' are proven
+--       to pass;
+--     * lib/platform/types.ts `DocumentStatus` is the full domain the product
+--       actually uses — the four above PLUS 'approved', 'rejected', 'archived';
+--     * lib/platform/document-ingest.ts:356 writes status='approved' on the
+--       review-queue Save, and lib/platform/docu/workflow.ts:25-27 maps the
+--       Approve / Reject / Archive actions onto exactly those three.
+--
+--   So the live constraint does not merely block section 2D's four 'approved'
+--   documents — it breaks Doc-U's own Save, Discard and Archive buttons. This
+--   block widens it to the union, which is precisely `DocumentStatus`.
+--
+-- WHY IT IS SHAPED LIKE THIS (and not a bare drop/add like §0's org_features)
+--   1. The constraint's NAME is not knowable from this repo. The first DO block
+--      therefore drops every CHECK constraint on `documents` whose definition
+--      both mentions the `status` column and has the shape of an enum list
+--      (`status = ANY (ARRAY[...])` / `status IN (...)`). Restricting to that
+--      shape means a compound business rule that merely happens to reference
+--      status is left alone.
+--   2. This database also holds NON-demo organisations (Morco, TNS). Their
+--      `documents` rows may carry a status this file cannot predict, and a
+--      plain ADD CONSTRAINT would then fail 23514 on rows nobody asked us to
+--      touch. The second DO block therefore builds the allowed list as the
+--      seven DocumentStatus values UNION whatever distinct statuses already
+--      exist in the table, so the ALTER can never fail on existing data while
+--      still admitting every value the app writes.
+--   3. Both blocks swallow undefined_table / undefined_object, so the file
+--      stays runnable on a database where `documents` (or the constraint) is
+--      not there yet, and re-runnable afterwards.
+--
+--   document_type is deliberately NOT touched: section 2D uses only 'invoice',
+--   'delivery_note', 'statement', 'price_list' and 'order', all five of which
+--   9-docu-seed.sql already put through the live constraint, and all five of
+--   which are lib/platform/types.ts `DocumentType`. There is nothing to widen.
+-- ---------------------------------------------------------------------------
+
+-- Step 1 — drop the stale enum-list CHECK on documents.status, under any name.
+do $$
+declare
+  c record;
+begin
+  if to_regclass('public.documents') is null then
+    return;
+  end if;
+  for c in
+    select con.conname
+    from pg_constraint con
+    where con.conrelid = 'public.documents'::regclass
+      and con.contype  = 'c'
+      and pg_get_constraintdef(con.oid) ~ '\mstatus\M'
+      and pg_get_constraintdef(con.oid) ~ '(= ANY \(ARRAY\[|\mIN \()'
+  loop
+    execute format('alter table public.documents drop constraint %I', c.conname);
+  end loop;
+exception
+  when undefined_table or undefined_object then null;
+end $$;
+
+-- Step 2 — re-add it over the full DocumentStatus domain, plus any status value
+--          already present in the table (see note 2 above).
+do $$
+declare
+  v_known text[] := array['pending','extracted','reviewed','error',
+                          'approved','rejected','archived'];
+  v_all   text[];
+  v_list  text;
+begin
+  if to_regclass('public.documents') is null then
+    return;
+  end if;
+
+  select v_known || coalesce(array_agg(distinct d.status), '{}'::text[])
+    into v_all
+  from documents d
+  where d.status is not null
+    and not (d.status = any (v_known));
+
+  select string_agg(quote_literal(q.s), ',')
+    into v_list
+  from (select distinct s from unnest(v_all) as s order by 1) q;
+
+  execute 'alter table public.documents drop constraint if exists documents_status_check';
+  execute 'alter table public.documents add constraint documents_status_check '
+       || 'check (status in (' || v_list || '))';
+exception
+  when undefined_table or undefined_object then null;
+end $$;
+
+
 -- ##########################################################################
 -- ##  SECTION 2 — SEEDS
 -- ##  Six domain fragments in strict FK dependency order. Each opens with a
@@ -2157,6 +2256,12 @@ from (values
 --    Only the columns the app itself writes are set; everything else keeps its
 --    column default. custom_units feeds the typeable unit dropdown on Products,
 --    the Doc-U line editor and the OrderFlow line-item unit picker.
+--    The list must cover every unit this file actually seeds that is NOT in
+--    BUILT_IN_UNITS (lib/platform/procurepulse/units.ts), otherwise allUnits()
+--    omits it from the dropdown. 'case' and 'bin' are in that set — 'case' is
+--    the unit on six catalogue lines, 'bin' a purchase unit in pp_product_units.
+--    'bag' / 'box' / 'bunch' are deliberately absent: they are the singular of
+--    the built-in 'bags' / 'boxes' / 'bunches' and would only duplicate them.
 -- ---------------------------------------------------------------------------
 insert into pp_settings (
   org_id, notify_low_stock, notify_direct_docs, notify_market_statements,
@@ -2165,7 +2270,7 @@ insert into pp_settings (
 values (
   '01000000-7e5d-4c1a-9b3f-000000000001'::uuid,
   true, true, true, true, true, 'Bergriver Growers',
-  array['crate','sleeve','bundle','tub','punnet','cover','batch','tray','drum','load','pallet-month','reel']
+  array['case','crate','sleeve','bundle','tub','bin','punnet','cover','batch','tray','drum','load','pallet-month','reel']
 );
 
 
@@ -4141,6 +4246,9 @@ from (values
 --     "Compliance & certificates" is intentionally empty — the certificates
 --     themselves live on the supplier profiles (ss_supplier_documents, writer f);
 --     the folder is the filing slot the team keeps for scanned originals.
+--     Every colour is a member of FOLDER_COLORS (lib/platform/docu/folders.ts),
+--     the palette the New-folder picker offers, so a demo folder is
+--     indistinguishable from one a user made.
 -- ---------------------------------------------------------------------------
 insert into document_folders (id, org_id, name, color, starred, created_by)
 select ('21000000-7e5d-4c1a-9b3f-' || lpad(v.n::text, 12, '0'))::uuid,
@@ -4151,7 +4259,7 @@ from (values
   (2, 'Delivery notes — July',       '#854F0B', false),
   (3, 'Supplier statements',         '#0F6E56', true),
   (4, 'Price lists — Q3',            '#5B4FD6', false),
-  (5, 'Compliance & certificates',   '#0E7490', false),
+  (5, 'Compliance & certificates',   '#1E5E54', false),
   (6, 'Customer orders (WhatsApp)',  '#C0345A', false)
 ) as v(n, name, color, starred);
 
