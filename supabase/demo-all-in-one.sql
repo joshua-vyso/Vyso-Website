@@ -2991,7 +2991,7 @@ inv as (
 )
 select
   ('0e000000-7e5d-4c1a-9b3f-' || lpad(inv.idx::text, 12, '0'))::uuid,
-  '01000000-7e5d-4c1a-9b3f-000000000001',
+  '01000000-7e5d-4c1a-9b3f-000000000001'::uuid,
   inv.id, inv.customer_id,
   inv.total,
   case when inv.cust_idx between 20 and 25
@@ -3005,7 +3005,7 @@ where inv.status = 'paid'
 union all
 select
   ('0e000000-7e5d-4c1a-9b3f-' || lpad((500000 + inv.idx)::text, 12, '0'))::uuid,
-  '01000000-7e5d-4c1a-9b3f-000000000001',
+  '01000000-7e5d-4c1a-9b3f-000000000001'::uuid,
   inv.id, inv.customer_id,
   round(inv.total * (array[0.35,0.40,0.45,0.50,0.55,0.60])[(inv.idx % 6) + 1], 2),
   'eft',
