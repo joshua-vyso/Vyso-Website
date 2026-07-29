@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { DocuNav } from './DocuNav';
+import { DocuChrome } from './Chrome';
 import {
   buildReconciliationCsv,
   fmtZar,
@@ -91,10 +91,10 @@ export function ReconciliationView({ statements }: { statements: DocumentWithSup
 
   return (
     <div className="px-8 py-7">
-      <DocuNav />
+      <DocuChrome />
 
       <div className="mt-6">
-        <h1 className="of-display text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Reconciliation</h1>
+        <h2 className="of-display text-[20px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Reconciliation</h2>
         <p className="mt-1.5 text-[14px] text-[#8A8E86]">
           Statement totals by month — grouped by the date on each statement. Export any month as CSV.
         </p>

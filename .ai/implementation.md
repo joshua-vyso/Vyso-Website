@@ -165,3 +165,91 @@ The realtime scripts are idempotent guarded `alter publication ... add table` bl
 6. **No visual/browser verification was run** in this pass. Build/typecheck/lint/test are green; nothing here confirms the new panels render correctly against real org data.
 7. **Perf measurement not captured in this pass.** The plan's acceptance criterion asked for before/after timing against `next start`; this verification covered correctness only.
 8. **Nothing committed** — the entire changeset is uncommitted working-tree state.
+
+---
+---
+
+# Implementation log — Module identity header above the tab nav (2026-07-29)
+
+Plan: `.ai/plan_module_header_consistency.md`
+Executed as: 2 parallel agents (agent A = Doc-U / OrderFlow / ProcurePulse, agent B = PricePilot / PlanWise / ShiftBoard / WasteWatch) → verification (this section).
+
+## Verification results
+
+| Command | Result |
+| --- | --- |
+| `npx tsc --noEmit --incremental false` | **exit 0** — zero output, zero errors |
+| `npm run build` (Next 16.2.7) | **exit 0** — every module route compiled |
+| `npm run lint` | **65 problems (51 errors, 14 warnings)** — identical to the pre-existing baseline; no new problems |
+
+### Lint audit method
+`eslint` was re-run against only the 24 changed/added files. Every problem reported in a changed
+file was traced to code the diff does not touch:
+
+- `app/app/procurepulse/stock/[id]/page.tsx:25` — unused `orgId`; confirmed present at `HEAD`
+  (`git show HEAD:…`), the diff only demotes an `h1` to an `h2` at line 70.
+- `InboxView.tsx`, `docu/FolderGridView.tsx`, `orderflow/Dashboard.tsx`, `docu/review/page.tsx` —
+  all `react-hooks/set-state-in-effect` / impure-render errors on pre-existing effect bodies.
+- The two **new** files (`docu/Chrome.tsx`, `wastewatch/Chrome.tsx`) lint completely clean.
+
+## Structure confirmation — all 10 modules
+
+Every module renders exactly one identity header, positioned before the tab nav in the tree.
+No module name is rendered as a heading anywhere below a nav (`grep` for every module name in a
+JSX text position returns only one prose mention inside `AddSupplierWizard`).
+
+| Module | Header host | Arrangement |
+| --- | --- | --- |
+| docu | `components/platform/docu/Chrome.tsx` (new) | `ModuleHeader` → `mt-5` `DocuNav` |
+| orderflow | `app/app/orderflow/layout.tsx` | `SetupBanner` → `ModuleHeader` → `mt-5` `SubNav` → `mt-6` children |
+| procurepulse | `app/app/procurepulse/layout.tsx` | `ModuleHeader` → `mt-5` `PpSubnav` → `mt-6` children |
+| pricepilot | `app/app/pricepilot/layout.tsx` | `PricePilotLive` → `ModuleHeader` (+`LiveChip`) → `mt-5` `SubNav` → `mt-6` children |
+| marginview (PlanWise) | `components/platform/planwise/Chrome.tsx` | `ModuleHeader` (+ Add budget line) → `mt-5` `SubNav` → `mt-6` children |
+| shiftboard | `components/platform/shiftboard/Chrome.tsx` | `ModuleHeader` (+ Create shift) → `mt-5` `SubNav` → `mt-6` children |
+| wastelog (WasteWatch) | `components/platform/wastewatch/Chrome.tsx` (new) | `ModuleHeader` (+ Log waste) → `mt-5` `SubNav` → `mt-6` children |
+| reportgen (InsightGen) | `insightgen/Chrome.tsx` | unchanged — was already correct |
+| suppliers (SupplySync) | `supplysync/Chrome.tsx` | unchanged — the reference pattern |
+| serviceden | `app/app/serviceden/layout.tsx` | unchanged — bespoke header, already above the nav |
+
+`ModuleHeader` was confirmed removed from all five views that previously rendered it below the
+tabs (`wastewatch/Overview`, `shiftboard/Overview`, `planwise/views`, `orderflow/Dashboard`,
+`procurepulse/ui`) — each now greps to zero references.
+
+### Doc-U detail routes
+Doc-U deliberately has **no** `layout.tsx`; `DocuChrome` replaced `DocuNav` 1:1 at its 6 mount
+sites. Each of the 15 Doc-U routes was traced to the component it renders and mounts the chrome
+exactly once — never twice, never zero where tabs were previously shown:
+
+- `page` → `FolderGridView`; `recent`/`awaiting`/`confidence`/`flagged`/`folder/[key]` → `InboxView`;
+  `reconciliation` → `ReconciliationView`; `review`, `settings`, `databases` → chrome inline.
+- `[id]`, `upload`, `databases/[entity]`, `databases/import` render **no** chrome — as before. This
+  is why a `layout.tsx` was rejected: it would have forced the nav onto these four and broken the
+  `[id]` view's own `h-full overflow-y-auto` scroll container. These four keep their own 28px `h1`,
+  which is correct — no module header sits above them to compete with.
+- `loading.tsx` was updated to `RouteSkeleton chrome` so the fallback draws header + tabs.
+
+## Open follow-up — heading hierarchy diverged between the two agents
+
+The two agents resolved the plan's "section titles may remain as **smaller** in-page headings
+below the nav" clause differently, and the result is inconsistent:
+
+- **Agent A demoted** its page titles — Doc-U 28px `h1` → 20px/18px `h2`, ProcurePulse `PageHead`
+  → 20px `h2`, `procurepulse/stock/[id]` → 20px `h2`. OrderFlow's were already 22–26px and were
+  left alone.
+- **Agent B did not.** 21 view files across PricePilot, PlanWise, ShiftBoard and WasteWatch still
+  render their per-tab section title as a **28px `h1`** — the exact size and heading level of the
+  `ModuleHeader` `h1` now sitting directly above them (`planwise/views.tsx` `PageTitle`,
+  `planwise/GoalsView`, all six `shiftboard/*` views, `wastewatch/{Analytics,Devices,WasteLog}`,
+  and nine `pricepilot/*` views plus `pricepilot/notifications` and `products/[id]`).
+
+Before this change those tabs had no module header above them, so the 28px title was the page's
+only heading. Now each renders two same-size `h1`s stacked — a visual-hierarchy regression this
+change set introduced, and two `h1`s per document. The reference modules (SupplySync, InsightGen)
+keep `h1` exclusively for `ModuleHeader` and use 16–18px `h2` below the nav.
+
+**Not fixed here** — it is a 21-file presentational change across files agent B deliberately left
+untouched, so it is flagged for a decision rather than applied unilaterally. The fix is mechanical:
+`h1`/28px → `h2`/20px in those 21 files, matching agent A and the `PageHead` precedent. Note
+`wastewatch/Overview.tsx:173,192` are `of-num` stat *values*, not headings — leave them.
+
+Nothing committed; the changeset remains uncommitted working-tree state on `finch-onboarding`.

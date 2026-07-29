@@ -107,7 +107,7 @@ export function RecommendationsView({
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="of-display text-[28px] font-semibold tracking-[-0.015em] text-[#171A17]">Recommendations</h1>
+          <h2 className="of-display text-[20px] font-semibold tracking-[-0.015em] text-[#171A17]">Recommendations</h2>
           <p className="mt-1 text-[14px] text-[#8A8E86]">
             <span className="of-num">{visible.length}</span> suggested price {visible.length === 1 ? 'change' : 'changes'} · up to{' '}
             <span className="of-num font-semibold text-[#0F6E56]">+{zar(totalImpact)}/mo</span> gross profit
@@ -226,7 +226,7 @@ function EmptyState({
 }) {
   return (
     <div>
-      <h1 className="of-display text-[28px] font-semibold tracking-[-0.015em] text-[#171A17]">Recommendations</h1>
+      <h2 className="of-display text-[20px] font-semibold tracking-[-0.015em] text-[#171A17]">Recommendations</h2>
       <div className="mt-6 rounded-2xl border border-[#EAEDF2] bg-white px-6 py-12 text-center shadow-[0_1px_2px_rgba(20,24,20,0.03)]">
         <p className="of-display text-[16px] font-semibold text-[#171A17]">{title}</p>
         <p className="mx-auto mt-2 max-w-md text-[13px] text-[#6B6F68]">{body}</p>

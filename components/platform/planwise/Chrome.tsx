@@ -1,8 +1,14 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { ModuleHeader, PrimaryAction } from '@/components/platform/module-ui';
+import { MODULE_META } from '@/lib/platform/module-meta';
 import { SubNav } from '@/components/platform/SubNav';
+import { useToast } from '@/components/platform/orderflow/ui';
 import { useRealtimeRefresh } from '@/lib/platform/useRealtimeRefresh';
+import { AddBudgetLineModal } from './AddBudgetLineModal';
+
+const M = MODULE_META.planwise;
 
 const TABS = [
   { label: 'Overview', href: '/app/marginview' },
@@ -13,7 +19,11 @@ const TABS = [
 ];
 
 /**
- * PlanWise chrome: the shared underline sub-nav plus the module's live wiring.
+ * PlanWise chrome: the module identity header above the shared underline
+ * sub-nav, plus the module's live wiring — the SupplySync/InsightGen
+ * arrangement. "+ Add budget line" is module-level (a budget line is the thing
+ * every tab reads from), so it rides in the header and its modal is hosted here
+ * rather than inside the Overview view.
  *
  * PlanWise is a read-mostly dashboard whose numbers are written from several
  * places — the budget modal here, the goals form here, PricePilot's target
@@ -21,16 +31,28 @@ const TABS = [
  * another. Subscribing re-runs the server layout, which re-derives every actual
  * from source. Each table needs a row in `supabase/planwise-realtime.sql`.
  *
- * The per-tab titles stay in the views (each PlanWise tab has its own heading),
- * so this deliberately renders no ModuleHeader.
+ * The per-tab section titles stay in the views, below the nav.
  */
 export function PlanWiseChrome({ children }: { children: ReactNode }) {
+  const { node, show } = useToast();
+  const [budgetOpen, setBudgetOpen] = useState(false);
   useRealtimeRefresh(['pw_budget_lines', 'pl_targets', 'pw_goals', 'pw_forecast', 'pw_decisions']);
 
   return (
     <>
-      <SubNav tabs={TABS} rootHref="/app/marginview" />
+      {node}
+      <ModuleHeader
+        icon={M.icon}
+        title={M.name}
+        description={M.description}
+        actions={<PrimaryAction onClick={() => setBudgetOpen(true)}>+ Add budget line</PrimaryAction>}
+      />
+      <div className="mt-5">
+        <SubNav tabs={TABS} rootHref="/app/marginview" />
+      </div>
       <div className="mt-6">{children}</div>
+
+      <AddBudgetLineModal open={budgetOpen} onClose={() => setBudgetOpen(false)} onSaved={(c) => show(`${c} added to budget`)} />
     </>
   );
 }

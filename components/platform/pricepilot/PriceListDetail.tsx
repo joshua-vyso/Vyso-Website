@@ -145,7 +145,7 @@ export function PriceListDetail({
             <span aria-hidden>‹</span> Price lists
           </Link>
           <div>
-            <h1 className="of-display text-[28px] font-semibold tracking-[-0.015em] text-[#171A17]">{list.name}</h1>
+            <h2 className="of-display text-[20px] font-semibold tracking-[-0.015em] text-[#171A17]">{list.name}</h2>
             <p className="mt-1 text-[14px] text-[#8A8E86]">
               {customerName} · {CADENCE_LABEL[list.cadence]}
             </p>

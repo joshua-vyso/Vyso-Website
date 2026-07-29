@@ -1,17 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/platform/orderflow/ui';
-import { ModuleHeader, PrimaryAction, Kpi, SectionCard, DataTable } from '@/components/platform/module-ui';
+import { Kpi, SectionCard, DataTable } from '@/components/platform/module-ui';
 import { MODULE_META } from '@/lib/platform/module-meta';
 import { zar } from '@/lib/platform/orderflow';
 import { DAYS, departmentSnapshots, overviewStats, operationalAlerts, openShiftKey, type RosterRow, type Shift } from '@/lib/platform/shiftboard';
 import { DeptBadge, StatusBadge, CoverageBadge, EmptyState, MobileSnapshotCards } from './shared';
 import { SwapsPanel } from './Swaps';
 import { useShiftBoard } from './context';
-
-const M = MODULE_META.shiftboard;
 
 function cellTone(s: Shift) {
   if (s.status === 'off') return { bg: '#EEF1F5', fg: '#8A8E86' };
@@ -23,15 +20,13 @@ function cellTone(s: Shift) {
 export function ShiftBoardOverview() {
   const { node, show } = useToast();
   const sb = useShiftBoard();
-  const router = useRouter();
 
-  const header = <ModuleHeader icon={M.icon} title={M.name} description="Who's working, where, on what — and whether you're properly staffed today." actions={<PrimaryAction onClick={() => router.push('/app/shiftboard/roster')}>+ Create shift</PrimaryAction>} />;
-
+  // The module header and its "+ Create shift" action live in ShiftBoardChrome,
+  // above the tab nav — this view renders only the overview's own content.
   if (sb.isEmpty) {
     return (
       <div className="space-y-5">
         {node}
-        {header}
         <EmptyState
           title="No people set up yet"
           hint="Add employees and departments to see who’s on shift, staffing coverage and labour cost here."
@@ -51,7 +46,6 @@ export function ShiftBoardOverview() {
   return (
     <div className="space-y-5">
       {node}
-      {header}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Kpi label="Staff on shift today" value={String(s.rostered)} sub="rostered" />

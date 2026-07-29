@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getPlatformSession } from '@/lib/platform/supabase-server';
-import { DocuNav } from '@/components/platform/docu/DocuNav';
+import { DocuChrome } from '@/components/platform/docu/Chrome';
 import { getCoreData, EMPTY_CORE_DATA, type CoreData } from '@/lib/platform/coredata-data';
 import { DB_ENTITIES, type DbEntityKey } from '@/lib/platform/coredata';
 
@@ -46,11 +46,11 @@ export default async function DatabasesIndexPage() {
 
   return (
     <div className="px-8 py-7">
-      <DocuNav />
+      <DocuChrome />
 
       <div className="mt-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="of-display text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Databases</h1>
+          <h2 className="of-display text-[20px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Databases</h2>
           <p className="mt-1.5 max-w-2xl text-[14px] text-[#8A8E86]">
             Your Core Data — the single source of truth behind every document. Manage it here and it flows straight
             through to OrderFlow invoices, quotes, orders and delivery notes.

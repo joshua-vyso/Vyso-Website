@@ -15,7 +15,7 @@ import {
   rand,
   NOTIFICATION_KINDS,
 } from '@/lib/platform/procurepulse';
-import { AreaChart, DonutChart, KpiCard, LiveChip, PageHead } from '@/components/platform/procurepulse/ui';
+import { AreaChart, DonutChart, KpiCard, LiveChip } from '@/components/platform/procurepulse/ui';
 
 /** Friendly labels for the stock-movement reasons (no wastage in ProcurePulse). */
 const MOVEMENT_LABEL: Record<string, string> = {
@@ -126,7 +126,10 @@ export default async function ProcurePulseDashboard() {
 
   return (
     <div className="space-y-5">
-      <PageHead title="ProcurePulse" subtitle="Stock intelligence" right={<LiveChip />} />
+      {/* Module identity lives above the sub-nav (layout.tsx) — just the live chip here. */}
+      <div className="flex justify-end">
+        <LiveChip />
+      </div>
 
       <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-5">
         <KpiCard label="Stock value" value={rand(kpis.stockValue, { compact: true })} />

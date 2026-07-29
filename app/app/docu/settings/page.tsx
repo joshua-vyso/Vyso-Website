@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getPlatformSession, createServerSupabase } from '@/lib/platform/supabase-server';
-import { DocuNav } from '@/components/platform/docu/DocuNav';
+import { DocuChrome } from '@/components/platform/docu/Chrome';
 import { allUnits } from '@/lib/platform/procurepulse/units';
 
 /**
@@ -19,9 +19,9 @@ export default async function DocuSettings() {
 
   return (
     <div className="px-8 py-7">
-      <DocuNav />
+      <DocuChrome />
       <div className="mt-6">
-        <h1 className="of-display text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Doc-U settings</h1>
+        <h2 className="of-display text-[20px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Doc-U settings</h2>
         <p className="mt-1.5 text-[14px] text-[#8A8E86]">
           How documents are reviewed and routed
         </p>

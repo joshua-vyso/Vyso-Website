@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getPlatformSession, createServerSupabase } from '@/lib/platform/supabase-server';
-import { KpiCard, LiveChip } from '@/components/platform/procurepulse/ui';
+import { KpiCard } from '@/components/platform/procurepulse/ui';
 import { ScoreRing, MarginBars, Panel, MarginTrendCard, type TrendSeries } from '@/components/platform/pricepilot/ui';
 import { ProfitSnapshot, type BreakdownOrder } from '@/components/platform/pricepilot/ProfitSnapshot';
 import { NotificationList } from '@/components/platform/pricepilot/NotificationList';
@@ -248,18 +248,12 @@ export default async function PricePilotDashboardPage() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div className="min-w-0">
-          <h1 className="of-display text-[28px] font-semibold tracking-[-0.015em] text-[#171A17]">PricePilot</h1>
-          <p className="mt-1 text-[14px] text-[#8A8E86]">Your pricing intelligence — margins, profitability and opportunities</p>
-        </div>
-        <LiveChip label="Live pricing" />
-      </div>
-
+      {/* The module header (icon, name, live chip) lives in the layout above the
+          tabs — this page starts straight at its own content. */}
       {!targets ? (
         <Link
           href="/app/marginview/goals"
-          className="mt-5 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#FBEEDA] bg-[#FFFBF4] px-5 py-3.5 transition-colors hover:border-[#EFD9AE]"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#FBEEDA] bg-[#FFFBF4] px-5 py-3.5 transition-colors hover:border-[#EFD9AE]"
         >
           <span className="text-[13px] text-[#7A6A4F]">
             <span className="font-semibold text-[#854F0B]">Set your goals in PlanWise</span> to unlock profit tracking,

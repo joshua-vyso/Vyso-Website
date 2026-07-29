@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { DocuNav } from './DocuNav';
+import { DocuChrome } from './Chrome';
 import { DocumentStatsCards } from './DocumentStatsCards';
 import { UploadBubble } from './UploadBubble';
 import { NewFolderButton } from './NewFolderButton';
@@ -59,12 +59,12 @@ export function FolderGridView({
 
   return (
     <div className="px-8 py-7">
-      <DocuNav />
+      <DocuChrome />
 
       {/* Header */}
       <div className="mt-6 flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
         <div className="min-w-[12rem] flex-1">
-          <h1 className="of-display text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Documents</h1>
+          <h2 className="of-display text-[20px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Documents</h2>
           <p className="mt-1.5 text-[14px] text-[#8A8E86]">
             Browse by folder — open one to see its documents by month
           </p>

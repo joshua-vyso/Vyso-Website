@@ -5,14 +5,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { zar } from '@/lib/platform/orderflow';
 import { useToast } from '@/components/platform/orderflow/ui';
-import { ModuleHeader, PrimaryAction, KpiStrip, Kpi, SectionCard, CountUp, Badge, ProgressRing } from '@/components/platform/module-ui';
+import { PrimaryAction, KpiStrip, Kpi, SectionCard, CountUp, Badge, ProgressRing } from '@/components/platform/module-ui';
 import { AreaChart } from '@/components/platform/procurepulse/ui';
 import { MODULE_META } from '@/lib/platform/module-meta';
 import { TIME_PERIODS, INSIGHTS, type TimePeriod, type WeeklyReport, type FoodCostContext } from '@/lib/platform/wastewatch';
 import { LogWasteModal, MobileWidgets, EmptyState, EmptyPanel } from './shared';
 import { useWasteWatch } from './categories';
-
-const M = MODULE_META.wastewatch;
 
 /** '2026-06-29' → '29 Jun'. */
 function shortDate(iso: string): string {
@@ -43,8 +41,9 @@ export function WasteOverview() {
   return (
     <div className="space-y-5">
       {node}
-      <ModuleHeader icon={M.icon} title={M.name} description="What's being wasted, why, by whom — and how to lose less of it." actions={<PrimaryAction onClick={() => setLogOpen(true)}>+ Log waste</PrimaryAction>} />
-
+      {/* The module header and its "+ Log waste" action live in WasteWatchChrome,
+          above the tab nav — this view renders only the overview's own content.
+          The empty state keeps its own in-context button below. */}
       {!hasEvents ? (
         <EmptyState
           title="No waste logged yet"

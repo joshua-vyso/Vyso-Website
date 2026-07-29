@@ -29,7 +29,9 @@ import { GlobalSearch, type SearchIndexItem } from '@/components/platform/orderf
 import { useIsAdmin } from '@/components/platform/RoleGate';
 
 // ---------------------------------------------------------------------------
-// Props — the OrderFlowSnapshot spread + orgName/email (see page.tsx).
+// Props — the OrderFlowSnapshot spread (see page.tsx). The module identity
+// (icon + OrderFlow + description) now lives in the OrderFlow layout, ABOVE the
+// sub-nav, so the dashboard no longer carries a title of its own.
 // ---------------------------------------------------------------------------
 
 interface DashboardProps {
@@ -45,8 +47,6 @@ interface DashboardProps {
   settings: OfSettings;
   /** How many website enquiries still need a quote. */
   quoteRequestsNew: number;
-  orgName: string | null;
-  email: string | null;
 }
 
 function todayIso(): string {
@@ -68,8 +68,6 @@ export function Dashboard({
   activity,
   settings,
   quoteRequestsNew,
-  orgName,
-  email,
 }: DashboardProps) {
   const vatRate = Number(settings?.default_vat_rate ?? 15);
   // Members don't see money figures — revenue/outstanding tiles are locked.
@@ -292,23 +290,8 @@ export function Dashboard({
 
   return (
     <div className="space-y-[22px]">
-      {/* Heading + search */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="of-display text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">
-            {orgName ? (
-              <>
-                {orgName} <span className="font-normal text-[#B9BEC5]">·</span>{' '}
-                <span className="text-[#E5651F]">OrderFlow</span>
-              </>
-            ) : (
-              <span className="text-[#E5651F]">OrderFlow</span>
-            )}
-          </h1>
-          <p className="mt-1.5 text-[14px] text-[#8A8E86]">
-            {email ? `Signed in as ${email}` : 'Invoicing, quotes, orders and payments in one place.'}
-          </p>
-        </div>
+      {/* Period chip — the module heading lives above the sub-nav (layout.tsx) */}
+      <div className="flex justify-end">
         <span className="shrink-0 rounded-[10px] border border-[#E4E9F0] bg-white px-[15px] py-2.5 text-[13px] text-[#5C6470]">
           {todayLabel ? `${todayLabel} · This month` : 'This month'}
         </span>

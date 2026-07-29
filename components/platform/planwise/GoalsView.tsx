@@ -190,7 +190,7 @@ export function GoalsView({ initial, needsSetup }: { initial: PlTargets | null; 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="of-display text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Goals</h1>
+        <h2 className="of-display text-[20px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Goals</h2>
         <p className="mt-1.5 text-[14px] text-[#8A8E86]">Define where you want the business to go. Vyso measures progress against these across every module.</p>
       </div>
 

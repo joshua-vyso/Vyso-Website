@@ -65,7 +65,7 @@ export function AnalyticsView({ windows, target, variance }: AnalyticsViewProps)
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="of-display text-[28px] font-semibold tracking-[-0.015em] text-[#171A17]">Analytics</h1>
+          <h2 className="of-display text-[20px] font-semibold tracking-[-0.015em] text-[#171A17]">Analytics</h2>
           <p className="mt-1 text-[14px] text-[#8A8E86]">Where your revenue and gross profit come from</p>
         </div>
         <div className="inline-flex rounded-[10px] border border-[#EEF1F5] bg-[#F6F8FB] p-0.5">

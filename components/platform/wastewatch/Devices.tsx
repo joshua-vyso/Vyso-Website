@@ -31,7 +31,7 @@ export function WasteDevices() {
       {node}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="of-display text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Devices</h1>
+          <h2 className="of-display text-[20px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Devices</h2>
           <p className="mt-1.5 text-[14px] text-[#8A8E86]">Connected scales and sensors that measure waste automatically</p>
         </div>
         <button type="button" onClick={() => setAddOpen(true)} className="inline-flex h-[42px] items-center rounded-[11px] bg-[#1F5FA8] px-[18px] text-[14px] font-semibold text-white transition-colors hover:bg-[#174C87]">+ Add device</button>

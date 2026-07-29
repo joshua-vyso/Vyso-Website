@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getPlatformSession, createServerSupabase } from '@/lib/platform/supabase-server';
-import { DocuNav } from '@/components/platform/docu/DocuNav';
+import { DocuChrome } from '@/components/platform/docu/Chrome';
 import { DocumentReviewQueue } from '@/components/platform/docu/DocumentReviewQueue';
 import { COMMIT_STALE_MS, reviewClaimableOr } from '@/lib/platform/document-ingest';
 import type { DocumentWithSupplier } from '@/lib/platform/types';
@@ -51,9 +51,9 @@ export default async function DocuReviewPage() {
 
   return (
     <div className="px-8 py-7">
-      <DocuNav reviewCount={docs.length} />
+      <DocuChrome reviewCount={docs.length} />
       <div className="mb-5 mt-5">
-        <h1 className="of-display text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Review queue</h1>
+        <h2 className="of-display text-[20px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Review queue</h2>
         <p className="mt-1.5 text-[14px] text-[#8A8E86]">
           Forwarded documents, extracted and waiting for you. Nothing updates your stock, orders or invoices until
           you Save.
