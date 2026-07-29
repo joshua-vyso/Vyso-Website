@@ -59,7 +59,7 @@ export function LeaveWorkspace() {
     <div className="space-y-5">
       {node}
       <div>
-        <h1 className="of-display text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Leave</h1>
+        <h2 className="of-display text-[20px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Leave</h2>
         <p className="mt-1.5 text-[14px] text-[#8A8E86]">Requests, balances and the coverage impact of time off</p>
       </div>
 

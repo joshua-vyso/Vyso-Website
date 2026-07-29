@@ -1,9 +1,13 @@
 import { redirect } from 'next/navigation';
 import { createServerSupabase, getPlatformSession } from '@/lib/platform/supabase-server';
 import { isSetupError } from '@/lib/platform/orderflow';
+import { ModuleHeader } from '@/components/platform/module-ui';
+import { MODULE_META } from '@/lib/platform/module-meta';
 import { SubNav } from '@/components/platform/SubNav';
 import { OrderFlowSetupBanner } from '@/components/platform/orderflow/OrderFlowSetupBanner';
 import { FinchLauncher } from '@/components/platform/finch/FinchLauncher';
+
+const M = MODULE_META.orderflow;
 
 const TABS = [
   { label: 'Dashboard', href: '/app/orderflow' },
@@ -32,7 +36,8 @@ async function needsOrderFlowSetup(): Promise<boolean> {
   return setupProbe;
 }
 
-/** OrderFlow chrome: sub-nav across the invoicing hub's screens. */
+/** OrderFlow chrome: module identity header ABOVE the sub-nav shared by every
+ *  screen of the invoicing hub (ModuleHeader → SubNav → page body). */
 export default async function OrderFlowLayout({ children }: { children: React.ReactNode }) {
   const session = await getPlatformSession();
   if (!session) redirect('/login');
@@ -44,12 +49,15 @@ export default async function OrderFlowLayout({ children }: { children: React.Re
     // which every module shares. OrderFlow only keeps its orange sub-nav accent.
     <div className="min-h-full px-8 py-7">
       {needsSetup ? <OrderFlowSetupBanner /> : null}
-      <SubNav
-        tabs={TABS}
-        rootHref="/app/orderflow"
-        accent="#E5651F"
-        right={<FinchLauncher module="orderflow" />}
-      />
+      <ModuleHeader icon={M.icon} title={M.name} description={M.description} />
+      <div className="mt-5">
+        <SubNav
+          tabs={TABS}
+          rootHref="/app/orderflow"
+          accent="#E5651F"
+          right={<FinchLauncher module="orderflow" />}
+        />
+      </div>
       <div className="mt-6">{children}</div>
     </div>
   );

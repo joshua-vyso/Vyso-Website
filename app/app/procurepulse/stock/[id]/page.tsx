@@ -67,7 +67,7 @@ export default async function StockDetailPage({
       <div className="mt-2 flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="of-display text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">{item.name}</h1>
+            <h2 className="of-display text-[20px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">{item.name}</h2>
             <StockStatusPill status={status} />
           </div>
           <p className="mt-1 text-[14px] text-[#8A8E86]">

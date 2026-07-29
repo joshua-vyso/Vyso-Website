@@ -1,8 +1,13 @@
 import { redirect } from 'next/navigation';
 import { getPlatformSession } from '@/lib/platform/supabase-server';
+import { ModuleHeader } from '@/components/platform/module-ui';
+import { MODULE_META } from '@/lib/platform/module-meta';
 import { PpSubnav } from '@/components/platform/procurepulse/ui';
 
-/** Shared chrome for every ProcurePulse desktop screen: feature gate + sub-nav. */
+const M = MODULE_META.procurepulse;
+
+/** Shared chrome for every ProcurePulse desktop screen: feature gate, then the
+ *  module identity header ABOVE the sub-nav (ModuleHeader → SubNav → body). */
 export default async function ProcurePulseLayout({
   children,
 }: {
@@ -28,7 +33,10 @@ export default async function ProcurePulseLayout({
 
   return (
     <div className="px-8 py-7">
-      <PpSubnav />
+      <ModuleHeader icon={M.icon} title={M.name} description={M.description} />
+      <div className="mt-5">
+        <PpSubnav />
+      </div>
       <div className="mt-6">{children}</div>
     </div>
   );

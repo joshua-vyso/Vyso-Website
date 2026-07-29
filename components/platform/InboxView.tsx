@@ -8,7 +8,7 @@ import { DocumentStatsCards } from './docu/DocumentStatsCards';
 import { DocumentFilters } from './docu/DocumentFilters';
 import { DocumentTable } from './docu/DocumentTable';
 import { UploadBubble } from './docu/UploadBubble';
-import { DocuNav } from './docu/DocuNav';
+import { DocuChrome } from './docu/Chrome';
 import { createClient } from '@/lib/platform/supabase-browser';
 import { applySearch, parseSearch, SEARCH_EXAMPLES } from '@/lib/platform/docu/search';
 import { deriveFlags } from '@/lib/platform/docu/flags';
@@ -187,7 +187,7 @@ export function InboxView({
 
   return (
     <div className="px-8 py-7">
-      <DocuNav />
+      <DocuChrome />
 
       {/* Header */}
       <div className="mt-6 flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
@@ -200,7 +200,7 @@ export function InboxView({
               <span aria-hidden>‹</span> {backLabel ?? 'Back'}
             </Link>
           ) : null}
-          <h1 className="of-display text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">{title}</h1>
+          <h2 className="of-display text-[20px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">{title}</h2>
           <p className="mt-1.5 text-[14px] text-[#8A8E86]">{subtitle}</p>
         </div>
         <div className="flex shrink-0 items-center gap-3">

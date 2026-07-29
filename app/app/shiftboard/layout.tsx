@@ -2,21 +2,11 @@ import { redirect } from 'next/navigation';
 import { getPlatformSession } from '@/lib/platform/supabase-server';
 import { getShiftBoardData } from '@/lib/platform/shiftboard-data';
 import { EMPTY_SHIFTBOARD } from '@/lib/platform/shiftboard';
-import { SubNav } from '@/components/platform/SubNav';
 import { ShiftBoardProvider } from '@/components/platform/shiftboard/context';
 import { ShiftBoardChrome } from '@/components/platform/shiftboard/Chrome';
 
-const TABS = [
-  { label: 'Overview', href: '/app/shiftboard' },
-  { label: 'Live Ops', href: '/app/shiftboard/live' },
-  { label: 'Roster', href: '/app/shiftboard/roster' },
-  { label: 'People', href: '/app/shiftboard/people' },
-  { label: 'Attendance', href: '/app/shiftboard/attendance' },
-  { label: 'Leave', href: '/app/shiftboard/leave' },
-  { label: 'Insights', href: '/app/shiftboard/insights' },
-];
-
-/** ShiftBoard chrome: Doc-U-style underline sub-nav across its people-ops screens. */
+/** ShiftBoard chrome: fetch the org's people-ops data once, provide it to every
+ *  tab, and host the module header + sub-nav + cross-tab overlays. */
 export default async function ShiftBoardLayout({ children }: { children: React.ReactNode }) {
   const session = await getPlatformSession();
   if (!session) redirect('/login');
@@ -25,11 +15,8 @@ export default async function ShiftBoardLayout({ children }: { children: React.R
 
   return (
     <div className="px-8 py-7">
-      <SubNav tabs={TABS} rootHref="/app/shiftboard" />
       <ShiftBoardProvider data={data}>
-        <ShiftBoardChrome>
-          <div className="mt-6">{children}</div>
-        </ShiftBoardChrome>
+        <ShiftBoardChrome>{children}</ShiftBoardChrome>
       </ShiftBoardProvider>
     </div>
   );

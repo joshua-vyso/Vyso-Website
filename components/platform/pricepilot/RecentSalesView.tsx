@@ -118,7 +118,7 @@ export function RecentSalesView({ sales, customers, target, now }: RecentSalesVi
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="of-display text-[28px] font-semibold tracking-[-0.015em] text-[#171A17]">Recent sales</h1>
+          <h2 className="of-display text-[20px] font-semibold tracking-[-0.015em] text-[#171A17]">Recent sales</h2>
           <p className="mt-1 text-[14px] text-[#8A8E86]">Every realized sale with the margin you actually earned on it</p>
         </div>
         <div className="inline-flex rounded-[10px] border border-[#EEF1F5] bg-[#F6F8FB] p-0.5">

@@ -28,5 +28,5 @@ export default async function OrderFlowDashboardPage() {
         quoteRequestsNew: 0,
       };
 
-  return <Dashboard {...snapshot} orgName={org?.name ?? null} email={session?.email ?? null} />;
+  return <Dashboard {...snapshot} />;
 }

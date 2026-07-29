@@ -3,8 +3,7 @@
 import { useState } from 'react';
 import { zar } from '@/lib/platform/orderflow';
 import { useToast } from '@/components/platform/orderflow/ui';
-import { ModuleHeader, PrimaryAction, SecondaryAction, KpiStrip, Kpi } from '@/components/platform/module-ui';
-import { MODULE_META } from '@/lib/platform/module-meta';
+import { SecondaryAction, KpiStrip, Kpi } from '@/components/platform/module-ui';
 import { usePlanWise } from './context';
 import { MonthlyGoalCard, GoalSummaryCards, MobileSnapshotCards } from './ui';
 import { DecisionsPanel } from './DecisionsPanel';
@@ -15,21 +14,17 @@ import { ScenariosWorkspace } from './Scenarios';
 import { AddBudgetLineModal } from './AddBudgetLineModal';
 import { BudgetVsActual, BudgetPaceStrip } from './BudgetVsActual';
 
-const M = MODULE_META.planwise;
-
 function PageTitle({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <div className="min-w-0">
-      <h1 className="of-display text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">{title}</h1>
+      <h2 className="of-display text-[20px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">{title}</h2>
       {subtitle ? <p className="mt-1.5 text-[14px] text-[#8A8E86]">{subtitle}</p> : null}
     </div>
   );
 }
 
 export function OverviewView() {
-  const { node, show } = useToast();
   const pw = usePlanWise();
-  const [budgetOpen, setBudgetOpen] = useState(false);
   const { totalBudget, totalActual, monthlyGoal, scenarioBase, forecast, actuals } = pw;
   const profitLine = forecast.find((f) => f.id === 'profit');
   const forecastProfit = profitLine ? profitLine.value : scenarioBase.revenue - scenarioBase.expenses;
@@ -43,15 +38,11 @@ export function OverviewView() {
   const used = pacedBudget > 0 ? usedVsPace : totalBudget > 0 ? Math.round((totalActual / totalBudget) * 100) : 0;
   const variance = pacedBudget > 0 ? spentToDate - pacedBudget : totalActual - totalBudget;
 
-  const header = <ModuleHeader icon={M.icon} title={M.name} description="Where are we trying to get to — and what needs to happen to get there?" actions={<PrimaryAction onClick={() => setBudgetOpen(true)}>+ Add budget line</PrimaryAction>} />;
-  const budgetModal = <AddBudgetLineModal open={budgetOpen} onClose={() => setBudgetOpen(false)} onSaved={(c) => show(`${c} added to budget`)} />;
-
+  // The module header and its "+ Add budget line" action live in PlanWiseChrome,
+  // above the tab nav — this view renders only the overview's own content.
   if (pw.isEmpty) {
     return (
       <div className="space-y-5">
-        {node}
-        {header}
-        {budgetModal}
         <div className="rounded-2xl border border-dashed border-[#E2E6EC] bg-[#FBFCFE] px-6 py-12 text-center">
           <p className="of-display text-[18px] font-semibold text-[#171A17]">No plan set up yet</p>
           <p className="mx-auto mt-2 max-w-md text-[14px] text-[#6B6F68]">Set a budget, goals and a forecast to see your revenue target, budget health and the decisions that close the gap here.</p>
@@ -62,10 +53,6 @@ export function OverviewView() {
 
   return (
     <div className="space-y-5">
-      {node}
-      {header}
-      {budgetModal}
-
       <KpiStrip>
         <Kpi label="Monthly revenue target" value={zar(monthlyGoal.targetRevenue)} sub={actuals.hasSales ? `${zar(actuals.revenueMtd)} banked so far` : undefined} />
         <Kpi

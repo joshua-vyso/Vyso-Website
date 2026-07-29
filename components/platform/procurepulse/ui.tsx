@@ -59,6 +59,11 @@ export function LiveChip({ label = 'Live · updated 2m ago' }: { label?: string 
   );
 }
 
+/**
+ * Page-level section heading for a ProcurePulse tab. The module identity
+ * (icon + ProcurePulse + description) lives above the sub-nav in the layout, so
+ * this is deliberately a subordinate h2, not a second page-sized h1.
+ */
 export function PageHead({
   title,
   subtitle,
@@ -71,7 +76,7 @@ export function PageHead({
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
       <div className="min-w-0">
-        <h1 className="of-display text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">{title}</h1>
+        <h2 className="of-display text-[20px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">{title}</h2>
         {subtitle ? <p className="mt-1.5 text-[14px] text-[#8A8E86]">{subtitle}</p> : null}
       </div>
       {right ? <div className="flex shrink-0 items-center gap-2.5">{right}</div> : null}

@@ -201,7 +201,7 @@ export function RecipeEditor({
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Recipe name"
-          className="of-display min-w-0 flex-1 border-0 bg-transparent text-[28px] font-semibold tracking-[-0.015em] text-[#171A17] outline-none placeholder:text-[#C4C4BE]"
+          className="of-display min-w-0 flex-1 border-0 bg-transparent text-[20px] font-semibold tracking-[-0.015em] text-[#171A17] outline-none placeholder:text-[#C4C4BE]"
         />
         <button
           type="button"

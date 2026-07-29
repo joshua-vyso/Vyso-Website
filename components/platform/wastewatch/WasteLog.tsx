@@ -58,7 +58,7 @@ export function WasteLog({ initialCategory }: { initialCategory?: string }) {
       {node}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="of-display text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Waste log</h1>
+          <h2 className="of-display text-[20px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Waste log</h2>
           <p className="mt-1.5 text-[14px] text-[#8A8E86]">Every waste event — item, recipe, employee and the device that measured it</p>
         </div>
         <button type="button" onClick={() => setLogOpen(true)} className="inline-flex h-[42px] items-center rounded-[11px] bg-[#1F5FA8] px-[18px] text-[14px] font-semibold text-white transition-colors hover:bg-[#174C87]">+ Log waste</button>

@@ -43,7 +43,7 @@ export function Attendance() {
 
   const header = (
     <div>
-      <h1 className="of-display text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Attendance</h1>
+      <h2 className="of-display text-[20px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Attendance</h2>
       <p className="mt-1.5 text-[14px] text-[#8A8E86]">Clock-ins, hours worked and timesheet approvals</p>
     </div>
   );

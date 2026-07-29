@@ -71,7 +71,7 @@ export function PriceListsView({ lists, customers }: { lists: PriceListRow[]; cu
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="of-display text-[28px] font-semibold tracking-[-0.015em] text-[#171A17]">Price lists</h1>
+          <h2 className="of-display text-[20px] font-semibold tracking-[-0.015em] text-[#171A17]">Price lists</h2>
           <p className="mt-1 text-[14px] text-[#8A8E86]">Sell prices built from ProcurePulse base prices with your margins</p>
         </div>
         <button type="button" onClick={() => setOpen(true)} className="inline-flex h-[42px] items-center rounded-[11px] bg-[#1F5FA8] px-[18px] text-[14px] font-semibold text-white transition-colors hover:bg-[#174C87]">

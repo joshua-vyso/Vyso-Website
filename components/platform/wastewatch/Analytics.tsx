@@ -63,7 +63,7 @@ export function WasteAnalytics() {
       {node}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="of-display text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Analytics</h1>
+          <h2 className="of-display text-[20px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">Analytics</h2>
           <p className="mt-1.5 text-[14px] text-[#8A8E86]">Patterns by category, reason code, recipe, person and time</p>
         </div>
         {selectedCat ? (
