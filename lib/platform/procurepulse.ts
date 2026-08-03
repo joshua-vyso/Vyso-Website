@@ -371,6 +371,15 @@ export function computeRecipeKpis(plans: RecipeWithPlan[], ingredients: RecipeIn
 
 /** Donut colours per produce category (aligned to the categorise taxonomy). */
 export const CATEGORY_COLORS: Record<string, string> = {
+  // Meridian Food Co. live category taxonomy.
+  'Field Produce': '#1D9E75',
+  'Prepared Lines': '#3E7BC4',
+  'Dairy & Chilled': '#5B7CC4',
+  'Dry Goods': '#BA7517',
+  Proteins: '#A32D2D',
+  Packaging: '#8A8E86',
+  'Freight & Charges': '#7C5B3C',
+  // Shared fallback taxonomy used by the original ProcurePulse seed.
   Fruit: '#BA7517',
   Vegetables: '#1D9E75',
   Herbs: '#3E7BC4',
@@ -387,13 +396,30 @@ export interface CategorySlice {
 }
 
 /**
- * Group stock items into category slices by product count. Items with no category
- * fall under "Uncategorised", which is always sorted last; the rest go largest-first.
+ * Receipts occasionally create a raw catalogue line before matching has been
+ * confirmed. Keep the dashboard useful in the meantime by applying the same
+ * durable Meridian taxonomy to those well-known live lines. The saved category
+ * always wins, so this is a presentation fallback rather than a data override.
  */
-export function stockByCategory(items: Pick<StockItem, 'category'>[]): CategorySlice[] {
+function dashboardCategory(item: Pick<StockItem, 'category' | 'name'>): string {
+  const saved = item.category?.trim();
+  if (saved) return saved;
+
+  const name = item.name.trim().toLowerCase();
+  if (/^(butter blocks?|cheese block)$/.test(name)) return 'Dairy & Chilled';
+  if (/^(cartons?\b|pallet deposit$|seedling trays\b)/.test(name)) return 'Packaging';
+  if (/^(chicken portions|line fish fillet)/.test(name)) return 'Proteins';
+  if (/^(cooking oil|frying medium|mealie meal)/.test(name)) return 'Dry Goods';
+  if (/^stock & sauce base/.test(name)) return 'Prepared Lines';
+  if (/^(delivery surcharge|outbound freight)/.test(name)) return 'Freight & Charges';
+  return 'Uncategorised';
+}
+
+/** Group stock items into category slices by product count, largest first. */
+export function stockByCategory(items: Pick<StockItem, 'category' | 'name'>[]): CategorySlice[] {
   const counts = new Map<string, number>();
   for (const it of items) {
-    const label = (it.category ?? '').trim() || 'Uncategorised';
+    const label = dashboardCategory(it);
     counts.set(label, (counts.get(label) ?? 0) + 1);
   }
   return [...counts.entries()]
