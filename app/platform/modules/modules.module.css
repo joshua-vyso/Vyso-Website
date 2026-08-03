@@ -1,0 +1,534 @@
+/* Layout for the "All Modules" overview grid and the per-module detail page.
+   Colocated with the routes that use it, per the existing app/faq/faq.module.css
+   precedent. Relies on the --marketing-orange / --marketing-body custom
+   properties set on .page in components/marketing/public-marketing.module.css —
+   those cascade to any descendant regardless of CSS-module scoping. */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.75rem;
+}
+
+/* Text-bearing surfaces are near-opaque on purpose — see the "OPAQUE TEXT
+   SURFACES" note at the foot of this file. */
+.card {
+  composes: blend-exempt from global;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 28px;
+  border: 1px solid rgb(255 255 255 / 55%);
+  background: rgb(255 255 255 / 92%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 70%),
+    0 14px 44px rgb(0 0 0 / 6%);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease;
+}
+
+.card:hover,
+.card:focus-visible {
+  background: rgb(255 255 255 / 97%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 84%),
+    0 20px 56px rgb(0 0 0 / 10%);
+  transform: translateY(-4px);
+}
+
+.cardBody {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0 0.5rem 0.35rem;
+}
+
+.cardFoot {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: auto;
+  padding-top: 0.5rem;
+  color: var(--marketing-orange);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.placeholder {
+  composes: blend-exempt from global;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 8 / 5;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 55%);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgb(190 93 35 / 18%), transparent 55%),
+    linear-gradient(315deg, rgb(53 135 202 / 14%), transparent 55%),
+    rgb(255 255 255 / 90%);
+}
+
+.placeholderInner {
+  display: flex;
+  max-width: 26rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.placeholderIcon {
+  display: flex;
+  width: 3rem;
+  height: 3rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(190 93 35 / 18%);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 62%);
+  color: var(--marketing-orange);
+}
+
+.placeholderLabel {
+  margin: 0;
+  color: #8a8a8a;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.placeholderNote {
+  margin: 0;
+  color: var(--marketing-body, #5d5d5d);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.placeholderTags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 0.2rem;
+}
+
+.placeholderTag {
+  padding: 0.3rem 0.65rem;
+  border: 1px solid rgb(13 13 13 / 7%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 55%);
+  color: #6d6d6d;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------------------------
+   Detail page: compact prev/next "More modules" footer
+
+   This used to be a full-height marketing section (~426px at 1400px wide):
+   section padding of clamp(6rem, 11vw, 10rem), a full-size kicker and two tall
+   stacked cards. It is wayfinding, not content, so it now renders as one tight
+   row of two low pills (~150px band) that keeps the same glass language.
+   --------------------------------------------------------------------------- */
+
+.navSection {
+  position: relative;
+  padding: clamp(1.9rem, 3.4vw, 2.6rem) 0;
+}
+
+.navKicker {
+  font-size: 0.6rem;
+  letter-spacing: 0.2em;
+  opacity: 0.85;
+}
+
+.navRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.7rem;
+}
+
+.navLink {
+  composes: blend-exempt from global;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.5rem 0.85rem;
+  border: 1px solid rgb(255 255 255 / 70%);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 90%);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    transform 160ms ease,
+    background 160ms ease;
+}
+
+.navLink:hover,
+.navLink:focus-visible {
+  background: rgb(255 255 255 / 98%);
+  transform: translateY(-1px);
+}
+
+.navLinkNext {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.navLabel {
+  margin: 0;
+  flex: none;
+  color: #8a8a8a;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.navName {
+  margin: 0;
+  overflow: hidden;
+  color: #0d0d0d;
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------------
+   Detail page: "Inside <Module>" alternating feature sections
+   --------------------------------------------------------------------------- */
+
+.featureList {
+  display: grid;
+  gap: clamp(3.5rem, 7vw, 6rem);
+}
+
+.featureRow {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: clamp(2rem, 5vw, 4.5rem);
+  align-items: center;
+}
+
+/* Every second row puts the screenshot on the left instead. */
+.featureRowFlipped .featureCopy {
+  order: 2;
+}
+
+.featureRowFlipped .featureMedia {
+  order: 1;
+}
+
+.featureCopy {
+  min-width: 0;
+}
+
+.featureMedia {
+  min-width: 0;
+}
+
+.featureIndex {
+  margin: 0 0 0.7rem;
+  color: var(--marketing-orange);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.featureTitle {
+  margin: 0 0 0.9rem;
+  color: #0d0d0d;
+  font-family: var(--font-sans);
+  font-size: clamp(1.35rem, 2.1vw, 1.85rem);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.12;
+}
+
+.featureCopyText {
+  margin: 0;
+  color: var(--marketing-body, #5d5d5d);
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+
+.featureBullets {
+  display: grid;
+  gap: 0;
+  margin: 1.3rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.featureBullets li {
+  display: grid;
+  grid-template-columns: 1.35rem minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+  padding: 0.72rem 0;
+  border-top: 1px solid rgb(13 13 13 / 6%);
+  color: #525252;
+  font-size: 0.87rem;
+  line-height: 1.55;
+}
+
+.featureBullets li:first-child {
+  border-top: 0;
+}
+
+.featureBullets li::before {
+  display: flex;
+  width: 1.25rem;
+  height: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.1rem;
+  border-radius: 50%;
+  background: rgb(190 93 35 / 10%);
+  color: var(--marketing-orange);
+  content: "✓";
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+/* Sections with no screenshot render as one wide glass card instead. */
+.featureSolo {
+  composes: blend-exempt from global;
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: clamp(1.6rem, 4vw, 3.5rem);
+  padding: clamp(1.6rem, 3.4vw, 2.4rem);
+  border: 1px solid rgb(255 255 255 / 70%);
+  border-radius: 24px;
+  background: rgb(255 255 255 / 92%);
+  box-shadow:
+    inset 0 1.5px 0 rgb(255 255 255 / 80%),
+    0 16px 48px rgb(0 0 0 / 7%);
+  backdrop-filter: blur(20px) saturate(1.6);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+}
+
+.featureSolo .featureBullets {
+  margin-top: 0;
+}
+
+/* ServiceDen: gradient surface panel standing in for a screenshot. */
+.surfacePanel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 8 / 5;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 58%);
+  border-radius: 22px;
+  background:
+    linear-gradient(135deg, rgb(190 93 35 / 20%), transparent 52%),
+    linear-gradient(315deg, rgb(53 135 202 / 16%), transparent 55%),
+    rgb(255 255 255 / 32%);
+  box-shadow:
+    inset 0 1.5px 0 rgb(255 255 255 / 80%),
+    0 16px 48px rgb(0 0 0 / 7%);
+}
+
+/* ---------------------------------------------------------------------------
+   Detail page: "How it fits your week"
+   --------------------------------------------------------------------------- */
+
+.workflowList {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  counter-reset: workflow;
+  list-style: none;
+}
+
+.workflowStep {
+  composes: blend-exempt from global;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 1.4rem 1.35rem 1.6rem;
+  border: 1px solid rgb(255 255 255 / 70%);
+  border-radius: 20px;
+  background: rgb(255 255 255 / 92%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 78%),
+    0 14px 42px rgb(0 0 0 / 6%);
+}
+
+.workflowNumber {
+  display: flex;
+  width: 2.2rem;
+  height: 2.2rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(190 93 35 / 18%);
+  border-radius: 12px;
+  background: rgb(190 93 35 / 9%);
+  color: var(--marketing-orange);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.workflowTitle {
+  margin: 0.35rem 0 0;
+  color: #0d0d0d;
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+}
+
+.workflowCopy {
+  margin: 0;
+  color: var(--marketing-body, #5d5d5d);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+/* ---------------------------------------------------------------------------
+   Detail page: "Works with" + industry fit cards
+   --------------------------------------------------------------------------- */
+
+.linkCardGrid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+
+.linkCard {
+  composes: blend-exempt from global;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 1.35rem 1.4rem 1.5rem;
+  border: 1px solid rgb(255 255 255 / 70%);
+  border-radius: 20px;
+  background: rgb(255 255 255 / 92%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 78%),
+    0 14px 42px rgb(0 0 0 / 6%);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    transform 170ms ease,
+    background 170ms ease,
+    box-shadow 170ms ease;
+}
+
+.linkCard:hover,
+.linkCard:focus-visible {
+  background: rgb(255 255 255 / 97%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 88%),
+    0 20px 54px rgb(0 0 0 / 10%);
+  transform: translateY(-3px);
+}
+
+.linkCardName {
+  margin: 0;
+  color: #0d0d0d;
+  font-family: var(--font-sans);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.linkCardReason {
+  margin: 0;
+  color: var(--marketing-body, #5d5d5d);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.linkCardFoot {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.65rem;
+  color: var(--marketing-orange);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+@media (max-width: 1020px) {
+  .featureRow,
+  .featureSolo {
+    grid-template-columns: 1fr;
+  }
+
+  /* Stacked on mobile: copy always reads before its screenshot. */
+  .featureRowFlipped .featureCopy {
+    order: 1;
+  }
+
+  .featureRowFlipped .featureMedia {
+    order: 2;
+  }
+
+  .featureSolo .featureBullets {
+    margin-top: 0.4rem;
+  }
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* The prev/next pills stay side by side at every width — stacking them is
+     what made this block tall in the first place. */
+  .navLink {
+    padding: 0.45rem 0.7rem;
+    gap: 0.35rem;
+  }
+
+  .navName {
+    font-size: 0.82rem;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   OPAQUE TEXT SURFACES
+
+   The site-wide `.blend-surface` rules in app/globals.css put every text run
+   through `filter: invert(1)` + `mix-blend-mode: difference` so copy lifts to
+   its complement when the shader's dark band sweeps behind it. That identity
+   only holds exactly over a WHITE backdrop; over a mid-luminance backdrop the
+   blended result can land on the backdrop's own value and the text disappears.
+
+   These cards used to be 28–34% white, so the band showed straight through and
+   dragged the surface into exactly that mid-grey danger zone — dark text on a
+   darkened card, unreadable (reported on the "Inside <module>" feature cards).
+   Two changes fix it at the source:
+
+     1. the fills are near-opaque (90–92% white), so the band can no longer
+        move the surface luminance more than a couple of percent, and
+     2. the cards carry `.blend-exempt`, so their copy renders literally
+        instead of blending against a surface that is now a light field in its
+        own right.
+
+   Blur, border and shadow are unchanged, so the glass language survives.
+   Purely decorative surfaces that carry no text (`.surfacePanel`) are left
+   translucent on purpose.
+   --------------------------------------------------------------------------- */

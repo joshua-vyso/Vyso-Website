@@ -56,7 +56,8 @@ function Section({ title, children }: Readonly<{ title: string; children: React.
 
 export default function PrivacyPage() {
   return (
-    <div style={{ position: "relative", isolation: "isolate" }}>
+    // `blend-surface` — universal reactive text blend, see app/globals.css.
+    <div className="blend-surface" style={{ position: "relative", isolation: "isolate" }}>
       <LazyShaderBackground global />
       <Navbar visible />
 

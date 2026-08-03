@@ -103,7 +103,9 @@ export default function Home() {
         <BounceDot onComplete={handleAnimationComplete} />
       ) : null}
 
+      {/* `blend-surface` — universal reactive text blend, see app/globals.css. */}
       <div
+        className="blend-surface"
         style={{
           opacity:       siteVisible ? 1 : 0,
           transition:    "opacity 0.5s ease",

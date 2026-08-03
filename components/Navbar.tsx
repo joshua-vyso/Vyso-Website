@@ -3,17 +3,33 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
+  Banknote,
+  BookOpen,
   Building2,
+  Calculator,
+  ChartColumn,
+  ChefHat,
   ChevronDown,
   ChevronRight,
+  CircleHelp,
+  ClipboardCheck,
+  FileText,
+  Gauge,
+  GitCompare,
+  Grid3x3,
+  Hotel,
   LayoutGrid,
   MapPinned,
   Menu,
+  Plug,
   Rocket,
+  ShoppingCart,
   Sparkles,
   Sprout,
+  Trophy,
   Truck,
   UtensilsCrossed,
+  Warehouse,
   Workflow,
 } from "lucide-react";
 import { LiquidButton }  from "./ui/liquid-button";
@@ -55,6 +71,12 @@ const PLATFORM_LINKS = [
     href:        "/platform/finch",
     Icon:        Sparkles,
   },
+  {
+    label:       "All Modules",
+    description: "Every Vyso module, with real screens from the platform.",
+    href:        "/platform/modules",
+    Icon:        Grid3x3,
+  },
 ];
 
 const AUDIENCE_LINKS = [
@@ -78,10 +100,44 @@ const AUDIENCE_LINKS = [
   },
 ];
 
+const SOLUTION_LINKS = [
+  { label: "Reduce money leakage",  href: "/solutions/reduce-money-leakage",  Icon: Banknote     },
+  { label: "Procurement automation", href: "/solutions/procurement-automation", Icon: ShoppingCart },
+  { label: "Reporting automation",  href: "/solutions/reporting-automation",  Icon: ChartColumn  },
+  { label: "Operations dashboard",  href: "/solutions/operations-dashboard",  Icon: Gauge        },
+];
+
 const INDUSTRY_LINKS = [
-  { label: "Restaurants",    href: "/industries/restaurants",    Icon: UtensilsCrossed },
-  { label: "Food suppliers", href: "/industries/food-suppliers", Icon: Truck            },
-  { label: "Farms",          href: "/industries/farms",          Icon: Sprout           },
+  { label: "Restaurants",        href: "/industries/restaurants",        Icon: UtensilsCrossed },
+  { label: "Food suppliers",     href: "/industries/food-suppliers",     Icon: Truck            },
+  { label: "Farms",              href: "/industries/farms",              Icon: Sprout           },
+  { label: "Catering companies", href: "/industries/catering-companies", Icon: ChefHat          },
+  { label: "Wholesale",          href: "/industries/wholesale",          Icon: Warehouse        },
+  { label: "Hospitality",        href: "/industries/hospitality",        Icon: Hotel            },
+];
+
+/* Desktop mega-menu "Explore" column — kept compact so the panel stays in view. */
+const EXPLORE_LINKS = [
+  { label: "Pricing",                    href: "/pricing"     },
+  { label: "Frequently asked questions", href: "/faq"         },
+  { label: "All solutions",              href: "/solutions"   },
+  { label: "All industries",             href: "/industries"  },
+  { label: "Learn",                      href: "/learn"       },
+  { label: "Resources",                  href: "/resources"   },
+  { label: "Compare Vyso",               href: "/compare"     },
+  { label: "Join Waitlist",              href: "/contact"     },
+];
+
+/* Mobile-sheet only — the sheet is a scrolling list, so it can carry the full set. */
+const RESOURCE_LINKS = [
+  { label: "Learn",             href: "/learn",            Icon: BookOpen       },
+  { label: "Resources & guides", href: "/resources",       Icon: FileText       },
+  { label: "ROI calculator",    href: "/roi-calculator",   Icon: Calculator     },
+  { label: "Operations audit",  href: "/operations-audit", Icon: ClipboardCheck },
+  { label: "Integrations",      href: "/integrations",     Icon: Plug           },
+  { label: "Compare Vyso",      href: "/compare",          Icon: GitCompare     },
+  { label: "Pricing FAQ",       href: "/pricing-faq",      Icon: CircleHelp     },
+  { label: "Case studies",      href: "/case-studies",     Icon: Trophy         },
 ];
 
 const LINK_STYLE: React.CSSProperties = {
@@ -146,7 +202,15 @@ export function Navbar({ visible = true }: NavbarProps) {
   const navShown = !scrolledDown;
 
   return (
+    // `blend-exempt`: the nav is `position: fixed` with a z-index, which makes
+    // it its own stacking context — mix-blend-mode inside it can never reach
+    // the shader canvas (z-index: -1, outside that context), so blended nav
+    // text would composite against nothing and render as its own inverse
+    // (i.e. invisible white links). It needs no blend anyway: the shader's
+    // band sits between ~20% and ~50% of viewport height and never reaches
+    // the 64px-tall fixed header. See app/globals.css.
     <header
+      className="blend-exempt"
       style={{
         position:       "fixed",
         top:            0,
@@ -348,6 +412,39 @@ export function Navbar({ visible = true }: NavbarProps) {
                 <div style={{ height: 1, background: "rgba(0,0,0,0.07)", margin: "0.85rem 0 1rem" }} />
 
                 <p style={{ ...MENU_LABEL_STYLE, margin: "0 0 0.65rem 0.3rem" }}>
+                  Solutions
+                </p>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.3rem" }}>
+                  {SOLUTION_LINKS.map(({ label, href, Icon }) => (
+                    <DropdownMenuItem key={href} asChild className="cursor-pointer p-0 focus:bg-transparent">
+                      <Link
+                        href={href}
+                        className="hover:bg-white/50 focus:bg-white/60"
+                        style={{
+                          display:       "flex",
+                          alignItems:    "center",
+                          gap:           "0.6rem",
+                          minHeight:     42,
+                          padding:       "0.5rem 0.6rem",
+                          borderRadius:  12,
+                          color:         "#0d0d0d",
+                          textDecoration:"none",
+                          fontFamily:    "var(--font-body, var(--font-sans))",
+                          fontSize:      "0.8rem",
+                          fontWeight:    600,
+                          transition:    "background 0.16s ease",
+                        }}
+                      >
+                        <Icon size={15} strokeWidth={1.8} color="hsl(22,69%,42%)" aria-hidden="true" />
+                        <span style={{ flex: 1, minWidth: 0 }}>{label}</span>
+                      </Link>
+                    </DropdownMenuItem>
+                  ))}
+                </div>
+
+                <div style={{ height: 1, background: "rgba(0,0,0,0.07)", margin: "0.85rem 0 1rem" }} />
+
+                <p style={{ ...MENU_LABEL_STYLE, margin: "0 0 0.65rem 0.3rem" }}>
                   Work with Vyso
                 </p>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.55rem" }}>
@@ -437,11 +534,7 @@ export function Navbar({ visible = true }: NavbarProps) {
                 <p style={{ ...MENU_LABEL_STYLE, margin: "0 0 0.65rem 0.3rem" }}>
                   Explore
                 </p>
-                {[
-                  { label: "Pricing", href: "/pricing" },
-                  { label: "Frequently asked questions", href: "/faq" },
-                  { label: "Join Waitlist", href: "/contact" },
-                ].map(({ label, href }) => (
+                {EXPLORE_LINKS.map(({ label, href }) => (
                   <DropdownMenuItem key={href} asChild className="cursor-pointer p-0 focus:bg-transparent">
                     <Link
                       href={href}
@@ -576,6 +669,24 @@ export function Navbar({ visible = true }: NavbarProps) {
             ))}
 
             <DropdownMenuLabel style={{ ...MENU_LABEL_STYLE, padding: "0.8rem 0.75rem 0.35rem" }}>
+              Solutions
+            </DropdownMenuLabel>
+            {SOLUTION_LINKS.map(({ label, href, Icon }) => (
+              <DropdownMenuItem key={href} asChild className="cursor-pointer p-0">
+                <Link href={href} style={MOBILE_LINK_STYLE}>
+                  <Icon size={16} strokeWidth={1.8} color="hsl(22,69%,42%)" aria-hidden="true" />
+                  {label}
+                </Link>
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuItem asChild className="cursor-pointer p-0">
+              <Link href="/solutions" style={MOBILE_LINK_STYLE}>
+                <LayoutGrid size={16} strokeWidth={1.8} color="hsl(22,69%,42%)" aria-hidden="true" />
+                All solutions
+              </Link>
+            </DropdownMenuItem>
+
+            <DropdownMenuLabel style={{ ...MENU_LABEL_STYLE, padding: "0.8rem 0.75rem 0.35rem" }}>
               Work with Vyso
             </DropdownMenuLabel>
             {AUDIENCE_LINKS.map(({ label, href, Icon }) => (
@@ -591,6 +702,24 @@ export function Navbar({ visible = true }: NavbarProps) {
               Industries
             </DropdownMenuLabel>
             {INDUSTRY_LINKS.map(({ label, href, Icon }) => (
+              <DropdownMenuItem key={href} asChild className="cursor-pointer p-0">
+                <Link href={href} style={MOBILE_LINK_STYLE}>
+                  <Icon size={16} strokeWidth={1.8} color="hsl(22,69%,42%)" aria-hidden="true" />
+                  {label}
+                </Link>
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuItem asChild className="cursor-pointer p-0">
+              <Link href="/industries" style={MOBILE_LINK_STYLE}>
+                <LayoutGrid size={16} strokeWidth={1.8} color="hsl(22,69%,42%)" aria-hidden="true" />
+                All industries
+              </Link>
+            </DropdownMenuItem>
+
+            <DropdownMenuLabel style={{ ...MENU_LABEL_STYLE, padding: "0.8rem 0.75rem 0.35rem" }}>
+              Resources &amp; tools
+            </DropdownMenuLabel>
+            {RESOURCE_LINKS.map(({ label, href, Icon }) => (
               <DropdownMenuItem key={href} asChild className="cursor-pointer p-0">
                 <Link href={href} style={MOBILE_LINK_STYLE}>
                   <Icon size={16} strokeWidth={1.8} color="hsl(22,69%,42%)" aria-hidden="true" />

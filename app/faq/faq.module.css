@@ -67,14 +67,14 @@
 }
 
 /*
-  .blendPlain is reserved for the hero title, which always sits over the
-  dark WebGL canvas near the top of the page — mix-blend-mode: difference
-  is safe there because there's a guaranteed dark backdrop to blend against.
+  .blendPlain is the hero title. The reactive colour shift now comes from the
+  universal `.blend-surface` rule in app/globals.css (which blends the parent
+  <h1>), so this carries the ink colour it is meant to LOOK like rather than
+  the pre-inverted white the old hand-rolled `difference` recipe needed.
 */
 .blendPlain {
   display: block;
-  color: white;
-  mix-blend-mode: difference;
+  color: var(--faq-ink);
 }
 
 /*
@@ -89,19 +89,16 @@
   color: var(--faq-ink);
 }
 
+/* Orange gradient = exact per-channel complement of the blue gradient this
+   used to carry, so the rendered result through the universal blend is
+   unchanged. */
 .blendOrange {
   display: block;
-  background: linear-gradient(
-    135deg,
-    hsl(219 72% 50%),
-    hsl(202 69% 56%),
-    hsl(199 66% 64%)
-  );
+  background: linear-gradient(135deg, #db9b24, #be5c23, #98461f);
   background-clip: text;
   color: transparent;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  mix-blend-mode: difference;
 }
 
 .heroCopy {
@@ -346,12 +343,13 @@
   line-height: 0.93;
 }
 
+/* #626262 is what #9d9d9d rendered as through the old `difference` blend over
+   the white shader field; the universal `.blend-surface` rule now inverts. */
 .comparisonIntro > p {
   margin: 0;
-  color: #9d9d9d;
+  color: #626262;
   font-size: 0.95rem;
   line-height: 1.7;
-  mix-blend-mode: difference;
 }
 
 .comparisonGrid {
@@ -481,13 +479,13 @@
   line-height: 0.9;
 }
 
+/* #606060 is what #9f9f9f rendered as through the old `difference` blend. */
 .ctaInner > p:not(.eyebrow) {
   max-width: 560px;
   margin: 1.4rem auto 0;
-  color: #9f9f9f;
+  color: #606060;
   font-size: 1rem;
   line-height: 1.7;
-  mix-blend-mode: difference;
 }
 
 .ctaActions {
@@ -517,6 +515,10 @@
 }
 
 .primaryButton {
+  /* Solid opaque fill — its own colour already guarantees contrast against
+     the shader's dark band, so it opts out of the universal blend (see
+     app/globals.css, `.blend-surface`). */
+  composes: blend-exempt from global;
   background: var(--faq-orange);
   box-shadow: 0 9px 26px rgb(190 93 35 / 22%);
   color: #fff;
