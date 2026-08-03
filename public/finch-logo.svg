@@ -1,0 +1,58 @@
+<!--
+  Finch brand mark — derived from "Finch logo orange & blue.svg" (kept as the
+  master artwork). Identical paths and gradients; the opaque 1254×1254 tile
+  background is dropped and the viewBox tightened to the bird so the mark can
+  sit directly on a page background at any size.
+-->
+<svg width="620" height="600" viewBox="300 293 620 600" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Finch">
+<title>Finch</title>
+<path id="back-head-beak" d="M325 835L548 510C568 481 581 450 594 416C617 354 670 319 728 319C779 319 821 346 840 389L896 414L846 437" stroke="url(#paint1_linear_0_1)" stroke-width="23" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="chest" d="M846 437C824 447 813 466 812 491C811 532 812 569 802 611C787 672 755 716 706 745" stroke="url(#paint2_linear_0_1)" stroke-width="23" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="lower-body" d="M706 745C674 764 637 775 597 778" stroke="url(#paint3_linear_0_1)" stroke-width="23" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="lower-tail" d="M597 778C570 780 547 773 522 782L325 835" stroke="url(#paint4_linear_0_1)" stroke-width="23" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="wing-upper" d="M551 507C584 482 624 481 654 500C688 521 697 555 685 590" stroke="url(#paint5_linear_0_1)" stroke-width="23" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="wing-lower" d="M685 590C668 640 625 679 573 708C523 736 462 747 389 746" stroke="url(#paint6_linear_0_1)" stroke-width="23" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="leg" d="M596 779L672 870M562 870H774" stroke="url(#paint7_linear_0_1)" stroke-width="23" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="eye" d="M765 420.5C775.217 420.5 783.5 412.217 783.5 402C783.5 391.783 775.217 383.5 765 383.5C754.783 383.5 746.5 391.783 746.5 402C746.5 412.217 754.783 420.5 765 420.5Z" fill="url(#paint8_linear_0_1)"/>
+<defs>
+<linearGradient id="paint1_linear_0_1" x1="315" y1="5.20593e-06" x2="908" y2="5.20593e-06" gradientUnits="userSpaceOnUse">
+<stop stop-color="#4B96DD"/>
+<stop offset="0.62" stop-color="#5798D3"/>
+<stop offset="0.78" stop-color="#9297A8"/>
+<stop offset="0.89" stop-color="#CF8065"/>
+<stop offset="1" stop-color="#FF7727"/>
+</linearGradient>
+<linearGradient id="paint2_linear_0_1" x1="846" y1="437" x2="706" y2="745" gradientUnits="userSpaceOnUse">
+<stop stop-color="#C98268"/>
+<stop offset="0.38" stop-color="#F17B3D"/>
+<stop offset="1" stop-color="#FB782C"/>
+</linearGradient>
+<linearGradient id="paint3_linear_0_1" x1="590" y1="-2.92605e-06" x2="710" y2="-2.92605e-06" gradientUnits="userSpaceOnUse">
+<stop stop-color="#9B94A0"/>
+<stop offset="1" stop-color="#FB782C"/>
+</linearGradient>
+<linearGradient id="paint4_linear_0_1" x1="325" y1="4.82035e-06" x2="600" y2="4.82035e-06" gradientUnits="userSpaceOnUse">
+<stop stop-color="#4B96DD"/>
+<stop offset="0.58" stop-color="#6097CA"/>
+<stop offset="1" stop-color="#A69092"/>
+</linearGradient>
+<linearGradient id="paint5_linear_0_1" x1="551" y1="507" x2="685" y2="590" gradientUnits="userSpaceOnUse">
+<stop stop-color="#4F97DA"/>
+<stop offset="0.62" stop-color="#7399BD"/>
+<stop offset="1" stop-color="#BA8879"/>
+</linearGradient>
+<linearGradient id="paint6_linear_0_1" x1="389" y1="1.66429e-05" x2="685" y2="1.66429e-05" gradientUnits="userSpaceOnUse">
+<stop stop-color="#4B96DD"/>
+<stop offset="0.56" stop-color="#6A98C3"/>
+<stop offset="1" stop-color="#BA8879"/>
+</linearGradient>
+<linearGradient id="paint7_linear_0_1" x1="550" y1="-4.57155e-05" x2="785" y2="-4.57155e-05" gradientUnits="userSpaceOnUse">
+<stop stop-color="#EF8650"/>
+<stop offset="1" stop-color="#FF7727"/>
+</linearGradient>
+<linearGradient id="paint8_linear_0_1" x1="746" y1="384" x2="784" y2="421" gradientUnits="userSpaceOnUse">
+<stop stop-color="#5A9BD5"/>
+<stop offset="1" stop-color="#8A9BAD"/>
+</linearGradient>
+</defs>
+</svg>

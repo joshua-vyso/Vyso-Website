@@ -96,7 +96,10 @@ const pricingSchema = {
 
 export default function PricingPage() {
   return (
-    <>
+    // `blend-surface` — universal reactive text blend, see app/globals.css.
+    // Plain wrapper: it declares nothing, so it adds no stacking context and
+    // the shader canvas keeps compositing exactly as before.
+    <div className="blend-surface">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -111,6 +114,6 @@ export default function PricingPage() {
       </main>
 
       <SiteFooter />
-    </>
+    </div>
   );
 }

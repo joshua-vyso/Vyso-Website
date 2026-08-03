@@ -139,6 +139,117 @@ const INDUSTRIES: Record<string, Industry> = {
       { question: "Can a producer start before every process is standardised?", answer: "Yes. The one-week audit maps the current reality first and defines one practical starting workflow rather than assuming the whole operation is already standardised." },
     ],
   },
+  "catering-companies": {
+    name: "Catering operations",
+    shortName: "Catering companies",
+    title: "Catering Company Operations Software in South Africa | Vyso",
+    description:
+      "Vyso helps South African catering companies cost events accurately, coordinate procurement and production, generate invoices and keep weekly wastage and margin under control.",
+    eyebrow: "Vyso for catering companies",
+    heroPlain: "Every event costed properly.",
+    heroAccent: "Every week under control.",
+    lead:
+      "Vyso helps catering teams connect event costing, procurement, production planning, invoicing and wastage into one operating record—so a good week is not just the ones somebody happened to track closely.",
+    gaps: [
+      { title: "Event costs are estimated, not tracked", copy: "Quotes are built from experience and old spreadsheets, while the real ingredient, labour and hire cost of an event is rarely compared back afterwards." },
+      { title: "Procurement runs event to event", copy: "Buying decisions are made per booking, with little visibility into what was already ordered, on hand, or needed across the week's functions." },
+      { title: "Production planning lives in someone's head", copy: "Prep lists, staffing and kitchen timelines are coordinated verbally or on paper, and get harder to hold together as bookings overlap." },
+      { title: "Invoicing trails the event by weeks", copy: "Final invoices, extras and deposits are reconciled long after the function, making cash flow and client billing harder to manage." },
+    ],
+    modules: [
+      { name: "PlanWise", role: "Event costing and margin forecasting" },
+      { name: "ProcurePulse", role: "Procurement and stock across bookings" },
+      { name: "ShiftBoard", role: "Kitchen and event staff planning" },
+      { name: "OrderFlow", role: "Quotes, invoicing and client accounts" },
+      { name: "WasteWatch", role: "Wastage across functions and prep" },
+      { name: "InsightGen", role: "Weekly operational reporting" },
+    ],
+    outcomes: [
+      "Each event costed against real ingredient, labour and hire numbers, not last year's guess.",
+      "One purchasing view across overlapping bookings, instead of ordering event by event.",
+      "Production and staffing plans that hold together when the week gets busy.",
+      "Invoices and deposits reconciled close to the event, not weeks later.",
+    ],
+    faqs: [
+      { question: "Can Vyso cost individual events or functions?", answer: "Yes. Event-level costing—ingredients, labour, hire and other line items—can be tracked and compared against the original quote as part of the implementation." },
+      { question: "Does Vyso help when several events overlap in the same week?", answer: "Yes. Procurement, production planning and staffing are designed to give one operating view across concurrent bookings rather than treating each event in isolation." },
+      { question: "Can a catering business start with just invoicing or just procurement?", answer: "Yes. The audit identifies where the biggest operational gap is—often costing or procurement—and that becomes the first workflow, with other modules added later." },
+    ],
+  },
+  wholesale: {
+    name: "Wholesale operations",
+    shortName: "Wholesale",
+    title: "Wholesale Operations Software in South Africa | Vyso",
+    description:
+      "Vyso helps South African wholesalers control purchasing, inventory movement, order processing, supplier management, margin and operational reporting from one connected system.",
+    eyebrow: "Vyso for wholesale",
+    heroPlain: "Stock moves fast.",
+    heroAccent: "Your visibility should too.",
+    lead:
+      "Vyso helps wholesale operations connect purchasing, inventory movement, order processing, supplier management and margin decisions—so volume does not mean losing sight of what's actually happening.",
+    gaps: [
+      { title: "Purchasing reacts to stockouts", copy: "Reorder decisions are triggered by a shortage someone notices, rather than a clear view of stock levels and movement across lines." },
+      { title: "Inventory movement is hard to trust", copy: "What's on the shelf, in transit and on order lives across different systems and sheets, so counts drift from reality." },
+      { title: "Order processing depends on manual capture", copy: "Customer orders arriving by call, email or message still need to be retyped into the system that actually ships and invoices." },
+      { title: "Margin is reviewed after the fact", copy: "Cost price changes from suppliers reach the selling price late, if at all, so margin erosion is only visible at month-end." },
+    ],
+    modules: [
+      { name: "ProcurePulse", role: "Purchasing and inventory intelligence" },
+      { name: "OrderFlow", role: "Order processing and invoicing" },
+      { name: "SupplySync", role: "Supplier records and performance" },
+      { name: "PricePilot", role: "Margin and selling-price control" },
+      { name: "InsightGen", role: "Operational reporting across lines" },
+      { name: "Doc-U", role: "Purchase order and invoice capture" },
+    ],
+    outcomes: [
+      "Reorder decisions based on real stock movement, not the next stockout.",
+      "One inventory record that purchasing, sales and dispatch can all trust.",
+      "Customer orders captured once and carried through to invoicing.",
+      "Selling prices that keep pace with supplier cost changes, reviewed on a routine, not a surprise.",
+    ],
+    faqs: [
+      { question: "Does Vyso replace our warehouse or inventory management system?", answer: "Not necessarily. Vyso can sit alongside existing stock systems or become the operational record for purchasing, orders and reporting—confirmed during scoping." },
+      { question: "Can Vyso handle high order volumes?", answer: "Yes. OrderFlow is built to carry repeat customer orders, pricing and invoicing through a connected workflow rather than a per-order manual process, and volume and workflow shape are assessed during the audit." },
+      { question: "Can we start with purchasing before touching order processing?", answer: "Yes. The recommended approach is to start with the workflow carrying the most risk—often purchasing or margin visibility—and expand once that value is proven." },
+    ],
+  },
+  hospitality: {
+    name: "Hospitality operations",
+    shortName: "Hospitality",
+    title: "Hospitality Operations Software in South Africa | Vyso",
+    description:
+      "Vyso gives South African hospitality operators multi-department visibility, supplier control, procurement approvals, staff workflows and executive dashboards in one connected system.",
+    eyebrow: "Vyso for hospitality",
+    heroPlain: "Every department, its own routine.",
+    heroAccent: "One dashboard above it all.",
+    lead:
+      "Vyso helps hospitality operations connect kitchen, front-of-house, procurement and back-office workflows into a single operating picture—so leadership can see performance without chasing each department for an update.",
+    gaps: [
+      { title: "Departments run on separate routines", copy: "Kitchen, bar, housekeeping and front-of-house each track their own numbers, making it hard to see how the operation is performing as a whole." },
+      { title: "Procurement approvals happen informally", copy: "Purchase requests move through calls, messages and verbal sign-off, with little record of who approved what and why." },
+      { title: "Supplier performance is remembered, not recorded", copy: "Which suppliers deliver late, short or over-priced tends to live in someone's memory rather than a reviewable history." },
+      { title: "Leadership waits for the report", copy: "Executives see performance once a manager has compiled it, rather than having a live view of the operation underneath them." },
+    ],
+    modules: [
+      { name: "InsightGen", role: "Executive dashboards across departments" },
+      { name: "ProcurePulse", role: "Procurement and stock intelligence" },
+      { name: "SupplySync", role: "Supplier control and performance history" },
+      { name: "ShiftBoard", role: "Staff scheduling and department workflows" },
+      { name: "PlanWise", role: "Budgeting and forecasting by department" },
+      { name: "Doc-U", role: "Approval and document capture" },
+    ],
+    outcomes: [
+      "One operating picture across kitchen, front-of-house and back-office departments.",
+      "Procurement approvals with a clear, reviewable record instead of a verbal trail.",
+      "Supplier performance tracked consistently, not remembered selectively.",
+      "Executives able to see performance directly, without waiting on a manual report.",
+    ],
+    faqs: [
+      { question: "Can Vyso work across multiple departments in one property?", answer: "Yes. Vyso is designed to connect procurement, stock, staffing and reporting across departments into one operating record, configured around how the property actually runs." },
+      { question: "Does Vyso support formal procurement approval chains?", answer: "Yes. Purchase requests and approvals can be routed and recorded as part of the procurement workflow, with the approval structure confirmed during implementation." },
+      { question: "Is Vyso suitable for a multi-property hospitality group?", answer: "It can be. Group-level visibility depends on how consistently each property currently operates, which the audit assesses before recommending a rollout approach." },
+    ],
+  },
 };
 
 const GAP_ICONS = [ClipboardList, Boxes, HandCoins, Route] as const;

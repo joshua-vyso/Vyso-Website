@@ -94,7 +94,8 @@ const contactSchema = {
 
 export default function ContactPage() {
   return (
-    <div style={{ position: "relative", isolation: "isolate" }}>
+    // `blend-surface` — universal reactive text blend, see app/globals.css.
+    <div className="blend-surface" style={{ position: "relative", isolation: "isolate" }}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{

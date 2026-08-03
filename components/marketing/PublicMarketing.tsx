@@ -11,7 +11,11 @@ export { styles as marketingStyles };
 
 export function PublicPageShell({ children }: { children: ReactNode }) {
   return (
-    <div className={styles.page}>
+    // `blend-surface` opts this whole tree (Navbar, page content, SiteFooter)
+    // into the universal reactive text blend defined in app/globals.css, so
+    // every text run — not just the display headings — shifts colour when the
+    // shader's dark band sweeps behind it. See that file for the mechanism.
+    <div className={`${styles.page} blend-surface`}>
       <LazyShaderBackground global />
       <Navbar visible />
       <main className={styles.main}>{children}</main>

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { Bot, ChartNoAxesCombined, MessagesSquare, ScanSearch } from "lucide-react";
 
@@ -117,6 +118,21 @@ export default function FinchPage() {
               { label: "Finch" },
             ]}
           />
+          {/* `blend-exempt` keeps the mark out of the site-wide invert +
+              difference text blend (app/globals.css) so it renders literally. */}
+          <div
+            className="blend-exempt"
+            style={{ margin: "0 0 1.15rem", lineHeight: 0 }}
+          >
+            <Image
+              src="/finch-logo.svg"
+              alt="Finch"
+              width={80}
+              height={77}
+              unoptimized
+              priority
+            />
+          </div>
           <span className={styles.statusPill}>Private preview · on track to launch</span>
           <h1 id="finch-heading" className={styles.compactTitle}>
             <span className={styles.blendPlain}>Ask the operation.</span>{" "}

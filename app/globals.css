@@ -517,3 +517,146 @@ html, body {
   .vyso-fade-in,
   .vyso-pop-in { animation: none; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   UNIVERSAL REACTIVE TEXT BLEND — marketing surface only
+   ══════════════════════════════════════════════════════════════════════════
+
+   The global WebGL canvas (components/WebGLShaderBackground.tsx) paints a
+   white field with a single dark sine band that sweeps across the viewport.
+   The canvas is `position: fixed`, so the band sits at a fixed screen height
+   and *different page content* slides behind it as you scroll. Historically
+   only the display headings opted into `mix-blend-mode: difference`, so every
+   other text run (body copy, list items, card copy, labels, nav, footer)
+   rendered a static dark colour and went unreadable whenever the band passed
+   behind it.
+
+   MECHANISM — `filter: invert(1)` + `mix-blend-mode: difference`
+   -------------------------------------------------------------
+   `filter: invert(1)` renders the element's own pixels as their complement,
+   then `mix-blend-mode: difference` composites that against the page backdrop:
+
+       result = |backdrop − (1 − C)|
+
+   Over the shader's white field (backdrop = 1) the two cancel *exactly*:
+   |1 − (1 − C)| = C. So on every light region the page is pixel-identical to
+   before — black body copy stays black, orange accents stay orange, gradient
+   text keeps its gradient. Over the dark band the difference no longer
+   cancels and the run lifts to (roughly) its complement — light on dark.
+
+   The win over the old `color: white; mix-blend-mode: difference` recipe is
+   that it needs NO per-element colour maths: it works for inherited colours,
+   `background-clip: text` gradients and inline styles alike, so one rule set
+   covers the whole surface instead of one hand-tuned class per heading.
+
+   SCOPING — `.blend-surface`
+   --------------------------
+   Only roots that actually render the shader carry `.blend-surface`
+   (PublicPageShell, /, /pricing, /faq, /contact, /privacy). The class itself
+   declares nothing, so it never creates a stacking context of its own. The
+   product platform under app/app/** never gets it and is untouched.
+
+   OPT-OUT — `.blend-exempt`
+   -------------------------
+   Put `.blend-exempt` on any subtree that must render literally: screenshot
+   frames, logos, media. Text elements that *contain* media or form controls
+   (`:has(img, svg, input, …)`) are auto-excluded so a picture is never
+   inverted just because it sits inside a link or a list item.
+
+   INTERACTION WITH STACKING CONTEXTS
+   ----------------------------------
+   `filter`/`mix-blend-mode` are set on the *leaf-most* text element only (see
+   the "nested runs" reset below), never on a wrapper, so the existing mobile
+   Safari fixes above — which strip `opacity`/`transform`/`position: relative`
+   from section wrappers so the blend can reach the canvas — keep working
+   unchanged and now benefit every text run rather than just the headings.
+   Text inside a glass card (`backdrop-filter`) blends against the card's own
+   frosted surface, which is what you want: the card is a light surface, so
+   the copy reads dark on it and lifts when the band darkens the card.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* 1 — every text-bearing element on the marketing surface blends. */
+.blend-surface :is(p, h1, h2, h3, h4, h5, h6, li, dt, dd, blockquote, figcaption,
+  caption, th, td, summary, address, label, legend, a, span, strong, em, b, i,
+  small, code, time, cite, q, abbr) {
+  filter: invert(1);
+  mix-blend-mode: difference;
+}
+
+/* 2 — nested runs inherit the ancestor's blend instead of blending again.
+   Double-blending would composite the inner run against its (transparent)
+   parent group rather than the canvas, which paints it as its own complement
+   — i.e. light grey text on white. Specificity (0,1,2) beats rule 1 (0,1,1). */
+.blend-surface :is(p, h1, h2, h3, h4, h5, h6, li, dt, dd, blockquote, figcaption,
+  caption, th, td, summary, address, label, legend, a, span, strong, em, b, i,
+  small, code, time, cite, q, abbr)
+  :is(p, h1, h2, h3, h4, h5, h6, li, dt, dd, blockquote, figcaption,
+  caption, th, td, summary, address, label, legend, a, span, strong, em, b, i,
+  small, code, time, cite, q, abbr) {
+  filter: none;
+  mix-blend-mode: normal;
+}
+
+/* 3 — opt-outs. Anything under `.blend-exempt`, plus any text element that
+   wraps media or a form control (inverting those would wreck screenshots,
+   logos and inputs). Specificity (0,2,1) beats rules 1 and 2. */
+.blend-surface .blend-exempt,
+.blend-surface .blend-exempt :is(p, h1, h2, h3, h4, h5, h6, li, dt, dd, blockquote,
+  figcaption, caption, th, td, summary, address, label, legend, a, span, strong,
+  em, b, i, small, code, time, cite, q, abbr),
+.blend-surface :is(p, h1, h2, h3, h4, h5, h6, li, dt, dd, blockquote, figcaption,
+  caption, th, td, summary, address, label, legend, a, span, strong, em, b, i,
+  small, code, time, cite, q, abbr):has(:is(img, svg, canvas, video, picture,
+  iframe, object, input, textarea, select, .blend-exempt)) {
+  filter: none;
+  mix-blend-mode: normal;
+}
+
+/* 3b — glass surfaces built with an inline `backdrop-filter`.
+   `backdrop-filter` establishes a *backdrop root*: mix-blend-mode inside it
+   can no longer see the shader canvas and instead composites against the
+   card's own translucent fill, which flattens every run to a constant
+   mid-grey (measured: ~#7a7a7a regardless of the colour underneath) and
+   strips the orange from accent text. Opt those subtrees out — a frosted
+   card is a light surface in its own right, so its copy stays readable
+   without the blend.
+
+   The attribute selector is the reliable hook here because every glass
+   surface on this site is composed from a shared inline `GLASS` style object
+   (PricingSection, ContactSection, SystemsShowcase, AuditBanner), which React
+   serialises into the style attribute as `backdrop-filter: …`. */
+.blend-surface [style*="backdrop-filter"],
+.blend-surface [style*="backdrop-filter"] :is(p, h1, h2, h3, h4, h5, h6, li, dt,
+  dd, blockquote, figcaption, caption, th, td, summary, address, label, legend,
+  a, span, strong, em, b, i, small, code, time, cite, q, abbr) {
+  filter: none;
+  mix-blend-mode: normal;
+}
+
+/* 4 — legacy hand-tuned blend spans.
+   `.blend-h-plain` / `.blend-h-orange` / `.blend-para` carry an inline
+   `mix-blend-mode: difference` (set in HeroSection, ContactSection,
+   PricingSection, HowItWorks, AppsShowcase, TrustStrip, SystemsShowcase and
+   app/contact). Inline styles outrank rule 2, so the nested spans have to be
+   neutralised with `!important` or they would blend a second time inside
+   their already-blending heading.
+
+   Their colours were pre-inverted for the old recipe (white text that reads
+   black through `difference`); now that the parent supplies the inversion
+   they carry the colour they are meant to LOOK like. The orange gradient is
+   the exact per-channel complement of the blue gradient those spans used, so
+   the rendered result is unchanged:
+     hsl(219 72% 50%) → #db9b24 · hsl(202 69% 56%) → #be5c23 · hsl(199 66% 64%) → #98461f */
+.blend-surface :is(p, h1, h2, h3, h4, h5, h6, li, dt, dd, blockquote, figcaption,
+  caption, th, td, summary, address, label, legend, a, span, strong, em, b, i,
+  small, code, time, cite, q, abbr) :is(.blend-h-plain, .blend-h-orange) {
+  mix-blend-mode: normal !important;
+}
+
+.blend-surface :is(.blend-h-plain, .blend-para) {
+  color: #0d0d0d !important;
+}
+
+.blend-surface .blend-h-orange {
+  background-image: linear-gradient(135deg, #db9b24, #be5c23, #98461f) !important;
+}

@@ -308,7 +308,8 @@ const faqSchema = {
 export default function FaqPage() {
   return (
     <>
-      <div style={{ position: "relative", isolation: "isolate" }}>
+      {/* `blend-surface` — universal reactive text blend, see app/globals.css. */}
+      <div className="blend-surface" style={{ position: "relative", isolation: "isolate" }}>
         <LazyShaderBackground global />
         <Navbar visible />
 

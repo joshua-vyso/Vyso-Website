@@ -96,23 +96,24 @@
   line-height: 1;
 }
 
+/*
+  The reactive colour shift now comes from the universal `.blend-surface` rule
+  in app/globals.css (filter: invert(1) + mix-blend-mode: difference on every
+  text element), so these two carry the colour they are meant to LOOK like
+  instead of the pre-inverted white/blue the old hand-rolled recipe needed.
+  The orange gradient is the exact per-channel complement of the blue gradient
+  that used to live here, so the rendered result is unchanged.
+*/
 .blendPlain {
-  color: white;
-  mix-blend-mode: difference;
+  color: var(--marketing-ink);
 }
 
 .blendAccent {
-  background: linear-gradient(
-    135deg,
-    hsl(219 72% 50%),
-    hsl(202 69% 56%),
-    hsl(199 66% 64%)
-  );
+  background: linear-gradient(135deg, #db9b24, #be5c23, #98461f);
   background-clip: text;
   color: transparent;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  mix-blend-mode: difference;
 }
 
 .heroLead,
@@ -177,6 +178,11 @@
 }
 
 .primaryButton {
+  /* Solid opaque fill — its own colour already guarantees contrast against
+     the shader's dark band, so it opts out of the universal blend (see
+     app/globals.css, `.blend-surface`). Same pattern as ScreenshotFrame's
+     `.wrap`. */
+  composes: blend-exempt from global;
   padding: 0.78rem 1.35rem;
   background: var(--marketing-orange);
   box-shadow: 0 10px 30px rgb(190 93 35 / 24%);
@@ -378,6 +384,17 @@
   min-height: 220px;
 }
 
+/* Answer cards are pure text on glass, and glass at 57% white let the shader's
+   dark band drag the surface into the mid-grey zone where `difference`-blended
+   copy lands on the backdrop's own value and vanishes (see the OPAQUE TEXT
+   SURFACES note in app/platform/modules/modules.module.css). A near-opaque
+   fill plus `.blend-exempt` keeps the answer readable at every band position;
+   the blur, border and shadow from the shared glass rule above are untouched. */
+.answerCard {
+  composes: blend-exempt from global;
+  background: rgb(255 255 255 / 92%);
+}
+
 .cardIcon {
   display: flex;
   width: 2.6rem;
@@ -490,24 +507,25 @@
   min-width: 0;
 }
 
+/* Colours below are what the old pre-inverted values rendered as through
+   `difference` over the white shader field (white → #000, 64% white → #5c5c5c);
+   the universal `.blend-surface` rule now supplies the inversion. */
 .processTitle {
   margin: 1rem 0 0.35rem;
-  color: white;
+  color: #000;
   font-family: var(--font-sans);
   font-size: clamp(1.25rem, 1.8vw, 1.65rem);
   font-weight: 700;
   letter-spacing: -0.025em;
   line-height: 1;
-  mix-blend-mode: difference;
 }
 
 .processCopy {
   max-width: 20ch;
   margin: 0 auto;
-  color: rgb(255 255 255 / 64%);
+  color: #5c5c5c;
   font-size: 0.76rem;
   line-height: 1.55;
-  mix-blend-mode: difference;
 }
 
 .splitSection {
