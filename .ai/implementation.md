@@ -253,3 +253,139 @@ untouched, so it is flagged for a decision rather than applied unilaterally. The
 `wastewatch/Overview.tsx:173,192` are `of-num` stat *values*, not headings — leave them.
 
 Nothing committed; the changeset remains uncommitted working-tree state on `finch-onboarding`.
+
+---
+
+# 2026-08-04 — Demo-day fixes: Doc-U header overlap + price-list picker with order-wide re-pricing
+
+Plan: `.ai/plan_demo-pricelist-fixes.md`. All six steps implemented in order. Nothing committed —
+the changeset is uncommitted working-tree state.
+
+## What changed, per file
+
+**`components/platform/ExtractionEditor.tsx`** (Step 1 — header collision)
+- `COLS`: 5th track (Units/box) widened `56px` → `80px`; the `1fr` Description column absorbs it.
+  Grid is now `[1fr_64px_48px_70px_80px_76px_88px_24px]`.
+- Added a `HEAD_CELL = 'min-w-0 truncate'` constant applied to all seven header spans, so any
+  future tight column degrades to an ellipsis instead of overlapping its neighbour.
+- Data-row cells were not touched: they are fixed grid tracks with `w-full` inputs, so alignment
+  follows the header automatically.
+
+**`app/app/docu/[id]/page.tsx`** (Step 2 — fetch)
+- Three org-scoped queries added to the existing `Promise.all` block: `pl_price_lists.select('*')`,
+  `pl_overrides.select('*')`, and `pp_stock_items.select('id, name, avg_unit_price, unit')` —
+  the exact table + fields `orderflow-from-doc.ts` matches lines against (`StockLite`).
+- Results destructured as `priceListData` / `overrideData` / `productData`, typed as
+  `CdPriceList[]` / `CdPriceOverride[]` / `StockLite[]`, and passed to `DocumentDetailPanel`.
+- Overrides are fetched org-wide (not per-list, as the server sync does) because the reviewer can
+  pick ANY list client-side; `resolvePrice` already filters by `price_list_id`.
+
+**`components/platform/docu/DocumentDetailPanel.tsx`** (Step 2 — pass-through)
+- Props extended with `priceLists` / `overrides` / `products`; forwarded verbatim to
+  `OrderReviewEditor`. No other behaviour touched.
+
+**`components/platform/docu/OrderReviewEditor.tsx`** (Step 3 — picker + order-wide re-price)
+- New optional props `priceLists` / `overrides` / `products` (default `[]`, so the component is
+  still usable without them).
+- New state `priceListId: string | null`, initialised from the persisted
+  `extractedData.price_list_id` — but only when that id still exists in `priceLists`, so a pin at a
+  deleted list is treated as absent (plan edge case).
+- New `applyPriceList(id)`: sets the ONE order-level `priceListId`, then re-prices EVERY line whose
+  description matches a product via `matchStockItem` (imported from `lib/platform/orderflow-from-doc.ts`
+  — reused, not duplicated) using `resolvePrice(product, list, overrides).price`. Unmatched lines and
+  `source === 'none'` results are left untouched, so a user-entered price is never overwritten with a
+  blank/zero. Choosing the empty "from list" option just unpins; prices already applied stay.
+- Row grid retracked `[1fr_64px_72px_84px_24px]` → `[1fr_52px_72px_76px_92px_24px]` (extracted to a
+  `rowCols` constant shared by the header and the rows) with a new "Price list" column. Every line
+  renders a native `<select>` bound to the single order-level `priceListId`, options = "from list"
+  (empty) + every `pl_price_lists` row by name. Header spans got `min-w-0 truncate`, matching Step 1.
+- Manual typing still calls `updateLine` and does NOT reset `priceListId`.
+- `confirm()` now writes `price_list_id: priceListId` into the document's `extracted_data` alongside
+  `line_items` / `customer_name`.
+
+**`lib/platform/types.ts`** (interface — see deviation 1)
+- `ExtractedData` gains `price_list_id?: string | null` (additive, optional; older docs simply lack it).
+
+**`lib/platform/orderflow-from-doc.ts`** (Step 4 — honour the persisted list)
+- `plRows` hoisted to a `priceLists` const; a `pinnedList` lookup from `ed.price_list_id` now wins
+  over `customerPriceList(...)`. Absent id, or an id that no longer resolves, falls through to the
+  exact prior behaviour. Six lines, fully guarded. `matchStockItem` / `StockLite` were already
+  exported — nothing had to be extracted or duplicated for client reuse.
+
+**`components/platform/orderflow/builder.tsx`** (Step 5 — picker UI)
+- `LineItemsEditor` gains two OPTIONAL props: `priceLists?: CdPriceList[]` and
+  `onPriceListChange?: (id: string | null) => void`. When both are supplied the read-only
+  "Pricing from <name>" label becomes a `<select>` over all org lists; when they are omitted the
+  original label renders unchanged — so `QuoteBuilder` and `InvoiceBuilder` are untouched.
+- The select's empty option is labelled "Default (from customer)" (value `''` → `onPriceListChange(null)`),
+  because clearing the pin restores the caller's derived list rather than removing pricing.
+
+**`components/platform/orderflow/OrdersView.tsx`** (Step 5 — state + re-price)
+- `NewOrderBuilder`: the pure `useMemo` price list became `derivedList` (unchanged formula), plus new
+  `pinnedListId` state; the effective `priceList` is the pinned list when set, else `derivedList`.
+- The re-price loop from `pickCustomer` was factored out to `repriceLines(list)` — same body
+  (skip lines without `stock_item_id`, skip lines with a non-empty `override_note`) — and is now
+  called from both `pickCustomer` and the new `pickPriceList`.
+- `pickCustomer` additionally clears `pinnedListId`, so picking a customer resets to their derived
+  list (today's behaviour wins, per the plan's edge case).
+- `LineItemsEditor` wired with `priceLists={context.priceLists}` and `onPriceListChange={pickPriceList}`.
+- `CdPriceList` added to the existing `coredata` type import.
+
+**`lib/platform/orderflow-data.ts`** — NOT modified. `BuilderContext` already carries
+`priceLists: CdPriceList[]` and `overrides: CdPriceOverride[]` (lines 245–246), as the plan predicted.
+
+## Deviations from the plan
+
+1. **`lib/platform/types.ts` edited (not in the plan's file list).** The plan's "Data/API/interface
+   changes" section requires the extracted order payload to gain `price_list_id?: string`, but
+   `ExtractedData` — the type both the client editor (via `DocuExtractedData extends ExtractedData`)
+   and the server sync read — lives in `types.ts`. Declaring it there is the single additive change
+   that types both sides; the alternative (an `as` cast in `orderflow-from-doc.ts` plus a duplicate
+   field on `DocuExtractedData`) would have been strictly worse. One optional field, no behaviour.
+
+2. **`LineItemsEditor`'s new props are optional, and the parent owns the re-price.** The plan says
+   "replace the read-only label with a select over `priceLists` (already in builder context)", but
+   `LineItemsEditor` never received `priceLists` — only a single resolved `priceList`. Making the two
+   new props optional keeps `QuoteBuilder` / `InvoiceBuilder` byte-for-byte behaviourally unchanged
+   (they keep the label), and the re-price loop stays in `OrdersView` where the lines state and
+   `context.products` / `context.overrides` live, exactly as the plan's "reuse the `pickCustomer`
+   loop" instruction implies.
+
+3. **Doc-U order review got a dedicated narrow "Price list" column rather than a control crammed
+   inside the 84px unit-price cell.** The plan explicitly delegated this ("chevron on the right of the
+   cell or an adjacent narrow select — implementer's choice, must not break the row grid"). The row
+   grid was retracked to fit the extra 92px track inside the half-width panel; the numeric unit-price
+   input and its "from list" placeholder semantics are untouched.
+
+4. **Doc-U overrides are fetched org-wide** instead of per-selected-list (as the server does). The
+   reviewer can pick any list at any time, so scoping the fetch to one list would break the picker.
+   `resolvePrice` filters by `price_list_id` internally, so results are identical.
+
+## Verification (Step 6)
+
+```
+$ npx tsc --noEmit
+TSC_EXIT=0            # no output at all — clean
+```
+
+```
+$ npm run lint
+✖ 65 problems (51 errors, 14 warnings)
+  0 errors and 1 warning potentially fixable with the `--fix` option.
+LINT_EXIT=1
+```
+Lint FAILS, but it fails identically on a clean tree — verified by stashing the changeset and
+re-running: baseline is also `✖ 65 problems (51 errors, 14 warnings)`. Zero regression. Linting only
+the eight changed files reports 2 errors, both in `OrdersView.tsx` at lines 139 (`Date.now()` during
+render) and 242 (`tempRef.n++`) — pre-existing code neither of which this change touched. All other
+findings are in unrelated files (wastewatch, supplysync, vyso-ai, pricepilot pages, …).
+
+```
+$ npm run build
+✓ Compiled successfully in 9.9s
+… full route table printed …
+BUILD_EXIT=0
+```
+
+Not run: manual dev-server walkthrough of the Fresh Valley demo data (Doc-U invoice headers,
+per-line dropdown, order re-pricing, OrderFlow order edit) — left for the demo-day smoke test.
