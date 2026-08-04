@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useCallback } from "react";
 import dynamic                     from "next/dynamic";
+import Link                        from "next/link";
 import { BounceDot }               from "@/components/BounceDot";
 import { Navbar }                  from "@/components/Navbar";
 import { HeroSection }             from "@/components/HeroSection";
+import { IntegrationsMarquee }     from "@/components/marketing/IntegrationsMarquee";
 import { SystemsShowcase }         from "@/components/sections/SystemsShowcase";
 import { HowItWorks }              from "@/components/sections/HowItWorks";
 import { AppsShowcase }            from "@/components/sections/AppsShowcase";
@@ -20,8 +22,89 @@ const WebGLShaderBackground = dynamic(
   { ssr: false },
 );
 
+/* ── Integrations band ──────────────────────────────────────────────────────
+   Compact section directly under the hero: the marquee rail plus the same
+   eyebrow/heading register the other homepage sections use (see
+   SystemsShowcase). The copy is deliberately about intent — what Vyso is built
+   to plug into — never a claim that every logo is live; per-integration status
+   lives on /integrations.                                                    */
+const FONT: React.CSSProperties = { fontFamily: "var(--font-sans)" };
+const BODY: React.CSSProperties = { fontFamily: "var(--font-body, var(--font-sans))" };
+
+// Complement of the orange gradient — reads orange on white, blue on the band.
+const blendOrange: React.CSSProperties = {
+  background:           "linear-gradient(135deg, hsl(219,72%,50%), hsl(202,69%,56%), hsl(199,66%,64%))",
+  WebkitBackgroundClip: "text",
+  backgroundClip:       "text",
+  WebkitTextFillColor:  "transparent",
+  color:                "transparent",
+  mixBlendMode:         "difference",
+  display:              "inline",
+};
+
+function IntegrationsBand() {
+  return (
+    <section
+      style={{
+        position:      "relative",
+        width:         "100%",
+        display:       "flex",
+        flexDirection: "column",
+        alignItems:    "center",
+        padding:       "clamp(3.5rem, 7vw, 6rem) 2rem",
+        boxSizing:     "border-box",
+        background:    "transparent",
+      }}
+    >
+      <div style={{ position: "relative", width: "100%", maxWidth: 1100, textAlign: "center" }}>
+        <p style={{
+          ...BODY,
+          fontSize:      "0.72rem",
+          fontWeight:    600,
+          letterSpacing: "0.22em",
+          textTransform: "uppercase",
+          color:         "#bbb",
+          marginBottom:  "1rem",
+        }}>
+          Integrations
+        </p>
+
+        <h2 style={{
+          ...FONT,
+          fontSize:      "clamp(2rem, 4.4vw, 3.4rem)",
+          fontWeight:    700,
+          lineHeight:    1.04,
+          letterSpacing: "-0.03em",
+          margin:        "0 0 2.4rem",
+        }}>
+          <span className="blend-h-plain" style={{ color: "white", mixBlendMode: "difference" as const }}>Built to plug into </span>
+          <span className="blend-h-orange" style={blendOrange}>the tools you already run.</span>
+        </h2>
+
+        <IntegrationsMarquee />
+
+        <div style={{ marginTop: "1.6rem" }}>
+          <Link
+            href="/integrations"
+            style={{
+              ...BODY,
+              fontSize:       "0.86rem",
+              fontWeight:     700,
+              color:          "hsl(22,69%,44%)",
+              textDecoration: "none",
+            }}
+          >
+            Explore integrations →
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 const SECTIONS: [React.ComponentType, string][] = [
   [HeroSection,      "hero"        ],
+  [IntegrationsBand, "integrations"],
   [SystemsShowcase,  "systems"     ],
   [HowItWorks,       "how-it-works"],
   [AppsShowcase,     "our-toolkit" ],
