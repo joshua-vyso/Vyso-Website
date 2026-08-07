@@ -4,6 +4,10 @@ import { SubNav } from '@/components/platform/SubNav';
 import { ServiceDenProvider } from '@/components/platform/serviceden/context';
 
 const TABS = [
+  // Outreach and Sales are two halves of one journey: Outreach is where the n8n
+  // email sequence has got to, Sales is where the deal stands once they reply.
+  { label: 'Outreach', href: '/app/serviceden/outreach' },
+  { label: 'Sales', href: '/app/serviceden/sales' },
   { label: 'Leads', href: '/app/serviceden/leads' },
   { label: 'Customers', href: '/app/serviceden' },
   { label: 'Services', href: '/app/serviceden/services' },
