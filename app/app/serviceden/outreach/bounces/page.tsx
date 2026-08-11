@@ -3,7 +3,8 @@ import { BouncesView } from '@/components/platform/serviceden/BouncesView';
 import { requireServiceDenSession } from '@/lib/platform/serviceden-access';
 import { requireServiceDenServerContext } from '@/lib/platform/serviceden-server';
 import { listOutreachBounces, type OutreachBounce } from '@/lib/platform/outreach-bounces';
-import { getOutreachLeads, notionOutreachConfigured } from '@/lib/platform/notion-outreach';
+import { notionOutreachConfigured } from '@/lib/platform/notion-outreach';
+import { cachedOutreachLeads } from '@/lib/platform/outreach-data';
 
 export default async function OutreachBouncesPage() {
   await requireServiceDenSession();
@@ -23,7 +24,7 @@ export default async function OutreachBouncesPage() {
     if (!ctx) {
       error = 'Gmail is not available for this account.';
     } else {
-      const result = await listOutreachBounces(ctx, await getOutreachLeads());
+      const result = await listOutreachBounces(ctx, await cachedOutreachLeads());
       bounces = result.bounces ?? [];
       error = result.error;
     }

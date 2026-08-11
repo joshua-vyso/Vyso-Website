@@ -3,12 +3,9 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Badge, DataTable, Kpi, KpiStrip, SectionCard, type Tone } from '@/components/platform/module-ui';
-import { OutreachTable } from '@/components/platform/serviceden/OutreachTable';
-import { TemplatesPanel } from '@/components/platform/serviceden/TemplatesPanel';
 import {
   MIN_SAMPLE_FOR_SIGNIFICANCE,
   type CampaignMetrics,
-  type EmailTemplate,
   type OutreachLead,
   type OutreachStage,
 } from '@/lib/platform/notion-outreach';
@@ -22,7 +19,6 @@ export type OutreachState =
       metrics: CampaignMetrics[];
       industries: { industry: string; leads: number; replied: number }[];
       totalLeads: number;
-      templates: EmailTemplate[];
     };
 
 const STAGE_TONE: Record<OutreachStage, Tone> = {
@@ -50,11 +46,8 @@ function todayISO(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Johannesburg' }).format(new Date());
 }
 
-type Panel = 'overview' | 'leads' | 'templates';
-
 export function OutreachView({ state }: { state: OutreachState }) {
   const [campaignFilter, setCampaignFilter] = useState<string>('All');
-  const [panel, setPanel] = useState<Panel>('overview');
 
   const today = todayISO();
 
@@ -93,51 +86,8 @@ export function OutreachView({ state }: { state: OutreachState }) {
   const avgIcp = scored.length ? scored.reduce((a, b) => a + b, 0) / scored.length : null;
   const campaigns = ['All', ...state.metrics.map((m) => m.campaign)];
 
-  const TABS: { id: Panel; label: string }[] = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'leads', label: `All leads (${state.leads.length})` },
-    { id: 'templates', label: `Templates (${state.templates.length})` },
-  ];
-
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-[#EEF1F5] pb-3">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setPanel(t.id)}
-            className={`rounded-lg px-3 py-1.5 text-[13px] font-medium transition ${
-              panel === t.id ? 'bg-[#1F5FA8] text-white' : 'text-[#5C605A] hover:bg-[#F4F6FA]'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-        {/* A route rather than a panel: it reads Gmail as well as Notion, and that
-            round trip should not be paid by everyone opening the overview. */}
-        <Link
-          href="/app/serviceden/outreach/today"
-          className="rounded-lg px-3 py-1.5 text-[13px] font-medium text-[#5C605A] transition hover:bg-[#F4F6FA]"
-        >
-          Today&rsquo;s Outreach
-          {dueToday > 0 ? (
-            <span className="ml-1.5 rounded-full bg-[#EAF2FC] px-1.5 py-0.5 text-[11px] text-[#1F5FA8]">{dueToday}</span>
-          ) : null}
-        </Link>
-        <Link
-          href="/app/serviceden/outreach/bounces"
-          className="rounded-lg px-3 py-1.5 text-[13px] font-medium text-[#5C605A] transition hover:bg-[#F4F6FA]"
-        >
-          Bounces
-        </Link>
-      </div>
-
-      {panel === 'leads' ? <OutreachTable initial={state.leads} /> : null}
-      {panel === 'templates' ? <TemplatesPanel initial={state.templates} /> : null}
-
-      {panel === 'overview' ? (
-      <div className="space-y-6">
       <KpiStrip>
         <Kpi label="In sequence" value={String(state.leads.length)} sub={`${state.totalLeads} contacted all time`} />
         <Kpi label="Due today" value={String(dueToday)} accent={dueToday > 0 ? '#1F5FA8' : undefined} sub="follow-ups queued" />
@@ -198,13 +148,12 @@ export function OutreachView({ state }: { state: OutreachState }) {
           title="Recently contacted"
           right={
             <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setPanel('leads')}
+              <Link
+                href="/app/serviceden/outreach/leads"
                 className="rounded-full bg-[#EAF2FC] px-2.5 py-1 text-[12px] font-medium text-[#1F5FA8] hover:bg-[#DCEAFA]"
               >
                 View all →
-              </button>
+              </Link>
               {campaigns.map((c) => (
                 <button
                   key={c}
@@ -286,8 +235,6 @@ export function OutreachView({ state }: { state: OutreachState }) {
           </SectionCard>
         </div>
       </div>
-      </div>
-      ) : null}
     </div>
   );
 }

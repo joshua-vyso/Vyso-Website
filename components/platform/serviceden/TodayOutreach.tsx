@@ -144,9 +144,6 @@ export function TodayOutreach({
             month: 'long',
           })}
         </p>
-        <Link href="/app/serviceden/outreach" className="text-[12px] font-medium text-[#1F5FA8] hover:underline">
-          ← Outreach overview
-        </Link>
       </div>
 
       <KpiStrip>
