@@ -125,6 +125,12 @@ export function OutreachView({ state }: { state: OutreachState }) {
             <span className="ml-1.5 rounded-full bg-[#EAF2FC] px-1.5 py-0.5 text-[11px] text-[#1F5FA8]">{dueToday}</span>
           ) : null}
         </Link>
+        <Link
+          href="/app/serviceden/outreach/bounces"
+          className="rounded-lg px-3 py-1.5 text-[13px] font-medium text-[#5C605A] transition hover:bg-[#F4F6FA]"
+        >
+          Bounces
+        </Link>
       </div>
 
       {panel === 'leads' ? <OutreachTable initial={state.leads} /> : null}

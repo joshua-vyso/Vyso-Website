@@ -62,6 +62,7 @@ export function TodayOutreach({
   const [armed, setArmed] = useState(false);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<SendResult | null>(null);
+  const [bounced, setBounced] = useState(0);
 
   /** Re-read the mailbox after a send so what remains is what actually remains. */
   const reload = useCallback(async () => {
@@ -86,10 +87,32 @@ export function TodayOutreach({
       return next;
     });
 
+  /**
+   * Bounces arrive seconds to a couple of minutes after a send, so a short poll
+   * catches most of them while the send is still on screen. It is a convenience,
+   * not the source of truth — the Bounces page derives the full list from the
+   * mailbox whenever it is opened, so a missed poll loses nothing.
+   */
+  const watchForBounces = useCallback(async (before: number) => {
+    for (const delay of [15_000, 30_000, 60_000]) {
+      await new Promise((r) => setTimeout(r, delay));
+      const res = await fetch('/api/serviceden/outreach/bounces?days=1');
+      if (!res.ok) return;
+      const payload = (await res.json().catch(() => ({}))) as { bounces?: { failedAt: string }[] };
+      const fresh = (payload.bounces ?? []).filter((b) => Date.parse(b.failedAt) >= before);
+      if (fresh.length > 0) {
+        setBounced(fresh.length);
+        return;
+      }
+    }
+  }, []);
+
   async function send() {
     if (!inbox || selected.size === 0) return;
     setSending(true);
     setDraftError(null);
+    setBounced(0);
+    const sentAt = Date.now();
     try {
       const res = await fetch('/api/serviceden/outreach/drafts', {
         method: 'POST',
@@ -101,6 +124,7 @@ export function TodayOutreach({
       setResult(payload);
       setArmed(false);
       await reload();
+      void watchForBounces(sentAt);
     } catch (e) {
       setDraftError(e instanceof Error ? e.message : 'Send failed');
     } finally {
@@ -164,6 +188,14 @@ export function TodayOutreach({
                   </li>
                 ))}
               </ul>
+            ) : null}
+            {bounced > 0 ? (
+              <p className="mt-2 text-[#B4342B]">
+                {bounced} {bounced === 1 ? 'address has' : 'addresses have'} already bounced.{' '}
+                <Link href="/app/serviceden/outreach/bounces" className="font-medium underline">
+                  See which
+                </Link>
+              </p>
             ) : null}
           </div>
         ) : null}
