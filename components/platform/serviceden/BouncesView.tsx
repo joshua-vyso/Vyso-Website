@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { Badge, Kpi, KpiStrip, SectionCard } from '@/components/platform/module-ui';
 import type { OutreachBounce } from '@/lib/platform/outreach-bounces';
 
@@ -26,9 +25,6 @@ export function BouncesView({ bounces, error }: { bounces: OutreachBounce[]; err
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <p className="text-[13px] text-[#8A8E86]">Delivery failures from the last 30 days, matched to leads.</p>
-        <Link href="/app/serviceden/outreach" className="text-[12px] font-medium text-[#1F5FA8] hover:underline">
-          ← Outreach overview
-        </Link>
       </div>
 
       <KpiStrip>

@@ -1,25 +1,20 @@
 import { OutreachView, type OutreachState } from '@/components/platform/serviceden/OutreachView';
-import { requireServiceDenSession } from '@/lib/platform/serviceden-access';
 import {
   campaignMetrics,
-  getCampaigns,
-  getEmailTemplates,
-  getOutreachLeads,
   industryBreakdown,
   isInOutreach,
   notionOutreachConfigured,
 } from '@/lib/platform/notion-outreach';
+import { cachedCampaigns, cachedOutreachLeads } from '@/lib/platform/outreach-data';
 
 export default async function ServiceDenOutreachPage() {
-  await requireServiceDenSession();
-
   if (!notionOutreachConfigured) {
     return <OutreachView state={{ kind: 'unconfigured' }} />;
   }
 
   let state: OutreachState;
   try {
-    const [all, templates, cohorts] = await Promise.all([getOutreachLeads(), getEmailTemplates(), getCampaigns()]);
+    const [all, cohorts] = await Promise.all([cachedOutreachLeads(), cachedCampaigns()]);
     state = {
       kind: 'ready',
       leads: all.filter(isInOutreach),
@@ -28,7 +23,6 @@ export default async function ServiceDenOutreachPage() {
       metrics: campaignMetrics(all, cohorts),
       industries: industryBreakdown(all),
       totalLeads: all.length,
-      templates,
     };
   } catch (error) {
     state = { kind: 'error', message: error instanceof Error ? error.message : 'Could not reach Notion.' };

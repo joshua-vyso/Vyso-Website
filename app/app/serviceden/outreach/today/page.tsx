@@ -4,11 +4,11 @@ import { requireServiceDenSession } from '@/lib/platform/serviceden-access';
 import { requireServiceDenServerContext } from '@/lib/platform/serviceden-server';
 import { draftInboxFor, type DraftInbox } from '@/lib/platform/outreach-drafts';
 import {
-  getOutreachLeads,
   notionOutreachConfigured,
   todaySnapshot,
   type TodaySnapshot,
 } from '@/lib/platform/notion-outreach';
+import { cachedOutreachLeads } from '@/lib/platform/outreach-data';
 
 export default async function TodaysOutreachPage() {
   await requireServiceDenSession();
@@ -29,7 +29,7 @@ export default async function TodaysOutreachPage() {
   try {
     // One Notion read serves both: the day's summary and the lead set the draft
     // matcher checks recipients against.
-    const leads = await getOutreachLeads();
+    const leads = await cachedOutreachLeads();
     snapshot = todaySnapshot(leads);
 
     const ctx = await requireServiceDenServerContext();
