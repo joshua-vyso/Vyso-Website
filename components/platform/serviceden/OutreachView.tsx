@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { Badge, DataTable, Kpi, KpiStrip, SectionCard, type Tone } from '@/components/platform/module-ui';
 import { OutreachTable } from '@/components/platform/serviceden/OutreachTable';
 import { TemplatesPanel } from '@/components/platform/serviceden/TemplatesPanel';
@@ -113,6 +114,23 @@ export function OutreachView({ state }: { state: OutreachState }) {
             {t.label}
           </button>
         ))}
+        {/* A route rather than a panel: it reads Gmail as well as Notion, and that
+            round trip should not be paid by everyone opening the overview. */}
+        <Link
+          href="/app/serviceden/outreach/today"
+          className="rounded-lg px-3 py-1.5 text-[13px] font-medium text-[#5C605A] transition hover:bg-[#F4F6FA]"
+        >
+          Today&rsquo;s Outreach
+          {dueToday > 0 ? (
+            <span className="ml-1.5 rounded-full bg-[#EAF2FC] px-1.5 py-0.5 text-[11px] text-[#1F5FA8]">{dueToday}</span>
+          ) : null}
+        </Link>
+        <Link
+          href="/app/serviceden/outreach/bounces"
+          className="rounded-lg px-3 py-1.5 text-[13px] font-medium text-[#5C605A] transition hover:bg-[#F4F6FA]"
+        >
+          Bounces
+        </Link>
       </div>
 
       {panel === 'leads' ? <OutreachTable initial={state.leads} /> : null}

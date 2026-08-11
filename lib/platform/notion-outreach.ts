@@ -561,3 +561,49 @@ export function notionErrorStatus(error: unknown): number {
 export function isInSales(lead: OutreachLead): boolean {
   return lead.replied || lead.outreachStage === 'Meeting Booked';
 }
+
+// ---------------------------------------------------------------------------
+// Today
+// ---------------------------------------------------------------------------
+
+export type TodaySnapshot = {
+  date: string;
+  /** First contacted today — what the discovery branch turned up this run. */
+  newLeads: OutreachLead[];
+  /** Due today, so the follow-up branch has drafted for them. */
+  followUps: OutreachLead[];
+  /** Replied today or yesterday. A reply is the only event worth interrupting for. */
+  replies: OutreachLead[];
+};
+
+/** SAST, because the automation schedules in SAST — reading "today" in UTC puts
+ *  the follow-up list a day out for the first two hours of every morning. */
+export function outreachToday(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Johannesburg' }).format(new Date());
+}
+
+function daysBefore(iso: string, n: number): string {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * The day's three questions: who did we just find, who are we chasing, and who
+ * answered. Takes every lead rather than the outreach subset, because repliers
+ * are filtered out of that subset by definition and they are the point.
+ */
+export function todaySnapshot(leads: OutreachLead[], date = outreachToday()): TodaySnapshot {
+  const since = daysBefore(date, 1);
+  const byName = (a: OutreachLead, b: OutreachLead) => a.company.localeCompare(b.company);
+  return {
+    date,
+    newLeads: leads.filter((l) => l.firstContact === date).sort(byName),
+    followUps: leads
+      .filter((l) => l.nextFollowUp === date && isInOutreach(l))
+      .sort((a, b) => (b.icpScore ?? 0) - (a.icpScore ?? 0) || byName(a, b)),
+    replies: leads
+      .filter((l) => l.repliedOn != null && l.repliedOn >= since)
+      .sort((a, b) => (b.repliedOn ?? '').localeCompare(a.repliedOn ?? '')),
+  };
+}
