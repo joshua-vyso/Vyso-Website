@@ -519,6 +519,84 @@ html, body {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+   PLATFORM (in-app) DESIGN TOKENS — "Brief" reskin, Wave 1
+   ══════════════════════════════════════════════════════════════════════════
+   Verbatim copies of the --pf-* custom properties from the Brief design
+   system (.ai/design/vyso-brief/_ds/.../tokens/{colors,radius,spacing,
+   elevation}.css), plus the semantic tone-pair variables from tokens/colors.css.
+   Names and values are copied as-is — do not rename. Additive only: no
+   marketing value above this block (--primary, --accent, --ring, --radius,
+   the :root theme block) is touched. Consumed by app/app/layout.tsx and,
+   in Wave 2, components/platform/{module-ui,ui}.tsx.
+   `.of-num` / `.of-display` (tokens/base.css helpers) already exist above
+   at lines ~497-503, so they are not duplicated here. */
+:root {
+  /* tokens/colors.css — platform surfaces, text ramp, accent */
+  --pf-page:#F6F6F4;
+  --pf-wash:linear-gradient(180deg,#F3F8FF 0%,#FFFFFF 340px);
+  --pf-surface:#FFFFFF;
+  --pf-surface-tint:#F5F9FE;
+  --pf-surface-tint-faint:#FBFCFE;
+  --pf-border:#EAEDF2;
+  --pf-border-strong:#E4E9F0;
+  --pf-border-soft:#EEF1F5;
+  --pf-border-chrome:#E9EEF4;
+  --pf-border-warm:#E7E7E2;
+
+  --pf-text:#171A17;
+  --pf-text-alt:#1A1C1E;
+  --pf-text-body:#2C333B;
+  --pf-text-control:#3E4A57;
+  --pf-text-secondary:#6B6F68;
+  --pf-text-muted:#8A8E86;
+  --pf-text-faint:#A0A49C;
+  --pf-text-disabled:#9A9DA1;
+
+  --pf-accent:#3E7BC4;
+  --pf-accent-strong:#1F5FA8;
+  --pf-accent-deep:#174C87;
+  --pf-accent-weak:#EAF2FC;
+  --pf-accent-weak-hover:#DCEBFB;
+  --pf-accent-ring:#C9DEF7;
+  --pf-accent-nav:#E6F0FB;
+
+  /* tokens/colors.css — semantic tone pairs (module-ui Badge / StatusPill) */
+  --tone-neutral-bg:#EEF1F5;   --tone-neutral-fg:#6B6F68;
+  --tone-positive-bg:#E1F5EE;  --tone-positive-fg:#0F6E56;
+  --tone-warning-bg:#FBEEDA;   --tone-warning-fg:#854F0B;
+  --tone-critical-bg:#FCEBEB;  --tone-critical-fg:#A32D2D;
+  --tone-info-bg:#E6F1FB;      --tone-info-fg:#0C447C;
+
+  /* tokens/radius.css — platform radii */
+  --pf-radius-sm:8px;
+  --pf-radius:10px;
+  --pf-radius-control:11px;
+  --pf-radius-tile:14px;
+  --pf-radius-card:16px;
+  --pf-radius-panel:20px;
+  --pf-radius-pill:9999px;
+
+  /* tokens/spacing.css — platform page frame + spacing */
+  --pf-pad-page-x:32px;
+  --pf-pad-page-y:28px;
+  --pf-pad-card:20px;
+  --pf-gap-stack:20px;
+  --pf-gap-grid:12px;
+  --pf-topbar-h:66px;
+  --pf-sidebar-w:248px;
+  --pf-nav-h:64px;
+
+  /* tokens/elevation.css — platform shadows + scrim */
+  --pf-shadow-card:0 1px 2px rgba(20,24,20,0.03);
+  --pf-shadow-card-hover:0 6px 18px -10px rgba(20,24,20,0.28);
+  --pf-shadow-menu:0 16px 50px -12px rgba(20,30,50,0.28);
+  --pf-shadow-overlay:0 30px 80px -20px rgba(20,30,50,0.4);
+  --pf-shadow-tab-active:0 1px 2px rgba(20,24,20,0.06);
+  --pf-scrim:rgba(23,30,40,0.32);
+  --pf-scrim-blur:blur(3px);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
    UNIVERSAL REACTIVE TEXT BLEND — marketing surface only
    ══════════════════════════════════════════════════════════════════════════
 
