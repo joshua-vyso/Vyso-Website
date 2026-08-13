@@ -509,3 +509,117 @@ export async function prepareOrderDraft(
     note: 'Draft only — nothing was saved. The user reviews and confirms it on the order page.',
   };
 }
+
+// ---------------------------------------------------------------------------
+// Debtors — who owes money and for how long. Reuses loadInvoiceRows, so the
+// "open"/overdue definitions and the balance maths are exactly the ones the
+// Dashboard already computes (effectiveInvoiceStatus / balanceDue) — nothing
+// here re-derives payment semantics.
+// ---------------------------------------------------------------------------
+
+/** A whole-tool restriction note — these two tools ARE money figures, so a
+ *  restricted caller gets one message instead of a redacted row shape (there's
+ *  no non-money version of "who owes what"). */
+export interface MoneyRestricted {
+  restricted: string;
+}
+
+/** Same "open" (unpaid, not draft/cancelled/credited) definition businessSnapshot
+ *  uses to accumulate `outstanding`. */
+function isOpenInvoice(status: InvoiceStatus): boolean {
+  return status !== 'draft' && status !== 'paid' && status !== 'cancelled' && status !== 'credited';
+}
+
+/** Days between an ISO date (yyyy-mm-dd) and today (UTC), floored at 0. */
+function daysSince(isoDate: string, todayMs: number): number {
+  return Math.max(0, Math.floor((todayMs - new Date(`${isoDate}T00:00:00Z`).getTime()) / 86_400_000));
+}
+
+/**
+ * Per-customer outstanding balance: total owed, open invoice count, oldest
+ * unpaid invoice date, and days past terms (measured off the oldest open
+ * invoice's due date). Sorted worst (most overdue) first.
+ */
+export async function outstandingByCustomer(
+  supabase: SupabaseClient,
+  orgId: string,
+  canSeeMoney: boolean,
+  limit: number,
+): Promise<Array<Record<string, string | number>> | MoneyRestricted> {
+  if (!canSeeMoney) return { restricted: 'Outstanding balances are only visible to admins.' };
+
+  const rows = await loadInvoiceRows(supabase, orgId);
+  const customers = byId(
+    must<Pick<OfCustomer, 'id' | 'name'>[]>(
+      await supabase.from('of_customers').select('id, name').eq('org_id', orgId),
+      'customers',
+    ),
+  );
+
+  interface Acc {
+    outstanding: number;
+    count: number;
+    oldestIssue: string | null;
+    oldestDue: string | null;
+  }
+  const byCustomer = new Map<string, Acc>();
+  for (const r of rows) {
+    const cid = r.inv.customer_id;
+    if (!cid || !isOpenInvoice(r.status)) continue;
+    const acc = byCustomer.get(cid) ?? { outstanding: 0, count: 0, oldestIssue: null, oldestDue: null };
+    acc.outstanding += r.balance;
+    acc.count += 1;
+    const issue = (r.inv.issue_date ?? '').slice(0, 10);
+    if (issue && (!acc.oldestIssue || issue < acc.oldestIssue)) acc.oldestIssue = issue;
+    if (r.inv.due_date && (!acc.oldestDue || r.inv.due_date < acc.oldestDue)) acc.oldestDue = r.inv.due_date;
+    byCustomer.set(cid, acc);
+  }
+
+  const todayMs = new Date(`${todayIso()}T00:00:00Z`).getTime();
+  return Array.from(byCustomer.entries())
+    .map(([cid, acc]) => ({
+      customer: customers.get(cid)?.name ?? 'Unknown',
+      outstanding: acc.outstanding,
+      open_invoices: acc.count,
+      oldest_unpaid_date: acc.oldestIssue ?? '—',
+      days_past_terms: acc.oldestDue ? daysSince(acc.oldestDue, todayMs) : 0,
+    }))
+    .sort((a, b) => b.days_past_terms - a.days_past_terms || b.outstanding - a.outstanding)
+    .slice(0, limit)
+    .map((c) => ({ ...c, outstanding: zar2(c.outstanding) }));
+}
+
+/**
+ * Overdue invoices (status derived exactly like the Dashboard: sent/viewed
+ * past its due date), oldest overdue first.
+ */
+export async function overdueInvoices(
+  supabase: SupabaseClient,
+  orgId: string,
+  canSeeMoney: boolean,
+  limit: number,
+): Promise<Array<Record<string, string | number>> | MoneyRestricted> {
+  if (!canSeeMoney) return { restricted: 'Overdue invoices are only visible to admins.' };
+
+  const rows = await loadInvoiceRows(supabase, orgId);
+  const customers = byId(
+    must<Pick<OfCustomer, 'id' | 'name'>[]>(
+      await supabase.from('of_customers').select('id, name').eq('org_id', orgId),
+      'customers',
+    ),
+  );
+  const todayMs = new Date(`${todayIso()}T00:00:00Z`).getTime();
+
+  return rows
+    .filter((r) => r.status === 'overdue')
+    .map((r) => ({
+      invoice: r.inv.invoice_number,
+      customer: (r.inv.customer_id && customers.get(r.inv.customer_id)?.name) || 'Unknown',
+      due_date: r.inv.due_date ? r.inv.due_date.slice(0, 10) : '—',
+      balance: r.balance,
+      daysOverdue: r.inv.due_date ? daysSince(r.inv.due_date, todayMs) : 0,
+    }))
+    .sort((a, b) => b.daysOverdue - a.daysOverdue)
+    .slice(0, limit)
+    .map(({ daysOverdue, balance, ...rest }) => ({ ...rest, days_overdue: daysOverdue, balance: zar2(balance) }));
+}

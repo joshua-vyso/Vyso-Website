@@ -17,8 +17,11 @@ import {
   findCustomers,
   orderDocumentLines,
   prepareOrderDraft,
+  outstandingByCustomer,
+  overdueInvoices,
   type DraftItemInput,
 } from './orderflow-data';
+import { findDocuments, documentSummary } from './docu-data';
 
 /** Runtime context handed to every tool. `canSeeMoney` mirrors the OrderFlow
  *  finance gate (members don't see revenue/outstanding). */
@@ -165,6 +168,98 @@ const ORDERFLOW_TOOLS: AgentTool[] = [
   },
 ];
 
+/** Debtors tools — money figures, so gated behind canSeeMoney inside the data
+ *  functions themselves (a restricted caller gets a note, not redacted rows). */
+const DEBTORS_TOOLS: AgentTool[] = [
+  {
+    name: 'orderflow_outstanding_by_customer',
+    description:
+      "Get outstanding balances per customer: total owed, how many invoices are open, the oldest unpaid invoice's date, and days past terms (measured off that oldest open invoice's due date). Sorted worst (longest overdue) first. Call this when the user asks who owes money, which customers are behind on payment, or wants a debtors summary. Restricted to admins — a non-admin caller gets a note that money figures are hidden.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'integer', description: 'How many customers to return (default 10, max 25).' },
+      },
+      additionalProperties: false,
+    },
+    run: (ctx, input) =>
+      outstandingByCustomer(ctx.supabase, ctx.orgId, ctx.canSeeMoney, clampLimit(input.limit, 10, 25)).then((r) =>
+        JSON.stringify(r),
+      ),
+  },
+  {
+    name: 'orderflow_list_overdue_invoices',
+    description:
+      'List overdue invoices (unpaid, past their due date), oldest overdue first, with the customer, outstanding balance and days overdue. Call this when the user asks about overdue or late invoices, or wants to chase debtors. Restricted to admins — a non-admin caller gets a note that money figures are hidden.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'integer', description: 'How many to return (default 10, max 25).' },
+      },
+      additionalProperties: false,
+    },
+    run: (ctx, input) =>
+      overdueInvoices(ctx.supabase, ctx.orgId, ctx.canSeeMoney, clampLimit(input.limit, 10, 25)).then((r) =>
+        JSON.stringify(r),
+      ),
+  },
+];
+
+const DOCU_TOOLS: AgentTool[] = [
+  {
+    name: 'docu_find_documents',
+    description:
+      'Search Doc-U for documents (invoices, statements, delivery notes, price lists, uploaded orders) by supplier name, document type, status and/or an upload date range. Returns a compact list: filename, type, supplier, date, extraction confidence, status, and total (when the document has one). Call this when the user asks to find, show or list documents — e.g. "last week\'s Umgeni invoices" or "statements still pending review". It does NOT return a document\'s contents — follow up with docu_get_document_summary on a result\'s id for that.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        supplier: { type: 'string', description: 'Supplier name, or part of it, to filter by (partial match).' },
+        document_type: {
+          type: 'string',
+          enum: ['invoice', 'statement', 'delivery_note', 'price_list', 'order'],
+          description: 'Restrict to one document type.',
+        },
+        status: {
+          type: 'string',
+          enum: ['pending', 'extracted', 'reviewed', 'error', 'approved', 'rejected', 'archived'],
+          description: 'Restrict to one document status.',
+        },
+        date_from: { type: 'string', description: 'Only documents uploaded on/after this date (YYYY-MM-DD).' },
+        date_to: { type: 'string', description: 'Only documents uploaded on/before this date (YYYY-MM-DD).' },
+        limit: { type: 'integer', description: 'How many to return (default 10, max 25).' },
+      },
+      additionalProperties: false,
+    },
+    run: (ctx, input) =>
+      findDocuments(
+        ctx.supabase,
+        ctx.orgId,
+        {
+          supplier: input.supplier != null ? String(input.supplier) : undefined,
+          documentType: input.document_type != null ? String(input.document_type) : undefined,
+          status: input.status != null ? String(input.status) : undefined,
+          dateFrom: input.date_from != null ? String(input.date_from) : undefined,
+          dateTo: input.date_to != null ? String(input.date_to) : undefined,
+        },
+        clampLimit(input.limit, 10, 25),
+      ).then((r) => JSON.stringify(r)),
+  },
+  {
+    name: 'docu_get_document_summary',
+    description:
+      "Get the extracted detail for ONE specific document by its id (usually taken from a docu_find_documents result): its extracted fields, how many line items it has, any flags raised on it (duplicate invoice, price spike, low extraction confidence, etc.) and its AI summary if one exists. Call this when the user asks what is actually on a specific document, or why it was flagged. It never returns the raw file or its storage location.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The document id, usually from a docu_find_documents result.' },
+      },
+      required: ['id'],
+      additionalProperties: false,
+    },
+    run: (ctx, input) => documentSummary(ctx.supabase, ctx.orgId, String(input.id ?? '')).then((r) => JSON.stringify(r)),
+  },
+];
+
 /** Read-only count of the org's rows in a table, tolerant of a missing table
  *  (returns 0 rather than throwing so onboarding progress never crashes). */
 async function orgRowCount(ctx: ToolContext, table: string): Promise<number> {
@@ -207,12 +302,14 @@ const ONBOARDING_TOOLS: AgentTool[] = [
 ];
 
 const TOOLS_BY_MODULE: Record<AgentModule, AgentTool[]> = {
-  orderflow: ORDERFLOW_TOOLS,
-  docu: [], // Doc-U tools land in a later phase.
+  orderflow: [...ORDERFLOW_TOOLS, ...DEBTORS_TOOLS],
+  docu: DOCU_TOOLS,
   onboarding: ONBOARDING_TOOLS,
   // The Brief's findings ride in with the conversation (the page already read
-  // them through the caller's RLS-scoped client), so there is nothing to fetch.
-  brief: [],
+  // them through the caller's RLS-scoped client) — but it's the cross-module
+  // COO surface, so it also gets the read tools built for P1 (Doc-U search +
+  // debtors so far; more modules land here as later waves ship).
+  brief: [...DOCU_TOOLS, ...DEBTORS_TOOLS],
 };
 
 /** The tool objects (with run handlers) for a module. Workflow tools are only
