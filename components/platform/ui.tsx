@@ -18,8 +18,8 @@ export function StatusPill({ status }: { status: DocumentStatus }) {
 }
 
 export function ConfidenceText({ value }: { value: number | null }) {
-  if (value == null) return <span className="text-[#8A8E86]">—</span>;
-  const color = value >= 80 ? '#0F6E56' : value >= 70 ? '#854F0B' : '#A32D2D';
+  if (value == null) return <span className="text-[var(--pf-text-muted)]">—</span>;
+  const color = value >= 80 ? 'var(--tone-positive-fg)' : value >= 70 ? 'var(--tone-warning-fg)' : 'var(--tone-critical-fg)';
   return (
     <span className="font-semibold" style={{ color }}>
       {Math.round(value)}%
@@ -43,19 +43,19 @@ export function KpiTile({
   return (
     <Link
       href={href}
-      className="block rounded-2xl border border-[#EAEDF2] bg-white px-6 py-[22px] shadow-[0_1px_2px_rgba(20,24,20,0.03)] transition-colors hover:border-[#C9DEF7] hover:bg-[#FBFCFE]"
+      className="block rounded-2xl border border-[var(--pf-border)] bg-white px-6 py-[22px] shadow-[var(--pf-shadow-card)] transition-colors hover:border-[var(--pf-accent-ring)] hover:bg-[var(--pf-surface-tint-faint)]"
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[12px] font-medium uppercase tracking-[0.05em] text-[#8A8E86]">{label}</span>
-        <span className="text-[15px] text-[#8A8E86]">›</span>
+        <span className="text-[12px] font-medium uppercase tracking-[0.05em] text-[var(--pf-text-muted)]">{label}</span>
+        <span className="text-[15px] text-[var(--pf-text-muted)]">›</span>
       </div>
       <div
         className="of-num mt-2 text-[30px] font-semibold leading-none tracking-[-0.02em]"
-        style={accent ? { color: accent } : { color: '#171A17' }}
+        style={accent ? { color: accent } : { color: 'var(--pf-text)' }}
       >
         {value}
       </div>
-      {sublabel ? <div className="mt-1.5 text-[13px] text-[#6B6F68]">{sublabel}</div> : null}
+      {sublabel ? <div className="mt-1.5 text-[13px] text-[var(--pf-text-secondary)]">{sublabel}</div> : null}
     </Link>
   );
 }
