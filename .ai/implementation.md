@@ -131,3 +131,25 @@ per-doc reconciliation check, auto-restore from backup on regression).
 - Discovery: agent_findings table already existed in prod → Josh applied the
   migration. Remaining manual step for data: the three phase2 re-extraction slices,
   then backfill → detection → crons.
+
+## Price Watch build (branch feat/ui-brief-reskin)
+
+- pw(1) `7ef9beb`: normalize + detect, 34 tests. pw(2): match + observe, 36 tests
+  (5.x models get no temperature param). pw(3): run.ts orchestrator + cron route +
+  digest route + backfill CLI + 28 tests — 141/141 total.
+- Key behaviours: matcher called once per (supplier, raw_description) ever (review
+  rows are cached decisions); in-run proposed items cannot auto-link (no stacked
+  guesses); dry-run writes nothing and skips the observe model; digest sends
+  nothing on zero findings and has no default recipient; dedupe key carries the
+  market agent and is parsed back for open-finding suppression; statement guard
+  skips statements covered by invoices within 31 days.
+- Env needed in Vercel: PRICE_WATCH_ORG_IDS (TnS org id), PRICE_WATCH_DIGEST_TO
+  (Josh + Roberto), CRON_SECRET (exists), RESEND_API_KEY (exists).
+- vercel.json: price-watch 45 3 * * *, digest 0 4 * * 1 — LEFT UNCOMMITTED
+  (file carries unrelated whatsapp-cron WIP; Josh commits both together).
+- BLOCKERS for first findings: (1) Josh re-runs the phase2 slices — DB confirmed
+  the earlier attempt never landed; (2) re-paste supabase/agents-price-watch.sql —
+  live DB has the pre-amendment schema, pw_price_points.line_supplier is MISSING
+  and every point write fails until then (deliberately no degraded path: mixing
+  agents would manufacture false findings); (3) backfill dry-run → live → Josh
+  clears the item-match review queue; (4) env vars above.
