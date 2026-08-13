@@ -103,3 +103,14 @@ per-doc reconciliation check, auto-restore from backup on regression).
   skipped: values already on-palette; churn without visual change.
 - Known pre-existing failures (NOT ours): tsc errors in lib/platform/whatsapp-ingest.ts
   (untracked WIP), lint errors in vyso-ai/*, wastewatch/*, module-ui.tsx:289.
+- W3 `9d57e54`: login restyled to platform blue (the reskin's biggest visible
+  change). Panel kept edge-to-edge (no card radius — architect-accepted deviation).
+- W4 verification: node tests 0 fail; tsc/lint clean for all touched files
+  (pre-existing failures unchanged); login visually verified in browser —
+  Log in button computes to rgb(31,95,168) = --pf-accent-strong; marketing home
+  provably unaffected (globals.css had zero --pf-/--tone- vars pre-W1 and no
+  marketing component references them; shader hero renders normally).
+  NOT visually verified: /app/* module screens (behind auth — Josh should eyeball
+  a Doc-U + OrderFlow screen after login; changes there are token-value swaps
+  plus three deliberate deltas: DataTable hairline, ModuleWidgetCard shadow/padding,
+  SecondaryAction border).
