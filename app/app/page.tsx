@@ -7,6 +7,7 @@ import { BriefRail } from '@/components/platform/brief/BriefRail';
 import { BriefChatPill } from '@/components/platform/brief/BriefChatPill';
 import { BriefEmpty } from '@/components/platform/brief/BriefEmpty';
 import { FindingCard, ResolvedFindingCard } from '@/components/platform/brief/FindingCard';
+import { briefChatContext } from '@/components/platform/brief/brief-chat';
 import {
   AI_GRADIENT_TEXT,
   briefDateLine,
@@ -156,7 +157,15 @@ export default async function AppIndex({
         </div>
 
         <div className="mt-auto">
-          <BriefChatPill />
+          {/* The open findings travel to Finch as a prelude on the first turn —
+              the only context channel /api/ai/agent has (see brief-chat.ts).
+              They are serialised here, from the rows this page already read
+              through the caller's RLS-scoped client, so the chat can never see
+              a finding the page couldn't. */}
+          <BriefChatPill
+            context={briefChatContext(feed.open, feed.evidence)}
+            orgName={session.org.name}
+          />
         </div>
       </div>
     </div>

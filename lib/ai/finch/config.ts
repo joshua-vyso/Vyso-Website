@@ -10,10 +10,12 @@
  */
 
 /** Modules the agent can currently assist with. Extend as coverage grows.
- *  'onboarding' is the guided first-run experience (see /onboarding). */
-export type AgentModule = 'orderflow' | 'docu' | 'onboarding';
+ *  'onboarding' is the guided first-run experience (see /onboarding).
+ *  'brief' is The Brief at /app — the agent findings feed, not a module screen;
+ *  it reads as a module here because that is this agent's unit of knowledge. */
+export type AgentModule = 'orderflow' | 'docu' | 'onboarding' | 'brief';
 
-export const AGENT_MODULES: readonly AgentModule[] = ['orderflow', 'docu', 'onboarding'];
+export const AGENT_MODULES: readonly AgentModule[] = ['orderflow', 'docu', 'onboarding', 'brief'];
 
 export function isAgentModule(value: unknown): value is AgentModule {
   return typeof value === 'string' && (AGENT_MODULES as readonly string[]).includes(value);

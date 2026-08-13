@@ -11,10 +11,19 @@ import { rand } from '@/lib/platform/procurepulse';
 // here does NOT pull `supabase-server` (and `next/headers`) into the client bundle.
 import type { AgentFinding, EvidenceSummary, FindingStatus } from '@/lib/platform/agent-findings';
 import { AI_GRADIENT_BAR, AI_GRADIENT_TEXT, agentChip } from './brief-display';
+import { askBrief, findingPrompt } from './brief-chat';
 
 /**
  * One finding, as the owner reads it: who found it, what it says, what it costs
- * a year, what it was read from — and Dismiss.
+ * a year, what it was read from — Dismiss, and a tap to talk about it.
+ *
+ * TAP TO DISCUSS. Tapping the card's body names the finding in the chat
+ * composer below (the mock's "Tap any finding to bring it into the
+ * conversation"). Clicks that land on the evidence link or a button are left
+ * alone — those already mean something. The observation itself is the
+ * keyboard-reachable version of the same gesture, so the affordance isn't
+ * mouse-only. It is offered only when the chat can actually receive it: the
+ * same `finchEnabled` session flag the pill gates on.
  *
  * The mock's other per-finding buttons ("Draft supplier email", "Show 6-month
  * trend") are features, not styling, and are deliberately not here yet
@@ -110,13 +119,26 @@ export function FindingCard({
   foundLabel: string;
 }) {
   const { write, done, busy, toastNode } = useStatusWrite(finding);
+  const { email, finchEnabled } = usePlatform();
   const chip = agentChip(finding.agent);
   const isNew = finding.status === 'new';
+  const canDiscuss = finchEnabled && !!email;
+
+  const discuss = () => askBrief(findingPrompt(finding));
 
   return (
     <article
-      className={`${CARD} px-[22px] py-5 ${done ? 'pointer-events-none opacity-40' : ''}`}
+      className={`${CARD} px-[22px] py-5 ${done ? 'pointer-events-none opacity-40' : ''} ${canDiscuss ? 'cursor-pointer' : ''}`}
       aria-busy={busy || done}
+      onClick={
+        canDiscuss
+          ? (e) => {
+              // The link and the buttons already say what a click on them means.
+              if ((e.target as HTMLElement).closest('a,button')) return;
+              discuss();
+            }
+          : undefined
+      }
     >
       {toastNode}
       {/* Gradient accent bar — only on findings the owner has not seen yet. */}
@@ -151,7 +173,20 @@ export function FindingCard({
         </span>
       </div>
 
-      <p className="mb-1 mt-3 text-[16px] leading-[1.5] text-[var(--pf-text-body)]">{finding.observation}</p>
+      {canDiscuss ? (
+        // The keyboard route to the same tap. A plain-text button: it reads as
+        // the observation, because that is what it is.
+        <button
+          type="button"
+          onClick={discuss}
+          aria-label={`Ask Vyso about this finding: ${finding.observation}`}
+          className="mb-1 mt-3 block w-full rounded-[6px] text-left text-[16px] leading-[1.5] text-[var(--pf-text-body)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--pf-accent-ring)]"
+        >
+          {finding.observation}
+        </button>
+      ) : (
+        <p className="mb-1 mt-3 text-[16px] leading-[1.5] text-[var(--pf-text-body)]">{finding.observation}</p>
+      )}
 
       {finding.rand_impact != null ? (
         <div className="of-num mb-0.5 mt-1.5 text-[22px] font-semibold text-[var(--pf-text)]">

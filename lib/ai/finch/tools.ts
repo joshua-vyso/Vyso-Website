@@ -210,6 +210,9 @@ const TOOLS_BY_MODULE: Record<AgentModule, AgentTool[]> = {
   orderflow: ORDERFLOW_TOOLS,
   docu: [], // Doc-U tools land in a later phase.
   onboarding: ONBOARDING_TOOLS,
+  // The Brief's findings ride in with the conversation (the page already read
+  // them through the caller's RLS-scoped client), so there is nothing to fetch.
+  brief: [],
 };
 
 /** The tool objects (with run handlers) for a module. Workflow tools are only

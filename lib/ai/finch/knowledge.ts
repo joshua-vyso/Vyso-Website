@@ -113,16 +113,66 @@ ONCE and flows to every module. The two building blocks the user brings in now:
 - Zero uploads is completely fine — they can click "Skip for now" and add data
   from inside Doc-U → Databases whenever they're ready.`;
 
+const BRIEF_KNOWLEDGE = `# The Brief — what the agents found
+
+The Brief is the landing page of Vyso (/app). It is not a module: it is the
+owner's morning read of what Vyso's autonomous agents noticed overnight, with
+the nine modules demoted to "under the hood" in the rail beside it.
+
+## The findings feed
+Every agent writes to ONE shared table, \`agent_findings\` (see
+supabase/agents-price-watch.sql). A finding is:
+- **agent** — which agent raised it (\`price_watch\` today; others later).
+- **observation** — one plain sentence about the business, e.g. "Umgeni Oils
+  sunflower oil is up 9% against your February average."
+- **rand_impact** — the estimated ANNUAL rand effect, in Rand. It is an
+  estimate the agent derived, not a booked figure: say "about" / "roughly".
+  It can be null — then the finding simply has no price tag, and you must not
+  invent one.
+- **evidence_refs** — the Doc-U document ids the finding was raised from. The
+  card shows them as "3 invoices ↗". Evidence is what makes a finding
+  checkable: if the owner doubts one, point them at the documents.
+- **recommended_action** — the agent's quiet suggestion. It is a suggestion,
+  never something Vyso has done or will do on its own.
+- **status** — new | in_progress (both "open", shown on the brief) and
+  resolved | dismissed (closed, kept under History so a mis-click is
+  recoverable). Dismiss is on each card; Restore is on each History row.
+
+## Price Watch
+Price Watch is the first agent. Nightly it reads the supplier invoice and
+statement lines Doc-U already extracted, normalises them onto a canonical
+buy-side item catalogue, keeps per-supplier price history, and raises a finding
+when a price moves materially against that history. It OBSERVES and
+RECOMMENDS; the human acts. It never places an order, contacts a supplier, or
+changes a price.
+
+## Your job on this screen
+The open findings for this business are supplied to you in the conversation.
+Answer questions about them: what a finding means, which supplier or item it
+concerns, what the rand figure is and how to read it, what the owner could do
+next, and how the findings relate to each other and to the rest of their
+operation (their suppliers, buying patterns, margins).
+- Ground every claim in the findings you were given. If something isn't in
+  them, say so plainly — do not guess a supplier, a price or a total.
+- Quote rand figures exactly as supplied, and keep the "about"/"a year" framing
+  the estimate deserves.
+- An empty brief is good news, not a fault: it means nothing crossed the
+  threshold. Say that rather than apologising.
+- You cannot dismiss, resolve or action a finding — the buttons on each card do
+  that. Point the owner at them instead.`;
+
 const MODULE_KNOWLEDGE: Record<AgentModule, string> = {
   orderflow: ORDERFLOW_KNOWLEDGE,
   docu: DOCU_KNOWLEDGE,
   onboarding: ONBOARDING_KNOWLEDGE,
+  brief: BRIEF_KNOWLEDGE,
 };
 
 const MODULE_LABEL: Record<AgentModule, string> = {
   orderflow: 'OrderFlow',
   docu: 'Doc-U',
   onboarding: 'Getting started',
+  brief: 'The Brief',
 };
 
 /**
