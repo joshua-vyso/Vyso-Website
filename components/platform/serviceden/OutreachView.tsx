@@ -18,6 +18,7 @@ export type OutreachState =
       leads: OutreachLead[];
       metrics: CampaignMetrics[];
       industries: { industry: string; leads: number; replied: number }[];
+      outcomes: { outcome: string; count: number; industries: string[] }[];
       totalLeads: number;
     };
 
@@ -213,6 +214,28 @@ export function OutreachView({ state }: { state: OutreachState }) {
                   </li>
                 );
               })}
+            </ul>
+          </SectionCard>
+
+          <SectionCard title="How conversations end">
+            <ul className="space-y-2">
+              {state.outcomes.map((row) => (
+                <li key={row.outcome} className="text-[13px]">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[#5C605A]">{row.outcome}</span>
+                    <span className="of-num font-medium text-[#171A17]">{row.count}</span>
+                  </div>
+                  {row.industries.length ? (
+                    <div className="mt-0.5 truncate text-[11px] text-[#A0A49C]">{row.industries.join(', ')}</div>
+                  ) : null}
+                </li>
+              ))}
+              {state.outcomes.length === 0 ? (
+                <li className="text-[13px] text-[#A0A49C]">
+                  No outcomes recorded yet. Set them on the Sales page or in All leads — &ldquo;Too Expensive&rdquo; on a
+                  lead that loved the product is exactly the signal worth counting.
+                </li>
+              ) : null}
             </ul>
           </SectionCard>
 

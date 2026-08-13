@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { Badge, DataTable, Kpi, KpiStrip, SectionCard } from '@/components/platform/module-ui';
-import type { OutreachLead } from '@/lib/platform/notion-outreach';
+import { OUTCOME_OPTIONS, type OutreachLead } from '@/lib/platform/notion-outreach';
 
 export type SalesState =
   | { kind: 'unconfigured' }
@@ -28,6 +28,30 @@ function daysSince(iso: string | null): number | null {
 
 export function SalesView({ state }: { state: SalesState }) {
   const [campaignFilter, setCampaignFilter] = useState<string>('All');
+  // Optimistic per-lead outcome, so the select reflects the click immediately
+  // and rolls back if Notion rejects it.
+  const [outcomes, setOutcomes] = useState<Record<string, string>>({});
+  const [outcomeError, setOutcomeError] = useState<string | null>(null);
+
+  async function saveOutcome(lead: OutreachLead, value: string) {
+    const previous = outcomes[lead.id] ?? lead.outcome ?? '';
+    setOutcomes((o) => ({ ...o, [lead.id]: value }));
+    setOutcomeError(null);
+    try {
+      const res = await fetch(`/api/serviceden/outreach/leads/${lead.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ outcome: value }),
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || `Save failed (${res.status})`);
+      }
+    } catch (e) {
+      setOutcomes((o) => ({ ...o, [lead.id]: previous }));
+      setOutcomeError(e instanceof Error ? e.message : 'Save failed');
+    }
+  }
 
   const campaigns = useMemo(() => {
     if (state.kind !== 'ready') return ['All'];
@@ -73,6 +97,10 @@ export function SalesView({ state }: { state: SalesState }) {
         <Kpi label="Hand-off rate" value={`${handoffRate.toFixed(1)}%`} sub={`of ${state.contactedTotal} contacted`} />
       </KpiStrip>
 
+      {outcomeError ? (
+        <div className="rounded-lg border border-[#E7B4AF] bg-[#FCF3F2] px-3 py-2 text-[13px] text-[#B4342B]">{outcomeError}</div>
+      ) : null}
+
       <SectionCard
         title="Replied leads"
         right={
@@ -98,6 +126,7 @@ export function SalesView({ state }: { state: SalesState }) {
             { label: 'Won by' },
             { label: 'Replied' },
             { label: 'Industry' },
+            { label: 'Outcome' },
             { label: 'ICP', align: 'right' },
             { label: 'Stage reached', align: 'right' },
           ]}
@@ -120,6 +149,11 @@ export function SalesView({ state }: { state: SalesState }) {
                 ) : null}
               </span>,
               l.industry ?? '—',
+              <select key="o" value={outcomes[l.id] ?? l.outcome ?? ''} onChange={(e) => saveOutcome(l, e.target.value)}
+                className="rounded-lg border border-transparent bg-transparent px-1.5 py-1 text-[13px] outline-none hover:border-[#EAEDF2] focus:border-[#1F5FA8]">
+                <option value="">—</option>
+                {OUTCOME_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>,
               l.icpScore ?? '—',
               l.outreachStage === 'Meeting Booked' ? (
                 <Badge key="s" label="Meeting booked" tone="positive" />

@@ -4,6 +4,7 @@ import {
   industryBreakdown,
   isInOutreach,
   notionOutreachConfigured,
+  outcomeBreakdown,
 } from '@/lib/platform/notion-outreach';
 import { cachedCampaigns, cachedOutreachLeads } from '@/lib/platform/outreach-data';
 
@@ -22,6 +23,7 @@ export default async function ServiceDenOutreachPage() {
       // a reply rate computed only over non-repliers would always be zero.
       metrics: campaignMetrics(all, cohorts),
       industries: industryBreakdown(all),
+      outcomes: outcomeBreakdown(all),
       totalLeads: all.length,
     };
   } catch (error) {

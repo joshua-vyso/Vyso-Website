@@ -4,11 +4,12 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   CAMPAIGN_OPTIONS,
   INDUSTRY_OPTIONS,
+  OUTCOME_OPTIONS,
   OUTREACH_STAGES,
   type OutreachLead,
 } from '@/lib/platform/notion-outreach';
 
-type Field = 'company' | 'email' | 'phone' | 'website' | 'industry' | 'campaign' | 'outreachStage' | 'icpScore' | 'nextFollowUp';
+type Field = 'company' | 'email' | 'phone' | 'website' | 'industry' | 'campaign' | 'outreachStage' | 'icpScore' | 'nextFollowUp' | 'outcome';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -124,7 +125,7 @@ export function OutreachTable({ initial }: { initial: OutreachLead[] }) {
         <table className="w-full min-w-[1100px] text-[13px]">
           <thead>
             <tr className="border-b border-[#EEF1F5] bg-[#FBFCFE] text-[11px] uppercase tracking-[0.06em] text-[#A0A49C]">
-              {['Business', 'Email', 'Phone', 'Stage', 'Campaign', 'Industry', 'ICP', 'Next follow-up', 'Website'].map((h) => (
+              {['Business', 'Email', 'Phone', 'Stage', 'Campaign', 'Industry', 'ICP', 'Next follow-up', 'Outcome', 'Website'].map((h) => (
                 <th key={h} className="px-2 py-2.5 text-left font-medium">{h}</th>
               ))}
             </tr>
@@ -142,6 +143,9 @@ export function OutreachTable({ initial }: { initial: OutreachLead[] }) {
                   <td className="px-2 py-1.5">
                     <input defaultValue={lead.email} onBlur={(e) => save(lead, 'email', e.target.value)}
                       className={cellClass(`${lead.id}:email`)} />
+                    {lead.emailStatus === 'Bounced' ? (
+                      <div className="px-2 pt-0.5 text-[11px] font-medium text-[#B4342B]">bounced — not emailed</div>
+                    ) : null}
                   </td>
                   <td className="px-2 py-1.5">
                     <input defaultValue={lead.phone ?? ''} onBlur={(e) => save(lead, 'phone', e.target.value)}
@@ -168,6 +172,10 @@ export function OutreachTable({ initial }: { initial: OutreachLead[] }) {
                     <select value={lead.industry ?? ''} onChange={(e) => save(lead, 'industry', e.target.value)}
                       className={cellClass(`${lead.id}:industry`)}>
                       <option value="">—</option>
+                      {/* Segment-defined industries are not in the static list; keep the
+                          current value selectable rather than blanking it. */}
+                      {lead.industry && !(INDUSTRY_OPTIONS as readonly string[]).includes(lead.industry)
+                        ? <option value={lead.industry}>{lead.industry}</option> : null}
                       {INDUSTRY_OPTIONS.map((i) => <option key={i} value={i}>{i}</option>)}
                     </select>
                   </td>
@@ -181,6 +189,13 @@ export function OutreachTable({ initial }: { initial: OutreachLead[] }) {
                       onBlur={(e) => save(lead, 'nextFollowUp', e.target.value)}
                       className={cellClass(`${lead.id}:nextFollowUp`)} />
                   </td>
+                  <td className="px-2 py-1.5 w-[150px]">
+                    <select value={lead.outcome ?? ''} onChange={(e) => save(lead, 'outcome', e.target.value)}
+                      className={cellClass(`${lead.id}:outcome`)}>
+                      <option value="">—</option>
+                      {OUTCOME_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </td>
                   <td className="px-2 py-1.5">
                     <input defaultValue={lead.website ?? ''} onBlur={(e) => save(lead, 'website', e.target.value)}
                       className={cellClass(`${lead.id}:website`)} />
@@ -189,7 +204,7 @@ export function OutreachTable({ initial }: { initial: OutreachLead[] }) {
               );
             })}
             {visible.length === 0 ? (
-              <tr><td colSpan={9} className="px-3 py-8 text-center text-[13px] text-[#A0A49C]">No leads match that search.</td></tr>
+              <tr><td colSpan={10} className="px-3 py-8 text-center text-[13px] text-[#A0A49C]">No leads match that search.</td></tr>
             ) : null}
           </tbody>
         </table>
