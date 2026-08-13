@@ -114,3 +114,20 @@ per-doc reconciliation check, auto-restore from backup on regression).
   a Doc-U + OrderFlow screen after login; changes there are token-value swaps
   plus three deliberate deltas: DataTable hairline, ModuleWidgetCard shadow/padding,
   SecondaryAction border).
+
+# The Brief landing page (branch feat/ui-brief-reskin)
+
+- `7957c8f` plan; `da882ef` Wave A: /app renders the Brief (was a redirect) —
+  rail, greeting, finding cards off agent_findings (RLS reads), dismiss/restore,
+  truthful evidence nouns, empty + table-missing states, POST_LOGIN_ROUTE → /app.
+  Migration file committed. isMissingRelation added to db-errors (42P01 + PGRST205).
+- `d194727` Wave B: chat pill wired to Finch ('brief' module via the documented
+  extension point; findings serialised server-side, bounded prelude on first user
+  turn; tap-a-finding prefill; inert when FINCH_ENABLED off). Live-tested signed-in:
+  three streamed answers, 200s. NOT yet exercised with real finding rows (table
+  empty until Price Watch runs) — tap flow verified at unit level.
+- Deviations from mock (deliberate): top bar retained (rail lives inside the page);
+  per-finding action buttons (draft email, trends) deferred; chat is text-only v1.
+- Discovery: agent_findings table already existed in prod → Josh applied the
+  migration. Remaining manual step for data: the three phase2 re-extraction slices,
+  then backfill → detection → crons.
