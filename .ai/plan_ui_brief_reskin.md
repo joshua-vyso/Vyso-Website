@@ -61,9 +61,13 @@ findings-feed UI is already deferred by the Price Watch plan. Therefore:
   `next/font/google` in `app/layout.tsx`; no change expected). Commit.
 - W2 Primitives: file 3, restyle against the Brief specs; keep exports/props identical;
   `npx tsc --noEmit` must pass. Commit.
-- W3 Module sweep: file 6 in module batches (docu, orderflow, pricepilot, supplysync,
-  serviceden, planwise, shiftboard, wastewatch, insightgen, coredata, outreach, misc)
-  + file 5. Commit per batch.
+- W3 Module sweep — **DESCOPED after inventory (architect, 2026-08-13)**: grep across
+  all platform screens showed the hardcoded hexes ARE the token values (the design
+  system was extracted from this codebase), so a 200+-file hex→var conversion would be
+  pure churn with zero visual change — skipped to conserve usage. The long-tail rare
+  hexes are legitimate module-glyph tints / app-tile brands / chart colors. The ONE
+  real spec violation found: `app/login/page.tsx` uses marketing orange (#BE5D23 ×8)
+  for actions — W3 is now just the login restyle to platform blue/card language.
 - W4 Verification: `npx tsc --noEmit`, `npm run lint`, `npm run test`; dev-server
   screenshot pass over key screens (login, module hub, Doc-U inbox, OrderFlow, one
   data-heavy table); fix fallout; final commit.

@@ -86,3 +86,20 @@ Decisions D1–D4 resolved by Josh 2026-08-13 (see plan). Re-extraction pre-task
 
 ### Phase 2: batch of 13 `extracted`-status docs — running (same procedure,
 per-doc reconciliation check, auto-restore from backup on regression).
+
+# UI Brief reskin — implementation log (branch feat/ui-brief-reskin)
+
+- W0 `5505f4b`: design bundle imported to `.ai/design/vyso-brief/` + plans committed.
+- W1 `e9979f4`: `--pf-*`/`--tone-*` token layer added to globals.css; /app shell
+  wash + text de-hardcoded. `lib/platform/tokens.ts` already matched tokens
+  value-for-value (design system was extracted from this codebase) — no sync needed.
+  Flag: `VYSO` export in tokens.ts has zero consumers (dead export, untouched).
+- W2 `a32cc60`: primitives tokenized (module-ui.tsx, ui.tsx). Visual deltas:
+  DataTable hairline #F5F9FE→#EEF1F5 (spec correction), ModuleWidgetCard gains card
+  shadow + 20px padding, SecondaryAction border snapped to --pf-border-strong,
+  donut/ring tracks unified on --pf-border-soft. W2 agent was killed mid-run by a
+  usage limit and resumed from transcript — partial edits reconciled, no loss.
+- W3 descoped to login-only after hex inventory (see plan). Mass hex→var conversion
+  skipped: values already on-palette; churn without visual change.
+- Known pre-existing failures (NOT ours): tsc errors in lib/platform/whatsapp-ingest.ts
+  (untracked WIP), lint errors in vyso-ai/*, wastewatch/*, module-ui.tsx:289.
