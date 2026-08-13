@@ -18,6 +18,8 @@ const EDITABLE: (keyof LeadEdit)[] = [
   'nextFollowUp',
   'replied',
   'signed',
+  'outcome',
+  'emailStatus',
 ];
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {

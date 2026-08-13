@@ -37,6 +37,7 @@ export default async function OutreachLayout({ children }: { children: ReactNode
     { label: leadCount == null ? 'All leads' : `All leads (${leadCount})`, href: `${ROOT}/leads` },
     { label: templateCount == null ? 'Templates' : `Templates (${templateCount})`, href: `${ROOT}/templates` },
     { label: 'Bounces', href: `${ROOT}/bounces` },
+    { label: 'Settings', href: `${ROOT}/settings` },
   ];
 
   return (

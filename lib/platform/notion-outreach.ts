@@ -58,6 +58,11 @@ export type OutreachLead = {
   reEngaged: boolean;
   signed: boolean;
   notes: string;
+  /** Deliverability of the address — set by the bounce scan, not by humans. */
+  emailStatus: string | null;
+  /** Why the conversation ended. Orthogonal to Lead Status: "Too Expensive"
+   *  after a warm reply is a different fact from a Breakup email going out. */
+  outcome: string | null;
 };
 
 export type CampaignRow = {
@@ -225,6 +230,8 @@ function toLead(row: Record<string, unknown>): OutreachLead {
     reEngaged: readCheckbox(p, 'Re-engaged'),
     signed: readCheckbox(p, 'Signed'),
     notes: readText(p, 'Notes'),
+    emailStatus: readSelect(p, 'Email Status'),
+    outcome: readSelect(p, 'Outcome'),
   };
 }
 
@@ -365,6 +372,21 @@ export const OUTREACH_STAGES: OutreachStage[] = [
 
 export const CAMPAIGN_OPTIONS = ['Legacy', 'Discovery First'] as const;
 
+export const EMAIL_STATUS_OPTIONS = ['Valid', 'Bounced', 'Catch-All', 'Do Not Contact'] as const;
+
+/** Why it ended, not where the sequence got to. "Too Expensive" is the signal
+ *  Josh is hunting for while finding his lane — a loved product at the wrong
+ *  price point is a different lesson from "No Need". */
+export const OUTCOME_OPTIONS = [
+  'Won',
+  'Too Expensive',
+  'Not Ready Yet',
+  'No Need',
+  'Not ICP',
+  'Wrong Contact',
+  'Ghosted',
+] as const;
+
 export const INDUSTRY_OPTIONS = [
   'Catering',
   'Restaurant',
@@ -418,6 +440,8 @@ export type LeadEdit = Partial<{
   nextFollowUp: string | null;
   replied: boolean;
   signed: boolean;
+  outcome: string;
+  emailStatus: string;
 }>;
 
 function richText(value: string) {
@@ -460,10 +484,23 @@ export async function updateLead(pageId: string, edit: LeadEdit): Promise<void> 
   if (edit.signed !== undefined) properties.Signed = { checkbox: edit.signed };
 
   if (edit.industry !== undefined) {
-    if (edit.industry && !(INDUSTRY_OPTIONS as readonly string[]).includes(edit.industry)) {
-      throw new NotionError(`Unknown industry "${edit.industry}".`, 400);
+    // Not validated against a fixed list any more: segments define their own
+    // industry labels and Notion creates select options on first write, exactly
+    // as the automation does. Commas are the one thing Notion rejects.
+    const industry = edit.industry.trim().slice(0, 100).replace(/,/g, '');
+    properties.Industry = { select: industry ? { name: industry } : null };
+  }
+  if (edit.outcome !== undefined) {
+    if (edit.outcome && !(OUTCOME_OPTIONS as readonly string[]).includes(edit.outcome)) {
+      throw new NotionError(`Unknown outcome "${edit.outcome}".`, 400);
     }
-    properties.Industry = { select: edit.industry ? { name: edit.industry } : null };
+    properties.Outcome = { select: edit.outcome ? { name: edit.outcome } : null };
+  }
+  if (edit.emailStatus !== undefined) {
+    if (edit.emailStatus && !(EMAIL_STATUS_OPTIONS as readonly string[]).includes(edit.emailStatus)) {
+      throw new NotionError(`Unknown email status "${edit.emailStatus}".`, 400);
+    }
+    properties['Email Status'] = { select: edit.emailStatus ? { name: edit.emailStatus } : null };
   }
   if (edit.campaign !== undefined) {
     if (edit.campaign && !(CAMPAIGN_OPTIONS as readonly string[]).includes(edit.campaign)) {
@@ -560,6 +597,117 @@ export function notionErrorStatus(error: unknown): number {
 /** Replied, so a human owns it now. This is the hand-off into the sales pipeline. */
 export function isInSales(lead: OutreachLead): boolean {
   return lead.replied || lead.outreachStage === 'Meeting Booked';
+}
+
+// ---------------------------------------------------------------------------
+// Segments — the knobs n8n obeys
+// ---------------------------------------------------------------------------
+
+export const SEGMENTS_DB = '3bb4c0ac-5f7c-81d1-b170-ef127c479544';
+
+/**
+ * One row per market the engine hunts in. n8n reads this database at the start
+ * of every run: the quota is how many leads that segment gets per day, the
+ * brief is pasted into the finder and qualifier prompts verbatim, and the
+ * industry labels are the classification values the qualifier may emit.
+ * Editing here IS editing the automation — there is no second copy in n8n.
+ */
+export type OutreachSegment = {
+  id: string;
+  name: string;
+  dailyQuota: number;
+  searchBrief: string;
+  industryLabels: string;
+  active: boolean;
+  priority: number;
+};
+
+function toSegment(row: Record<string, unknown>): OutreachSegment {
+  const p = props(row);
+  return {
+    id: String(row.id ?? ''),
+    name: readTitle(p, 'Segment'),
+    dailyQuota: readNumber(p, 'Daily Quota') ?? 0,
+    searchBrief: readText(p, 'Search Brief'),
+    industryLabels: readText(p, 'Industry Labels'),
+    active: readCheckbox(p, 'Active'),
+    priority: readNumber(p, 'Priority') ?? 999,
+  };
+}
+
+export async function getSegments(): Promise<OutreachSegment[]> {
+  const rows = await queryAll(SEGMENTS_DB);
+  return rows
+    .map(toSegment)
+    .filter((s) => s.name)
+    .sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
+}
+
+export type SegmentEdit = {
+  name: string;
+  dailyQuota: number;
+  searchBrief: string;
+  industryLabels: string;
+  active: boolean;
+  priority: number;
+};
+
+/** Long briefs must be split: Notion rejects a single rich-text item over 2000 chars. */
+function longRichText(value: string) {
+  const chunks: { type: 'text'; text: { content: string } }[] = [];
+  for (let i = 0; i < value.length && chunks.length < 20; i += 1900) {
+    chunks.push({ type: 'text', text: { content: value.slice(i, i + 1900) } });
+  }
+  return { rich_text: chunks };
+}
+
+function segmentProperties(edit: SegmentEdit): Record<string, unknown> {
+  if (!edit.name.trim()) throw new NotionError('Segment needs a name.', 400);
+  const quota = Math.round(Number(edit.dailyQuota));
+  if (!Number.isFinite(quota) || quota < 0 || quota > 100) {
+    throw new NotionError('Daily quota must be between 0 and 100.', 400);
+  }
+  if (edit.active && quota > 0 && !edit.searchBrief.trim()) {
+    throw new NotionError('An active segment needs a search brief — it is the text the lead finder works from.', 400);
+  }
+  return {
+    Segment: { title: [{ type: 'text', text: { content: edit.name.trim().slice(0, 120) } }] },
+    'Daily Quota': { number: quota },
+    'Search Brief': longRichText(edit.searchBrief.trim()),
+    'Industry Labels': longRichText(edit.industryLabels.trim()),
+    Active: { checkbox: edit.active },
+    Priority: { number: Math.round(Number(edit.priority)) || 999 },
+  };
+}
+
+export async function updateSegment(pageId: string, edit: SegmentEdit): Promise<void> {
+  await notionPatch(`/pages/${pageId}`, { properties: segmentProperties(edit) });
+}
+
+export async function createSegment(edit: SegmentEdit): Promise<string> {
+  const page = await notionFetch('/pages', {
+    parent: { database_id: SEGMENTS_DB },
+    properties: segmentProperties(edit),
+  });
+  return String(page.id ?? '');
+}
+
+/** How conversations end, per campaign and overall — the "finding my lane" view. */
+export function outcomeBreakdown(leads: OutreachLead[]): { outcome: string; count: number; industries: string[] }[] {
+  const byOutcome = new Map<string, OutreachLead[]>();
+  for (const lead of leads) {
+    if (!lead.outcome) continue;
+    const list = byOutcome.get(lead.outcome) ?? [];
+    list.push(lead);
+    byOutcome.set(lead.outcome, list);
+  }
+  return [...byOutcome.entries()]
+    .map(([outcome, rows]) => ({
+      outcome,
+      count: rows.length,
+      industries: [...new Set(rows.map((r) => r.industry).filter((i): i is string => Boolean(i)))],
+    }))
+    .sort((a, b) => b.count - a.count);
 }
 
 // ---------------------------------------------------------------------------
