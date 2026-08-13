@@ -21,6 +21,10 @@ const SUMMARY_MODEL = process.env.ANTHROPIC_SUMMARY_MODEL || 'claude-haiku-4-5';
 const CATEGORISE_MODEL = process.env.ANTHROPIC_CATEGORISE_MODEL || 'claude-haiku-4-5';
 // Product-name matching: pick the right canonical from a short candidate list.
 const MATCH_MODEL = process.env.ANTHROPIC_MATCH_MODEL || 'claude-haiku-4-5';
+// Price Watch observation text is the only agent output a human reads verbatim
+// in the weekly digest, so it runs on the strong default tier rather than Haiku
+// (plan D3). Override with ANTHROPIC_OBSERVE_MODEL.
+const OBSERVE_MODEL = process.env.ANTHROPIC_OBSERVE_MODEL || MODEL;
 
 export const aiConfigured = Boolean(apiKey);
 
@@ -686,4 +690,63 @@ export async function suggestProductMatches(items: MatchSuggestionInput[]): Prom
       reason: r && typeof r.reason === 'string' ? r.reason.slice(0, 200) : '',
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Price Watch (lib/platform/price-watch/*)
+//
+// These two helpers are deliberately DUMB: prompt in, raw model text out. All
+// the contract logic — shortlisting, JSON parsing, the ≥0.9 auto-link rule, the
+// number-fidelity validator — lives in the price-watch modules, which are pure
+// and unit-testable offline. This file stays the one and only place an Anthropic
+// client is constructed (there must never be a second client).
+// ---------------------------------------------------------------------------
+
+export interface ModelPrompt {
+  system: string;
+  user: string;
+}
+
+/**
+ * Claude models from Opus 4.7 onward (plus Sonnet 5 / Fable 5 / Mythos 5)
+ * REMOVED the sampling parameters: sending `temperature` at all returns a 400,
+ * not a warning. The matcher wants temperature 0 for determinism and the
+ * default MATCH_MODEL (claude-haiku-4-5) still accepts it — but both model ids
+ * here are env-overridable, so a well-meaning override to an Opus tier would
+ * otherwise break every call at runtime with an opaque 400. This guard drops
+ * the parameter for the families that reject it; on those models determinism is
+ * not available as a knob at all, which is exactly why observe.ts validates the
+ * output instead of trusting it.
+ */
+const SAMPLING_REMOVED = /(opus-4-[78]|opus-5|sonnet-5|fable-5|mythos-5)/;
+function samplingParams(model: string): { temperature?: number } {
+  return SAMPLING_REMOVED.test(model) ? {} : { temperature: 0 };
+}
+
+/** Canonical-item matching for one Doc-U line. Haiku tier, temperature 0. */
+export async function runPriceWatchMatch(prompt: ModelPrompt): Promise<string> {
+  const message = await client().messages.create({
+    model: MATCH_MODEL,
+    // The reply is a single small JSON object; anything longer is malformed
+    // output, which the caller routes to review rather than salvaging.
+    max_tokens: 400,
+    ...samplingParams(MATCH_MODEL),
+    system: prompt.system,
+    messages: [{ role: 'user', content: prompt.user }],
+  });
+  return textOf(message);
+}
+
+/** Observation + recommended action for one finding. Default (Opus) tier. */
+export async function runPriceWatchObservation(prompt: ModelPrompt): Promise<string> {
+  const message = await client().messages.create({
+    model: OBSERVE_MODEL,
+    // Two short sentences plus a one-liner, as JSON. Generous enough that a
+    // truncation never silently mangles a number mid-digit.
+    max_tokens: 700,
+    ...samplingParams(OBSERVE_MODEL),
+    system: prompt.system,
+    messages: [{ role: 'user', content: prompt.user }],
+  });
+  return textOf(message);
 }
