@@ -1,0 +1,8 @@
+/* Minimal resets + the two helper classes the platform relies on. */
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;font-family:var(--font-body);color:var(--ink);background:var(--surface);-webkit-font-smoothing:antialiased}
+a{color:var(--vyso-orange);text-decoration:none}
+a:hover{color:var(--vyso-orange-burnt)}
+/* Space Grotesk numerals — anything that lines up in a column */
+.of-num{font-family:var(--font-num);font-feature-settings:'tnum' 1}
+.of-display{font-family:var(--font-num)}

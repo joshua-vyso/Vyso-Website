@@ -1,0 +1,102 @@
+:root{
+  /* ── Marketing / brand ─────────────────────────────────────────── */
+  --vyso-orange:#BE5D23;              /* hsl(22 69% 44%) — the brand accent */
+  --vyso-orange-hsl:22 69% 44%; /* @kind color */
+  --vyso-orange-amber:hsl(30 82% 57%);
+  --vyso-orange-burnt:hsl(14 72% 36%);
+  --vyso-orange-golden:hsl(35 88% 64%);
+  --vyso-orange-rust:hsl(10 62% 28%);
+  --vyso-orange-tint:hsl(22 69% 44% / 0.10);
+  --vyso-orange-tint-border:hsl(22 69% 44% / 0.12);
+  --vyso-orange-mark:#D9730D;         /* wordmark colour on platform chrome */
+
+  --ink:#0D0D0D;
+  --ink-deep:#0A0A0A;
+  --ink-body:#555555;
+  --ink-muted:#6B6B6B;
+  --ink-soft:#777777;
+  --ink-faint:#888888;
+  --ink-ghost:#AAAAAA;
+  --label-grey:#8A8A8A;
+
+  --surface:#FFFFFF;
+  --surface-subtle:#F5F5F5;
+  --hairline:#E5E5E5;
+
+  /* Glass (nav panels, pricing cards, buttons) */
+  --glass-fill:rgba(255,255,255,0.52);
+  --glass-fill-strong:rgba(255,255,255,0.76);
+  --glass-fill-faint:rgba(255,255,255,0.12);
+  --glass-border:rgba(255,255,255,0.68);
+  --glass-blur:blur(22px) saturate(1.9); /* @kind other */
+  --glass-blur-panel:blur(30px) saturate(1.9); /* @kind other */
+
+  /* ── Platform (in-app) ─────────────────────────────────────────── */
+  --pf-page:#F6F6F4;
+  --pf-wash:linear-gradient(180deg,#F3F8FF 0%,#FFFFFF 340px); /* @kind color */
+  --pf-surface:#FFFFFF;
+  --pf-surface-tint:#F5F9FE;
+  --pf-surface-tint-faint:#FBFCFE;
+  --pf-border:#EAEDF2;
+  --pf-border-strong:#E4E9F0;
+  --pf-border-soft:#EEF1F5;
+  --pf-border-chrome:#E9EEF4;
+  --pf-border-warm:#E7E7E2;
+
+  --pf-text:#171A17;
+  --pf-text-alt:#1A1C1E;
+  --pf-text-body:#2C333B;
+  --pf-text-control:#3E4A57;
+  --pf-text-secondary:#6B6F68;
+  --pf-text-muted:#8A8E86;
+  --pf-text-faint:#A0A49C;
+  --pf-text-disabled:#9A9DA1;
+
+  --pf-accent:#3E7BC4;
+  --pf-accent-strong:#1F5FA8;
+  --pf-accent-deep:#174C87;
+  --pf-accent-weak:#EAF2FC;
+  --pf-accent-weak-hover:#DCEBFB;
+  --pf-accent-ring:#C9DEF7;
+  --pf-accent-nav:#E6F0FB;
+
+  /* Semantic tone pairs (module-ui Badge / StatusPill) */
+  --tone-neutral-bg:#EEF1F5;   --tone-neutral-fg:#6B6F68;
+  --tone-positive-bg:#E1F5EE;  --tone-positive-fg:#0F6E56;
+  --tone-warning-bg:#FBEEDA;   --tone-warning-fg:#854F0B;
+  --tone-critical-bg:#FCEBEB;  --tone-critical-fg:#A32D2D;
+  --tone-info-bg:#E6F1FB;      --tone-info-fg:#0C447C;
+
+  /* Module glyph tints (AppIcon) */
+  --mod-docu-bg:#EAF2FC;      --mod-docu-fg:#3E7BC4;
+  --mod-proc-bg:#E6F1FB;      --mod-proc-fg:#2C5E8A;
+  --mod-margin-bg:#E1F5EE;    --mod-margin-fg:#2E7D67;
+  --mod-waste-bg:#FBEFDD;     --mod-waste-fg:#9A6314;
+  --mod-shift-bg:#ECEAFB;     --mod-shift-fg:#5B53C0;
+  --mod-supplier-bg:#FBE9EE;  --mod-supplier-fg:#B0466A;
+  --mod-dash-bg:#EDEFF1;      --mod-dash-fg:#6B6F68;
+
+  /* App-tile brand colours (marketing app icons) */
+  --app-docu:#7B5CF0;
+  --app-procurepulse:#8D75F4;
+  --app-wastewatch:#086B62;
+  --app-supplysync:#1167D8;
+  --app-shiftboard:#F46A00;
+  --app-orderflow:#CB1552;
+  --app-pricepilot:#17A858;
+  --app-insightgen:#E6A800;
+  --app-planwise:#B9571E;
+
+  /* Finch (in-app AI assistant sub-brand) */
+  --finch-gradient:linear-gradient(115deg,#6FB7F0,#3E8FE0,#8ED0F7,#59A6EE,#6FB7F0); /* @kind color */
+  --finch-blue:#3E8FE0;
+
+  /* ── Semantic aliases ──────────────────────────────────────────── */
+  --text-heading:var(--ink);
+  --text-body:var(--ink-muted);
+  --text-accent:var(--vyso-orange);
+  --surface-page:var(--surface);
+  --surface-card:var(--surface);
+  --border-card:var(--hairline);
+  --focus-ring:var(--vyso-orange);
+}

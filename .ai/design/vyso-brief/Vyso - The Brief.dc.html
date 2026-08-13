@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="design_doc_mode" content="canvas">
+  <link rel="stylesheet" href="_ds/vyso-design-system-3031f9ea-8242-4efe-9038-b4a970447ec8/tokens/fonts.css">
+  <link rel="stylesheet" href="_ds/vyso-design-system-3031f9ea-8242-4efe-9038-b4a970447ec8/tokens/colors.css">
+  <link rel="stylesheet" href="_ds/vyso-design-system-3031f9ea-8242-4efe-9038-b4a970447ec8/tokens/typography.css">
+  <link rel="stylesheet" href="_ds/vyso-design-system-3031f9ea-8242-4efe-9038-b4a970447ec8/tokens/spacing.css">
+  <link rel="stylesheet" href="_ds/vyso-design-system-3031f9ea-8242-4efe-9038-b4a970447ec8/tokens/radius.css">
+  <link rel="stylesheet" href="_ds/vyso-design-system-3031f9ea-8242-4efe-9038-b4a970447ec8/tokens/elevation.css">
+  <link rel="stylesheet" href="_ds/vyso-design-system-3031f9ea-8242-4efe-9038-b4a970447ec8/tokens/motion.css">
+  <link rel="stylesheet" href="_ds/vyso-design-system-3031f9ea-8242-4efe-9038-b4a970447ec8/tokens/base.css">
+  <link rel="stylesheet" href="_ds/vyso-design-system-3031f9ea-8242-4efe-9038-b4a970447ec8/styles.css">
+  <script src="_ds/vyso-design-system-3031f9ea-8242-4efe-9038-b4a970447ec8/_ds_bundle.js"></script>
+  <style>
+    body{margin:0;background:#ECEAE5;font-family:'Instrument Sans',sans-serif;}
+    a{color:#1F5FA8;text-decoration:none;} a:hover{color:#BE5D23;}
+    @keyframes vysoPulse{0%,100%{opacity:1;}50%{opacity:0.55;}}
+  </style>
+</helmet>
+
+<section style="padding:72px; display:flex; flex-direction:column; gap:40px;">
+  <div style="display:flex; align-items:baseline; gap:16px;">
+    <div style="font-family:'Space Grotesk',sans-serif; font-size:22px; font-weight:600; color:#171A17;">Vyso — the fractional COO</div>
+    <div style="font-size:13px; color:#8A8E86;">Five screens · The Brief leads, chat supports, modules stay under the hood</div>
+  </div>
+  <div style="display:flex; align-items:flex-start; gap:72px; flex-wrap:wrap;">
+
+    <!-- ══════════ 1a · THE BRIEF (desktop) ══════════ -->
+    <div id="1a" style="display:flex; flex-direction:column; gap:12px;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="background:#171A17; color:#fff; font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; letter-spacing:0.04em;">1a</span>
+        <span style="font-size:13px; color:#6B6F68;">The Brief — home screen</span>
+      </div>
+      <div style="width:1440px; height:1180px; background:linear-gradient(180deg,#FBF9F6 0%,#FFFFFF 420px); border:1px solid #E4E9F0; border-radius:20px; box-shadow:0 30px 80px -20px rgba(20,24,20,0.18); position:relative; overflow:hidden; display:flex;">
+
+        <!-- left rail -->
+        <div style="width:216px; flex:none; border-right:1px solid #EFEDE8; padding:28px 20px 24px; display:flex; flex-direction:column; gap:8px;">
+          <div style="padding:0 8px 22px;">
+            <x-import component-from-global-scope="VysoDesignSystem_3031f9.VysoMark" width="{{ w64 }}" color="#171A17" hint-size="64px,25px"></x-import>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:10px; background:#fff; border:1px solid #EAEDF2; box-shadow:0 1px 2px rgba(20,24,20,0.04); font-size:13.5px; font-weight:600; color:#171A17;">
+            <span style="width:8px; height:8px; border-radius:50%; background:linear-gradient(115deg,#BE5D23,#3E8FE0); animation:vysoPulse 2.4s ease-in-out infinite;"></span>
+            Today's brief
+            <span style="margin-left:auto; font-size:11px; font-weight:600; color:#BE5D23; font-variant-numeric:tabular-nums;">3</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:10px; font-size:13.5px; color:#6B6F68;" style-hover="background:#F5F3EF; color:#171A17;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 3"></path></svg>
+            History
+          </div>
+          <div style="margin-top:auto; display:flex; flex-direction:column; gap:2px;">
+            <div style="font-size:10.5px; font-weight:600; letter-spacing:0.14em; color:#A0A49C; padding:0 10px 8px; text-transform:uppercase;">Under the hood</div>
+            <sc-for list="{{ railModules }}" as="m" hint-placeholder-count="6">
+              <div style="display:flex; align-items:center; gap:9px; padding:6px 10px; border-radius:8px; font-size:12.5px; color:#8A8E86;" style-hover="background:#F5F3EF; color:#3E4A57;">
+                <span style="width:5px; height:5px; border-radius:2px; background:#C9CCC4;"></span>{{ m }}
+              </div>
+            </sc-for>
+            <div style="margin-top:14px; padding:10px 10px 0; border-top:1px solid #EFEDE8; display:flex; align-items:center; gap:9px;">
+              <span style="width:26px; height:26px; border-radius:50%; background:#EAF2FC; color:#1F5FA8; display:grid; place-items:center; font-size:11px; font-weight:600;">JM</span>
+              <span style="font-size:12.5px; color:#6B6F68;">Josh · Meadow Fresh</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- main -->
+        <div style="flex:1; position:relative; overflow:hidden;">
+          <div style="max-width:760px; margin:0 auto; padding:52px 40px 150px;">
+            <!-- today's brief -->
+            <div style="font-size:12px; color:#8A8E86; letter-spacing:0.06em; text-transform:uppercase; font-weight:600;">{{ dateLine }}</div>
+            <h1 style="font-family:'Space Grotesk',sans-serif; font-size:33px; font-weight:600; line-height:1.25; letter-spacing:-0.01em; color:#171A17; margin:10px 0 0; text-wrap:balance;">{{ greeting }} 3 things need your attention — one is worth <span style="background:linear-gradient(100deg,#BE5D23,#3E8FE0); -webkit-background-clip:text; background-clip:text; color:transparent; white-space:nowrap;">R4,200 a year</span>.</h1>
+            <div style="display:flex; align-items:center; gap:8px; margin-top:14px; font-size:13.5px; color:#6B6F68;">
+              <span style="color:#3E8FE0;">✦</span> Overnight I read 12 new invoices and checked prices across 6 suppliers.
+            </div>
+
+            <!-- feed -->
+            <div style="display:flex; flex-direction:column; gap:14px; margin-top:36px;">
+
+              <!-- finding 1 · new -->
+              <div style="background:#fff; border:1px solid #EAEDF2; border-radius:16px; box-shadow:0 1px 2px rgba(20,24,20,0.03); padding:20px 22px; position:relative; overflow:hidden;" style-hover="border-color:#C9DEF7; box-shadow:0 10px 30px -12px rgba(20,24,20,0.12);">
+                <div style="position:absolute; inset:0 auto 0 0; width:3px; background:linear-gradient(180deg,#BE5D23,#3E8FE0);"></div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <span style="display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#854F0B; background:#FBEEDA; padding:3px 9px; border-radius:999px;"><span style="width:5px; height:5px; border-radius:50%; background:#BE5D23;"></span>Price Watch</span>
+                  <span style="font-size:11.5px; color:#A0A49C;">Found this morning</span>
+                  <span style="margin-left:auto; font-size:11px; font-weight:600; color:#0C447C; background:#E6F1FB; padding:3px 9px; border-radius:999px;">New</span>
+                </div>
+                <p style="font-size:16px; line-height:1.5; color:#2C333B; margin:12px 0 4px;">Butternut is up 12% at FreshCo Produce since June. Dew Valley Farms quoted <span style="font-variant-numeric:tabular-nums; font-weight:600;">R8.40/kg</span> for the same grade last week.</p>
+                <div style="font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; font-size:22px; font-weight:600; color:#171A17; margin:6px 0 2px;">≈ R4,200<span style="font-size:14px; font-weight:500; color:#8A8E86;">/yr at current volumes</span></div>
+                <a href="#1c" style="font-size:12.5px; color:#1F5FA8;">3 invoices ↗</a>
+                <div style="display:flex; gap:8px; margin-top:16px;">
+                  <button style="font-family:inherit; font-size:12.5px; font-weight:600; color:#fff; background:#171A17; border:none; border-radius:9px; padding:8px 14px; cursor:pointer;">Draft supplier email</button>
+                  <button style="font-family:inherit; font-size:12.5px; font-weight:600; color:#3E4A57; background:#fff; border:1px solid #E4E9F0; border-radius:9px; padding:8px 14px; cursor:pointer;" style-hover="border-color:#C9DEF7; color:#174C87;">Show 6-month trend</button>
+                  <button style="font-family:inherit; font-size:12.5px; color:#8A8E86; background:none; border:none; padding:8px 10px; cursor:pointer; margin-left:auto;" style-hover="color:#3E4A57;">Dismiss</button>
+                </div>
+              </div>
+
+              <!-- finding 2 · debtors, new -->
+              <div style="background:#fff; border:1px solid #EAEDF2; border-radius:16px; box-shadow:0 1px 2px rgba(20,24,20,0.03); padding:20px 22px; position:relative; overflow:hidden;" style-hover="border-color:#C9DEF7; box-shadow:0 10px 30px -12px rgba(20,24,20,0.12);">
+                <div style="position:absolute; inset:0 auto 0 0; width:3px; background:linear-gradient(180deg,#BE5D23,#3E8FE0);"></div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <span style="display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#B0466A; background:#FBE9EE; padding:3px 9px; border-radius:999px;"><span style="width:5px; height:5px; border-radius:50%; background:#B0466A;"></span>Debtors</span>
+                  <span style="font-size:11.5px; color:#A0A49C;">Found this morning</span>
+                  <span style="margin-left:auto; font-size:11px; font-weight:600; color:#0C447C; background:#E6F1FB; padding:3px 9px; border-radius:999px;">New</span>
+                </div>
+                <p style="font-size:16px; line-height:1.5; color:#2C333B; margin:12px 0 4px;">Thyme &amp; Basil Catering is 18 days past terms. They usually settle by day 32 — this is day 48, their longest ever.</p>
+                <div style="font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; font-size:22px; font-weight:600; color:#171A17; margin:6px 0 2px;">R23,400<span style="font-size:14px; font-weight:500; color:#8A8E86;"> outstanding</span></div>
+                <a href="#1c" style="font-size:12.5px; color:#1F5FA8;">2 unpaid invoices ↗</a>
+                <div style="display:flex; gap:8px; margin-top:16px;">
+                  <button style="font-family:inherit; font-size:12.5px; font-weight:600; color:#fff; background:#171A17; border:none; border-radius:9px; padding:8px 14px; cursor:pointer;">Draft polite reminder</button>
+                  <button style="font-family:inherit; font-size:12.5px; font-weight:600; color:#3E4A57; background:#fff; border:1px solid #E4E9F0; border-radius:9px; padding:8px 14px; cursor:pointer;" style-hover="border-color:#C9DEF7; color:#174C87;">Payment history</button>
+                  <button style="font-family:inherit; font-size:12.5px; color:#8A8E86; background:none; border:none; padding:8px 10px; cursor:pointer; margin-left:auto;" style-hover="color:#3E4A57;">Dismiss</button>
+                </div>
+              </div>
+
+              <!-- finding 3 · reconciliation, in progress -->
+              <div style="background:#fff; border:1px solid #EAEDF2; border-radius:16px; box-shadow:0 1px 2px rgba(20,24,20,0.03); padding:20px 22px;" style-hover="border-color:#C9DEF7;">
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <span style="display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#0C447C; background:#E6F1FB; padding:3px 9px; border-radius:999px;"><span style="width:5px; height:5px; border-radius:50%; background:#3E7BC4;"></span>Reconciliation</span>
+                  <span style="font-size:11.5px; color:#A0A49C;">Yesterday</span>
+                  <span style="margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600; color:#854F0B; background:#FBEEDA; padding:3px 9px; border-radius:999px;"><span style="width:5px; height:5px; border-radius:50%; background:#BE5D23; animation:vysoPulse 1.6s ease-in-out infinite;"></span>Awaiting supplier</span>
+                </div>
+                <p style="font-size:16px; line-height:1.5; color:#2C333B; margin:12px 0 4px;">Umgeni Oils invoice INV-88412 bills 20 × 5L sunflower oil; your delivery note shows 18 received.</p>
+                <div style="font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; font-size:22px; font-weight:600; color:#171A17; margin:6px 0 2px;">R756<span style="font-size:14px; font-weight:500; color:#8A8E86;"> over-billed</span></div>
+                <div style="display:flex; align-items:center; gap:8px; margin-top:14px; font-size:12.5px; color:#6B6F68; background:#FBFCFE; border:1px solid #EEF1F5; border-radius:9px; padding:9px 12px;">
+                  <span style="color:#3E8FE0;">✦</span> Credit request sent to Umgeni Oils on Tue 11 Aug. I'll flag their reply.
+                </div>
+              </div>
+
+              <!-- finding 4 · resolved -->
+              <sc-if value="{{ showResolved }}" hint-placeholder-val="{{ true }}">
+                <div style="background:#FBFAF8; border:1px solid #EFEDE8; border-radius:16px; padding:16px 22px; opacity:0.82;">
+                  <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#2E7D67; background:#E1F5EE; padding:3px 9px; border-radius:999px;"><span style="width:5px; height:5px; border-radius:50%; background:#2E7D67;"></span>Stock</span>
+                    <span style="font-size:13.5px; color:#6B6F68; text-decoration:line-through; text-decoration-color:#C9CCC4;">Cooking oil cover at 22 days — overstocked ~R9,800 for winter volumes.</span>
+                    <span style="margin-left:auto; font-size:11px; font-weight:600; color:#0F6E56; background:#E1F5EE; padding:3px 9px; border-radius:999px;">Resolved</span>
+                  </div>
+                  <div style="font-size:12px; color:#8A8E86; margin:8px 0 0 2px;">You paused Thursday's order. Next review when cover drops under 14 days.</div>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+
+          <!-- chat bar -->
+          <div style="position:absolute; left:0; right:0; bottom:0; padding:28px 40px 26px; background:linear-gradient(180deg,rgba(255,255,255,0) 0%,#FFFFFF 55%);">
+            <div style="max-width:680px; margin:0 auto; position:relative; border-radius:999px; padding:1.5px; background:linear-gradient(115deg,#BE5D23,#D9730D 35%,#3E8FE0); box-shadow:0 16px 50px -12px rgba(31,95,168,0.25);">
+              <div style="display:flex; align-items:center; gap:12px; background:#fff; border-radius:999px; padding:13px 8px 13px 20px;">
+                <span style="font-size:15px; background:linear-gradient(115deg,#BE5D23,#3E8FE0); -webkit-background-clip:text; background-clip:text; color:transparent;">✦</span>
+                <span style="flex:1; font-size:14.5px; color:#8A8E86;">Ask Vyso anything about your operation…</span>
+                <button style="width:38px; height:38px; border-radius:50%; border:none; background:#171A17; color:#fff; display:grid; place-items:center; cursor:pointer;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
+              </div>
+            </div>
+            <div style="max-width:680px; margin:8px auto 0; text-align:center; font-size:11.5px; color:#A0A49C;">Tap any finding to bring it into the conversation</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ 1e · MOBILE BRIEF ══════════ -->
+    <div id="1e" style="display:flex; flex-direction:column; gap:12px;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="background:#171A17; color:#fff; font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; letter-spacing:0.04em;">1e</span>
+        <span style="font-size:13px; color:#6B6F68;">Mobile companion — same cards, WhatsApp-friendly</span>
+      </div>
+      <div style="width:390px; height:844px; background:linear-gradient(180deg,#FBF9F6,#FFFFFF 340px); border:1px solid #E4E9F0; border-radius:44px; box-shadow:0 30px 80px -20px rgba(20,24,20,0.18); position:relative; overflow:hidden;">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:16px 26px 0; font-size:13px; font-weight:600; color:#171A17; font-variant-numeric:tabular-nums;">
+          07:42
+          <span style="display:flex; gap:5px; align-items:center;">
+            <svg width="15" height="11" viewBox="0 0 16 12" fill="#171A17"><rect x="0" y="7" width="3" height="5" rx="0.8"></rect><rect x="4.5" y="4.5" width="3" height="7.5" rx="0.8"></rect><rect x="9" y="2" width="3" height="10" rx="0.8"></rect><rect x="13" y="0" width="3" height="12" rx="0.8" opacity="0.3"></rect></svg>
+            <svg width="22" height="11" viewBox="0 0 24 12"><rect x="0.5" y="0.5" width="19" height="11" rx="3" fill="none" stroke="#171A17" opacity="0.4"></rect><rect x="2" y="2" width="14" height="8" rx="1.6" fill="#171A17"></rect><rect x="21" y="4" width="2" height="4" rx="1" fill="#171A17" opacity="0.4"></rect></svg>
+          </span>
+        </div>
+        <div style="padding:18px 20px 130px; overflow:hidden; height:100%; box-sizing:border-box;">
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 2px 0;">
+            <x-import component-from-global-scope="VysoDesignSystem_3031f9.VysoMark" width="{{ w52 }}" color="#171A17" hint-size="52px,20px"></x-import>
+            <span style="width:30px; height:30px; border-radius:50%; background:#EAF2FC; color:#1F5FA8; display:grid; place-items:center; font-size:11px; font-weight:600;">JM</span>
+          </div>
+          <h2 style="font-family:'Space Grotesk',sans-serif; font-size:21.5px; font-weight:600; line-height:1.3; letter-spacing:-0.01em; color:#171A17; margin:20px 0 0; text-wrap:balance;">{{ greeting }} 3 things need your attention — one is worth <span style="background:linear-gradient(100deg,#BE5D23,#3E8FE0); -webkit-background-clip:text; background-clip:text; color:transparent;">R4,200 a year</span>.</h2>
+          <div style="font-size:12.5px; color:#6B6F68; margin-top:8px;"><span style="color:#3E8FE0;">✦</span> 12 invoices read overnight · 6 suppliers checked</div>
+
+          <div style="display:flex; flex-direction:column; gap:12px; margin-top:22px;">
+            <div style="background:#fff; border:1px solid #EAEDF2; border-radius:16px; box-shadow:0 1px 2px rgba(20,24,20,0.03); padding:16px; position:relative; overflow:hidden;">
+              <div style="position:absolute; inset:0 auto 0 0; width:3px; background:linear-gradient(180deg,#BE5D23,#3E8FE0);"></div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:10px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#854F0B; background:#FBEEDA; padding:3px 8px; border-radius:999px;">Price Watch</span>
+                <span style="margin-left:auto; font-size:10px; font-weight:600; color:#0C447C; background:#E6F1FB; padding:3px 8px; border-radius:999px;">New</span>
+              </div>
+              <p style="font-size:14px; line-height:1.45; color:#2C333B; margin:10px 0 4px;">Butternut up 12% at FreshCo since June. Dew Valley quoted R8.40/kg last week.</p>
+              <div style="font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; font-size:18px; font-weight:600; color:#171A17;">≈ R4,200<span style="font-size:12px; font-weight:500; color:#8A8E86;">/yr</span></div>
+              <div style="display:flex; gap:7px; margin-top:12px;">
+                <button style="flex:1; font-family:inherit; font-size:12px; font-weight:600; color:#fff; background:#171A17; border:none; border-radius:9px; padding:9px 0; cursor:pointer;">Draft email</button>
+                <button style="flex:1; font-family:inherit; font-size:12px; font-weight:600; color:#3E4A57; background:#fff; border:1px solid #E4E9F0; border-radius:9px; padding:9px 0; cursor:pointer;">6-mo trend</button>
+              </div>
+            </div>
+
+            <div style="background:#fff; border:1px solid #EAEDF2; border-radius:16px; box-shadow:0 1px 2px rgba(20,24,20,0.03); padding:16px; position:relative; overflow:hidden;">
+              <div style="position:absolute; inset:0 auto 0 0; width:3px; background:linear-gradient(180deg,#BE5D23,#3E8FE0);"></div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:10px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#B0466A; background:#FBE9EE; padding:3px 8px; border-radius:999px;">Debtors</span>
+                <span style="margin-left:auto; font-size:10px; font-weight:600; color:#0C447C; background:#E6F1FB; padding:3px 8px; border-radius:999px;">New</span>
+              </div>
+              <p style="font-size:14px; line-height:1.45; color:#2C333B; margin:10px 0 4px;">Thyme &amp; Basil Catering: 18 days past terms, their longest ever.</p>
+              <div style="font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; font-size:18px; font-weight:600; color:#171A17;">R23,400<span style="font-size:12px; font-weight:500; color:#8A8E86;"> outstanding</span></div>
+              <div style="display:flex; gap:7px; margin-top:12px;">
+                <button style="flex:1; font-family:inherit; font-size:12px; font-weight:600; color:#fff; background:#171A17; border:none; border-radius:9px; padding:9px 0; cursor:pointer;">Draft reminder</button>
+                <button style="flex:1; font-family:inherit; font-size:12px; font-weight:600; color:#3E4A57; background:#fff; border:1px solid #E4E9F0; border-radius:9px; padding:9px 0; cursor:pointer;">History</button>
+              </div>
+            </div>
+
+            <div style="background:#fff; border:1px solid #EAEDF2; border-radius:16px; padding:14px 16px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:10px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#0C447C; background:#E6F1FB; padding:3px 8px; border-radius:999px;">Reconciliation</span>
+                <span style="margin-left:auto; display:inline-flex; align-items:center; gap:5px; font-size:10px; font-weight:600; color:#854F0B; background:#FBEEDA; padding:3px 8px; border-radius:999px;"><span style="width:4px; height:4px; border-radius:50%; background:#BE5D23; animation:vysoPulse 1.6s ease-in-out infinite;"></span>Awaiting supplier</span>
+              </div>
+              <p style="font-size:14px; line-height:1.45; color:#2C333B; margin:10px 0 0;">Umgeni Oils over-billed R756 on INV-88412. Credit request sent Tue.</p>
+            </div>
+          </div>
+        </div>
+
+        <div style="position:absolute; left:0; right:0; bottom:0; padding:20px 16px 14px; background:linear-gradient(180deg,rgba(255,255,255,0),#FFFFFF 45%);">
+          <div style="border-radius:999px; padding:1.5px; background:linear-gradient(115deg,#BE5D23,#D9730D 35%,#3E8FE0); box-shadow:0 12px 36px -10px rgba(31,95,168,0.3);">
+            <div style="display:flex; align-items:center; gap:10px; background:#fff; border-radius:999px; padding:11px 6px 11px 16px;">
+              <span style="font-size:14px; background:linear-gradient(115deg,#BE5D23,#3E8FE0); -webkit-background-clip:text; background-clip:text; color:transparent;">✦</span>
+              <span style="flex:1; font-size:13.5px; color:#8A8E86;">Ask Vyso anything…</span>
+              <button style="width:34px; height:34px; border-radius:50%; border:none; background:#171A17; color:#fff; display:grid; place-items:center;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
+            </div>
+          </div>
+          <div style="width:134px; height:5px; border-radius:3px; background:#171A17; opacity:0.85; margin:14px auto 0;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ 1b · CHAT VIEW ══════════ -->
+    <div id="1b" style="display:flex; flex-direction:column; gap:12px;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="background:#171A17; color:#fff; font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; letter-spacing:0.04em;">1b</span>
+        <span style="font-size:13px; color:#6B6F68;">Chat — question, tool use, evidence, action</span>
+      </div>
+      <div style="width:1440px; height:1000px; background:linear-gradient(180deg,#FBF9F6 0%,#FFFFFF 420px); border:1px solid #E4E9F0; border-radius:20px; box-shadow:0 30px 80px -20px rgba(20,24,20,0.18); position:relative; overflow:hidden; display:flex;">
+        <div style="width:216px; flex:none; border-right:1px solid #EFEDE8; padding:28px 20px 24px; display:flex; flex-direction:column; gap:8px;">
+          <div style="padding:0 8px 22px;">
+            <x-import component-from-global-scope="VysoDesignSystem_3031f9.VysoMark" width="{{ w64 }}" color="#171A17" hint-size="64px,25px"></x-import>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:10px; font-size:13.5px; color:#6B6F68;" style-hover="background:#F5F3EF; color:#171A17;">
+            <span style="width:8px; height:8px; border-radius:50%; background:linear-gradient(115deg,#BE5D23,#3E8FE0);"></span>
+            Today's brief
+            <span style="margin-left:auto; font-size:11px; font-weight:600; color:#BE5D23; font-variant-numeric:tabular-nums;">3</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:10px; background:#fff; border:1px solid #EAEDF2; box-shadow:0 1px 2px rgba(20,24,20,0.04); font-size:13.5px; font-weight:600; color:#171A17;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 1 1-3.6-6.7L21 4l-1 4.5A8 8 0 0 1 21 12z"></path></svg>
+            Margin question
+          </div>
+          <div style="margin-top:auto; display:flex; flex-direction:column; gap:2px;">
+            <div style="font-size:10.5px; font-weight:600; letter-spacing:0.14em; color:#A0A49C; padding:0 10px 8px; text-transform:uppercase;">Under the hood</div>
+            <sc-for list="{{ railModules }}" as="m" hint-placeholder-count="6">
+              <div style="display:flex; align-items:center; gap:9px; padding:6px 10px; border-radius:8px; font-size:12.5px; color:#8A8E86;" style-hover="background:#F5F3EF; color:#3E4A57;">
+                <span style="width:5px; height:5px; border-radius:2px; background:#C9CCC4;"></span>{{ m }}
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="flex:1; position:relative; overflow:hidden;">
+          <div style="max-width:720px; margin:0 auto; padding:48px 40px 150px; display:flex; flex-direction:column; gap:22px;">
+            <!-- user msg -->
+            <div style="align-self:flex-end; max-width:70%; background:#F1EEE9; border-radius:18px 18px 4px 18px; padding:12px 18px; font-size:15px; color:#171A17;">Why is my margin down this month?</div>
+
+            <!-- tool status lines -->
+            <div style="display:flex; flex-direction:column; gap:6px; padding-left:2px;">
+              <div style="font-size:12.5px; color:#A0A49C; display:flex; gap:8px; align-items:center;"><span style="color:#3E8FE0;">✦</span> Checked 214 invoice lines from July</div>
+              <div style="font-size:12.5px; color:#A0A49C; display:flex; gap:8px; align-items:center;"><span style="color:#3E8FE0;">✦</span> Compared cost per unit vs June across 41 items</div>
+            </div>
+
+            <!-- vyso answer -->
+            <div style="display:flex; gap:14px;">
+              <span style="flex:none; width:30px; height:30px; border-radius:50%; background:linear-gradient(115deg,#BE5D23,#D9730D 40%,#3E8FE0); display:grid; place-items:center; color:#fff; font-size:13px;">✦</span>
+              <div style="flex:1; min-width:0;">
+                <p style="font-size:15.5px; line-height:1.6; color:#2C333B; margin:0;">Your gross margin dropped from <strong style="font-variant-numeric:tabular-nums;">31.4%</strong> to <strong style="font-variant-numeric:tabular-nums;">29.3%</strong> — that's about <strong style="font-variant-numeric:tabular-nums;">R18,600</strong> for July. Two inputs explain most of it:</p>
+                <ul style="font-size:15px; line-height:1.7; color:#2C333B; margin:12px 0 0; padding-left:20px;">
+                  <li>Sunflower oil up 9% at Umgeni Oils — you haven't repriced fried lines since May.</li>
+                  <li>Butternut up 12% at FreshCo — hits your prepped-veg range hardest.</li>
+                </ul>
+                <div style="background:#fff; border:1px solid #EAEDF2; border-radius:14px; padding:16px 18px 10px; margin-top:16px;">
+                  <div style="display:flex; align-items:baseline; justify-content:space-between;">
+                    <div style="font-size:12px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; color:#8A8E86;">Gross margin · Feb–Jul</div>
+                    <div style="font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; font-size:13px; color:#A32D2D;">−2.1 pts</div>
+                  </div>
+                  <div style="margin-top:8px;">
+                    <svg viewBox="0 0 600 110" preserveAspectRatio="none" style="width:100%; height:110px; display:block;">
+                      <line x1="0" y1="30" x2="600" y2="30" stroke="#EEF1F5"></line>
+                      <line x1="0" y1="60" x2="600" y2="60" stroke="#EEF1F5"></line>
+                      <line x1="0" y1="90" x2="600" y2="90" stroke="#EEF1F5"></line>
+                      <path d="M0,26 L120,36 L240,29 L360,42 L480,42 L600,92" fill="none" stroke="#BE5D23" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+                      <circle cx="600" cy="92" r="4.5" fill="#BE5D23"></circle>
+                    </svg>
+                  </div>
+                  <div style="display:flex; justify-content:space-between; font-size:11px; color:#A0A49C; font-variant-numeric:tabular-nums; padding:6px 2px 4px;">
+                    <span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span>
+                  </div>
+                </div>
+                <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+                  <a href="#1c" style="font-size:12.5px; color:#1F5FA8; background:#EAF2FC; border-radius:999px; padding:5px 12px;">Oil invoices ↗</a>
+                  <a href="#1c" style="font-size:12.5px; color:#1F5FA8; background:#EAF2FC; border-radius:999px; padding:5px 12px;">Butternut price history ↗</a>
+                  <a href="#1d" style="font-size:12.5px; color:#1F5FA8; background:#EAF2FC; border-radius:999px; padding:5px 12px;">Item-level margins ↗</a>
+                </div>
+                <div style="display:flex; gap:8px; margin-top:18px;">
+                  <button style="font-family:inherit; font-size:12.5px; font-weight:600; color:#fff; background:#171A17; border:none; border-radius:9px; padding:9px 15px; cursor:pointer;">Draft price review for top 5 lines</button>
+                  <button style="font-family:inherit; font-size:12.5px; font-weight:600; color:#3E4A57; background:#fff; border:1px solid #E4E9F0; border-radius:9px; padding:9px 15px; cursor:pointer;" style-hover="border-color:#C9DEF7; color:#174C87;">Show item-level breakdown</button>
+                  <button style="font-family:inherit; font-size:12.5px; font-weight:600; color:#3E4A57; background:#fff; border:1px solid #E4E9F0; border-radius:9px; padding:9px 15px; cursor:pointer;" style-hover="border-color:#C9DEF7; color:#174C87;">Add to today's brief</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- follow-up user msg -->
+            <div style="align-self:flex-end; max-width:70%; background:#F1EEE9; border-radius:18px 18px 4px 18px; padding:12px 18px; font-size:15px; color:#171A17;">Draft the price review — hold bread lines steady.</div>
+            <div style="font-size:12.5px; color:#A0A49C; display:flex; gap:8px; align-items:center; padding-left:2px;"><span style="color:#3E8FE0; animation:vysoPulse 1.4s ease-in-out infinite;">✦</span> Drafting price review · excluding 4 bread lines…</div>
+          </div>
+
+          <div style="position:absolute; left:0; right:0; bottom:0; padding:28px 40px 26px; background:linear-gradient(180deg,rgba(255,255,255,0),#FFFFFF 55%);">
+            <div style="max-width:680px; margin:0 auto; border-radius:999px; padding:1.5px; background:linear-gradient(115deg,#BE5D23,#D9730D 35%,#3E8FE0); box-shadow:0 16px 50px -12px rgba(31,95,168,0.25);">
+              <div style="display:flex; align-items:center; gap:12px; background:#fff; border-radius:999px; padding:13px 8px 13px 20px;">
+                <span style="font-size:15px; background:linear-gradient(115deg,#BE5D23,#3E8FE0); -webkit-background-clip:text; background-clip:text; color:transparent;">✦</span>
+                <span style="flex:1; font-size:14.5px; color:#171A17;">Reply to Vyso…<span style="display:inline-block; width:1.5px; height:16px; background:#BE5D23; vertical-align:-3px; margin-left:2px; animation:vysoPulse 1.1s steps(2) infinite;"></span></span>
+                <button style="width:38px; height:38px; border-radius:50%; border:none; background:#171A17; color:#fff; display:grid; place-items:center; cursor:pointer;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ 1c · FINDING DETAIL ══════════ -->
+    <div id="1c" style="display:flex; flex-direction:column; gap:12px;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="background:#171A17; color:#fff; font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; letter-spacing:0.04em;">1c</span>
+        <span style="font-size:13px; color:#6B6F68;">Finding detail — the full evidence view</span>
+      </div>
+      <div style="width:1440px; height:1000px; background:linear-gradient(180deg,#FBF9F6 0%,#FFFFFF 420px); border:1px solid #E4E9F0; border-radius:20px; box-shadow:0 30px 80px -20px rgba(20,24,20,0.18); position:relative; overflow:hidden;">
+        <div style="max-width:880px; margin:0 auto; padding:44px 40px;">
+          <a href="#1a" style="font-size:13px; color:#6B6F68;" style-hover="color:#BE5D23;">‹ Back to today's brief</a>
+          <div style="display:flex; align-items:center; gap:10px; margin-top:24px;">
+            <span style="display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#854F0B; background:#FBEEDA; padding:3px 9px; border-radius:999px;"><span style="width:5px; height:5px; border-radius:50%; background:#BE5D23;"></span>Price Watch</span>
+            <span style="font-size:11px; font-weight:600; color:#0C447C; background:#E6F1FB; padding:3px 9px; border-radius:999px;">New</span>
+            <span style="font-size:12px; color:#A0A49C;">Found 06:14, Wed 13 Aug</span>
+            <button style="margin-left:auto; display:inline-flex; align-items:center; gap:8px; font-family:inherit; font-size:12.5px; font-weight:600; color:#3E4A57; background:#fff; border:1px solid #E4E9F0; border-radius:999px; padding:8px 16px; cursor:pointer;" style-hover="border-color:#C9DEF7; color:#174C87;"><span style="background:linear-gradient(115deg,#BE5D23,#3E8FE0); -webkit-background-clip:text; background-clip:text; color:transparent;">✦</span>Send to chat</button>
+          </div>
+          <h1 style="font-family:'Space Grotesk',sans-serif; font-size:30px; font-weight:600; line-height:1.3; letter-spacing:-0.01em; color:#171A17; margin:16px 0 0; text-wrap:balance;">Butternut is up 12% at FreshCo Produce since June.</h1>
+          <div style="display:flex; align-items:baseline; gap:24px; margin-top:12px;">
+            <div style="font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; font-size:34px; font-weight:600; background:linear-gradient(100deg,#BE5D23,#3E8FE0); -webkit-background-clip:text; background-clip:text; color:transparent;">≈ R4,200/yr</div>
+            <div style="font-size:13.5px; color:#6B6F68;">at your current ~380 kg/month</div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1.6fr 1fr; gap:16px; margin-top:28px;">
+            <!-- price history -->
+            <div style="background:#fff; border:1px solid #EAEDF2; border-radius:16px; box-shadow:0 1px 2px rgba(20,24,20,0.03); padding:18px 20px;">
+              <div style="display:flex; align-items:center; justify-content:space-between;">
+                <div style="font-size:12px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; color:#8A8E86;">Butternut · R/kg · Jan–Aug</div>
+                <div style="display:flex; gap:14px; font-size:11.5px; color:#6B6F68;">
+                  <span style="display:inline-flex; align-items:center; gap:6px;"><span style="width:10px; height:2.5px; background:#BE5D23; border-radius:2px;"></span>FreshCo</span>
+                  <span style="display:inline-flex; align-items:center; gap:6px;"><span style="width:10px; height:2.5px; background:#3E7BC4; border-radius:2px;"></span>Dew Valley quote</span>
+                </div>
+              </div>
+              <svg viewBox="0 0 520 180" style="width:100%; height:190px; margin-top:10px;" preserveAspectRatio="none">
+                <line x1="0" y1="45" x2="520" y2="45" stroke="#EEF1F5"></line>
+                <line x1="0" y1="90" x2="520" y2="90" stroke="#EEF1F5"></line>
+                <line x1="0" y1="135" x2="520" y2="135" stroke="#EEF1F5"></line>
+                <path d="M0,120 L74,124 L148,118 L222,112 L296,106 L370,78 L444,58 L520,44" fill="none" stroke="#BE5D23" stroke-width="3" stroke-linecap="round"></path>
+                <line x1="370" y1="98" x2="520" y2="96" stroke="#3E7BC4" stroke-width="2.5" stroke-dasharray="6 5" stroke-linecap="round"></line>
+                <circle cx="520" cy="44" r="4.5" fill="#BE5D23"></circle>
+                <circle cx="520" cy="96" r="4.5" fill="#3E7BC4"></circle>
+              </svg>
+              <div style="display:flex; justify-content:space-between; font-size:11px; color:#A0A49C; font-variant-numeric:tabular-nums; padding:2px 2px 0;">
+                <span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span>
+              </div>
+              <div style="display:flex; gap:26px; border-top:1px solid #EEF1F5; margin-top:14px; padding-top:12px;">
+                <div><div style="font-size:11px; color:#8A8E86;">FreshCo today</div><div style="font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; font-size:17px; font-weight:600; color:#171A17;">R9.42/kg</div></div>
+                <div><div style="font-size:11px; color:#8A8E86;">Dew Valley quote</div><div style="font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; font-size:17px; font-weight:600; color:#171A17;">R8.40/kg</div></div>
+                <div><div style="font-size:11px; color:#8A8E86;">Gap on 380 kg/mo</div><div style="font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; font-size:17px; font-weight:600; color:#0F6E56;">R388/mo</div></div>
+              </div>
+            </div>
+
+            <!-- recommendation -->
+            <div style="background:#fff; border:1px solid #EAEDF2; border-radius:16px; box-shadow:0 1px 2px rgba(20,24,20,0.03); overflow:hidden; display:flex; flex-direction:column;">
+              <div style="height:3px; background:linear-gradient(90deg,#BE5D23,#3E8FE0);"></div>
+              <div style="padding:16px 20px 20px; display:flex; flex-direction:column; flex:1;">
+                <div style="font-size:12px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; color:#8A8E86;">Recommended</div>
+                <p style="font-size:14.5px; line-height:1.55; color:#2C333B; margin:10px 0 0;">Ask FreshCo to match R8.40 — you've bought from them for 3 years and paid on time every month. If they hold, split the volume with Dew Valley for a quarter.</p>
+                <div style="font-size:12.5px; color:#6B6F68; margin-top:10px;">Switching cost is low: Dew Valley already delivers to your area on Tuesdays.</div>
+                <div style="display:flex; flex-direction:column; gap:8px; margin-top:auto; padding-top:16px;">
+                  <button style="font-family:inherit; font-size:13px; font-weight:600; color:#fff; background:#171A17; border:none; border-radius:9px; padding:10px 0; cursor:pointer;">Draft email to FreshCo</button>
+                  <button style="font-family:inherit; font-size:13px; font-weight:600; color:#3E4A57; background:#fff; border:1px solid #E4E9F0; border-radius:9px; padding:10px 0; cursor:pointer;" style-hover="border-color:#C9DEF7; color:#174C87;">Request Dew Valley trial order</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- evidence -->
+          <div style="margin-top:20px;">
+            <div style="display:flex; align-items:baseline; gap:10px;">
+              <div style="font-size:12px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; color:#8A8E86;">Evidence · 3 invoices from Doc-U</div>
+              <a href="#1d" style="font-size:12px; color:#1F5FA8;">Open in Doc-U ↗</a>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:12px;">
+              <sc-for list="{{ invoices }}" as="inv" hint-placeholder-count="3">
+                <div style="background:#fff; border:1px solid #EAEDF2; border-radius:12px; padding:12px; display:flex; gap:12px; align-items:center;" style-hover="border-color:#C9DEF7; background:#FBFCFE;">
+                  <div style="flex:none; width:52px; height:66px; background:#FDFDFC; border:1px solid #E5E5E5; border-radius:3px; padding:7px 6px; display:flex; flex-direction:column; gap:4px; box-shadow:0 1px 3px rgba(20,24,20,0.08);">
+                    <div style="width:55%; height:4px; background:#C9CCC4; border-radius:2px;"></div>
+                    <div style="width:85%; height:3px; background:#E5E5E5; border-radius:2px;"></div>
+                    <div style="width:75%; height:3px; background:#E5E5E5; border-radius:2px;"></div>
+                    <div style="width:82%; height:3px; background:#E5E5E5; border-radius:2px;"></div>
+                    <div style="width:40%; height:3px; background:#E5E5E5; border-radius:2px; margin-top:auto;"></div>
+                    <div style="width:60%; height:4px; background:#BE5D23; opacity:0.55; border-radius:2px;"></div>
+                  </div>
+                  <div style="min-width:0;">
+                    <div style="font-size:13px; font-weight:600; color:#171A17; font-variant-numeric:tabular-nums;">{{ inv.no }}</div>
+                    <div style="font-size:12px; color:#6B6F68; margin-top:2px;">{{ inv.date }}</div>
+                    <div style="font-size:12px; color:#8A8E86; font-variant-numeric:tabular-nums; margin-top:2px;">Butternut @ {{ inv.price }}</div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ 1d · UNDER THE HOOD · SUPPLIERS ══════════ -->
+    <div id="1d" style="display:flex; flex-direction:column; gap:12px;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="background:#171A17; color:#fff; font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; letter-spacing:0.04em;">1d</span>
+        <span style="font-size:13px; color:#6B6F68;">Under the hood → Suppliers — the back office, deliberately plain</span>
+      </div>
+      <div style="width:1440px; height:1000px; background:#F8F8F6; border:1px solid #E4E9F0; border-radius:20px; box-shadow:0 30px 80px -20px rgba(20,24,20,0.18); position:relative; overflow:hidden; display:flex;">
+        <div style="width:216px; flex:none; border-right:1px solid #EBEBE7; padding:28px 20px 24px; display:flex; flex-direction:column; gap:8px; background:#F8F8F6;">
+          <div style="padding:0 8px 22px;">
+            <x-import component-from-global-scope="VysoDesignSystem_3031f9.VysoMark" width="{{ w64 }}" color="#171A17" hint-size="64px,25px"></x-import>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:10px; font-size:13.5px; color:#6B6F68;" style-hover="color:#171A17;">
+            <span style="width:8px; height:8px; border-radius:50%; background:linear-gradient(115deg,#BE5D23,#3E8FE0);"></span>
+            Today's brief
+            <span style="margin-left:auto; font-size:11px; font-weight:600; color:#BE5D23; font-variant-numeric:tabular-nums;">3</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:10px; font-size:13.5px; color:#6B6F68;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 3"></path></svg>
+            History
+          </div>
+          <div style="margin-top:auto; display:flex; flex-direction:column; gap:2px;">
+            <div style="font-size:10.5px; font-weight:600; letter-spacing:0.14em; color:#A0A49C; padding:0 10px 8px; text-transform:uppercase;">Under the hood</div>
+            <div style="display:flex; align-items:center; gap:9px; padding:6px 10px; border-radius:8px; font-size:12.5px; color:#8A8E86;"><span style="width:5px; height:5px; border-radius:2px; background:#C9CCC4;"></span>Doc-U</div>
+            <div style="display:flex; align-items:center; gap:9px; padding:6px 10px; border-radius:8px; font-size:12.5px; font-weight:600; color:#171A17; background:#EDEDEA;"><span style="width:5px; height:5px; border-radius:2px; background:#171A17;"></span>Suppliers</div>
+            <div style="display:flex; align-items:center; gap:9px; padding:6px 10px; border-radius:8px; font-size:12.5px; color:#8A8E86;"><span style="width:5px; height:5px; border-radius:2px; background:#C9CCC4;"></span>Stock</div>
+            <div style="display:flex; align-items:center; gap:9px; padding:6px 10px; border-radius:8px; font-size:12.5px; color:#8A8E86;"><span style="width:5px; height:5px; border-radius:2px; background:#C9CCC4;"></span>Margins</div>
+            <div style="display:flex; align-items:center; gap:9px; padding:6px 10px; border-radius:8px; font-size:12.5px; color:#8A8E86;"><span style="width:5px; height:5px; border-radius:2px; background:#C9CCC4;"></span>Debtors</div>
+            <div style="display:flex; align-items:center; gap:9px; padding:6px 10px; border-radius:8px; font-size:12.5px; color:#8A8E86;"><span style="width:5px; height:5px; border-radius:2px; background:#C9CCC4;"></span>Reports</div>
+          </div>
+        </div>
+
+        <div style="flex:1; padding:40px 44px; overflow:hidden;">
+          <div style="display:flex; align-items:center; gap:14px;">
+            <h1 style="font-family:'Space Grotesk',sans-serif; font-size:22px; font-weight:600; color:#171A17; margin:0;">Suppliers</h1>
+            <span style="font-size:12px; color:#8A8E86; font-variant-numeric:tabular-nums;">14 active · raw data behind the brief</span>
+            <div style="margin-left:auto; display:flex; gap:8px;">
+              <div style="display:flex; align-items:center; gap:8px; background:#fff; border:1px solid #E4E9F0; border-radius:9px; padding:7px 12px; font-size:12.5px; color:#8A8E86; width:220px;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+                Search suppliers…
+              </div>
+              <button style="font-family:inherit; font-size:12.5px; font-weight:600; color:#3E4A57; background:#fff; border:1px solid #E4E9F0; border-radius:9px; padding:7px 14px; cursor:pointer;">Filter</button>
+              <button style="font-family:inherit; font-size:12.5px; font-weight:600; color:#3E4A57; background:#fff; border:1px solid #E4E9F0; border-radius:9px; padding:7px 14px; cursor:pointer;">Export</button>
+            </div>
+          </div>
+
+          <div style="background:#fff; border:1px solid #EAEDF2; border-radius:14px; box-shadow:0 1px 2px rgba(20,24,20,0.03); margin-top:20px; overflow:hidden;">
+            <div style="display:grid; grid-template-columns:1.7fr 1.1fr 0.6fr 0.9fr 0.8fr 0.9fr 0.7fr; gap:0 16px; padding:11px 20px; border-bottom:1px solid #EEF1F5; font-size:11px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; color:#8A8E86;">
+              <span>Supplier</span><span>Category</span><span style="text-align:right;">Items</span><span style="text-align:right;">Spend · 3 mo</span><span style="text-align:right;">Δ price 3 mo</span><span>Trend</span><span style="text-align:right;">On-time</span>
+            </div>
+            <sc-for list="{{ suppliers }}" as="s" hint-placeholder-count="9">
+              <div style="display:grid; grid-template-columns:1.7fr 1.1fr 0.6fr 0.9fr 0.8fr 0.9fr 0.7fr; gap:0 16px; align-items:center; padding:12px 20px; border-bottom:1px solid #F3F4F1; font-size:13px;" style-hover="background:#FBFCFE;">
+                <span style="display:flex; align-items:center; gap:10px; min-width:0;">
+                  <span style="flex:none; width:26px; height:26px; border-radius:7px; background:{{ s.tint }}; color:{{ s.tintFg }}; display:grid; place-items:center; font-size:10.5px; font-weight:600;">{{ s.initials }}</span>
+                  <span style="min-width:0;"><span style="display:block; font-weight:600; color:#171A17; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ s.name }}</span><span style="display:block; font-size:11px; color:#A0A49C;">{{ s.where }}</span></span>
+                </span>
+                <span style="color:#6B6F68;">{{ s.cat }}</span>
+                <span style="text-align:right; font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; color:#2C333B;">{{ s.items }}</span>
+                <span style="text-align:right; font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; color:#171A17; font-weight:500;">{{ s.spend }}</span>
+                <span style="text-align:right; font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; font-weight:600; color:{{ s.deltaColor }};">{{ s.delta }}</span>
+                <span><svg width="88" height="26" viewBox="0 0 88 26"><polyline points="{{ s.spark }}" fill="none" stroke="{{ s.sparkColor }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline></svg></span>
+                <span style="text-align:right; font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; color:#2C333B;">{{ s.ontime }}</span>
+              </div>
+            </sc-for>
+            <div style="display:flex; align-items:center; gap:8px; padding:11px 20px; font-size:12px; color:#A0A49C;">
+              <span style="color:#3E8FE0;">✦</span> Price Watch monitors this table for you — 2 findings surfaced this month. <a href="#1a" style="font-size:12px;">View in brief ↗</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;3300px&quot;},&quot;timeOfDay&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;morning&quot;,&quot;afternoon&quot;,&quot;evening&quot;],&quot;default&quot;:&quot;morning&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Brief&quot;},&quot;showResolved&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Brief&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const tod = this.props.timeOfDay ?? 'morning';
+    const greeting = tod === 'afternoon' ? 'Afternoon Josh.' : tod === 'evening' ? 'Evening Josh.' : 'Morning Josh.';
+    return {
+      greeting,
+      dateLine: 'Wednesday 13 August · Johannesburg',
+      showResolved: this.props.showResolved ?? true,
+      w64: 64, w52: 52, h110: 110,
+      railModules: ['Doc-U', 'Suppliers', 'Stock', 'Margins', 'Debtors', 'Reports'],
+      marginTrend: [31.9, 31.6, 31.8, 31.4, 31.4, 29.3],
+      invoices: [
+        { no: 'INV-77201', date: '4 Jun · FreshCo', price: 'R8.41/kg' },
+        { no: 'INV-79118', date: '9 Jul · FreshCo', price: 'R8.95/kg' },
+        { no: 'INV-80442', date: '6 Aug · FreshCo', price: 'R9.42/kg' },
+      ],
+      suppliers: [
+        { name: 'FreshCo Produce', where: 'City Deep Market, JHB', cat: 'Fresh produce', items: '38', spend: 'R142 800', delta: '+8.4%', deltaColor: '#A32D2D', spark: '2,18 14,17 26,18 38,15 50,13 62,9 76,6 88,4', sparkColor: '#A32D2D', ontime: '96%', tint: '#FBEEDA', tintFg: '#854F0B', initials: 'FP' },
+        { name: 'Umgeni Oils', where: 'Durban', cat: 'Oils & fats', items: '6', spend: 'R96 400', delta: '+9.0%', deltaColor: '#A32D2D', spark: '2,19 14,18 26,16 38,16 50,12 62,10 76,7 88,5', sparkColor: '#A32D2D', ontime: '89%', tint: '#FBEFDD', tintFg: '#9A6314', initials: 'UO' },
+        { name: 'Dew Valley Farms', where: 'Tarlton, West Rand', cat: 'Fresh produce', items: '21', spend: 'R64 200', delta: '+1.2%', deltaColor: '#6B6F68', spark: '2,14 14,13 26,14 38,13 50,13 62,12 76,13 88,12', sparkColor: '#8A8E86', ontime: '98%', tint: '#E1F5EE', tintFg: '#2E7D67', initials: 'DV' },
+        { name: 'Highveld Poultry', where: 'Krugersdorp', cat: 'Protein', items: '12', spend: 'R188 500', delta: '+2.8%', deltaColor: '#6B6F68', spark: '2,16 14,15 26,15 38,14 50,14 62,13 76,12 88,11', sparkColor: '#8A8E86', ontime: '94%', tint: '#FBE9EE', tintFg: '#B0466A', initials: 'HP' },
+        { name: 'Karoo Meat Co-op', where: 'Graaff-Reinet', cat: 'Protein', items: '9', spend: 'R121 300', delta: '−0.6%', deltaColor: '#0F6E56', spark: '2,10 14,11 26,10 38,12 50,12 62,13 76,13 88,14', sparkColor: '#0F6E56', ontime: '91%', tint: '#FBE9EE', tintFg: '#B0466A', initials: 'KM' },
+        { name: 'Mzansi Dry Goods', where: 'Crown Mines, JHB', cat: 'Dry goods', items: '54', spend: 'R88 900', delta: '+1.9%', deltaColor: '#6B6F68', spark: '2,15 14,15 26,14 38,14 50,13 62,13 76,12 88,12', sparkColor: '#8A8E86', ontime: '99%', tint: '#EAF2FC', tintFg: '#3E7BC4', initials: 'MD' },
+        { name: 'Bergrivier Citrus', where: 'Citrusdal', cat: 'Fresh produce', items: '8', spend: 'R31 600', delta: '−4.1%', deltaColor: '#0F6E56', spark: '2,7 14,8 26,9 38,11 50,12 62,14 76,15 88,17', sparkColor: '#0F6E56', ontime: '92%', tint: '#E1F5EE', tintFg: '#2E7D67', initials: 'BC' },
+        { name: 'Atlas Packaging', where: 'Wynberg, Sandton', cat: 'Packaging', items: '17', spend: 'R42 700', delta: '+0.4%', deltaColor: '#6B6F68', spark: '2,13 14,13 26,13 38,13 50,12 62,13 76,13 88,13', sparkColor: '#8A8E86', ontime: '97%', tint: '#EDEFF1', tintFg: '#6B6F68', initials: 'AP' },
+        { name: 'Jozi Dairy Direct', where: 'Midrand', cat: 'Dairy', items: '14', spend: 'R76 100', delta: '+3.2%', deltaColor: '#A32D2D', spark: '2,17 14,16 26,16 38,15 50,13 62,12 76,10 88,9', sparkColor: '#A32D2D', ontime: '95%', tint: '#E6F1FB', tintFg: '#2C5E8A', initials: 'JD' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>
