@@ -511,11 +511,32 @@ html, body {
   from { opacity: 0; transform: translateY(-6px) scale(0.985); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
-.vyso-fade-in { animation: vyso-fade-in 0.18s ease; }
-.vyso-pop-in  { animation: vyso-pop-in 0.2s cubic-bezier(0.2, 0.8, 0.3, 1); }
+/* Mirror of vyso-pop-in for menus anchored to the BOTTOM of their trigger
+   (the shell rail's user-chip menu opens upward) — same token-driven timing,
+   opposite translateY origin. Added in the chat-first shell wave; .vyso-pop-in
+   itself is untouched/reused everywhere it already applies (plan §5). */
+@keyframes vyso-pop-in-up {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* The shell rail's "live" indicator (Today's brief dot) — promoted from the
+   design mock's inline `vysoPulse` keyframe (.ai/design/vyso-brief/Vyso - The
+   Brief.dc.html:25). The only other continuous loop the motion spec sanctions
+   is the chat streaming caret (components/platform/shell/GlobalChatDock.tsx,
+   a later wave) — nothing else should loop (plan §5 "Continuous loops"). */
+@keyframes vyso-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+.vyso-fade-in   { animation: vyso-fade-in 0.18s ease; }
+.vyso-pop-in    { animation: vyso-pop-in var(--dur-pop) var(--ease-pop); }
+.vyso-pop-in-up { animation: vyso-pop-in-up var(--dur-pop) var(--ease-pop); transform-origin: bottom left; }
+.vyso-pulse     { animation: vyso-pulse 2.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
   .vyso-fade-in,
-  .vyso-pop-in { animation: none; }
+  .vyso-pop-in,
+  .vyso-pop-in-up,
+  .vyso-pulse { animation: none; }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -583,7 +604,12 @@ html, body {
   --pf-gap-stack:20px;
   --pf-gap-grid:12px;
   --pf-topbar-h:66px;
-  --pf-sidebar-w:248px;
+  /* 216px, not the design system's 248px — the mock (.ai/design/vyso-brief/Vyso
+     - The Brief.dc.html, rail div) hardcodes 216px and that measured value wins
+     over tokens/spacing.css per plan_chat_first_shell.md §7. Zero consumers
+     before the shell wave (Wave 1) — components/platform/shell/AppRail.tsx is
+     the first. */
+  --pf-sidebar-w:216px;
   --pf-nav-h:64px;
 
   /* tokens/elevation.css — platform shadows + scrim */
@@ -594,6 +620,18 @@ html, body {
   --pf-shadow-tab-active:0 1px 2px rgba(20,24,20,0.06);
   --pf-scrim:rgba(23,30,40,0.32);
   --pf-scrim-blur:blur(3px);
+
+  /* tokens/motion.css — durations + eases (chat-first shell, Wave 1). Only the
+     four durations + three eases the shell wave's motion spec names (plan §5)
+     are ported — tokens/motion.css also defines --dur-reveal, --dur-count and
+     --ease-mark-pop, which nothing in this product uses yet. */
+  --dur-hover:.16s;
+  --dur-fade:.18s;
+  --dur-pop:.2s;
+  --dur-control:.22s;
+  --ease-standard:cubic-bezier(0.4,0,0.2,1);
+  --ease-pop:cubic-bezier(0.2,0.8,0.3,1);
+  --ease-out-soft:cubic-bezier(0.22,1,0.36,1);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
