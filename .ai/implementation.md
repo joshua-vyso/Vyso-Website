@@ -153,3 +153,28 @@ per-doc reconciliation check, auto-restore from backup on regression).
   and every point write fails until then (deliberately no degraded path: mixing
   agents would manufacture false findings); (3) backfill dry-run → live → Josh
   clears the item-match review queue; (4) env vars above.
+
+## Backfill diagnosis (2026-08-14) — 6 of 7 findings are artifacts
+
+- Root causes: (1) sub-pack lines — extraction stores per-BOX price against per-PUNNET
+  weight (contract in anthropic.ts says "do NOT multiply by units_per_box" — right for
+  loose boxes, wrong for punnet boxes); (2) units_per_box polysemy — pack multiplier on
+  punnet lines, fruit COUNT CODE on cartons (apples 18.5kg/135ct); (3) 54/381 points
+  (14%) are duplicates: same purchase on two same-day statements + one double-uploaded
+  invoice; (4) statements are DAILY, not monthly — STATEMENT_PERIOD_DAYS=31 guard ~30x
+  too wide. Verdicts: Musk Melons PLAUSIBLE; Saladette = different SKU compared to
+  loose (R857/kg printed, R42.86 real); Baby Sweet Corn Wenpro is SIGN-INVERTED (real
+  move was -20%); Peppers + Lemons findings vanish entirely on dedupe.
+- Experimentally proven: blind units_per_box correction is WORSE than none (new R1.8m
+  broccoli artifact) — mis-scaled-but-CONSISTENT series keep honest percentages
+  (scale cancels in deltaPct and randImpact); inconsistent series are what explode.
+  Hence the series-consistency gate is load-bearing in the fix.
+- SECOND root cause: neither Claude call (match/observe) has EVER succeeded — both use
+  `await import('@/lib/ai/anthropic')` which fails under node and tsx CLIs ('@/' alias
+  + server-only). Silently absorbed by the designed fallbacks (review queue / template
+  observations). Writer proven fine via one real validated call. Fix: dependency-inject
+  model calls from callers; loud warning on zero successful calls.
+- Remediation in flight: full fix spec to the assembly agent; then wipe pw_price_points
+  + the 7 agent_findings (KEEP pw_items + 112 confirmed matches — sound and free to
+  reuse) and re-run. Expected: ~263 points, 1-2 findings. MIN_ANNUALISE_SPAN_DAYS 7→14
+  (architect decision: honesty floor without muting v1 entirely).
