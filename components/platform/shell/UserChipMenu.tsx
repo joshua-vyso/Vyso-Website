@@ -8,6 +8,7 @@ import { createClient } from '@/lib/platform/supabase-browser';
 import { clearParsedOrder } from '@/lib/ai/finch/order-handoff';
 import { firstName, initials } from '@/components/platform/brief/brief-display';
 import { FeedbackModal } from '@/components/platform/FeedbackModal';
+import { useFinchChat } from './FinchChatProvider';
 import { trialPillLabel } from './shell-data';
 
 /**
@@ -40,6 +41,7 @@ export function UserChipMenu() {
   const { org, email, profile, trial } = usePlatform();
   const pathname = usePathname() ?? '';
   const router = useRouter();
+  const { reset: resetChat } = useFinchChat();
 
   const [accountOpen, setAccountOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
@@ -68,6 +70,11 @@ export function UserChipMenu() {
     // so it can't survive sign-out into the next user's session on a shared
     // workstation. Ported verbatim from TopBar.tsx.
     clearParsedOrder();
+    // Same reasoning, same workstation, newer state (plan §8 E7): abort any
+    // answer still streaming and empty the transcript. The chat now lives in
+    // the LAYOUT, so — unlike the old page-local pill — it would otherwise
+    // outlive the redirect below for as long as the layout stays mounted.
+    resetChat();
     const supabase = createClient();
     if (supabase) await supabase.auth.signOut();
     router.push('/login');

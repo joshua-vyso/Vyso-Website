@@ -2,10 +2,8 @@ import { redirect } from 'next/navigation';
 import { getPlatformSession } from '@/lib/platform/supabase-server';
 import { fetchFindings } from '@/lib/platform/agent-findings';
 import { rand } from '@/lib/platform/procurepulse';
-import { BriefChatPill } from '@/components/platform/brief/BriefChatPill';
 import { BriefEmpty } from '@/components/platform/brief/BriefEmpty';
 import { FindingCard, ResolvedFindingCard } from '@/components/platform/brief/FindingCard';
-import { briefChatContext } from '@/components/platform/brief/brief-chat';
 import {
   AI_GRADIENT_TEXT,
   briefDateLine,
@@ -33,7 +31,13 @@ import {
  * app/app/layout.tsx as AppRail, so it persists across every /app/* route
  * (.ai/plan_chat_first_shell.md §4.1, W2) — which is also why the modules
  * filter and the findings counts the rail needs are derived up there instead
- * of here. TrialGate and ModuleLockGuard both let this page through: the guard
+ * of here. W4 moved the chat pill the same way and for the same reason: it is
+ * GlobalChatDock now, docked by the layout over every route, with its state in
+ * FinchChatProvider so a conversation survives navigation. The findings prelude
+ * it sends is built up there too, from the layout's own copy of this feed — so
+ * this page no longer serialises anything for the chat, and the bottom of the
+ * column is now just padding that keeps the last card clear of the dock.
+ * TrialGate and ModuleLockGuard both let this page through: the guard
  * only locks paths owned by a MODULES entry and none of them is `/app`, and
  * the trial gate is a platform-wide expiry screen that /app should not be an
  * exception to.
@@ -73,12 +77,13 @@ export default async function AppIndex({
   const { openCount, maxRandImpact, supplierCount } = feed.summary;
 
   return (
-    // Still a flex row with one child: the column needs `flex-1` for the
-    // chat pill's `mt-auto` to sit at the bottom of a short feed, and
-    // `min-h-full` for that to mean the full viewport rather than the
-    // content's height.
+    // `pb-[168px]`: the chat dock is an overlay pinned to the bottom of <main>
+    // now, not an element in this column's flow, so the feed has to leave it
+    // room or the last finding card would sit under the pill and its scrim.
+    // The reservation is this page's alone — plan §8 E5 forbids adding bottom
+    // padding to the modules, which take the overlap and the scrim instead.
     <div className="flex min-h-full">
-      <div className="mx-auto flex w-full max-w-[820px] flex-1 flex-col px-6 pb-2 pt-10 sm:px-10">
+      <div className="mx-auto flex w-full max-w-[820px] flex-1 flex-col px-6 pb-[168px] pt-10 sm:px-10">
         <div className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[var(--pf-text-muted)]">
           {briefDateLine(now)} · {session.org.name}
         </div>
@@ -146,17 +151,6 @@ export default async function AppIndex({
           )}
         </div>
 
-        <div className="mt-auto">
-          {/* The open findings travel to Finch as a prelude on the first turn —
-              the only context channel /api/ai/agent has (see brief-chat.ts).
-              They are serialised here, from the rows this page already read
-              through the caller's RLS-scoped client, so the chat can never see
-              a finding the page couldn't. */}
-          <BriefChatPill
-            context={briefChatContext(feed.open, feed.evidence)}
-            orgName={session.org.name}
-          />
-        </div>
       </div>
     </div>
   );

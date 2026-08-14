@@ -5,9 +5,15 @@
  * THE GRADIENT RULE. `#BE5D23 → #3E8FE0` (orange → blue) is the AI voice in
  * this product, not a decoration: the design system gives the platform ONE
  * accent (blue `#1F5FA8`) and reserves orange for marketing, so the two of them
- * together only ever mean "Vyso said this". It appears in exactly four places
- * on this screen — the greeting's rand figure, the new-finding accent bar, the
- * chat pill's border, and the ✦ marks. Anywhere else it is a bug.
+ * together only ever mean "Vyso said this". It appears in exactly FIVE places —
+ * on the Brief: the greeting's rand figure, the new-finding accent bar, the
+ * chat pill's border and the ✦ marks; and, since the chat became persistent
+ * chrome, that same pill border and ✦ on every other /app/* route, where the
+ * dock renders its compact variant (GlobalChatDock — the fifth placement,
+ * sanctioned by .ai/plan_chat_first_shell.md §4.3). Note what that does NOT
+ * license: the gradient left the Brief attached to the chat, and only to the
+ * chat. On a module screen the ONLY thing wearing it is the dock. Anywhere
+ * else it is still a bug.
  */
 
 /** Orange → blue, angled for text runs (greeting figure). */

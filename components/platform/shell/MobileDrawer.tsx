@@ -10,6 +10,7 @@ import { firstName, initials } from '@/components/platform/brief/brief-display';
 import { FeedbackModal } from '@/components/platform/FeedbackModal';
 import { ModuleLockNotice } from '@/components/platform/ModuleLockNotice';
 import { VysoMark } from '@/components/platform/VysoMark';
+import { useFinchChat } from './FinchChatProvider';
 import { RailNav } from './RailNav';
 import { trialPillLabel, type RailModule } from './shell-data';
 
@@ -66,6 +67,7 @@ export function MobileDrawer({
   const { org, email, profile, trial, lockedModules } = usePlatform();
   const pathname = usePathname() ?? '';
   const router = useRouter();
+  const { reset: resetChat } = useFinchChat();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [lockedLabel, setLockedLabel] = useState<string | null>(null);
 
@@ -93,6 +95,9 @@ export function MobileDrawer({
 
   async function signOut() {
     clearParsedOrder();
+    // Abort any in-flight answer and empty the transcript before the session
+    // goes — the mobile half of plan §8 E7, identical to UserChipMenu's.
+    resetChat();
     const supabase = createClient();
     if (supabase) await supabase.auth.signOut();
     onClose();
