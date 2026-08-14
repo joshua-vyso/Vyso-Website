@@ -18,7 +18,7 @@ import { AI_GRADIENT_CHROME } from '@/components/platform/brief/brief-display';
  * Reused as-is inside MobileDrawer.tsx (plan §6) — the drawer's nav rows are
  * the same two Links, just inside a sheet instead of the desktop rail.
  *
- * Unmounted in W1 — not imported by any rendered tree yet.
+ * Mounted from Wave 2 on, inside AppRail (app/app/layout.tsx).
  */
 
 const ITEM = 'flex items-center gap-2.5 rounded-[10px] px-2.5 py-[9px] text-[13.5px] transition-colors';

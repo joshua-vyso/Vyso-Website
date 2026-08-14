@@ -34,7 +34,7 @@ import { trialPillLabel } from './shell-data';
  * where the locked rows that open it actually are. Mounting an unreachable
  * modal here would be dead code.
  *
- * Unmounted in W1 — not imported by any rendered tree yet.
+ * Mounted from Wave 2 on, inside AppRail (app/app/layout.tsx).
  */
 export function UserChipMenu() {
   const { org, email, profile, trial } = usePlatform();

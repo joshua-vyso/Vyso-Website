@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { VysoMark } from '@/components/platform/VysoMark';
 import { RailNav } from './RailNav';
 import { UnderTheHood } from './UnderTheHood';
@@ -21,8 +22,7 @@ import type { RailModule } from './shell-data';
  * `h-screen` is correct and there is no more --pf-topbar-h consumer on the
  * desktop rail.
  *
- * Unmounted in Wave 1 — not imported by app/app/layout.tsx yet (Wave 2 swaps
- * TopBar out for this).
+ * Mounted by app/app/layout.tsx from Wave 2 on.
  */
 export function AppRail({
   openCount,
@@ -36,15 +36,44 @@ export function AppRail({
   return (
     <nav
       aria-label="Vyso"
-      className="hidden h-screen w-[var(--pf-sidebar-w)] shrink-0 flex-col gap-2 overflow-y-auto border-r border-[#EFEDE8] px-5 pb-6 pt-7 lg:flex"
+      // NO overflow on the <nav> itself (W2). It used to be `overflow-y-auto`,
+      // which was invisible while the rail was unmounted and wrong the moment
+      // it wasn't: `overflow-y: auto` forces `overflow-x` to compute to `auto`
+      // too, so the account menu — 224px wide, anchored to a chip inside a
+      // 216px rail — was clipped at the rail's right edge and put a horizontal
+      // scrollbar across the user chip. The scroll region moved down to the
+      // logo+nav block instead, which contains no popovers; the bottom cluster
+      // now sits in a clip-free box and its menu can overhang the rail, which
+      // is what the mock shows.
+      className="hidden h-screen w-[var(--pf-sidebar-w)] shrink-0 flex-col gap-2 border-r border-[#EFEDE8] px-5 pb-6 pt-7 lg:flex"
     >
-      <div className="px-2 pb-[22px]">
-        <VysoMark width={64} color="#171A17" />
+      {/* flex-1 + min-h-0: this block absorbs the leftover height (so the
+          bottom cluster still sits at the bottom, exactly as `mt-auto` did)
+          and is the one that scrolls if a short viewport can't fit the rail. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+        <div className="px-2 pb-[22px]">
+          <VysoMark width={64} color="#171A17" />
+        </div>
+
+        {/* SUSPENSE, deliberately (plan §8 E4). RailNav reads `?view=history`
+          with useSearchParams(), and the Next docs' rule is: a PRERENDERED
+          route bails out to client-side rendering up to the nearest Suspense
+          boundary, and a production build of a static page that calls the hook
+          without one fails outright ("Missing Suspense boundary with
+          useSearchParams" —
+          node_modules/next/dist/docs/01-app/03-api-reference/04-functions/use-search-params.md).
+          Every /app/* route is dynamic today (the layout awaits
+          getPlatformSession() → cookies()), so the hook resolves during the
+          server render and this fallback never actually paints — the boundary
+          is here so the rail can't become the reason a build breaks if any
+          route below it ever turns static. The fallback reserves the two rows'
+          height so nothing would jump if it ever did. */}
+        <Suspense fallback={<div className="h-[82px]" aria-hidden />}>
+          <RailNav openCount={openCount} historyCount={historyCount} />
+        </Suspense>
       </div>
 
-      <RailNav openCount={openCount} historyCount={historyCount} />
-
-      <div className="mt-auto flex flex-col">
+      <div className="flex flex-col">
         <UnderTheHood modules={modules} />
         <UserChipMenu />
       </div>

@@ -1,9 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getPlatformSession } from '@/lib/platform/supabase-server';
-import { MODULES } from '@/lib/platform/modules';
 import { fetchFindings } from '@/lib/platform/agent-findings';
 import { rand } from '@/lib/platform/procurepulse';
-import { BriefRail } from '@/components/platform/brief/BriefRail';
 import { BriefChatPill } from '@/components/platform/brief/BriefChatPill';
 import { BriefEmpty } from '@/components/platform/brief/BriefEmpty';
 import { FindingCard, ResolvedFindingCard } from '@/components/platform/brief/FindingCard';
@@ -13,7 +11,6 @@ import {
   briefDateLine,
   firstName,
   foundLabel,
-  initials,
   timeOfDayGreeting,
 } from '@/components/platform/brief/brief-display';
 
@@ -32,11 +29,14 @@ import {
  * the schema records that the agent read anything. When a number can't be
  * established the clause is dropped rather than invented.
  *
- * The page renders inside the existing TopBar + wash shell (app/app/layout.tsx
- * is untouched); the 216px rail belongs to this page alone. TrialGate and
- * ModuleLockGuard both let it through: the guard only locks paths owned by a
- * MODULES entry and none of them is `/app`, and the trial gate is a
- * platform-wide expiry screen that /app should not be an exception to.
+ * The page is now just the feed column. The 216px rail it used to own moved to
+ * app/app/layout.tsx as AppRail, so it persists across every /app/* route
+ * (.ai/plan_chat_first_shell.md §4.1, W2) — which is also why the modules
+ * filter and the findings counts the rail needs are derived up there instead
+ * of here. TrialGate and ModuleLockGuard both let this page through: the guard
+ * only locks paths owned by a MODULES entry and none of them is `/app`, and
+ * the trial gate is a platform-wide expiry screen that /app should not be an
+ * exception to.
  */
 
 /** Copy for the two flavours of "nothing here", kept together so they read as
@@ -72,22 +72,12 @@ export default async function AppIndex({
   const name = firstName(session.profile?.full_name);
   const { openCount, maxRandImpact, supplierCount } = feed.summary;
 
-  const modules = MODULES.filter((m) => m.status === 'active' && session.features[m.key]).map((m) => ({
-    label: m.label,
-    href: m.screens.desktop,
-  }));
-
   return (
+    // Still a flex row with one child: the column needs `flex-1` for the
+    // chat pill's `mt-auto` to sit at the bottom of a short feed, and
+    // `min-h-full` for that to mean the full viewport rather than the
+    // content's height.
     <div className="flex min-h-full">
-      <BriefRail
-        view={isHistory ? 'history' : 'brief'}
-        openCount={openCount}
-        historyCount={feed.history.length}
-        modules={modules}
-        userInitials={initials(session.profile?.full_name ?? session.email)}
-        userLabel={[name || session.email, session.org.name].filter(Boolean).join(' · ')}
-      />
-
       <div className="mx-auto flex w-full max-w-[820px] flex-1 flex-col px-6 pb-2 pt-10 sm:px-10">
         <div className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[var(--pf-text-muted)]">
           {briefDateLine(now)} · {session.org.name}

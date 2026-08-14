@@ -13,16 +13,15 @@ import { trialPillLabel, type RailModule } from './shell-data';
  * content in MobileDrawer. Owns the drawer's open/close state itself, the same
  * self-containment TopBar had for ModulesOverlay's `modulesOpen`.
  *
- * HEIGHT. ~56px per plan §6, but deliberately NOT wired to --pf-topbar-h: that
- * var is still live at 66px for TopBar.tsx (hardcoded `h-[66px]`, not actually
- * reading the var) and BriefRail.tsx's sticky calc
- * (`h-[calc(100dvh-var(--pf-topbar-h))]`) until both are retired in Waves 2-5.
- * Repointing the var to 56px now — before either consumer is gone — would be a
- * live 10px layout shift on the Brief page today, which Wave 1's "zero visual
- * change" gate forbids. `h-14` (56px) is a plain literal here; whoever wires
- * this in (Wave 3) can repoint --pf-topbar-h to 56px and switch this to
- * `h-[var(--pf-topbar-h)]` once TopBar/BriefRail no longer depend on its old
- * value (plan §7 flags exactly this repointing, just not the "when").
+ * HEIGHT. ~56px per plan §6, but deliberately NOT wired to --pf-topbar-h. As
+ * of Wave 2 that var has no consumer left in code — BriefRail.tsx's sticky
+ * `h-[calc(100dvh-var(--pf-topbar-h))]` went with the file — but it still
+ * DESCRIBES a live height: TopBar.tsx renders `<lg` until Wave 3 and is 66px
+ * (hardcoded, it never read the var). The var stays at 66px until TopBar is
+ * unmounted; `h-14` (56px) is a plain literal here. Wave 3 can repoint
+ * --pf-topbar-h to 56px and switch this to `h-[var(--pf-topbar-h)]` in the
+ * same change that drops TopBar (plan §7 flags exactly this repointing, just
+ * not the "when").
  *
  * Unmounted in Wave 1 — not imported by app/app/layout.tsx yet (Wave 3 mounts
  * it as the `<lg` sibling of AppRail).

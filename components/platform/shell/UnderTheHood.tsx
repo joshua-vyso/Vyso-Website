@@ -30,7 +30,7 @@ import { moduleForPathname, type RailModule } from './shell-data';
  * as a <button>, not a <Link>; clicking it opens ModuleLockNotice instead of
  * navigating — mirrors ModulesOverlay.tsx's locked-tile branch.
  *
- * Unmounted in W1 — not imported by any rendered tree yet.
+ * Mounted from Wave 2 on, inside AppRail (app/app/layout.tsx).
  */
 export function UnderTheHood({ modules }: { modules: RailModule[] }) {
   const [expanded, setExpanded] = useState(false);
