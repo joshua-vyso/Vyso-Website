@@ -8,6 +8,7 @@ import { createClient } from '@/lib/platform/supabase-browser';
 import { clearParsedOrder } from '@/lib/ai/finch/order-handoff';
 import { firstName, initials } from '@/components/platform/brief/brief-display';
 import { FeedbackModal } from '@/components/platform/FeedbackModal';
+import { ModuleLockNotice } from '@/components/platform/ModuleLockNotice';
 import { VysoMark } from '@/components/platform/VysoMark';
 import { RailNav } from './RailNav';
 import { trialPillLabel, type RailModule } from './shell-data';
@@ -28,10 +29,15 @@ const ROW_ACTIVE = 'bg-[#EDEDEA] font-semibold text-[var(--pf-text)]';
  *   - Account items (My Organisation, Settings, Send feedback, Sign out) are
  *     inline rows, not a nested popover — UserChipMenu's floating menu doesn't
  *     fit inside a sheet that's already an overlay.
- *   - Locked modules render as plain disabled text, not a tappable row that
- *     opens ModuleLockNotice: stacking a second modal inside the drawer's own
- *     overlay/focus-trap is unnecessary complexity for a state the desktop
- *     already explains, and the drawer closes on route change anyway.
+ *
+ * LOCKED MODULES ARE NOT A DIFFERENCE (plan §8 E2). A row for a module in
+ * `lockedModules` renders as a <button> that opens ModuleLockNotice and does
+ * NOT navigate — the same branch UnderTheHood.tsx takes on the desktop rail,
+ * and the same modal instance-for-instance (ModuleLockNotice is reused, never
+ * duplicated). An earlier draft rendered these as muted disabled text on the
+ * theory that a modal over a sheet was needless complexity; the approved plan
+ * requires the explanation to be reachable on every surface, and the stacking
+ * works out (the drawer is z-50, the shared Modal portals at z-[100]).
  *
  * RailNav.tsx IS reused verbatim for the two primary rows — that markup is
  * identical on mobile and desktop.
@@ -61,6 +67,7 @@ export function MobileDrawer({
   const pathname = usePathname() ?? '';
   const router = useRouter();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [lockedLabel, setLockedLabel] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -146,10 +153,16 @@ export function MobileDrawer({
 
             if (locked) {
               return (
-                <span key={m.href} className={`${ROW} cursor-default text-[var(--pf-text-disabled)]`}>
+                <button
+                  key={m.href}
+                  type="button"
+                  onClick={() => setLockedLabel(m.label)}
+                  className={`${ROW} ${ROW_IDLE} w-full text-left`}
+                  style={{ transitionDuration: 'var(--dur-hover)' }}
+                >
                   {dot}
                   {m.label}
-                </span>
+                </button>
               );
             }
 
@@ -231,6 +244,13 @@ export function MobileDrawer({
       </div>
 
       <FeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
+      {/* Same modal the desktop rail opens (UnderTheHood.tsx) — one component,
+          two mount points, no duplicated copy. */}
+      <ModuleLockNotice
+        open={lockedLabel !== null}
+        moduleLabel={lockedLabel ?? ''}
+        onClose={() => setLockedLabel(null)}
+      />
     </>
   );
 }
