@@ -104,12 +104,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               sight. This column's bottom edge is <main>'s bottom edge, so the
               geometry the plan asked for (§4.3) is unchanged. */}
           <div className="relative flex min-w-0 flex-1 flex-col">
-            {/* W3: MobileTopBar + its MobileDrawer replace TopBar below `lg`,
-                same as AppRail does above it — mounted OUTSIDE TrialGate /
-                ModuleLockGuard so the drawer's Sign out row stays reachable
-                during a hard trial lock (plan §8 E1). TopBar.tsx is now
-                unmounted everywhere; the file itself is untouched here and
-                deleted whole in W5, not edited twice. */}
+            {/* W3: MobileTopBar + its MobileDrawer replace the old TopBar
+                below `lg`, same as AppRail does above it — mounted OUTSIDE
+                TrialGate / ModuleLockGuard so the drawer's Sign out row stays
+                reachable during a hard trial lock (plan §8 E1). TopBar.tsx
+                and ModulesOverlay.tsx were deleted in W5 — this shell has no
+                remaining reference to either. */}
             <MobileTopBar
               openCount={feed.summary.openCount}
               historyCount={feed.history.length}

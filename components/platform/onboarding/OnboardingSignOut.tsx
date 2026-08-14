@@ -3,9 +3,10 @@
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/platform/supabase-browser';
 
-/** A small "Sign out" link for the onboarding chrome. Mirrors the TopBar sign-out
- *  idiom (signOut → push /login), minus the parsed-order clear (there's no Finch
- *  order draft to leak during onboarding). */
+/** A small "Sign out" link for the onboarding chrome. Mirrors the shell's
+ *  sign-out idiom (UserChipMenu / MobileDrawer: signOut → push /login), minus
+ *  the parsed-order clear (there's no Finch order draft to leak during
+ *  onboarding). */
 export function OnboardingSignOut() {
   const router = useRouter();
 

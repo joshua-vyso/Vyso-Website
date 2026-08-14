@@ -239,3 +239,93 @@ Completed the seam the assembly agent died mid-write on twice
   above are additions the plan's own wording anticipated ("Verify how drafts
   flow into the detect call and thread accordingly"; "ensure output is
   truthful") rather than departures from it.
+
+## Chat-first shell (W1–W5, branch feat/ui-brief-reskin)
+
+Plan: `.ai/plan_chat_first_shell.md`. Replaces TopBar/ModulesOverlay as the
+`/app/*` navigation with a persistent rail (desktop) / header+drawer (mobile)
+and a chat dock whose conversation survives client-side navigation.
+
+- W1 `f962932`: motion tokens (`--dur-*`, `--ease-*`, `vyso-pulse`) ported into
+  `app/globals.css`; all `components/platform/shell/*` built except
+  `GlobalChatDock`/`FinchChatProvider`, rendered nowhere yet — zero visual
+  change, tsc/lint green.
+- W2 `16206df`: `app/app/layout.tsx` rewritten flex-row with `AppRail` as a
+  full-height sibling column outside `TrialGate`/`ModuleLockGuard` (same
+  sign-out-stays-reachable guarantee TopBar gave from above `<main>`, now
+  given from beside it — plan §8 E1). `BriefRail.tsx` deleted, its usage
+  dropped from `app/app/page.tsx`. TopBar still rendered `<lg` only during
+  this transitional wave so mobile never broke mid-migration.
+- W3 `383e77a`: `MobileTopBar` + `MobileDrawer` replace TopBar below `lg`;
+  TopBar unmounted everywhere (file still present, deleted in W5).
+- W3.1 `8205e37`: architect-accepted deviation — drawer locked module rows
+  now open `ModuleLockNotice` instead of navigating, matching `AppRail`'s
+  desktop behaviour (plan §8 E2 conformance gap found during W3 verification).
+- W4 `9756e58`: `FinchChatProvider` lifts chat state (`turns`/`streaming`/
+  `error`, the SSE reader, and the `onBriefAsk` pub/sub subscription) above
+  the whole shell in `app/app/layout.tsx` so it survives navigation;
+  `GlobalChatDock` renders it as a bottom-docked pill — full variant on
+  `/app` (+ `?view=history`), compact elsewhere, expanding on focus/first
+  turn. `page.tsx` stops mounting `BriefChatPill` directly. Architect-accepted
+  deviations from the plan's literal geometry sketch, both load-bearing for
+  correctness, documented in the components' own docblocks:
+  - **Dock-as-sibling geometry**: the dock is a sibling of `<main>` (inside
+    the shell's flex column, `position: relative` container), not a child of
+    `<main>`. `<main>` is the scroll container; an absolutely-positioned
+    child of a scroller lays out against the scrolled padding box, which
+    would park the dock at the bottom of the full scrollable document instead
+    of pinning it to the viewport-visible bottom edge. Sibling placement
+    keeps the plan's intended visual geometry (§4.3) while fixing this.
+  - **`DisabledPill` retirement**: the old pill's separate "disabled" render
+    branch (shown when `finchEnabled === false`) was retired — `GlobalChatDock`
+    now renders nothing at all in that case (plan §8 E6's stated behaviour),
+    rather than carrying forward a distinct disabled-but-visible state that
+    the plan never asked for.
+  - **Transcript Hide control**: the transcript overlay panel gained an
+    explicit "Hide" affordance beyond the plan's spec, since it now persists
+    across navigation (§8 E8) and can otherwise be stuck open across route
+    changes with no way to dismiss it short of a hard reload.
+  - **Brief-only bottom padding**: `/app/page.tsx`'s feed column keeps bottom
+    padding reserved for the pill (a pre-existing Brief-specific treatment);
+    this was NOT extended to other modules per plan §8 E5 ("do NOT add global
+    bottom padding to modules — no module edits").
+- W5 (this commit): deleted `components/platform/TopBar.tsx`,
+  `ModulesOverlay.tsx`, `Sidebar.tsx` — confirmed zero non-comment imports of
+  any of the three before deletion (`Sidebar.tsx` had zero references of any
+  kind; `TopBar.tsx`/`ModulesOverlay.tsx` had only the comment/docblock
+  attribution mentions swept below, plus `TopBar.tsx`'s own now-deleted
+  `import { ModulesOverlay } from './ModulesOverlay'`). Kept
+  `FeedbackModal.tsx` and `ModuleLockNotice.tsx` — both still mounted by the
+  new shell (`UserChipMenu`, `AppRail`/`UnderTheHood`, `MobileDrawer`).
+  Comment sweep (behavior-only-safe edits, no logic changes):
+  - `app/app/docu/[id]/page.tsx` — the "flex child under the 66px TopBar"
+    sizing comment rewritten to describe the current shell (`<main>` is a
+    flex-1 child of the layout's column; full height beside `AppRail` on
+    desktop, 100dvh minus the 56px `MobileTopBar` below `lg`).
+  - `components/platform/TrialGate.tsx` — "TopBar renders above this... so
+    sign-out stays reachable" rewritten to name `AppRail` (desktop) and
+    `MobileTopBar`+`MobileDrawer` (mobile) as the components now giving that
+    guarantee.
+  - `components/platform/onboarding/OnboardingSignOut.tsx` — "Mirrors the
+    TopBar sign-out idiom" rewritten to "Mirrors the shell's sign-out idiom
+    (UserChipMenu / MobileDrawer)".
+  - `app/app/layout.tsx` — a W3-era comment noting TopBar.tsx was merely
+    unmounted (not yet deleted) updated to state both TopBar.tsx and
+    ModulesOverlay.tsx are now deleted.
+  - Left untouched (correct as historical attribution, not describing
+    currently-live architecture): docblocks in `UserChipMenu.tsx`,
+    `AppRail.tsx`, `shell-data.ts`, `MobileDrawer.tsx`, `MobileTopBar.tsx`,
+    `RailNav.tsx`, `UnderTheHood.tsx`, `brief-display.ts` that say things
+    like "ported from TopBar.tsx verbatim" or "mirrors ModulesOverlay's
+    locked-tile branch" — these correctly describe where today's logic came
+    from, not a claim that TopBar/ModulesOverlay still exist. Also left
+    untouched: `--pf-topbar-h` comments in `app/globals.css` and
+    `AppRail.tsx` (already correctly past-tense — "BriefRail.tsx's old
+    calc(...) consumer was deleted with the file in W2"), and `--pf-nav-h`
+    (plan §7: leave untouched, no consumer changes).
+  - Gates: `npx tsc --noEmit` clean except the exempt
+    `lib/platform/whatsapp-ingest.ts` (3 pre-existing errors, unchanged).
+    `npm run lint`: 84 problems (53 errors/31 warnings), all pre-existing in
+    already-exempt files (vyso-ai/*, wastewatch/*, module-ui.tsx, unrelated
+    whatsapp/component files) — zero new problems, zero in any file this
+    wave touched. `npm run test`: 148/148.
