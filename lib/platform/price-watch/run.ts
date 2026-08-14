@@ -606,6 +606,52 @@ interface PwItemMatchRow {
   status: string | null;
 }
 
+/** Query-builder methods that change data. Everything else is a read. */
+const WRITE_METHODS = new Set(['insert', 'upsert', 'update', 'delete']);
+
+/**
+ * Wrap a Supabase client so that ANY write throws.
+ *
+ * `if (!dryRun)` gates around each write are a promise the code makes to
+ * itself, and a promise like that is only as good as the next person who adds a
+ * write below it. This makes the guarantee structural instead: on a dry run the
+ * orchestrator physically holds a handle that cannot insert, upsert, update or
+ * delete, so a forgotten gate fails loudly in testing rather than quietly
+ * writing to a customer's database.
+ *
+ * Scope, stated honestly: it traps the write methods on the builder returned by
+ * `.from()` and on `.rpc()` — the only shapes this module uses. Methods chained
+ * after a read (`.select().eq()…`) return the underlying builder, and supabase
+ * exposes no write method there, so there is nothing further to guard.
+ */
+export function readOnlyClient(supabase: SupabaseClient): SupabaseClient {
+  const guarded = {
+    from(table: string) {
+      const builder = supabase.from(table) as unknown as Record<string | symbol, unknown>;
+      return new Proxy(builder, {
+        get(target, prop, receiver) {
+          if (typeof prop === 'string' && WRITE_METHODS.has(prop)) {
+            return () => {
+              throw new Error(
+                `Price Watch dry run attempted to ${prop} into "${table}" — this is a bug: ` +
+                  'a dry run must be completely free of side effects.',
+              );
+            };
+          }
+          const value = Reflect.get(target, prop, receiver);
+          // Supabase builders are stateful and rely on `this`, so hand back a
+          // bound function rather than a detached one.
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+    },
+    rpc() {
+      throw new Error('Price Watch dry run attempted an rpc call — dry runs are read-only.');
+    },
+  };
+  return guarded as unknown as SupabaseClient;
+}
+
 interface PricePointDraft {
   org_id: string;
   supplier_id: string;
@@ -641,6 +687,12 @@ export async function runPriceWatch(
   const log = opts.log ?? (() => {});
   const summary = emptySummary(orgId, dryRun);
 
+  // From here on the ONLY handle to the database is `db`. On a dry run it is a
+  // client that throws on any write, so "dry run writes nothing" is enforced by
+  // the object in hand rather than by remembering to check a flag. Never use
+  // `supabase` directly below this line.
+  const db = dryRun ? readOnlyClient(supabase) : supabase;
+
   const countSkip = (reason: DocumentSkipReason) => {
     summary.documentsSkipped[reason] = (summary.documentsSkipped[reason] ?? 0) + 1;
   };
@@ -649,7 +701,7 @@ export async function runPriceWatch(
   // Read first, because a missing pw_items table means the migration hasn't
   // been applied and there is nothing sensible to do — better a clear,
   // early "tables missing" than a half-run that fails on the first insert.
-  const { data: itemRows, error: itemsError } = await supabase
+  const { data: itemRows, error: itemsError } = await db
     .from('pw_items')
     .select('id, name, base_unit')
     .eq('org_id', orgId)
@@ -673,7 +725,7 @@ export async function runPriceWatch(
   const itemById = new Map(catalogue.map((c) => [c.id, c]));
 
   // ---- 2. Suppliers ------------------------------------------------------
-  const { data: supplierRows, error: suppliersError } = await supabase
+  const { data: supplierRows, error: suppliersError } = await db
     .from('suppliers')
     .select('id, name')
     .eq('org_id', orgId)
@@ -686,7 +738,7 @@ export async function runPriceWatch(
   );
 
   // ---- 3. Documents ------------------------------------------------------
-  const { data: docRows, error: docsError } = await supabase
+  const { data: docRows, error: docsError } = await db
     .from('documents')
     .select('id, supplier_id, document_type, status, archived_at, created_at, filename, extracted_data')
     .eq('org_id', orgId)
@@ -766,7 +818,7 @@ export async function runPriceWatch(
   }
 
   // ---- 6. Existing matches (the Claude budget guard) ---------------------
-  const { data: matchRows, error: matchesError } = await supabase
+  const { data: matchRows, error: matchesError } = await db
     .from('pw_item_matches')
     .select('raw_description, supplier_id, pw_item_id, confidence, status')
     .eq('org_id', orgId)
@@ -922,15 +974,23 @@ export async function runPriceWatch(
     if (usedAnyLine) summary.documentsUsed += 1;
   }
 
+  // The header has to describe what HAPPENED, not just what succeeded. An
+  // earlier version printed "0 docs used, 0 price points" for a run that read 22
+  // documents and 387 lines and parked every one of them in the review queue —
+  // technically true and completely misleading, because "0 docs used" reads as
+  // "found nothing" when the truth was "found everything, linked nothing yet".
   log(
-    `price-watch ${orgId}: ${summary.documentsUsed} docs used, ${drafts.length} price points, ` +
-      `${summary.matchModelCalls} model matches (${summary.matchCacheHits} cached)`,
+    `price-watch ${orgId}: ${summary.documentsSeen} docs read, ${eligible.length} eligible, ` +
+      `${summary.linesSeen} lines seen → ${drafts.length} price points, ` +
+      `${summary.linesAwaitingReview} review-parked, ${summary.linesSkippedNoPrice} unpriced; ` +
+      `${summary.matchModelCalls} model matches (${summary.matchCacheHits} cached), ` +
+      `${summary.itemsCreated} items proposed`,
   );
 
   // ---- 8. Writes: new items, new match rows, price points ----------------
   if (!dryRun) {
     for (const batch of chunk(newItemRows, WRITE_CHUNK)) {
-      const { error } = await supabase
+      const { error } = await db
         .from('pw_items')
         .insert(batch.map((r) => ({ id: r.id, org_id: orgId, name: r.name, base_unit: r.base_unit })));
       if (error) summary.warnings.push(`pw_items insert failed: ${error.message}`);
@@ -944,14 +1004,14 @@ export async function runPriceWatch(
       // a unique violation (a concurrent run) means "already there" — not an
       // error, and explicitly NOT an update: overwriting would churn a human's
       // review decision back to the model's guess.
-      const { error } = await supabase.from('pw_item_matches').insert(batch);
+      const { error } = await db.from('pw_item_matches').insert(batch);
       if (error && !isUniqueViolation(error)) {
         summary.warnings.push(`pw_item_matches insert failed: ${error.message}`);
       }
     }
 
     for (const batch of chunk(drafts, WRITE_CHUNK)) {
-      const { error } = await supabase
+      const { error } = await db
         .from('pw_price_points')
         .upsert(batch, { onConflict: 'document_id,line_index' });
       if (error) {
@@ -966,7 +1026,7 @@ export async function runPriceWatch(
   }
 
   // ---- 9. Detection input: stored history + this run's points ------------
-  const { data: storedPoints, error: pointsError } = await supabase
+  const { data: storedPoints, error: pointsError } = await db
     .from('pw_price_points')
     .select('supplier_id, line_supplier, pw_item_id, document_id, line_index, unit_price, quantity_base, invoice_date')
     .eq('org_id', orgId)
@@ -1016,7 +1076,7 @@ export async function runPriceWatch(
   }
 
   // ---- 10. Open findings → suppression list ------------------------------
-  const { data: openRows, error: openError } = await supabase
+  const { data: openRows, error: openError } = await db
     .from('agent_findings')
     .select('dedupe_key')
     .eq('org_id', orgId)
@@ -1084,7 +1144,7 @@ export async function runPriceWatch(
       continue;
     }
 
-    const { error } = await supabase.from('agent_findings').insert({
+    const { error } = await db.from('agent_findings').insert({
       org_id: orgId,
       agent: AGENT_NAME,
       observation: text.observation,

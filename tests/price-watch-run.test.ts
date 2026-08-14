@@ -8,7 +8,9 @@ import {
   parseDedupeKey,
   parseDocumentDate,
   parseEnvList,
+  readOnlyClient,
   resolveDocumentDate,
+  runPriceWatch,
   statementCoveredByInvoices,
   type PriceWatchDocument,
 } from '../lib/platform/price-watch/run.ts';
@@ -314,4 +316,207 @@ test('parseEnvList: unset or empty means an EMPTY list, never "everything"', () 
 
 test('parseEnvList: trims and drops blanks', () => {
   assert.deepEqual(parseEnvList('a, b ,,c '), ['a', 'b', 'c']);
+});
+
+// ---------------------------------------------------------------------------
+// Dry run must be completely free of side effects
+//
+// REGRESSION TEST for the 2026-08-14 incident: a backfill believed to be a dry
+// run wrote 56 pw_items and 115 pw_item_matches rows to production. The
+// original smoke test asserted "0 writes" by COUNTING calls on a stub that
+// happily accepted them — a stub that says yes can only ever prove the code
+// took the path it happened to take that day. These tests use a stub that
+// THROWS on every write method, so a leak cannot be counted and shrugged off:
+// it fails the run.
+// ---------------------------------------------------------------------------
+
+interface StubTables {
+  [table: string]: Record<string, unknown>[];
+}
+
+/** Chainable read-only Supabase stub. Every write method throws. */
+function throwingStub(tables: StubTables): { client: unknown; writeAttempts: string[] } {
+  const writeAttempts: string[] = [];
+  const thrower = (table: string, method: string) => () => {
+    writeAttempts.push(`${method} ${table}`);
+    throw new Error(`stub: ${method} on ${table} must never be called`);
+  };
+  const client = {
+    from(table: string) {
+      const chain: Record<string, unknown> = {};
+      for (const m of ['select', 'eq', 'in', 'order', 'limit', 'not', 'returns', 'maybeSingle']) {
+        chain[m] = () => chain;
+      }
+      for (const m of ['insert', 'upsert', 'update', 'delete']) {
+        chain[m] = thrower(table, m);
+      }
+      chain.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: tables[table] ?? [], error: null });
+      return chain;
+    },
+  };
+  return { client, writeAttempts };
+}
+
+/** A statement with one priced line, dated via summary.statement_date. */
+function statementDoc(
+  id: string,
+  supplierId: string,
+  statementDate: string,
+  description: string,
+  unitPrice: number,
+): Record<string, unknown> {
+  return {
+    id,
+    supplier_id: supplierId,
+    document_type: 'statement',
+    status: 'extracted',
+    archived_at: null,
+    created_at: `${statementDate}T08:00:00.000Z`,
+    filename: `${id}.pdf`,
+    extracted_data: {
+      fields: [],
+      summary: { statement_date: statementDate },
+      line_items: [
+        {
+          description,
+          quantity: '100',
+          unit: 'kg',
+          unit_price: String(unitPrice),
+          weight: '1',
+          total_kg: '100',
+        },
+      ],
+    },
+  };
+}
+
+/** Matcher stub: confidently picks the first shortlisted candidate, or proposes
+ *  a new item when the shortlist is empty (mirroring a real "none of these"). */
+const pickFirstCandidate = async (prompt: { system: string; user: string }): Promise<string> => {
+  const payload = JSON.parse(prompt.user) as { candidates: { id: string }[] };
+  const first = payload.candidates[0];
+  return JSON.stringify(
+    first
+      ? { pw_item_id: first.id, confidence: 0.97, reason: 'same product' }
+      : { pw_item_id: null, confidence: 0.4, reason: 'no candidates' },
+  );
+};
+
+const cannedObservation = async () =>
+  JSON.stringify({ observation: 'Canned observation.', recommended_action: 'Canned action.' });
+
+test('runPriceWatch dry run: completes against a stub whose writes THROW, and reports planned counts', async () => {
+  // Empty catalogue → every description is a new-item proposal, which is
+  // exactly the write path that leaked in production.
+  const { client, writeAttempts } = throwingStub({
+    pw_items: [],
+    suppliers: [{ id: 'sup-1', name: 'JHB Fresh Produce Market' }],
+    pw_item_matches: [],
+    pw_price_points: [],
+    agent_findings: [],
+    documents: [
+      statementDoc('doc-1', 'sup-1', '2026-06-01', 'TOMATOES SALADETTE', 20),
+      statementDoc('doc-2', 'sup-1', '2026-07-01', 'ONIONS BROWN', 12),
+    ],
+  });
+
+  const summary = await runPriceWatch(client as never, 'org-1', {
+    dryRun: true,
+    matchCall: pickFirstCandidate,
+    observeCall: cannedObservation,
+  });
+
+  assert.deepEqual(writeAttempts, [], 'a dry run must not call a single write method');
+  assert.equal(summary.dryRun, true);
+  // It still did the work and can say what it WOULD have done.
+  assert.equal(summary.documentsSeen, 2);
+  assert.equal(summary.linesSeen, 2);
+  assert.equal(summary.itemsCreated, 2, 'two new items would be proposed');
+  assert.equal(summary.reviewQueueAdds, 2);
+  assert.equal(summary.linesAwaitingReview, 2, 'proposals are never price points');
+  assert.equal(summary.pricePointsUpserted, 0);
+});
+
+test('runPriceWatch dry run: an auto-linkable catalogue plans points and findings without writing', async () => {
+  // Four statements over 60+ days with a jump at the end: enough for detect.ts
+  // to fire, so the findings write path is exercised too.
+  const docs = [
+    statementDoc('doc-1', 'sup-1', '2026-06-01', 'TOMATOES SALADETTE', 20),
+    statementDoc('doc-2', 'sup-1', '2026-06-20', 'TOMATOES SALADETTE', 21),
+    statementDoc('doc-3', 'sup-1', '2026-07-10', 'TOMATOES SALADETTE', 20),
+    statementDoc('doc-4', 'sup-1', '2026-08-01', 'TOMATOES SALADETTE', 30),
+  ];
+  const { client, writeAttempts } = throwingStub({
+    pw_items: [{ id: 'item-tom', name: 'Tomatoes Saladette', base_unit: 'kg' }],
+    suppliers: [{ id: 'sup-1', name: 'JHB Fresh Produce Market' }],
+    pw_item_matches: [],
+    pw_price_points: [],
+    agent_findings: [],
+    documents: docs,
+  });
+
+  const summary = await runPriceWatch(client as never, 'org-1', {
+    dryRun: true,
+    matchCall: pickFirstCandidate,
+    observeCall: cannedObservation,
+  });
+
+  assert.deepEqual(writeAttempts, [], 'a dry run must not call a single write method');
+  assert.equal(summary.pricePointsUpserted, 4, 'four points would be written');
+  assert.equal(summary.findingsDetected, 1);
+  assert.equal(summary.findingsWritten, 1, 'reported as planned, not actually inserted');
+  // The dry run uses the deterministic template rather than spending the
+  // writing model, and says so.
+  assert.equal(summary.observationFallbacks, 1);
+  assert.ok(summary.sampleFindings[0].dedupeKey.startsWith('price_watch:sup-1:item-tom:'));
+});
+
+test('runPriceWatch dry run: in-memory proposals still converge two suppliers onto ONE item', async () => {
+  // The pending-item logic keeps proposals in memory during a dry run. This
+  // asserts they are still visible to the matcher, so the same new product
+  // arriving from a second supplier does NOT propose a duplicate item — while
+  // still refusing to auto-link to an item no human has confirmed.
+  const { client, writeAttempts } = throwingStub({
+    pw_items: [],
+    suppliers: [
+      { id: 'sup-1', name: 'Supplier One' },
+      { id: 'sup-2', name: 'Supplier Two' },
+    ],
+    pw_item_matches: [],
+    pw_price_points: [],
+    agent_findings: [],
+    documents: [
+      statementDoc('doc-1', 'sup-1', '2026-06-01', 'TOMATOES SALADETTE', 20),
+      statementDoc('doc-2', 'sup-2', '2026-06-02', 'TOMATOES SALADETTE', 21),
+    ],
+  });
+
+  const summary = await runPriceWatch(client as never, 'org-1', {
+    dryRun: true,
+    matchCall: pickFirstCandidate,
+    observeCall: cannedObservation,
+  });
+
+  assert.deepEqual(writeAttempts, []);
+  assert.equal(summary.itemsCreated, 1, 'the second supplier reuses the in-memory proposal');
+  assert.equal(summary.reviewQueueAdds, 2, 'but each supplier still gets its own review row');
+  assert.equal(summary.pricePointsUpserted, 0, 'an unconfirmed item never yields price points');
+});
+
+test('readOnlyClient: every write method throws, reads pass through', async () => {
+  const { client } = throwingStub({ pw_items: [{ id: 'x' }] });
+  const guarded = readOnlyClient(client as never);
+
+  for (const method of ['insert', 'upsert', 'update', 'delete'] as const) {
+    assert.throws(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      () => (guarded.from('pw_items') as any)[method]({}),
+      /dry run attempted to/,
+      `${method} must be blocked before it reaches the database`,
+    );
+  }
+  // A read still works through the guard.
+  const { data } = await guarded.from('pw_items').select('id');
+  assert.deepEqual(data, [{ id: 'x' }]);
 });

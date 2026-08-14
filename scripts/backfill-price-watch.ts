@@ -85,12 +85,32 @@ interface Args {
   quiet: boolean;
 }
 
+const USAGE =
+  'Usage: node scripts/backfill-price-watch.ts --org <uuid> [--dry-run] [--quiet]';
+
+/**
+ * STRICT on purpose: an argument this parser does not recognise is a fatal
+ * error, not something to ignore.
+ *
+ * This is not pedantry, it is the exact defect that put 56 pw_items and 115
+ * pw_item_matches rows into the production database on 2026-08-14. An earlier
+ * version of this parser silently skipped anything it did not match, so
+ * `--dryrun` — one missing hyphen — parsed as "no flags at all" and the script
+ * ran LIVE while the operator believed they were previewing. A tool holding the
+ * service-role key must never quietly do the more destructive thing when it is
+ * given something it does not understand.
+ */
 function parseArgs(argv: string[]): Args {
   const args: Args = { orgId: null, dryRun: false, quiet: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--org') {
-      args.orgId = argv[i + 1] ?? null;
+      const value = argv[i + 1];
+      if (!value || value.startsWith('-')) {
+        console.error(`Refusing to run: --org needs a value.\n  ${USAGE}`);
+        process.exit(1);
+      }
+      args.orgId = value;
       i += 1;
     } else if (arg.startsWith('--org=')) {
       args.orgId = arg.slice('--org='.length);
@@ -98,6 +118,16 @@ function parseArgs(argv: string[]): Args {
       args.dryRun = true;
     } else if (arg === '--quiet') {
       args.quiet = true;
+    } else if (arg === '--help' || arg === '-h') {
+      console.log(USAGE);
+      process.exit(0);
+    } else {
+      console.error(
+        `Refusing to run: unrecognised argument "${arg}".\n` +
+          `  ${USAGE}\n` +
+          '  (Nothing was read or written. If you meant --dry-run, note the hyphen.)',
+      );
+      process.exit(1);
     }
   }
   return args;
@@ -109,8 +139,16 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // Printing
 // ---------------------------------------------------------------------------
 
+/** "1240.374" → "R 1,240.37".
+ *
+ *  Hand-rolled, NOT toLocaleString('en-ZA'): that locale renders 2.8 as "2,8"
+ *  and 1280 as "1 280", so a terminal full of prices reads as though the
+ *  decimals had moved. Same formatter shape as observe.ts's formatRand, for the
+ *  same reason — a number a human might act on must never be ambiguous. */
 function money(n: number): string {
-  return `R ${n.toLocaleString('en-ZA', { maximumFractionDigits: 2 })}`;
+  const [whole, frac] = Math.abs(n).toFixed(2).split('.');
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `R ${n < 0 ? '-' : ''}${grouped}.${frac}`;
 }
 
 function printSummary(summary: PriceWatchSummary): void {
@@ -249,9 +287,17 @@ async function main(): Promise<void> {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  console.log(
-    `Price Watch backfill: org ${args.orgId}${args.dryRun ? ' (dry run)' : ' (LIVE — will write)'}`,
-  );
+  // The mode is stated loudly and unmistakably, because the failure mode this
+  // guards against is a human scrolling past a one-line "(LIVE)" and believing
+  // they ran a preview.
+  if (args.dryRun) {
+    console.log(`Price Watch backfill: org ${args.orgId} — DRY RUN (read-only, writes disabled)`);
+  } else {
+    console.log('!'.repeat(72));
+    console.log(`!!  LIVE RUN — this WILL write to the database for org ${args.orgId}`);
+    console.log('!!  Add --dry-run to preview instead.');
+    console.log('!'.repeat(72));
+  }
 
   const summary = await runPriceWatch(supabase, args.orgId, {
     dryRun: args.dryRun,
