@@ -40,9 +40,35 @@ export interface LineForNormalization {
   unit_price?: string;
   weight?: string;
   total_kg?: string;
+  /** Packs per box on a punnet/tray line — but a fruit COUNT CODE on a carton
+   *  line. normalizeLine decides which by the box weight it implies; see
+   *  PLAUSIBLE_BOX_MIN_KG. */
+  units_per_box?: string;
 }
 
 export type BaseUnit = 'kg' | 'unit';
+
+/**
+ * HOW a line's per-kg price was arrived at. Threaded through run.ts onto every
+ * price point and enforced by detect.ts, which refuses to compare a series whose
+ * points were derived different ways.
+ *
+ * This is load-bearing, not metadata. The 2026-08-14 diagnosis proved it
+ * experimentally: a series that is mis-scaled but CONSISTENTLY mis-scaled still
+ * reports honest percentages and rand impacts (the scale factor cancels in both
+ * (latest-median)/median and delta x volume). A series that MIXES bases is what
+ * explodes — correcting sub-pack lines without this gate produced a fresh
+ * R1.8m broccoli artifact where a 12-punnet box was compared against a loose kg.
+ */
+export type NormalizationBasis =
+  /** Row was already priced by weight ("unit" is kg/g/...). */
+  | 'weight_unit'
+  /** Box of N sub-kg packs: price is per BOX, weight is per PACK. */
+  | 'sub_pack'
+  /** Ordinary pack with a real per-pack weight (>= 1kg). */
+  | 'pack_weight'
+  /** No weight survived extraction — price is per printed counting unit. */
+  | 'count';
 
 export interface NormalizedUnitPrice {
   /** Unit price expressed in baseUnit terms (rand per kg, or rand per the
@@ -51,7 +77,46 @@ export interface NormalizedUnitPrice {
   /** Quantity for this line expressed in baseUnit terms. */
   quantityBase: number;
   baseUnit: BaseUnit;
+  /** How this price was derived — see NormalizationBasis. */
+  basis: NormalizationBasis;
+  /** Packs per box, ONLY for basis 'sub_pack'. Part of the series identity: a
+   *  supplier that switches from 12-packs to 8-packs has changed what a "box"
+   *  means, and the two are not comparable prices even though both are per-kg. */
+  packsPerBox: number | null;
 }
+
+/** Why a line produced no price point. */
+export type NormalizeRejection =
+  /** Unparseable, zero or negative unit price — not a price observation. */
+  | 'no_price'
+  /**
+   * A sub-kg pack weight with no trustworthy box grouping. NOT normalisable:
+   * dividing a per-box price by a per-punnet weight is what produced
+   * "Lettuce R400/kg" and "Strawberries R1,280/kg" in the live backfill.
+   */
+  | 'sub_pack_unresolvable';
+
+export interface NormalizeResult {
+  value: NormalizedUnitPrice | null;
+  rejection: NormalizeRejection | null;
+}
+
+/**
+ * A plausible produce box, in kg. Used to decide whether `units_per_box` is a
+ * PACK MULTIPLIER or a FRUIT COUNT CODE — the polysemy at the heart of the
+ * 2026-08-14 artifacts:
+ *
+ *   - Ginger Processed: weight 1kg, units_per_box 6   -> 6kg box    (multiplier)
+ *   - Apples Golden:    weight 18.5kg, units_per_box 135 -> 2,497kg (count code:
+ *     135 is the FRUIT COUNT in the carton, an industry size grade)
+ *
+ * A bare "weight >= 1kg means ignore units_per_box" rule gets ginger wrong
+ * (R456/kg instead of the real R76/kg), so the test is the PRODUCT: if
+ * weight x units_per_box lands inside a range a human could lift, it is a real
+ * box; otherwise the number is not a multiplier at all.
+ */
+const PLAUSIBLE_BOX_MIN_KG = 2;
+const PLAUSIBLE_BOX_MAX_KG = 25;
 
 /**
  * Normalise one Doc-U line item to a base-unit price.
@@ -70,12 +135,23 @@ export interface NormalizedUnitPrice {
  * is rejected here rather than downstream).
  */
 export function normalizeLineUnitPrice(line: LineForNormalization): NormalizedUnitPrice | null {
+  return normalizeLine(line).value;
+}
+
+/**
+ * The full form of normalizeLineUnitPrice: the price, or the REASON there isn't
+ * one. run.ts needs the reason (a line parked as unnormalisable is a data-quality
+ * signal a human should see, and is a different fact from "this line has no
+ * price"); everything else just wants the value, and calls the wrapper above.
+ */
+export function normalizeLine(line: LineForNormalization): NormalizeResult {
   const unitPrice = parseAmount(line.unit_price);
-  if (unitPrice == null || unitPrice <= 0) return null;
+  if (unitPrice == null || unitPrice <= 0) return { value: null, rejection: 'no_price' };
 
   const quantity = parseAmount(line.quantity);
   const weight = parseAmount(line.weight);
   const totalKg = parseAmount(line.total_kg);
+  const unitsPerBox = parseAmount(line.units_per_box);
   const unitLabel = (line.unit ?? '').trim().toLowerCase();
 
   // Case 1: the row is already priced BY WEIGHT ("unit" is kg/g/... per
@@ -93,7 +169,10 @@ export function normalizeLineUnitPrice(line: LineForNormalization): NormalizedUn
         : quantity != null && quantity > 0
           ? quantity / factor
           : 0;
-    return { unitPriceBase, quantityBase, baseUnit: 'kg' };
+    return {
+      value: { unitPriceBase, quantityBase, baseUnit: 'kg', basis: 'weight_unit', packsPerBox: null },
+      rejection: null,
+    };
   }
 
   // Case 2: a counting unit (boxes, pockets, punnets, ...), or no unit label
@@ -116,6 +195,50 @@ export function normalizeLineUnitPrice(line: LineForNormalization): NormalizedUn
         : null;
 
   if (perUnitWeight != null && perUnitWeight > 0) {
+    // Case 2a: SUB-PACK. `units_per_box` is a real pack multiplier when the box
+    // it implies is a box a person could carry. Doc-U's extraction contract says
+    // unit_price is "per whatever `unit` says" and tells the model NOT to
+    // multiply by units_per_box — correct for a loose 10kg carton, wrong for a
+    // tray of punnets, where the printed price is per TRAY and the printed
+    // weight is per PUNNET. Left uncorrected that inflates the per-kg price by
+    // exactly units_per_box (Tomatoes Saladette read R857.14/kg against a real
+    // R42.86/kg on a 20-punnet tray).
+    const boxKg =
+      unitsPerBox != null && unitsPerBox > 1 ? perUnitWeight * unitsPerBox : null;
+    if (boxKg != null && boxKg >= PLAUSIBLE_BOX_MIN_KG && boxKg <= PLAUSIBLE_BOX_MAX_KG) {
+      // quantity counts BOXES here, so the line's kg is boxes x kg-per-box.
+      // total_kg is deliberately NOT used: Doc-U computes it as weight x
+      // quantity, which on these lines is punnet-weight x boxes — a number that
+      // is neither the pack weight nor the line weight.
+      const quantityBase = quantity != null && quantity > 0 ? quantity * boxKg : 0;
+      return {
+        value: {
+          unitPriceBase: unitPrice / boxKg,
+          quantityBase,
+          baseUnit: 'kg',
+          basis: 'sub_pack',
+          packsPerBox: unitsPerBox,
+        },
+        rejection: null,
+      };
+    }
+
+    // Case 2b: PARK. A sub-kg pack weight with no usable box grouping cannot be
+    // normalised at all, and the one thing we must NOT do is fall through to
+    // unit_price / weight: a punnet weight under the line's real pack size turns
+    // a R100 tray into "R400/kg lettuce". No price point, counted as
+    // unnormalisable so the volume of them is visible rather than silent.
+    if (perUnitWeight < 1) {
+      return { value: null, rejection: 'sub_pack_unresolvable' };
+    }
+
+    // Case 2c: ordinary pack with a real per-pack weight. `units_per_box` is
+    // IGNORED here by design — on a carton line it is a fruit COUNT CODE
+    // (Apples Golden Delicious: 18.5kg, "135" = the count of fruit in the
+    // carton, an industry size grade), and multiplying by it would claim a
+    // 2.5-tonne box. The plausible-box test above already claimed every case
+    // where the number really is a multiplier, including the 1kg-pack boundary
+    // (Ginger Processed 1kg x 6).
     const unitPriceBase = unitPrice / perUnitWeight;
     const quantityBase =
       totalKg != null && totalKg > 0
@@ -123,7 +246,10 @@ export function normalizeLineUnitPrice(line: LineForNormalization): NormalizedUn
         : quantity != null && quantity > 0
           ? quantity * perUnitWeight
           : 0;
-    return { unitPriceBase, quantityBase, baseUnit: 'kg' };
+    return {
+      value: { unitPriceBase, quantityBase, baseUnit: 'kg', basis: 'pack_weight', packsPerBox: null },
+      rejection: null,
+    };
   }
 
   // Case 3: no weight information survived extraction at all — fall back to
@@ -133,9 +259,14 @@ export function normalizeLineUnitPrice(line: LineForNormalization): NormalizedUn
   // switches from "per box" to "per bag" pricing without a weight figure on
   // either line is a known blind spot for v1 (no data to correct it with).
   return {
-    unitPriceBase: unitPrice,
-    quantityBase: quantity != null && quantity > 0 ? quantity : 0,
-    baseUnit: 'unit',
+    value: {
+      unitPriceBase: unitPrice,
+      quantityBase: quantity != null && quantity > 0 ? quantity : 0,
+      baseUnit: 'unit',
+      basis: 'count',
+      packsPerBox: null,
+    },
+    rejection: null,
   };
 }
 

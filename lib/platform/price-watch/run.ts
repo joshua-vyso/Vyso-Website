@@ -48,14 +48,20 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { isUniqueViolation, isMissingRelation } from '../db-errors.ts';
-import { buildSupplierAliasMap, normalizeLineUnitPrice } from './normalize.ts';
+import { buildSupplierAliasMap, normalizeLine } from './normalize.ts';
 import {
   matchLineItem,
   type MatchModelCall,
   type MatchOutcome,
   type PwItemCandidate,
 } from './match.ts';
-import { detectPriceFindings, type OpenFinding, type PwPricePoint } from './detect.ts';
+import {
+  detectPriceFindings,
+  emptyDetectStats,
+  type DetectStats,
+  type OpenFinding,
+  type PwPricePoint,
+} from './detect.ts';
 import {
   buildFallbackObservation,
   generateObservation,
@@ -81,6 +87,11 @@ export interface PriceWatchLine {
   weight?: string | null;
   total_kg?: string | null;
   amount?: string | null;
+  /** Packs per box on a punnet/tray line, or a fruit count code on a carton
+   *  line — normalizeLine (normalize.ts) decides which. Without this field
+   *  reaching normalizeLine, a sub-pack line can never be recognised as one
+   *  (see NormalizationBasis 'sub_pack'). */
+  units_per_box?: string | null;
   /** Per-line market agent — statements only; empty on single-supplier invoices. */
   supplier?: string | null;
 }
@@ -136,18 +147,52 @@ const WRITE_CHUNK = 200;
 const SAMPLE_LIMIT = 10;
 
 /**
- * How much of the past a statement is assumed to cover, for the
+ * Bounds on how much of the past one statement is assumed to cover, for the
  * statement-vs-invoice double-count guard below.
  *
- * A market statement prints one date (its issue date) and no period, so the
- * period has to be assumed. A month is the OUTER bound of what a produce
- * supplier's statement covers, which is the conservative choice here: too WIDE
- * a window only skips statement lines that invoices already cover (no data
- * lost, invoices are the better source anyway), while too NARROW a window
- * double-counts the same purchase as two price points and inflates the volume
- * behind every rand figure.
+ * A statement prints one date and no period, so the period has to be inferred.
+ * v1 assumed a month, which the 2026-08-14 diagnosis showed is ~30x too wide:
+ * Turn 'n Slice's market statements are DAILY. A 31-day window meant a single
+ * invoice anywhere in the month silently discarded four weeks of real daily
+ * statement lines — the guard was deleting far more evidence than it protected.
+ *
+ * The period is now derived per supplier from the cadence actually observed
+ * (statementPeriodDaysFor), clamped to these bounds. The MAX remains the
+ * ceiling for a supplier whose cadence cannot be observed at all.
  */
-export const STATEMENT_PERIOD_DAYS = 31;
+export const STATEMENT_PERIOD_MIN_DAYS = 1;
+export const STATEMENT_PERIOD_MAX_DAYS = 31;
+
+/**
+ * Infer a supplier's statement period from the dates of its own statements:
+ * the MEDIAN gap between consecutive statement dates, clamped to
+ * [MIN, MAX] days.
+ *
+ * Median, not mean, because one holiday gap or one missing upload should not
+ * stretch the window that a hundred daily statements established. With fewer
+ * than two dated statements there is no cadence to observe, and the honest
+ * assumption is the NARROW one (a single day): a too-narrow guard costs at
+ * worst one duplicated point, while a too-wide one throws away real history —
+ * which is precisely the failure this replaces.
+ */
+export function statementPeriodDaysFor(statementDates: readonly string[]): number {
+  const days = [...new Set(statementDates)]
+    .map((d) => Date.parse(`${d}T00:00:00Z`))
+    .filter((t) => Number.isFinite(t))
+    .sort((a, b) => a - b);
+  if (days.length < 2) return STATEMENT_PERIOD_MIN_DAYS;
+
+  const gaps: number[] = [];
+  for (let i = 1; i < days.length; i += 1) gaps.push((days[i] - days[i - 1]) / DAY_MS);
+  gaps.sort((a, b) => a - b);
+  const mid = Math.floor(gaps.length / 2);
+  const median = gaps.length % 2 !== 0 ? gaps[mid] : (gaps[mid - 1] + gaps[mid]) / 2;
+
+  return Math.min(
+    STATEMENT_PERIOD_MAX_DAYS,
+    Math.max(STATEMENT_PERIOD_MIN_DAYS, Math.round(median)),
+  );
+}
 
 const DAY_MS = 86_400_000;
 
@@ -358,7 +403,9 @@ export function resolveDocumentDate(doc: PriceWatchDocument): DocumentDate | nul
 export function statementCoveredByInvoices(
   statementDate: string,
   invoiceDatesForSupplier: readonly string[],
-  periodDays: number = STATEMENT_PERIOD_DAYS,
+  /** Days this statement is assumed to cover. run.ts passes the supplier's
+   *  observed cadence (statementPeriodDaysFor); the default is the ceiling. */
+  periodDays: number = STATEMENT_PERIOD_MAX_DAYS,
 ): boolean {
   const end = Date.parse(`${statementDate}T00:00:00Z`);
   if (!Number.isFinite(end)) return false;
@@ -494,6 +541,9 @@ export interface SamplePricePoint {
   quantityBase: number;
   baseUnit: string;
   invoiceDate: string;
+  /** How this point's price was derived — see PricePointDraft.basis. */
+  basis: string;
+  packsPerBox: number | null;
 }
 
 export interface SampleReviewItem {
@@ -525,13 +575,33 @@ export interface PriceWatchSummary {
   linesSeen: number;
   linesSkippedNoDescription: number;
   linesSkippedNoPrice: number;
+  /** Sub-kg pack lines with no trustworthy box grouping — parked rather than
+   *  normalised into a fictional per-kg price. A data-quality number: high
+   *  counts mean Doc-U is losing units_per_box on punnet lines. */
+  linesSkippedUnnormalisable: number;
   linesAwaitingReview: number;
   pricePointsUpserted: number;
   pricePointErrors: number;
+  /** Points collapsed as content duplicates before detection (same item, agent,
+   *  date, price and quantity arriving on two documents). */
+  pointsDeduped: number;
+  /** Stored points this run's own re-reading of the same document superseded. */
+  stalePointsIgnored: number;
   itemsCreated: number;
   reviewQueueAdds: number;
   matchModelCalls: number;
+  /** Match calls that reached the model and failed (transport, key, 4xx). */
+  matchModelFailures: number;
+  observeModelCalls: number;
+  /** Observations that produced no usable model text (transport or fidelity). */
+  observeModelFailures: number;
+  /** True when EVERY model call in this run failed — the outage that hid for
+   *  two full runs behind the designed fallbacks. */
+  modelOutage: boolean;
   matchCacheHits: number;
+  /** Per-supplier statement period the double-count guard used, in days. */
+  statementPeriodDays: Record<string, number>;
+  detect: DetectStats;
   findingsDetected: number;
   findingsWritten: number;
   findingsSkippedDuplicate: number;
@@ -556,13 +626,22 @@ function emptySummary(orgId: string, dryRun: boolean): PriceWatchSummary {
     linesSeen: 0,
     linesSkippedNoDescription: 0,
     linesSkippedNoPrice: 0,
+    linesSkippedUnnormalisable: 0,
     linesAwaitingReview: 0,
     pricePointsUpserted: 0,
     pricePointErrors: 0,
+    pointsDeduped: 0,
+    stalePointsIgnored: 0,
     itemsCreated: 0,
     reviewQueueAdds: 0,
     matchModelCalls: 0,
+    matchModelFailures: 0,
+    observeModelCalls: 0,
+    observeModelFailures: 0,
+    modelOutage: false,
     matchCacheHits: 0,
+    statementPeriodDays: {},
+    detect: emptyDetectStats(),
     findingsDetected: 0,
     findingsWritten: 0,
     findingsSkippedDuplicate: 0,
@@ -662,6 +741,12 @@ interface PricePointDraft {
   unit_price: number;
   quantity_base: number;
   invoice_date: string;
+  /** How this point's price was derived (normalize.ts's NormalizationBasis)
+   *  and its pack multiplier when relevant. NOT written to pw_price_points
+   *  (see the write loop below) — these live only on the in-memory objects
+   *  fed to detectPriceFindings's series-consistency gate. */
+  basis: string;
+  packsPerBox: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -873,21 +958,29 @@ export async function runPriceWatch(
         continue;
       }
 
-      // normalize.ts returns null for an unparseable or zero/negative price —
-      // a credit reversal, a "no charge" promo line, or extraction noise. Those
-      // must never reach a median (see its own comments).
-      const normalized = normalizeLineUnitPrice({
+      // normalize.ts returns null (with a reason) for a line that isn't a
+      // usable price observation: an unparseable/zero/negative price (a credit
+      // reversal, a "no charge" promo line, extraction noise), or a sub-kg pack
+      // with no trustworthy box grouping (see normalizeLine's own comments —
+      // that second case must never fall through to a fabricated per-kg price).
+      const normalizeResult = normalizeLine({
         description: rawDescription,
         quantity: line.quantity ?? undefined,
         unit: line.unit ?? undefined,
         unit_price: line.unit_price ?? undefined,
         weight: line.weight ?? undefined,
         total_kg: line.total_kg ?? undefined,
+        units_per_box: line.units_per_box ?? undefined,
       });
-      if (!normalized) {
-        summary.linesSkippedNoPrice += 1;
+      if (!normalizeResult.value) {
+        if (normalizeResult.rejection === 'sub_pack_unresolvable') {
+          summary.linesSkippedUnnormalisable += 1;
+        } else {
+          summary.linesSkippedNoPrice += 1;
+        }
         continue;
       }
+      const normalized = normalizeResult.value;
 
       const rawAgent = (line.supplier ?? '').trim();
       const lineSupplier = rawAgent ? aliasMap.get(rawAgent) ?? rawAgent : null;
@@ -910,7 +1003,13 @@ export async function runPriceWatch(
         // 'no_candidates' short-circuits inside matchLineItem without spending a
         // call, so it must not be counted as one — this number is how the Claude
         // budget is watched.
-        if (outcome.reason !== 'no_candidates') summary.matchModelCalls += 1;
+        if (outcome.reason !== 'no_candidates') {
+          summary.matchModelCalls += 1;
+          // 'model_error' is specifically the call() throwing (rate limit,
+          // timeout, missing key — see match.ts). Every other reason means the
+          // model was reached and answered, just not usefully.
+          if (outcome.reason === 'model_error') summary.matchModelFailures += 1;
+        }
 
         const created = applyMatchOutcome({
           orgId,
@@ -952,6 +1051,8 @@ export async function runPriceWatch(
         unit_price: normalized.unitPriceBase,
         quantity_base: normalized.quantityBase,
         invoice_date: e.date,
+        basis: normalized.basis,
+        packsPerBox: normalized.packsPerBox,
       });
       usedAnyLine = true;
 
@@ -967,6 +1068,8 @@ export async function runPriceWatch(
           quantityBase: normalized.quantityBase,
           baseUnit: normalized.baseUnit,
           invoiceDate: e.date,
+          basis: normalized.basis,
+          packsPerBox: normalized.packsPerBox,
         });
       }
     }
@@ -1072,7 +1175,41 @@ export async function runPriceWatch(
       unitPrice: d.unit_price,
       quantityBase: d.quantity_base,
       invoiceDate: d.invoice_date,
+      basis: d.basis,
+      packsPerBox: d.packsPerBox,
     });
+  }
+
+  // ---- 9b. Content-level dedupe, before detection -------------------------
+  // Row identity (document_id, line_index) is not the same thing as PURCHASE
+  // identity: the 2026-08-14 diagnosis found 54/381 points (14%) were the same
+  // delivery re-printed on two same-day market statements, or one invoice
+  // uploaded twice. Each duplicate silently doubles both the median's sample
+  // and — worse — the trailing volume that randImpact is built from. Content
+  // identity is (item, market agent, invoice date, unit price, quantity base):
+  // deliberately NOT document_id (that's exactly what's duplicated) and NOT
+  // supplier_id (the same purchase re-billed under a different document is
+  // still one purchase). Map iteration order is insertion order, so the first
+  // occurrence — stored history before this run's own points, and within
+  // those, ascending document read order — always wins; this is deterministic
+  // across re-runs of the same data, which is what makes a duplicate-point
+  // count meaningful to compare run over run.
+  const seenContent = new Set<string>();
+  const dedupedPoints: PwPricePoint[] = [];
+  for (const point of pointByLine.values()) {
+    const contentKey = [
+      point.pwItemId,
+      point.lineSupplier ?? '',
+      point.invoiceDate,
+      point.unitPrice,
+      point.quantityBase,
+    ].join('::');
+    if (seenContent.has(contentKey)) {
+      summary.pointsDeduped += 1;
+      continue;
+    }
+    seenContent.add(contentKey);
+    dedupedPoints.push(point);
   }
 
   // ---- 10. Open findings → suppression list ------------------------------
@@ -1101,7 +1238,12 @@ export async function runPriceWatch(
   }
 
   // ---- 11. Detect + write findings ---------------------------------------
-  const candidates = detectPriceFindings([...pointByLine.values()], openFindings);
+  // `summary.detect` is passed in (not left to detectPriceFindings's own
+  // default) so the caller — the backfill script's printout, the cron's JSON
+  // body — can actually see how many series the mixed-basis gate suppressed.
+  // That count is the whole point of today's fix: without it, a human has no
+  // way to tell "the gate is working" from "there was nothing to suppress".
+  const candidates = detectPriceFindings(dedupedPoints, openFindings, summary.detect);
   summary.findingsDetected = candidates.length;
 
   for (const candidate of candidates) {
@@ -1122,6 +1264,13 @@ export async function runPriceWatch(
 
     const text = await generateFindingText(facts, dryRun, opts.observeCall);
     if (text.source === 'template') summary.observationFallbacks += 1;
+    // A dry run deliberately never calls the writing model (generateFindingText
+    // short-circuits to the template) — that's a designed skip, not a failure,
+    // so only a real run's attempts count toward the outage check below.
+    if (!dryRun) {
+      summary.observeModelCalls += 1;
+      if (text.source === 'template') summary.observeModelFailures += 1;
+    }
 
     const dedupeKey = buildDedupeKey({
       supplierId: candidate.supplierId,
@@ -1165,6 +1314,28 @@ export async function runPriceWatch(
       summary.findingErrors += 1;
       summary.warnings.push(`agent_findings insert failed: ${error.message}`);
     }
+  }
+
+  // The 2026-08-14 incident: neither Claude call ever succeeded for two full
+  // runs because both were reached via an `@/` alias import that fails outside
+  // Next's bundler, and the designed fallbacks (review queue / template
+  // observations) absorbed every failure silently — including on the
+  // BACKFILL SCRIPT'S DRY RUN, which is exactly where the outage first hid: a
+  // dry run skips writing match results and skips the observe call entirely
+  // (see generateFindingText), but it still calls the MATCHER for real, for
+  // every genuinely new description. So this check is not dry-run-gated: it
+  // fires whenever every model call actually attempted this run — match,
+  // observe, or both — came back a failure.
+  const modelCallsAttempted = summary.matchModelCalls + summary.observeModelCalls;
+  const modelCallsFailed = summary.matchModelFailures + summary.observeModelFailures;
+  summary.modelOutage = modelCallsAttempted > 0 && modelCallsFailed === modelCallsAttempted;
+  if (summary.modelOutage) {
+    summary.warnings.push(
+      `Price Watch model outage: all ${modelCallsAttempted} match/observe model calls failed ` +
+        `this run (0 succeeded) — every match landed in the review queue and every finding used ` +
+        'the fallback template. Check the injected model call (lib/ai/price-watch-model.ts): the ' +
+        '2026-08-14 incident was caused by an unresolvable "@/" import outside Next\'s bundler.',
+    );
   }
 
   log(

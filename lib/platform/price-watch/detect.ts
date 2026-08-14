@@ -39,6 +39,17 @@ export interface PwPricePoint {
   quantityBase: number;
   /** yyyy-mm-dd. */
   invoiceDate: string;
+  /**
+   * HOW this point's per-kg price was derived (normalize.ts's
+   * NormalizationBasis), plus the pack multiplier when it was a sub-pack line.
+   *
+   * Optional because points read back from pw_price_points predate the column —
+   * absent reads as one single "unknown" basis, so a series entirely of them is
+   * still compared (that is the pre-2026-08-14 behaviour, unchanged), while a
+   * series that MIXES known and unknown is suppressed.
+   */
+  basis?: string | null;
+  packsPerBox?: number | null;
 }
 
 /** Series identity: everything that must match for two points to be the
@@ -112,10 +123,17 @@ const MIN_SERIES_POINTS = 3;
 const VOLUME_WINDOW_DAYS = 84;
 
 /** Below this, extrapolating a handful of deliveries to a full year is a
- *  fiction rather than an estimate — mirrors measuredAnnualUnits's identical
- *  7-day floor (supplysync-pricing.ts) for the same reason: a volume window
- *  that short can swing wildly on which single delivery landed inside it. */
-const MIN_ANNUALISE_SPAN_DAYS = 7;
+ *  fiction rather than an estimate — a volume window that short can swing
+ *  wildly on which single delivery landed inside it.
+ *
+ *  Raised 7 -> 14 after the 2026-08-14 backfill (architect decision): on DAILY
+ *  market statements a 7-day span is a single week of buying, and annualising
+ *  it multiplied ordinary week-to-week volume swings by 52 straight into the
+ *  rand impact. Deliberately not raised further — v1 needs some findings to
+ *  tune against, and the `verdict` column exists to catch the ones that are
+ *  wrong. (supplysync-pricing.ts's measuredAnnualUnits keeps its own 7-day
+ *  floor: its window is the whole observed series, not a fixed 12 weeks.) */
+const MIN_ANNUALISE_SPAN_DAYS = 14;
 
 const DAY_MS = 86_400_000;
 
@@ -125,6 +143,66 @@ const DAY_MS = 86_400_000;
 
 function seriesKeyOf(p: PriceSeriesIdentity): string {
   return `${p.supplierId}::${p.lineSupplier ?? ''}::${p.pwItemId}`;
+}
+
+/**
+ * What a point's price is COMPARABLE to. Two points share a comparison basis
+ * only when they were derived the same way — and, for sub-pack lines, from the
+ * same pack multiplier.
+ *
+ * A basis-less point (read back from pw_price_points, which has no such column)
+ * collapses to one shared 'unknown' value, so a series entirely of them behaves
+ * exactly as it did before this gate existed.
+ */
+function comparisonBasisOf(p: PwPricePoint): string {
+  const basis = (p.basis ?? 'unknown') || 'unknown';
+  // packsPerBox only changes the meaning of a sub-pack price. On every other
+  // basis it is ignored by normalize.ts, so including it would split series for
+  // no reason.
+  return basis === 'sub_pack' ? `sub_pack:${p.packsPerBox ?? '?'}` : basis;
+}
+
+/**
+ * True when every point in a series can honestly be compared with every other.
+ *
+ * THE LOAD-BEARING RULE (2026-08-14 diagnosis). A series that is mis-scaled but
+ * CONSISTENTLY mis-scaled still reports the truth about the things findings are
+ * made of: the scale factor cancels in (latest - median) / median, and it
+ * cancels again in delta x volume. A series that MIXES bases does not — one
+ * 12-punnet tray priced per box against the same produce priced loose per kg is
+ * a 12x "price move" that never happened. Correcting sub-pack normalisation
+ * WITHOUT this gate was measured to produce a fresh R1.8m broccoli artifact, so
+ * the gate ships with the correction, not after it.
+ *
+ * Suppression, not repair: there is no arithmetic that rescues a series whose
+ * points mean different things, and guessing one would be the invented number
+ * this agent exists not to produce.
+ */
+export function seriesIsComparable(points: PwPricePoint[]): boolean {
+  if (points.length === 0) return false;
+  const first = comparisonBasisOf(points[0]);
+  return points.every((p) => comparisonBasisOf(p) === first);
+}
+
+/** Counters describing what detection did with each series. Optional: pass one
+ *  in to report on suppressions (run.ts does), ignore it to just get findings. */
+export interface DetectStats {
+  seriesTotal: number;
+  /** Series dropped because their points aren't mutually comparable. */
+  seriesSuppressedMixedBasis: number;
+  /** Series that qualified but already have an open finding. */
+  seriesSuppressedOpenFinding: number;
+  /** Series shorter than the 3-point history floor. */
+  seriesBelowPointFloor: number;
+}
+
+export function emptyDetectStats(): DetectStats {
+  return {
+    seriesTotal: 0,
+    seriesSuppressedMixedBasis: 0,
+    seriesSuppressedOpenFinding: 0,
+    seriesBelowPointFloor: 0,
+  };
 }
 
 /** yyyy-mm-dd -> epoch ms, local midnight. Matches
@@ -196,6 +274,7 @@ function trailingAnnualUnits(series: PwPricePoint[], asOfDate: string): number |
 export function detectPriceFindings(
   points: PwPricePoint[],
   openFindings: OpenFinding[] = [],
+  stats: DetectStats = emptyDetectStats(),
 ): FindingCandidate[] {
   const bySeries = new Map<string, PwPricePoint[]>();
   for (const p of points) {
@@ -218,11 +297,23 @@ export function detectPriceFindings(
 
   const out: FindingCandidate[] = [];
   for (const [key, unsorted] of bySeries) {
+    stats.seriesTotal += 1;
+
     // < 3 points: acceptance criterion 5's history floor. Checked on the
     // WHOLE series, not just what falls inside the 60-day window below —
     // three ancient points still mean "we have never actually seen the
     // price move before", which is exactly the case a median guards against.
-    if (unsorted.length < MIN_SERIES_POINTS) continue;
+    if (unsorted.length < MIN_SERIES_POINTS) {
+      stats.seriesBelowPointFloor += 1;
+      continue;
+    }
+
+    // Mixed normalisation bases -> these prices are not the same kind of
+    // number and comparing them invents a move. See seriesIsComparable.
+    if (!seriesIsComparable(unsorted)) {
+      stats.seriesSuppressedMixedBasis += 1;
+      continue;
+    }
 
     const series = [...unsorted].sort((a, b) => a.invoiceDate.localeCompare(b.invoiceDate));
     // "Latest" = max invoiceDate. On a same-day tie the stable sort keeps
@@ -262,7 +353,10 @@ export function detectPriceFindings(
     const randImpact = Math.round(deltaPerUnit * annualUnits);
     if (randImpact < RAND_IMPACT_FLOOR) continue;
 
-    if (openSet.has(`${key}::increase`)) continue;
+    if (openSet.has(`${key}::increase`)) {
+      stats.seriesSuppressedOpenFinding += 1;
+      continue;
+    }
 
     out.push({
       supplierId: latest.supplierId,

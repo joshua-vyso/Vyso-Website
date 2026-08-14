@@ -25,9 +25,10 @@
  * VALUE: "R 12,480.37", "R12 480.37", "12480.37" and "R12,480" (rounded to the
  * precision shown) all pass for the same input; 12,481 does not.
  *
- * Pure by construction — the Claude call is injected and defaults to a lazy
- * import of the server-only client, so the validator and the fallback are unit-
- * testable offline with canned text.
+ * Pure by construction — the Claude call is INJECTED by the caller (there is no
+ * default; see missingModelCall), so the validator and the fallback are unit-
+ * testable offline with canned text and this module's import graph stays free of
+ * the SDK.
  */
 
 // ---------------------------------------------------------------------------
@@ -405,11 +406,23 @@ export function evaluateObservationReply(
 // Orchestration
 // ---------------------------------------------------------------------------
 
-/** Lazy so this module's static graph stays free of `server-only` and the SDK
- *  (see the equivalent note in match.ts). */
-async function defaultCall(prompt: { system: string; user: string }): Promise<string> {
-  const mod = await import('@/lib/ai/anthropic');
-  return mod.runPriceWatchObservation(prompt);
+/**
+ * No default call, ON PURPOSE (2026-08-14 incident — same story as match.ts).
+ *
+ * This was `await import('@/lib/ai/anthropic')`: resolvable only under Next's
+ * bundler, and throwing on load in any plain node/tsx process because that
+ * module is marked `server-only`. Every observation the backfill CLI generated
+ * therefore came from the deterministic template, and `generateObservation`'s
+ * fallback made that indistinguishable from "the model wrote something we
+ * rejected". The fallback is a safety net, not a transport — so the transport is
+ * now injected by the caller (lib/ai/price-watch-model.ts) and its absence is a
+ * named error rather than a silent downgrade.
+ */
+async function missingModelCall(): Promise<string> {
+  throw new Error(
+    'generateObservation was called with no model call injected. Pass `call` (see ' +
+      'lib/ai/price-watch-model.ts → priceWatchObservationCall); run.ts takes it as opts.observeCall.',
+  );
 }
 
 /**
@@ -422,7 +435,7 @@ async function defaultCall(prompt: { system: string; user: string }): Promise<st
  */
 export async function generateObservation(
   facts: FindingFacts,
-  call: ObserveModelCall = defaultCall,
+  call: ObserveModelCall = missingModelCall,
 ): Promise<ObservationResult> {
   let lastViolations: string[] = [];
 

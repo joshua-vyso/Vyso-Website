@@ -504,6 +504,138 @@ test('runPriceWatch dry run: in-memory proposals still converge two suppliers on
   assert.equal(summary.pricePointsUpserted, 0, 'an unconfirmed item never yields price points');
 });
 
+// ---------------------------------------------------------------------------
+// The normalization basis seam (2026-08-14 completion): normalizeLine's
+// rejection reason reaching its own counter, basis threaded through to
+// detection, content-level dedupe, and the total-model-outage warning.
+// ---------------------------------------------------------------------------
+
+test('runPriceWatch: a sub-kg pack with no plausible box grouping is parked, not guessed into a price', async () => {
+  // 300g punnets, no units_per_box at all — normalizeLine cannot tell what a
+  // "box" of these is, so this must be REJECTED ('sub_pack_unresolvable'),
+  // never fall through to unit_price / weight (which is exactly how
+  // "Lettuce R400/kg" got manufactured in the live backfill).
+  const docWithUnresolvableLine = {
+    id: 'doc-1',
+    supplier_id: 'sup-1',
+    document_type: 'invoice',
+    status: 'extracted',
+    archived_at: null,
+    created_at: '2026-07-20T09:15:00.000Z',
+    filename: 'invoice-1.pdf',
+    extracted_data: {
+      fields: [{ label: 'Invoice Date', value: '2026-07-20' }],
+      line_items: [
+        {
+          description: 'STRAWBERRIES PUNNET',
+          quantity: '5',
+          unit: 'punnets',
+          unit_price: '20',
+          weight: '0.3',
+          total_kg: '1.5',
+          units_per_box: '',
+        },
+      ],
+    },
+  };
+
+  const { client, writeAttempts } = throwingStub({
+    pw_items: [{ id: 'item-straw', name: 'Strawberries', base_unit: 'kg' }],
+    suppliers: [{ id: 'sup-1', name: 'Supplier One' }],
+    pw_item_matches: [],
+    pw_price_points: [],
+    agent_findings: [],
+    documents: [docWithUnresolvableLine],
+  });
+
+  const summary = await runPriceWatch(client as never, 'org-1', {
+    dryRun: true,
+    matchCall: pickFirstCandidate,
+    observeCall: cannedObservation,
+  });
+
+  assert.deepEqual(writeAttempts, []);
+  assert.equal(summary.linesSkippedUnnormalisable, 1);
+  assert.equal(summary.linesSkippedNoPrice, 0, 'this is a distinct signal from "no price at all"');
+  assert.equal(summary.pricePointsUpserted, 0);
+});
+
+test('runPriceWatch: content-identical points from two documents collapse to one before detection', async () => {
+  const docs = [
+    statementDoc('doc-1', 'sup-1', '2026-06-01', 'TOMATOES SALADETTE', 20),
+    // Same purchase, re-printed on a second same-day statement — the exact
+    // 2026-08-14 diagnosis case (54/381 live points were duplicates like this).
+    statementDoc('doc-2', 'sup-1', '2026-06-01', 'TOMATOES SALADETTE', 20),
+    statementDoc('doc-3', 'sup-1', '2026-07-10', 'TOMATOES SALADETTE', 21),
+  ];
+  const { client, writeAttempts } = throwingStub({
+    pw_items: [{ id: 'item-tom', name: 'Tomatoes Saladette', base_unit: 'kg' }],
+    suppliers: [{ id: 'sup-1', name: 'JHB Fresh Produce Market' }],
+    pw_item_matches: [],
+    pw_price_points: [],
+    agent_findings: [],
+    documents: docs,
+  });
+
+  const summary = await runPriceWatch(client as never, 'org-1', {
+    dryRun: true,
+    matchCall: pickFirstCandidate,
+    observeCall: cannedObservation,
+  });
+
+  assert.deepEqual(writeAttempts, []);
+  assert.equal(
+    summary.pricePointsUpserted,
+    3,
+    'all three lines still count as planned writes — dedupe is only a detection-input concern',
+  );
+  assert.equal(
+    summary.pointsDeduped,
+    1,
+    'the re-printed same-day duplicate collapses to one point before detection',
+  );
+  assert.equal(
+    summary.detect.seriesBelowPointFloor,
+    1,
+    'two unique points is below the 3-point history floor once the duplicate is removed',
+  );
+  assert.equal(summary.findingsDetected, 0, 'a duplicate-inflated series must not manufacture a finding');
+});
+
+test('runPriceWatch: a total match-model outage is loudly warned about, even on a dry run', async () => {
+  // Reproduces the 2026-08-14 incident shape: the injected call always throws
+  // (an unresolvable import outside Next's bundler). A dry run still calls the
+  // MATCHER for real for a genuinely new description — only the write of its
+  // result and the separate observe call are skipped — so the outage must be
+  // visible here, not hidden behind "well, it was only a dry run".
+  const alwaysThrows = async (): Promise<string> => {
+    throw new Error("Cannot find module '@/lib/ai/anthropic'");
+  };
+  const { client, writeAttempts } = throwingStub({
+    pw_items: [{ id: 'item-tom', name: 'Tomatoes Saladette', base_unit: 'kg' }],
+    suppliers: [{ id: 'sup-1', name: 'JHB Fresh Produce Market' }],
+    pw_item_matches: [],
+    pw_price_points: [],
+    agent_findings: [],
+    documents: [statementDoc('doc-1', 'sup-1', '2026-06-01', 'TOMATOES SALADETTE', 20)],
+  });
+
+  const summary = await runPriceWatch(client as never, 'org-1', {
+    dryRun: true,
+    matchCall: alwaysThrows,
+    observeCall: cannedObservation,
+  });
+
+  assert.deepEqual(writeAttempts, []);
+  assert.equal(summary.matchModelCalls, 1);
+  assert.equal(summary.matchModelFailures, 1);
+  assert.equal(summary.modelOutage, true);
+  assert.ok(
+    summary.warnings.some((w) => w.includes('model outage')),
+    'a total outage must be a loud, specific warning, not just a silent counter nobody reads',
+  );
+});
+
 test('readOnlyClient: every write method throws, reads pass through', async () => {
   const { client } = throwingStub({ pw_items: [{ id: 'x' }] });
   const guarded = readOnlyClient(client as never);

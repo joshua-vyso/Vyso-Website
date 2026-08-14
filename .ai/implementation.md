@@ -178,3 +178,64 @@ per-doc reconciliation check, auto-restore from backup on regression).
   + the 7 agent_findings (KEEP pw_items + 112 confirmed matches — sound and free to
   reuse) and re-run. Expected: ~263 points, 1-2 findings. MIN_ANNUALISE_SPAN_DAYS 7→14
   (architect decision: honesty floor without muting v1 entirely).
+
+## pw(5) — normalization basis seam + fix completion (2026-08-14, resumed)
+
+Completed the seam the assembly agent died mid-write on twice
+(`.ai/plan_pw_fix_completion.md`).
+
+- `run.ts:964` (was `:950`) now calls `normalizeLine(...)` instead of the removed
+  `normalizeLineUnitPrice` — the tsc TS2304 error and the 3 failing tests
+  (`runPriceWatch dry run: …`, tests 96–98) are fixed. `result.rejection ===
+  'sub_pack_unresolvable'` → `linesSkippedUnnormalisable += 1`; every other null
+  value → `linesSkippedNoPrice += 1`, matching the plan exactly.
+- **Found and fixed a gap the plan didn't call out**: `PriceWatchLine` (the
+  `documents.extracted_data.line_items` shape run.ts reads) never carried
+  `units_per_box`, and the `normalizeLine(...)` call never passed it through —
+  so `NormalizationBasis 'sub_pack'` could never fire from real data no matter
+  what else was fixed (boxKg is only computed when `units_per_box` is present).
+  Added the field to `PriceWatchLine` and threaded `line.units_per_box` into the
+  call (`run.ts:82-92`, `:964-976`).
+- `basis`/`packsPerBox` now threaded from `normalizeLine`'s result into:
+  `PricePointDraft` (write payload — used only in-memory, NOT sent to the DB
+  insert, per the plan), the `PwPricePoint` objects built from `drafts` for
+  detection input, and `SamplePricePoint` (the backfill's printout). Points read
+  back from `pw_price_points` still have no `basis` column by design — they
+  collapse to `detect.ts`'s `'unknown'` bucket, unchanged from pre-fix behaviour.
+- **Found and fixed a second gap**: `detectPriceFindings(...)` was called
+  without its optional third `stats` argument, so `summary.detect` — the
+  mixed-basis-suppression counts that are the entire diagnostic value of this
+  fix — was always all-zero in the returned summary, silently. Now passed as
+  `detectPriceFindings(dedupedPoints, openFindings, summary.detect)`.
+- Audited the two remaining fix-spec items (plan step 3) — neither existed yet,
+  both implemented:
+  - **Content-level dedupe before detection**: keyed on `(pw_item_id,
+    line_supplier, invoice_date, unit_price, quantity_base)` — org is implicit
+    (one org per run), document/line_index deliberately excluded (that's
+    exactly what's duplicated). Runs over the merged stored+draft point map,
+    first occurrence wins (stored history before this run's own points), and
+    only affects what `detectPriceFindings` sees — NOT what gets written to
+    `pw_price_points` (every line still gets its own row; two documents
+    describing one purchase is a detection-input problem, not a write
+    problem). `summary.pointsDeduped` counts the collapsed points.
+  - **Zero-successful-model-calls warning**: `summary.modelOutage` is true
+    when `matchModelCalls + observeModelCalls > 0` and every one of them
+    failed (`matchModelFailures` + `observeModelFailures` — added the actual
+    increments too; both fields existed in the interface but were never
+    written). Pushes a specific warning naming the 2026-08-14 root cause.
+    Deliberately **not** gated on `dryRun`: the matcher is called for real
+    even on a dry run (only the DB write of its result and the separate
+    observe call are skipped), and the 2026-08-14 outage was first hidden
+    behind exactly a dry run — a `!dryRun` guard would have re-hidden it.
+- Gates: `npx tsc --noEmit` clean except the pre-existing exempt
+  `lib/platform/whatsapp-ingest.ts` errors (3, unchanged). `npm run lint`: 85
+  pre-existing problems (53 errors/32 warnings), all in exempt files
+  (vyso-ai/*, wastewatch/*, module-ui.tsx, plus unrelated whatsapp/component
+  files already failing before this change) — zero in any price-watch or
+  `lib/ai/anthropic.ts`/`price-watch-model.ts` file. `npm run test`: 148/148
+  (145 pre-existing + 3 added for the seam: `sub_pack_unresolvable` → counter,
+  content dedupe → `seriesBelowPointFloor`, total match-outage → warning).
+- No deviations from the plan's ordered steps; the two "found and fixed" items
+  above are additions the plan's own wording anticipated ("Verify how drafts
+  flow into the detect call and thread accordingly"; "ensure output is
+  truthful") rather than departures from it.

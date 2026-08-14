@@ -28,11 +28,11 @@
  *    name (`cleanDisplayName`) and route it to the review queue for a human to
  *    create. That is how the catalogue grows without the agent inventing rows.
  *
- * Pure by construction: the Claude call is injected (`MatchModelCall`) and
- * defaults to a LAZY import of the server-only client, so this module carries no
- * `server-only` marker in its static graph and the contract logic below is
- * testable with canned strings and no API key. The lazy import still trips
- * `server-only` at build time if a client component ever pulls this in.
+ * Pure by construction: the Claude call is INJECTED (`MatchModelCall`) by the
+ * caller, so this module's import graph carries neither `server-only` nor the
+ * Anthropic SDK, and the contract logic below is testable with canned strings
+ * and no API key. There is deliberately no default — see missingModelCall at the
+ * bottom for the outage that removed it.
  */
 
 // Relative + explicit `.ts` so `node --test tests/*.test.ts` can resolve it
@@ -345,14 +345,25 @@ export function parseMatchResponse(
 // ---------------------------------------------------------------------------
 
 /**
- * Default model call. Imported lazily so the static import graph of this module
- * stays free of `server-only` and the Anthropic SDK — that is what lets the
- * node:test suite import this file directly. Callers (run.ts, the backfill
- * script) get working behaviour with no wiring; tests pass their own `call`.
+ * There is no default model call, ON PURPOSE (2026-08-14 incident).
+ *
+ * This used to be `await import('@/lib/ai/anthropic')`, chosen so the static
+ * import graph stayed free of `server-only` and the SDK. It worked under Next
+ * and failed everywhere else: the `@/` alias is a bundler construct and
+ * anthropic.ts throws on load outside a server component. The backfill CLI is a
+ * plain node process, so EVERY match it attempted threw — and `matchLineItem`
+ * dutifully turned each one into a `model_error` review row, exactly as
+ * designed. A silent outage for two full runs.
+ *
+ * A convenient default that can fail invisibly is worse than no default. Both
+ * callers now inject a real call (lib/ai/price-watch-model.ts), and a missing
+ * injection is a loud, specific error rather than a shrug into the review queue.
  */
-async function defaultCall(prompt: { system: string; user: string }): Promise<string> {
-  const mod = await import('@/lib/ai/anthropic');
-  return mod.runPriceWatchMatch(prompt);
+async function missingModelCall(): Promise<string> {
+  throw new Error(
+    'matchLineItem was called with no model call injected. Pass `call` (see ' +
+      'lib/ai/price-watch-model.ts → priceWatchMatchCall); run.ts takes it as opts.matchCall.',
+  );
 }
 
 /**
@@ -363,7 +374,7 @@ async function defaultCall(prompt: { system: string; user: string }): Promise<st
  */
 export async function matchLineItem(
   input: MatchInput,
-  call: MatchModelCall = defaultCall,
+  call: MatchModelCall = missingModelCall,
 ): Promise<MatchOutcome> {
   const shortlist = shortlistCandidates(input.rawDescription, input.candidates);
 
