@@ -603,7 +603,13 @@ html, body {
   --pf-pad-card:20px;
   --pf-gap-stack:20px;
   --pf-gap-grid:12px;
-  --pf-topbar-h:66px;
+  /* Repointed W3 (plan §7): TopBar (66px) is unmounted everywhere as of Wave 3
+     — its only living consumer now is MobileTopBar.tsx's own `<lg` header, so
+     the var tracks that height (56px) instead. BriefRail.tsx's old
+     `calc(100dvh-var(--pf-topbar-h))` consumer was deleted with the file in
+     Wave 2; TopBar.tsx itself hardcodes h-[66px] and never read this var, so
+     nothing else observes this change. */
+  --pf-topbar-h:56px;
   /* 216px, not the design system's 248px — the mock (.ai/design/vyso-brief/Vyso
      - The Brief.dc.html, rail div) hardcodes 216px and that measured value wins
      over tokens/spacing.css per plan_chat_first_shell.md §7. Zero consumers

@@ -13,18 +13,13 @@ import { trialPillLabel, type RailModule } from './shell-data';
  * content in MobileDrawer. Owns the drawer's open/close state itself, the same
  * self-containment TopBar had for ModulesOverlay's `modulesOpen`.
  *
- * HEIGHT. ~56px per plan §6, but deliberately NOT wired to --pf-topbar-h. As
- * of Wave 2 that var has no consumer left in code — BriefRail.tsx's sticky
- * `h-[calc(100dvh-var(--pf-topbar-h))]` went with the file — but it still
- * DESCRIBES a live height: TopBar.tsx renders `<lg` until Wave 3 and is 66px
- * (hardcoded, it never read the var). The var stays at 66px until TopBar is
- * unmounted; `h-14` (56px) is a plain literal here. Wave 3 can repoint
- * --pf-topbar-h to 56px and switch this to `h-[var(--pf-topbar-h)]` in the
- * same change that drops TopBar (plan §7 flags exactly this repointing, just
- * not the "when").
+ * HEIGHT. ~56px per plan §6. As of Wave 3, TopBar is unmounted everywhere and
+ * this is --pf-topbar-h's only remaining consumer, so the var is repointed to
+ * 56px (app/globals.css) and this header reads it via `h-[var(--pf-topbar-h)]`
+ * instead of a hardcoded `h-14` literal (plan §7 ruling).
  *
- * Unmounted in Wave 1 — not imported by app/app/layout.tsx yet (Wave 3 mounts
- * it as the `<lg` sibling of AppRail).
+ * Mounted by app/app/layout.tsx from Wave 3 on, as the `<lg` sibling of
+ * AppRail — outside TrialGate/ModuleLockGuard (plan §8 E1).
  */
 export function MobileTopBar({
   openCount,
@@ -41,7 +36,7 @@ export function MobileTopBar({
 
   return (
     <>
-      <header className="z-30 flex h-14 shrink-0 items-center gap-3 border-b border-[var(--pf-border-chrome)] bg-white/90 px-4 backdrop-blur-[10px] lg:hidden">
+      <header className="z-30 flex h-[var(--pf-topbar-h)] shrink-0 items-center gap-3 border-b border-[var(--pf-border-chrome)] bg-white/90 px-4 backdrop-blur-[10px] lg:hidden">
         <Link href="/app" aria-label="Vyso home" className="flex shrink-0 items-center">
           <VysoMark width={80} color="#171A17" />
         </Link>

@@ -3,10 +3,10 @@ import { redirect } from 'next/navigation';
 import { getPlatformSession } from '@/lib/platform/supabase-server';
 import { PlatformProvider } from '@/lib/platform/session';
 import { fetchFindings } from '@/lib/platform/agent-findings';
-import { TopBar } from '@/components/platform/TopBar';
 import { ModuleLockGuard } from '@/components/platform/ModuleLockGuard';
 import { TrialGate } from '@/components/platform/TrialGate';
 import { AppRail } from '@/components/platform/shell/AppRail';
+import { MobileTopBar } from '@/components/platform/shell/MobileTopBar';
 import { railModules } from '@/components/platform/shell/shell-data';
 
 export const metadata: Metadata = {
@@ -70,7 +70,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             screen, the rail — and with it the user chip's Sign out — is still
             on screen. That is the guarantee TopBar used to give from above
             <main>; the rail gives it from beside <main>. ≥lg only (its own
-            `hidden lg:flex`); mobile is W3. */}
+            `hidden lg:flex`). */}
         <AppRail
           openCount={feed.summary.openCount}
           historyCount={feed.history.length}
@@ -78,14 +78,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         />
 
         <div className="flex min-w-0 flex-1 flex-col">
-          {/* MIGRATION SEAM (W2 → W3). TopBar is now <lg only, so phones and
-              tablets keep a working nav (hamburger → ModulesOverlay) until
-              MobileTopBar + MobileDrawer replace it in W3. The wrapper carries
-              the breakpoint so TopBar.tsx itself stays untouched — it is
+          {/* W3: MobileTopBar + its MobileDrawer replace TopBar below `lg`,
+              same as AppRail does above it — mounted OUTSIDE TrialGate /
+              ModuleLockGuard so the drawer's Sign out row stays reachable
+              during a hard trial lock (plan §8 E1). TopBar.tsx is now
+              unmounted everywhere; the file itself is untouched here and
               deleted whole in W5, not edited twice. */}
-          <div className="shrink-0 lg:hidden">
-            <TopBar />
-          </div>
+          <MobileTopBar
+            openCount={feed.summary.openCount}
+            historyCount={feed.history.length}
+            modules={railModules(session.features)}
+          />
 
           {/* The cool wash every module sits on. It lives here rather than in each
               module layout so the nine of them can't drift apart. */}
