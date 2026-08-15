@@ -329,3 +329,95 @@ and a chat dock whose conversation survives client-side navigation.
     already-exempt files (vyso-ai/*, wastewatch/*, module-ui.tsx, unrelated
     whatsapp/component files) — zero new problems, zero in any file this
     wave touched. `npm run test`: 148/148.
+
+## W6 verification (branch feat/ui-brief-reskin)
+
+### Gates (re-run 2026-08-15, full chained pass)
+
+`npx tsc --noEmit; npm run lint; npm run test`
+
+- `tsc --noEmit`: 3 errors, all in `lib/platform/whatsapp-ingest.ts`
+  (pre-existing/exempt WIP: `extractOrderFromText` missing export, an
+  implicit-`any` param, an `IngestDocumentInput` shape mismatch). Zero
+  errors anywhere else.
+- `lint`: 84 problems (53 errors, 31 warnings) — matches the W5 baseline
+  exactly. Spread across `vyso-ai/*`, `wastewatch/*`, `module-ui.tsx`,
+  `.ai/design/vyso-brief/**` bundle files, and a wide pre-existing set of
+  `react-hooks/set-state-in-effect` / `react-hooks/purity` /
+  `react-hooks/immutability` findings in orderflow/planwise/procurepulse/
+  serviceden/shiftboard/supplysync/docu/finch components — none of it new,
+  none of it touched by this task. Confirmed **zero** problems in
+  `components/platform/shell/**`, `components/platform/brief/**`,
+  `app/app/layout.tsx`, or `app/app/page.tsx` (grepped the lint output for
+  those paths directly).
+- `test`: 148/148 passing, 0 failed.
+
+All three gates match the expected baseline. Nothing fixed, nothing
+unexpected.
+
+### Screenshot inventory (`.ai/verification/shell-w6/`, 10 files)
+
+**Important caveat, found while mapping these to plan §11**: only
+`login-1440.png` / `login-390.png` are screenshots of the real, unmodified
+`/login` route. The other 8 were captured against a **synthetic harness
+page**, not the real authenticated `/app/*` routes — every one of them
+carries visible on-page copy reading "W6 harness placeholder — this stands
+in for `app/app/page.tsx`'s Brief feed column (finding cards)/a module
+screen's own ModuleHeader/SubNav/table chrome, which needs a real
+org/session to render." The harness appears to mount the real shell
+components (rail, nav, under-the-hood, user-chip menu, mobile drawer,
+global chat dock/pill, transcript overlay) around fabricated data (3
+"Placeholder finding" cards, a canned "What moved this week?" Q&A instead
+of a live Finch SSE stream, a "SupplySync — Suppliers" screen with 3
+"Placeholder row" entries standing in for any real module route). No
+harness source file exists anywhere in the current working tree
+(`grep -r "harness placeholder"` across the whole repo, tracked and
+untracked, returns nothing) — it was built and used outside the tracked
+codebase, so there's nothing left to clean up, but it also means **no
+`/app/*` screenshot here is evidence about the real authenticated app.**
+It only confirms the shell components themselves render their intended
+layout/active/motion states in isolation.
+
+| Plan §11 item | Screenshot | Real or harness |
+|---|---|---|
+| `/app` rail active, under-the-hood collapsed (1440) | `brief-rail-active-collapsed-1440.png` | harness |
+| `/app` rail active, under-the-hood expanded (1440) | `brief-rail-active-expanded-1440.png` | harness |
+| `/app` pill / transcript open (1440) | `brief-transcript-open-1440.png` | harness — canned Q&A, not a real SSE stream |
+| `/app` at 390px | `brief-mobile-390.png` | harness |
+| `/app?view=history` | — not captured | — |
+| `/app/docu` | — not captured | — |
+| `/app/orderflow` (compact pill + `FinchLauncher` coexistence) | — not captured; no `FinchLauncher` visible in any screenshot | — |
+| `/app/suppliers` (active module row) | `module-compact-pill-active-row-1440.png` (labeled "SupplySync — Suppliers") stands in | harness |
+| module screen at 390px | `module-mobile-390.png` (same placeholder screen) | harness |
+| `/app/settings` | — not captured | — |
+| user-chip menu open (1440) | `user-chip-menu-open-1440.png` | harness |
+| mobile drawer open (390) | `mobile-drawer-open-390.png` | harness |
+| chat mid-stream on a module screen, navigate, transcript persists | — not captured (needs real cross-route navigation; no single screenshot can show it) | — |
+| `/login` (1440, 390) | `login-1440.png`, `login-390.png` | **real** |
+| `/onboarding` | — not captured | — |
+| marketing home unchanged | — not captured | — |
+| reduced-motion spot check | — not performed | — |
+
+### Explicitly UNVERIFIED
+
+- **Marketing home** — no screenshot exists; not visually re-checked this
+  wave (W4 already argued it's provably unaffected by construction — see
+  above — but that's not a substitute for an eyeball check).
+- **Reduced-motion emulation** — not performed.
+- **Everything under `/app/*`** — only exercised via the synthetic harness
+  described above. No screenshot here comes from a real authenticated
+  session, real module chrome, or a real Finch response.
+- `/app?view=history`, `/app/settings`, `/onboarding`, `/app/orderflow`,
+  `/app/docu` — no screenshot evidence in either direction.
+
+### REMAINING FOR JOSH
+
+- Authenticated at 1280px+: all 13 route groups rendering inside the new
+  shell
+- Real Finch SSE chat on `/app` and on a module route
+- Tap-a-finding on a real `FindingCard`
+- Sign-out mid-stream (desktop + mobile)
+- Trial-expired org (dock hidden, sign-out reachable)
+- E5 dock-vs-sticky-footer on ShiftBoard/OrderFlow
+- Reduced motion
+- Marketing home unchanged
