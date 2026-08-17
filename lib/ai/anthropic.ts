@@ -8,7 +8,12 @@ import type { AiSummary, StatementSummary } from '@/lib/platform/docu/types';
  * use AI exclusively through the /api/ai/* route handlers that wrap this module.
  */
 const apiKey = process.env.ANTHROPIC_API_KEY;
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-8';
+// Long-form tier (Price Watch observation text a human reads verbatim, plus
+// whatever else calls runPrompt directly). Sonnet is the default now — Opus
+// is strong enough to justify its cost only for the rare hand-picked case, so
+// it is reachable exclusively by setting ANTHROPIC_MODEL to an Opus id, never
+// as a default (.ai/plan_brief_chat_v2.md §2.7/W0).
+const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 // Document extraction is high-volume + structured, so it's right-sized to the
 // fast/cheap tier rather than Opus. On real statements Haiku 4.5 matched Opus on
 // every product, weight and amount at ~1/5 the cost and lower latency. Override

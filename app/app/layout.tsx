@@ -83,6 +83,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           // flex-ROW now: the rail is a full-height column beside the scroller,
           // not a bar above it (.ai/plan_chat_first_shell.md §4.1).
           className="flex h-screen flex-row overflow-hidden bg-white text-[var(--pf-text)] antialiased"
+          // Marks the platform shell root so globals.css can scope the
+          // marketing-only `html, body { overflow-x: hidden }` override
+          // (see the `:has([data-platform-shell])` block there) to `/app/*`
+          // without touching the marketing site's selector
+          // (.ai/plan_brief_chat_v2.md §2.7/W0).
+          data-platform-shell
         >
           {/* OUTSIDE TrialGate/ModuleLockGuard on purpose (plan §8 E1): when the
               trial hard-locks and the gate replaces `children` with its expiry

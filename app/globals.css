@@ -918,7 +918,21 @@ html, body {
    "never scroll sideways" guarantee without creating a scroll container.
    Scoped with :has() so only the Finch surface is affected. */
 html:has(.finch-site),
-body:has(.finch-site) {
+body:has(.finch-site),
+/* Same fix, same root cause, for the platform shell (`/app/*`). The rule at
+   ~292-297 is unscoped `overflow-x: hidden`, which — same as above — leaves
+   `overflow-y` at its default `auto` on `html`/`body`. That makes the
+   document itself a SECOND scroll container stacked on top of
+   `<main class="… overflow-y-auto">` in app/app/layout.tsx, and the wheel/
+   trackpad event goes to whichever container the browser picks first, which
+   is not reliably `<main>`. Net effect: scrolling breaks intermittently on
+   every module page under `/app/*`. `app/app/layout.tsx`'s shell root carries
+   `data-platform-shell` for exactly this selector — see the comment there.
+   `app/app/docu/[id]/page.tsx` has its own local scroll-container workaround
+   predating this fix; it is left in place rather than unwound here (out of
+   scope for this wave — .ai/plan_brief_chat_v2.md §2.7/W0). */
+html:has([data-platform-shell]),
+body:has([data-platform-shell]) {
   overflow-x: clip;
   overflow-y: visible;
 }
