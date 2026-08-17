@@ -1421,6 +1421,108 @@ wave ran against a live database.
    page still renders.
 10. `/app/finding/<a random uuid>` → 404, not a 500.
 
+## W3b — the detail page's evidence strip after Phase C (follow-up)
+
+W3 shipped when every agent cited Doc-U documents, so `listFindingEvidence`
+resolved `evidence_refs` against `documents` full stop. Phase C's agents do not:
+**Debtors Watch** cites `of_invoices` ids and **Stock Cover** cites nothing at
+all (its subject is in the dedupe key). Both therefore resolved to zero rows and
+the page told the owner *"The documents behind this finding are no longer
+available"* — false, and false on the one screen whose whole job is to let them
+check a claim about their money. The FEED already knew better
+(`lib/platform/agents/finding-kinds.ts` → `evidenceKindOf`); only the detail
+route did not.
+
+Nothing in W4's files was touched: `components/platform/{shell,chat,finch}/*`,
+`app/app/orderflow/layout.tsx`, `components/platform/docu/DocuNav.tsx`,
+`app/api/ai/agent/route.ts`.
+
+### Files
+
+**Modified**
+
+- `lib/platform/agents/finding-kinds.ts` — five new pure helpers:
+  `evidenceSourceName` (Doc-U / OrderFlow / ProcurePulse), `evidenceHeadingWord`,
+  `evidenceHeading`, `evidenceMissingCopy`, `daysPastTermsLabel`, `stockRuleLabel`.
+- `lib/platform/agent-findings.ts` — `listFindingEvidence` branches on
+  `evidenceKindOf(finding.agent)` and returns a **discriminated union**
+  (`FindingEvidence` = documents | invoices | stock). New row shapes
+  `EvidenceInvoice`, `EvidenceStockLine`. Signature widened to
+  `Pick<AgentFinding, 'agent' | 'evidence_refs' | 'dedupe_key'>`.
+- `components/platform/brief/EvidenceList.tsx` — generic: an item is now
+  `{id, href, title, subtitle, detail}` and the heading / "Open in X ↗" / missing
+  copy arrive as strings. New `EvidencePanel` type; a `CrateMark` glyph for the
+  stock line, which is not a piece of paper.
+- `components/platform/brief/FindingDetail.tsx` — three evidence props collapsed
+  into one `evidence: EvidencePanel`, passed straight through. **Header, the
+  chart, the volume sub-line, the recommendation block and every action button
+  are byte-identical.**
+- `app/app/finding/[id]/page.tsx` — `evidencePanel(evidence, series)` words each
+  of the three strips server-side.
+- `tests/agent-findings-evidence.test.ts` — +22.
+
+### Decisions
+
+1. **A discriminated union, not three optional arrays.** "documents is empty"
+   must not be indistinguishable from "this finding does not cite documents at
+   all" — that conflation *is* the bug. `missing` (cited but unreadable → say so
+   in words) stays distinct from an empty strip (nothing cited → omit the
+   section).
+2. **Invoice balances come from `loadInvoiceRows`, not a SELECT.** The strip
+   itemises the headline: "R190,900 outstanding across 2 invoices" has to be
+   these rows adding up. An outstanding balance is not a column — it is
+   `docTotals` − payments − credit notes with an effective status on top — and
+   `lib/platform/orderflow-debtors.ts` is the one definition the Dashboard,
+   Finch's chat tools and Debtors Watch itself already share. A cheaper query
+   here would have been a fourth opinion about the same money. It costs ~6 reads
+   on one customer's ledger, scoped by the customer id **read out of the dedupe
+   key** (free); only an unparseable key pays for a lookup to find it.
+   `loadInvoiceRows` throws on a read error, so the call is wrapped — a degraded
+   strip, never a 500 on a page whose headline already rendered.
+3. **Stock says "Subject · stock line", not "Evidence".** Stock Cover's
+   `evidence_refs` is empty; the `pp_stock_items` row named by its key is not
+   proof of the finding, it is the thing the finding is about. Calling it
+   evidence would be a small lie about what the agent did. Its sub-line is the
+   RULE (`Low cover` / `Count variance`), the only other thing the key records,
+   and the difference between "you are about to run out" and "your count does not
+   match your ledger".
+4. **A key that will not parse omits the section; a key that parses to a row this
+   org cannot read reports it missing.** "No longer available" is a claim about
+   the catalogue, and it must not be made when the truth is that the finding
+   never recorded which line it meant.
+5. **No on-hand figure on the stock card.** It would need `qtyWithUnit`'s
+   pluralisation, which is private to `stock-cover/detect.ts`; importing a
+   detector onto the render path is what `agents/dedupe-keys.ts` exists to
+   prevent, and re-implementing "14 boxes" would be a second definition of it.
+   Say less rather than duplicate.
+6. **The link targets are the ones the FEED already uses** —
+   `/app/orderflow/invoices/<id>` and `/app/procurepulse/stock/<id>` — both
+   verified to exist. The invoices LIST reads no search params, so a
+   `?customer=` filter would silently do nothing (the same finding C1 recorded).
+7. **The price-history chart is untouched and still Price-Watch-only**: it hangs
+   off `series`, which is null for every other agent.
+
+### Edge cases
+
+- Debtors finding whose invoices were deleted, or whose ledger read fails → *"The
+  invoices behind this finding are no longer available."*
+- Stock finding whose line was removed → *"The stock line behind this finding is
+  no longer available."*
+- Invoice with no due date → no "due …" clause and no "N days past terms"; an
+  invoice not actually late → no lateness clause (never "0 days past terms").
+- Invoice whose customer row can't be read → figures still render, name dropped.
+- An agent nobody has taught `evidenceKindOf` about still resolves against
+  `documents`, exactly as before.
+
+### Gates
+
+`npx tsc --noEmit` clean · `npm test` **359/359** (337 pre-change + 22 new) ·
+`npm run build` passes and still lists `ƒ /app/finding/[id]` · `npx eslint`
+**53 errors — unchanged**; the six changed files lint clean on their own.
+
+Runtime verification still needs a signed-in session with a Debtors Watch and a
+Stock Cover finding in the org — nothing here ran against a live database.
+
 ---
 
 # Phase C agents — Debtors Watch, Stock Cover, Doc Watch (branch feat/agents-phase-c)

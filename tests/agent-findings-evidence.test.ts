@@ -4,12 +4,19 @@ import {
   INFORMATIONAL_AGENTS,
   INFORMATIONAL_TTL_HOURS,
   STOCK_EVIDENCE_LABEL,
+  daysPastTermsLabel,
   documentEvidenceLabel,
+  evidenceHeading,
+  evidenceHeadingWord,
   evidenceKindOf,
+  evidenceMissingCopy,
+  evidenceSourceName,
   invoiceEvidenceLabel,
   isInformationalExpired,
   isInformationalFinding,
+  stockRuleLabel,
 } from '../lib/platform/agents/finding-kinds.ts';
+import type { EvidenceKind } from '../lib/platform/agents/finding-kinds.ts';
 
 // The pure half of lib/platform/agent-findings.ts. The read path itself cannot
 // be unit tested (it imports supabase-server → next/headers, which only exists
@@ -68,6 +75,107 @@ test('invoiceEvidenceLabel: Debtors Watch cites invoices, and knows it', () => {
 
 test('Stock Cover cites exactly one catalogue line', () => {
   assert.equal(STOCK_EVIDENCE_LABEL, '1 stock line');
+});
+
+// ---------------------------------------------------------------------------
+// How the detail page introduces the strip — the bug this fixes was a heading
+// and a sentence that said "documents" over a finding that cites invoices.
+// ---------------------------------------------------------------------------
+
+const KINDS: EvidenceKind[] = ['documents', 'invoices', 'stock'];
+
+const SOURCE_CASES: Array<[kind: EvidenceKind, source: string]> = [
+  ['documents', 'Doc-U'],
+  ['invoices', 'OrderFlow'],
+  ['stock', 'ProcurePulse'],
+];
+
+for (const [kind, source] of SOURCE_CASES) {
+  test(`evidenceSourceName('${kind}') === '${source}'`, () => {
+    assert.equal(evidenceSourceName(kind), source);
+  });
+}
+
+test('a stock line is the finding’s SUBJECT, not evidence for it', () => {
+  assert.equal(evidenceHeadingWord('stock'), 'Subject');
+  assert.equal(evidenceHeadingWord('documents'), 'Evidence');
+  assert.equal(evidenceHeadingWord('invoices'), 'Evidence');
+});
+
+const HEADING_CASES: Array<[kind: EvidenceKind, label: string, heading: string]> = [
+  ['documents', '3 invoices', 'Evidence · 3 invoices from Doc-U'],
+  ['documents', '1 statement', 'Evidence · 1 statement from Doc-U'],
+  ['invoices', '2 invoices', 'Evidence · 2 invoices from OrderFlow'],
+  ['invoices', '1 invoice', 'Evidence · 1 invoice from OrderFlow'],
+  // Stock ignores the label it is handed: there is only ever one line, and it is
+  // named in the card below rather than counted in the heading.
+  ['stock', '1 stock line', 'Subject · 1 stock line'],
+  ['stock', '', 'Subject · 1 stock line'],
+];
+
+for (const [kind, label, heading] of HEADING_CASES) {
+  test(`evidenceHeading('${kind}', '${label}') === '${heading}'`, () => {
+    assert.equal(evidenceHeading(kind, label), heading);
+  });
+}
+
+test('the missing-evidence sentence names what was actually cited', () => {
+  assert.equal(
+    evidenceMissingCopy('documents'),
+    'The documents behind this finding are no longer available.',
+  );
+  assert.equal(
+    evidenceMissingCopy('invoices'),
+    'The invoices behind this finding are no longer available.',
+  );
+  assert.equal(
+    evidenceMissingCopy('stock'),
+    'The stock line behind this finding is no longer available.',
+  );
+});
+
+test('every kind gets a heading and a sentence — none falls through to ""', () => {
+  for (const kind of KINDS) {
+    assert.ok(evidenceHeading(kind, '1 thing').length > 0);
+    assert.ok(evidenceMissingCopy(kind).endsWith('.'));
+    assert.ok(evidenceSourceName(kind).length > 0);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// "40 days past terms" — the same words Debtors Watch's observation uses
+// ---------------------------------------------------------------------------
+
+const OVERDUE_CASES: Array<[days: number | null, label: string | null]> = [
+  [40, '40 days past terms'],
+  [1, '1 day past terms'],
+  [2, '2 days past terms'],
+  // Not late is not a fact worth a line: "0 days past terms" under a heading
+  // about overdue money reads as a bug.
+  [0, null],
+  [-3, null],
+  // No due date → no terms to be past.
+  [null, null],
+  [Number.NaN, null],
+  [Number.POSITIVE_INFINITY, null],
+  // `daysSince` floors already; a fractional day here is still a whole day of
+  // lateness, never "1.6 days".
+  [1.6, '1 day past terms'],
+];
+
+for (const [days, label] of OVERDUE_CASES) {
+  test(`daysPastTermsLabel(${String(days)}) === ${JSON.stringify(label)}`, () => {
+    assert.equal(daysPastTermsLabel(days), label);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Which Stock Cover rule fired — read back off the dedupe key
+// ---------------------------------------------------------------------------
+
+test('stockRuleLabel names the rule in the owner’s words', () => {
+  assert.equal(stockRuleLabel('low_cover'), 'Low cover');
+  assert.equal(stockRuleLabel('count_variance'), 'Count variance');
 });
 
 // ---------------------------------------------------------------------------

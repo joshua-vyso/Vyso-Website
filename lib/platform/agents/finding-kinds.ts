@@ -14,7 +14,12 @@
  * Framework-free and dependency-free, like agents/dedupe-keys.ts beside it.
  */
 
-import { DEBTORS_WATCH_AGENT, DOC_WATCH_AGENT, STOCK_COVER_AGENT } from './dedupe-keys.ts';
+import {
+  DEBTORS_WATCH_AGENT,
+  DOC_WATCH_AGENT,
+  STOCK_COVER_AGENT,
+  type StockCoverRule,
+} from './dedupe-keys.ts';
 
 // ---------------------------------------------------------------------------
 // Receipts vs findings
@@ -124,3 +129,76 @@ export function invoiceEvidenceLabel(count: number): string {
 
 /** Stock Cover cites exactly one catalogue line, named by its dedupe key. */
 export const STOCK_EVIDENCE_LABEL = '1 stock line';
+
+// ---------------------------------------------------------------------------
+// How the DETAIL page introduces that evidence
+// ---------------------------------------------------------------------------
+
+/**
+ * The module a kind of evidence lives in, by the name the owner knows it by.
+ *
+ * The detail page's whole claim on trust is "every sentence here comes from a
+ * row you have", so the strip says WHERE that row is before it offers a link
+ * into it. Before Phase C there was only ever one answer (Doc-U) and it was
+ * hardcoded in the component; now there are three, and the mapping is a fact
+ * about agents rather than about markup.
+ */
+export function evidenceSourceName(kind: EvidenceKind): string {
+  if (kind === 'invoices') return 'OrderFlow';
+  if (kind === 'stock') return 'ProcurePulse';
+  return 'Doc-U';
+}
+
+/**
+ * "Evidence" or "Subject" — what the strip IS for this kind of finding.
+ *
+ * Stock Cover cites nothing: `evidence_refs` is empty and the stock line named
+ * by its dedupe key is not proof of the finding, it is the thing the finding is
+ * about. Calling that section "Evidence" would be a small lie about what the
+ * agent did, so it gets the honest word instead.
+ */
+export function evidenceHeadingWord(kind: EvidenceKind): string {
+  return kind === 'stock' ? 'Subject' : 'Evidence';
+}
+
+/** "Evidence · 3 invoices from OrderFlow" / "Subject · stock line". */
+export function evidenceHeading(kind: EvidenceKind, label: string): string {
+  if (kind === 'stock') return `${evidenceHeadingWord(kind)} · ${STOCK_EVIDENCE_LABEL}`;
+  return `${evidenceHeadingWord(kind)} · ${label} from ${evidenceSourceName(kind)}`;
+}
+
+/**
+ * What the page says when the rows a finding points at cannot be read any more.
+ *
+ * The noun has to match what was actually cited. The pre-Phase-C copy ("the
+ * documents behind this finding") appeared under a Debtors Watch card that cites
+ * no documents at all — false in the one place the product is asking to be
+ * believed. Same sentence, true noun.
+ */
+export function evidenceMissingCopy(kind: EvidenceKind): string {
+  if (kind === 'invoices') return 'The invoices behind this finding are no longer available.';
+  if (kind === 'stock') return 'The stock line behind this finding is no longer available.';
+  return 'The documents behind this finding are no longer available.';
+}
+
+/**
+ * "40 days past terms" — the same words Debtors Watch's own observation uses, so
+ * the headline and the invoice under it cannot describe the same lateness two
+ * different ways.
+ *
+ * Null (say nothing) for an invoice with no due date and for one that is not
+ * actually late: "0 days past terms" on a strip whose heading is about overdue
+ * money would read as a bug.
+ */
+export function daysPastTermsLabel(days: number | null): string | null {
+  if (days == null || !Number.isFinite(days)) return null;
+  const whole = Math.floor(days);
+  if (whole <= 0) return null;
+  return `${whole} ${whole === 1 ? 'day' : 'days'} past terms`;
+}
+
+/** Which of Stock Cover's two rules raised a finding, in words — read off the
+ *  dedupe key, which is the only record of it. */
+export function stockRuleLabel(rule: StockCoverRule): string {
+  return rule === 'count_variance' ? 'Count variance' : 'Low cover';
+}

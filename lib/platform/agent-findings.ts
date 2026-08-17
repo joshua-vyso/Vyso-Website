@@ -38,7 +38,13 @@ import { isMissingRelation } from './db-errors';
 // /app's render path, and a Stock Cover card's only record of WHICH stock line
 // it is about is its key, so the resolver has to read one without dragging an
 // agent's detector (and its transitive weight) into the page bundle.
-import { parseStockCoverDedupeKey } from './agents/dedupe-keys';
+import { parseDebtorsDedupeKey, parseStockCoverDedupeKey } from './agents/dedupe-keys';
+// The detail page's invoice strip quotes a BALANCE, and there is exactly one
+// definition of what a customer still owes on an invoice (net of payments and
+// credit notes): the one the OrderFlow Dashboard and Debtors Watch itself both
+// render from. Re-deriving it here is how the Brief ends up telling the owner a
+// different number from the invoice screen it links them to.
+import { daysSince, loadInvoiceRows, todayIso, type InvoiceRow } from './orderflow-debtors';
 // The decisions this file makes about WHAT a finding is — receipt or problem,
 // documents or invoices or a stock line — are pure, and they are the ones that
 // go wrong quietly. They live in a testable module beside the keys; only the I/O
@@ -52,6 +58,7 @@ import {
   STOCK_EVIDENCE_LABEL,
   type EvidenceKind,
 } from './agents/finding-kinds';
+import type { StockCoverRule } from './agents/dedupe-keys';
 
 export {
   INFORMATIONAL_AGENTS,
@@ -396,37 +403,93 @@ export interface EvidenceDocument {
   created_at: string;
 }
 
-/** The evidence behind ONE finding, resolved document by document. */
-export interface FindingEvidence {
-  documents: EvidenceDocument[];
-  /** "3 invoices" — the same truthful noun the cards use. */
-  label: string;
-  /** The finding cites documents, but none of them can be read any more (they
-   *  were deleted, or this user cannot see them). The page says so in words
-   *  rather than showing an empty section (plan §5). */
-  missing: boolean;
+/** One cited invoice, as the detail page's evidence list draws it. Debtors
+ *  Watch's `evidence_refs` are `of_invoices` ids, in worst-first order. */
+export interface EvidenceInvoice {
+  id: string;
+  invoice_number: string;
+  /** Null when the invoice has no customer, or the customer row can't be read. */
+  customer_name: string | null;
+  /** yyyy-mm-dd. Null when the invoice carries no terms at all. */
+  due_date: string | null;
+  /** Rand still outstanding — `balanceDue`, net of payments and credit notes.
+   *  The same figure the OrderFlow Dashboard shows for this invoice. */
+  balance: number;
+  /** Days past terms as of today (UTC day, like every other OrderFlow figure).
+   *  Null when there is no due date to be past. */
+  days_overdue: number | null;
+}
+
+/** The one catalogue line a Stock Cover finding is about, named by its dedupe
+ *  key and then verified against `pp_stock_items`. */
+export interface EvidenceStockLine {
+  id: string;
+  name: string;
+  /** Which of Stock Cover's two rules raised the finding — also from the key. */
+  rule: StockCoverRule;
 }
 
 /**
- * Resolve one finding's `evidence_refs` against `documents`, in citation order.
+ * The evidence behind ONE finding, resolved against whatever table its agent
+ * actually cites.
+ *
+ * A DISCRIMINATED UNION rather than three optional arrays, because the page
+ * renders three different strips and "documents is empty" must not be
+ * indistinguishable from "this finding does not cite documents at all" — that
+ * conflation is exactly the bug this change fixes: a Debtors Watch finding used
+ * to be resolved against `documents`, come back with nothing, and tell the owner
+ * its evidence was "no longer available" when it was sitting in OrderFlow the
+ * whole time.
+ */
+export type FindingEvidence =
+  | { kind: 'documents'; documents: EvidenceDocument[]; label: string; missing: boolean }
+  | { kind: 'invoices'; invoices: EvidenceInvoice[]; label: string; missing: boolean }
+  | { kind: 'stock'; item: EvidenceStockLine | null; label: string; missing: boolean };
+
+/**
+ * Resolve one finding's evidence, in citation order — the detail route's read.
  *
  * Separate from `resolveEvidence` above rather than a variant of it: that one
  * summarises a whole feed into a count and a link for every card in one query,
- * this one needs the rows themselves for a single finding. Sharing a function
- * between "one line per card" and "a card per document" would mean the feed
- * paying for columns it never draws.
+ * this one needs the rows THEMSELVES for a single finding. Sharing a function
+ * between "one line per card" and "a card per row" would mean the feed paying
+ * for columns it never draws.
  *
- * Soft on failure for the same reason the feed's resolver is: this decorates a
- * page that already has an observation, a figure and a recommendation on it.
+ * Branches on `evidenceKindOf(finding.agent)`, the same decision the feed makes,
+ * so the strip on the detail page can never disagree with the "3 invoices ↗"
+ * link on the card that led here.
+ *
+ * Soft on failure throughout, for the same reason the feed's resolver is: this
+ * decorates a page that already has an observation, a figure and a
+ * recommendation on it. `missing` (the rows were cited but cannot be read) is
+ * distinguished from an empty strip (nothing was cited) — the first is a fact
+ * the page states in words, the second is a section it omits.
  */
 export async function listFindingEvidence(
+  orgId: string,
+  finding: Pick<AgentFinding, 'agent' | 'evidence_refs' | 'dedupe_key'>,
+): Promise<FindingEvidence> {
+  const supabase = await createServerSupabase();
+  switch (evidenceKindOf(finding.agent)) {
+    case 'invoices':
+      return listInvoiceEvidence(supabase, orgId, finding);
+    case 'stock':
+      return listStockEvidence(supabase, orgId, finding);
+    default:
+      return listDocumentEvidence(supabase, orgId, finding);
+  }
+}
+
+/** Price Watch / Doc Watch (and any agent nobody has taught `evidenceKindOf`
+ *  about) — `evidence_refs` are `documents.id`. Unchanged behaviour. */
+async function listDocumentEvidence(
+  supabase: ServerSupabase,
   orgId: string,
   finding: Pick<AgentFinding, 'evidence_refs'>,
 ): Promise<FindingEvidence> {
   const refs = finding.evidence_refs ?? [];
-  if (refs.length === 0) return { documents: [], label: '', missing: false };
+  if (refs.length === 0) return { kind: 'documents', documents: [], label: '', missing: false };
 
-  const supabase = await createServerSupabase();
   const { data, error } = await supabase
     .from('documents')
     .select('id, filename, document_type, created_at')
@@ -434,7 +497,7 @@ export async function listFindingEvidence(
     .in('id', refs.slice(0, EVIDENCE_PROBE_LIMIT))
     .returns<EvidenceDocument[]>();
 
-  if (error || !data) return { documents: [], label: '', missing: true };
+  if (error || !data) return { kind: 'documents', documents: [], label: '', missing: true };
 
   // Citation order, not database order: `evidence_refs` is the order the agent
   // read them in, and the chart beside this list runs left to right in the same
@@ -443,9 +506,132 @@ export async function listFindingEvidence(
   const documents = refs.map((id) => byId.get(id)).filter((d): d is EvidenceDocument => d != null);
 
   return {
+    kind: 'documents',
     documents,
     label: documentEvidenceLabel(documents.length, documents.map((d) => d.document_type)),
     missing: documents.length === 0,
+  };
+}
+
+/**
+ * Debtors Watch — `evidence_refs` are `of_invoices` ids, worst-first.
+ *
+ * WHY THIS GOES THROUGH `loadInvoiceRows` AND NOT A SELECT. The strip's job is
+ * to itemise the headline: "R190,900 outstanding across 2 invoices" has to be
+ * these two rows adding up. An invoice's outstanding balance is not a column —
+ * it is `docTotals` minus payments minus credit notes, with an effective status
+ * on top — and the one place that is defined is `lib/platform/orderflow-debtors.ts`,
+ * which the Dashboard, Finch's chat tools and the agent that wrote this finding
+ * all already share. A cheaper select here would be a fourth opinion about the
+ * same money.
+ *
+ * The customer whose ledger to load comes from the DEDUPE KEY
+ * (`debtors_watch:<customer_id>:<oldest_invoice_id>`), which is free; only a key
+ * this build cannot parse pays for a lookup to find it.
+ */
+async function listInvoiceEvidence(
+  supabase: ServerSupabase,
+  orgId: string,
+  finding: Pick<AgentFinding, 'evidence_refs' | 'dedupe_key'>,
+): Promise<FindingEvidence> {
+  const refs = finding.evidence_refs ?? [];
+  if (refs.length === 0) return { kind: 'invoices', invoices: [], label: '', missing: false };
+  const ids = refs.slice(0, EVIDENCE_PROBE_LIMIT);
+
+  const parsed = parseDebtorsDedupeKey(finding.dedupe_key ?? '');
+  let customerIds: string[];
+  if (parsed) {
+    customerIds = [parsed.customerId];
+  } else {
+    const { data } = await supabase
+      .from('of_invoices')
+      .select('customer_id')
+      .eq('org_id', orgId)
+      .in('id', ids)
+      .returns<{ customer_id: string | null }[]>();
+    customerIds = [...new Set((data ?? []).map((r) => r.customer_id).filter((c): c is string => !!c))];
+  }
+  if (customerIds.length === 0) return { kind: 'invoices', invoices: [], label: '', missing: true };
+
+  let rows: InvoiceRow[];
+  try {
+    // `loadInvoiceRows` THROWS on a read error (a debtors figure derived from a
+    // half-read ledger would be worse than none). Here that has to become a
+    // degraded strip, not a 500 on a page whose headline is already rendered.
+    rows = await loadInvoiceRows(supabase, orgId, { customerIds });
+  } catch {
+    return { kind: 'invoices', invoices: [], label: '', missing: true };
+  }
+
+  const byId = new Map(rows.map((r) => [r.inv.id, r]));
+  const cited = ids.map((id) => byId.get(id)).filter((r): r is InvoiceRow => r != null);
+  if (cited.length === 0) return { kind: 'invoices', invoices: [], label: '', missing: true };
+
+  // Customer names, softly: a strip that says "Invoice INV-1042 · 40 days past
+  // terms" without a name is still useful; a failed read here must not cost the
+  // owner the figures.
+  const nameById = new Map<string, string>();
+  const custIds = [...new Set(cited.map((r) => r.inv.customer_id).filter((c): c is string => !!c))];
+  if (custIds.length > 0) {
+    const { data } = await supabase
+      .from('of_customers')
+      .select('id, name')
+      .eq('org_id', orgId)
+      .in('id', custIds)
+      .returns<{ id: string; name: string | null }[]>();
+    for (const c of data ?? []) if (c.name) nameById.set(c.id, c.name);
+  }
+
+  const todayMs = Date.parse(`${todayIso()}T00:00:00Z`);
+  const invoices: EvidenceInvoice[] = cited.map((r) => ({
+    id: r.inv.id,
+    invoice_number: r.inv.invoice_number,
+    customer_name: r.inv.customer_id ? (nameById.get(r.inv.customer_id) ?? null) : null,
+    due_date: r.inv.due_date,
+    balance: r.balance,
+    days_overdue: r.inv.due_date ? daysSince(r.inv.due_date, todayMs) : null,
+  }));
+
+  return {
+    kind: 'invoices',
+    invoices,
+    label: invoiceEvidenceLabel(invoices.length),
+    missing: false,
+  };
+}
+
+/**
+ * Stock Cover — `evidence_refs` is EMPTY, and the line the finding is about is
+ * named only by its dedupe key (`stock_cover:<rule>:<stock_item_id>:<iso-week>`).
+ *
+ * A key that will not parse names nothing, so the section is OMITTED rather than
+ * reported as missing: "the stock line behind this finding is no longer
+ * available" would be a claim about the catalogue when the truth is that the row
+ * never recorded which line it meant. A key that parses to a line this org
+ * cannot read IS the missing case, and says so.
+ */
+async function listStockEvidence(
+  supabase: ServerSupabase,
+  orgId: string,
+  finding: Pick<AgentFinding, 'dedupe_key'>,
+): Promise<FindingEvidence> {
+  const parsed = parseStockCoverDedupeKey(finding.dedupe_key ?? '');
+  if (!parsed) return { kind: 'stock', item: null, label: '', missing: false };
+
+  const { data, error } = await supabase
+    .from('pp_stock_items')
+    .select('id, name')
+    .eq('org_id', orgId)
+    .eq('id', parsed.stockItemId)
+    .maybeSingle<{ id: string; name: string | null }>();
+
+  if (error || !data) return { kind: 'stock', item: null, label: '', missing: true };
+
+  return {
+    kind: 'stock',
+    item: { id: data.id, name: data.name ?? 'This stock line', rule: parsed.rule },
+    label: STOCK_EVIDENCE_LABEL,
+    missing: false,
   };
 }
 

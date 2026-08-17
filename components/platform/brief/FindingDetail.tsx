@@ -15,7 +15,7 @@ import { AI_GRADIENT_RULE, AI_GRADIENT_TEXT, agentChip } from './brief-display';
 import { askBrief, draftEmailPrompt, findingPrompt } from './brief-chat';
 import { useStatusWrite } from './FindingCard';
 import { PriceHistoryChart } from './PriceHistoryChart';
-import { EvidenceList, type EvidenceItem } from './EvidenceList';
+import { EvidenceList, type EvidencePanel } from './EvidenceList';
 
 /**
  * One finding, in full (design 1c; `.ai/plan_brief_chat_v2.md` §4 W3).
@@ -106,8 +106,6 @@ export function FindingDetail({
   foundAt,
   series,
   evidence,
-  evidenceLabel,
-  evidenceMissing,
 }: {
   finding: AgentFinding;
   /** "Found 06:14, Thu 13 Aug" — SAST, computed server-side. */
@@ -116,9 +114,10 @@ export function FindingDetail({
    *  isn't Price Watch, and any Price Watch finding whose series can't be
    *  reconstructed). The chart and the volume line disappear together. */
   series: FindingSeries | null;
-  evidence: EvidenceItem[];
-  evidenceLabel: string;
-  evidenceMissing: boolean;
+  /** The evidence strip, already resolved and worded by the page — documents
+   *  from Doc-U, invoices from OrderFlow, or the one stock line a Stock Cover
+   *  finding is about. This component only passes it along. */
+  evidence: EvidencePanel;
 }) {
   const router = useRouter();
   const { finchEnabled, email } = usePlatform();
@@ -361,7 +360,7 @@ export function FindingDetail({
         </div>
       </div>
 
-      <EvidenceList items={evidence} label={evidenceLabel} missing={evidenceMissing} />
+      <EvidenceList {...evidence} />
     </article>
   );
 }
