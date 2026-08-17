@@ -478,6 +478,23 @@ html, body {
   .finch-mark-pop { animation: none; transform: none; opacity: 1; }
 }
 
+/* ── Home hero: the bird above the finding card, revealed once on mount ──────
+   Same fade + 6px lift curve `CyclingFinding` plays on every card swap, but
+   the bird only ever plays it once — it doesn't recycle every 6s the way the
+   card does. Plain CSS rather than a `motion` mount tween: nothing here reads
+   state or a pointer, so there's no reason to pull the element into a client
+   component just to animate it once. */
+.finch-hero-bird-reveal {
+  animation: finch-hero-bird-reveal 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes finch-hero-bird-reveal {
+  0%   { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .finch-hero-bird-reveal { animation: none; transform: none; opacity: 1; }
+}
+
 /* ── OrderFlow ────────────────────────────────────────────────────────────────
    The module pairs Instrument Sans for UI text with Space Grotesk for figures.
    `.of-num` is for anything that should line up in a column — money, counts,
