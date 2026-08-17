@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceSupabase } from '@/lib/platform/supabase-service';
-import { parseEnvList, runPriceWatch, type PriceWatchSummary } from '@/lib/platform/price-watch/run';
+import { runPriceWatch, type PriceWatchSummary } from '@/lib/platform/price-watch/run';
+import { agentOrgIds, NO_ORGS_MESSAGE } from '@/lib/platform/agents/org-allowlist';
 import { priceWatchMatchCall, priceWatchObservationCall } from '@/lib/ai/price-watch-model';
 
 export const maxDuration = 300;
@@ -19,10 +20,12 @@ export const maxDuration = 300;
  * idempotent (price points upsert on (document_id, line_index); findings dedupe
  * on unique(org_id, dedupe_key)), so a missed or doubled run costs nothing.
  *
- * ORG ALLOWLIST — PRICE_WATCH_ORG_IDS, comma-separated org uuids. v1 is Turn 'n
- * Slice only. An unset or empty value means DO NOTHING and say so: an agent that
- * defaulted to "every org" would write findings into customers' Briefs off a
- * catalogue nobody has reviewed. Opt-in is the only safe default here.
+ * ORG ALLOWLIST — now the SHARED one (lib/platform/agents/org-allowlist.ts):
+ * AGENTS_ORG_IDS, falling back to this route's original PRICE_WATCH_ORG_IDS so
+ * the var already set in Vercel keeps working unchanged. An unset or empty value
+ * still means DO NOTHING and say so: an agent that defaulted to "every org"
+ * would write findings into customers' Briefs off a catalogue nobody has
+ * reviewed. Opt-in is the only safe default here.
  *
  * Authenticated with CRON_SECRET — Vercel Cron sends it as a bearer token.
  */
@@ -40,15 +43,11 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Service role is not configured.' }, { status: 503 });
   }
 
-  const orgIds = parseEnvList(process.env.PRICE_WATCH_ORG_IDS);
+  const orgIds = agentOrgIds();
   if (orgIds.length === 0) {
     // 200, not an error: the cron fired correctly and there is simply nothing
     // enabled. A 5xx here would page us nightly for a working system.
-    return NextResponse.json({
-      ok: true,
-      ran: 0,
-      message: 'PRICE_WATCH_ORG_IDS is not set — no organisation is enabled for Price Watch.',
-    });
+    return NextResponse.json({ ok: true, ran: 0, message: NO_ORGS_MESSAGE });
   }
 
   // Serial on purpose: each org runs Claude matches for any line description it

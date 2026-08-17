@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { createServiceSupabase } from '@/lib/platform/supabase-service';
 import { parseEnvList } from '@/lib/platform/price-watch/run';
+import { agentOrgIds, NO_ORGS_MESSAGE } from '@/lib/platform/agents/org-allowlist';
 
 export const maxDuration = 300;
 
@@ -50,8 +51,9 @@ interface DigestFinding {
  * curl by hand when a send is missed.
  *
  * Env:
- *   PRICE_WATCH_ORG_IDS   — comma-separated org uuids (same allowlist the run
- *                           uses; unset ⇒ nothing to report)
+ *   AGENTS_ORG_IDS        — comma-separated org uuids (the shared allowlist every
+ *                           agent route reads, falling back to
+ *                           PRICE_WATCH_ORG_IDS; unset ⇒ nothing to report)
  *   PRICE_WATCH_DIGEST_TO — comma-separated recipients (D2: Josh + Roberto).
  *                           Unset ⇒ 503 and NOT A SINGLE EMAIL SENT. There is no
  *                           default recipient on purpose: a business's supplier
@@ -85,13 +87,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'RESEND_API_KEY is not configured.' }, { status: 503 });
   }
 
-  const orgIds = parseEnvList(process.env.PRICE_WATCH_ORG_IDS);
+  const orgIds = agentOrgIds();
   if (orgIds.length === 0) {
-    return NextResponse.json({
-      ok: true,
-      sent: 0,
-      message: 'PRICE_WATCH_ORG_IDS is not set — no organisation is enabled for Price Watch.',
-    });
+    return NextResponse.json({ ok: true, sent: 0, message: NO_ORGS_MESSAGE });
   }
 
   const results: { orgId: string; findings: number; sent: boolean; error?: string }[] = [];
