@@ -33,7 +33,11 @@ export interface ModelPrompt {
   user: string;
 }
 
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-8';
+// Default tier is Sonnet, not Opus (plan_brief_chat_v2.md §2.7 — no code path may
+// reference an Opus id as a default). This file still can't import lib/ai/anthropic.ts's
+// own default (see file header: `server-only` throws under the backfill CLI's plain
+// node process), so the default has to be repeated here rather than imported.
+const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 /** Product-name matching: pick the right canonical from a short candidate list. */
 const MATCH_MODEL = process.env.ANTHROPIC_MATCH_MODEL || 'claude-haiku-4-5';
 /** Observation text is the only agent output a human reads verbatim, so it runs
