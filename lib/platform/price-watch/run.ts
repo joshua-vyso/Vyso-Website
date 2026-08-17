@@ -749,6 +749,53 @@ interface PricePointDraft {
   packsPerBox: number | null;
 }
 
+/**
+ * The exact `pw_price_points` columns a run writes, in DDL order
+ * (`supabase/agents-price-watch.sql` — the create table plus the
+ * `alter table … add column if not exists line_supplier` upgrade line).
+ * `id` and `created_at` are omitted deliberately: both have defaults.
+ */
+const PRICE_POINT_COLUMNS = [
+  'org_id',
+  'supplier_id',
+  'pw_item_id',
+  'line_supplier',
+  'document_id',
+  'line_index',
+  'unit_price',
+  'quantity_base',
+  'invoice_date',
+] as const;
+
+type PricePointRow = Record<(typeof PRICE_POINT_COLUMNS)[number], unknown>;
+
+/**
+ * Drafts → rows, with an EXPLICIT column list.
+ *
+ * The write boundary is spelled out rather than passing the draft straight
+ * through, because a draft deliberately carries in-memory-only fields —
+ * `basis` and `packsPerBox`, which detect.ts's series-consistency gate needs
+ * and `pw_price_points` has no columns for (detect.ts:153). Handing the draft
+ * to PostgREST verbatim sent those keys to the API and every batch came back
+ * "Could not find the 'basis' column of 'pw_price_points' in the schema cache"
+ * — 0 upserted, 49 errors on the 2026-08-17 Meridian run. Anything added to
+ * PricePointDraft from here on is in-memory by default; it reaches the table
+ * only by being added to PRICE_POINT_COLUMNS *and* the DDL.
+ */
+function toPricePointRow(d: PricePointDraft): PricePointRow {
+  return {
+    org_id: d.org_id,
+    supplier_id: d.supplier_id,
+    pw_item_id: d.pw_item_id,
+    line_supplier: d.line_supplier,
+    document_id: d.document_id,
+    line_index: d.line_index,
+    unit_price: d.unit_price,
+    quantity_base: d.quantity_base,
+    invoice_date: d.invoice_date,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // The run
 // ---------------------------------------------------------------------------
@@ -1116,7 +1163,7 @@ export async function runPriceWatch(
     for (const batch of chunk(drafts, WRITE_CHUNK)) {
       const { error } = await db
         .from('pw_price_points')
-        .upsert(batch, { onConflict: 'document_id,line_index' });
+        .upsert(batch.map(toPricePointRow), { onConflict: 'document_id,line_index' });
       if (error) {
         summary.pricePointErrors += batch.length;
         summary.warnings.push(`pw_price_points upsert failed: ${error.message}`);

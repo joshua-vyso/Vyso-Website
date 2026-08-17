@@ -678,3 +678,92 @@ test('readOnlyClient: every write method throws, reads pass through', async () =
   const { data } = await guarded.from('pw_items').select('id');
   assert.deepEqual(data, [{ id: 'x' }]);
 });
+
+// ---------------------------------------------------------------------------
+// The pw_price_points write payload
+//
+// REGRESSION TEST for the 2026-08-17 Meridian cron run: 0 points upserted, 49
+// errors, "Could not find the 'basis' column of 'pw_price_points' in the schema
+// cache". PricePointDraft deliberately carries `basis`/`packsPerBox` for
+// detect.ts's series-consistency gate, and the write loop handed the draft
+// straight to PostgREST, so those in-memory-only keys were sent as columns.
+// The expected list below is derived BY HAND from the DDL in
+// `supabase/agents-price-watch.sql` (the `create table pw_price_points (...)`
+// block plus its `alter table … add column if not exists line_supplier` upgrade
+// line), minus `id` and `created_at`, which have defaults and are never sent.
+// If a column is genuinely added to that table, this list changes with it —
+// which is the point: the payload can no longer drift from the schema silently.
+// ---------------------------------------------------------------------------
+
+const PW_PRICE_POINT_DDL_COLUMNS = [
+  'org_id',
+  'supplier_id',
+  'pw_item_id',
+  'line_supplier',
+  'document_id',
+  'line_index',
+  'unit_price',
+  'quantity_base',
+  'invoice_date',
+];
+
+/** Chainable stub that ACCEPTS writes and records each payload by table. */
+function recordingStub(tables: StubTables): {
+  client: unknown;
+  upserts: { table: string; rows: Record<string, unknown>[] }[];
+} {
+  const upserts: { table: string; rows: Record<string, unknown>[] }[] = [];
+  const client = {
+    from(table: string) {
+      const chain: Record<string, unknown> = {};
+      for (const m of ['select', 'eq', 'in', 'order', 'limit', 'not', 'returns', 'maybeSingle']) {
+        chain[m] = () => chain;
+      }
+      chain.insert = () => ({ then: (r: (v: unknown) => void) => r({ data: null, error: null }) });
+      chain.upsert = (rows: Record<string, unknown>[]) => {
+        upserts.push({ table, rows });
+        return { then: (r: (v: unknown) => void) => r({ data: null, error: null }) };
+      };
+      chain.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: tables[table] ?? [], error: null });
+      return chain;
+    },
+  };
+  return { client, upserts };
+}
+
+test('runPriceWatch: upserted pw_price_points rows carry EXACTLY the DDL columns', async () => {
+  const docs = [
+    statementDoc('doc-1', 'sup-1', '2026-06-01', 'TOMATOES SALADETTE', 20),
+    statementDoc('doc-2', 'sup-1', '2026-07-01', 'TOMATOES SALADETTE', 21),
+  ];
+  const { client, upserts } = recordingStub({
+    pw_items: [{ id: 'item-tom', name: 'Tomatoes Saladette', base_unit: 'kg' }],
+    suppliers: [{ id: 'sup-1', name: 'JHB Fresh Produce Market' }],
+    pw_item_matches: [],
+    pw_price_points: [],
+    agent_findings: [],
+    documents: docs,
+  });
+
+  const summary = await runPriceWatch(client as never, 'org-1', {
+    matchCall: pickFirstCandidate,
+    observeCall: cannedObservation,
+  });
+
+  assert.equal(summary.pricePointErrors, 0, 'the schema-cache failure must not recur');
+  assert.equal(summary.pricePointsUpserted, 2);
+
+  const pointRows = upserts
+    .filter((u) => u.table === 'pw_price_points')
+    .flatMap((u) => u.rows);
+  assert.equal(pointRows.length, 2, 'both price points reached the write');
+
+  for (const row of pointRows) {
+    assert.deepEqual(
+      Object.keys(row).sort(),
+      [...PW_PRICE_POINT_DDL_COLUMNS].sort(),
+      'the row must contain every DDL column and nothing else — no basis, no packsPerBox',
+    );
+  }
+});
