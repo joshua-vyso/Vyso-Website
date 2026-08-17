@@ -6,7 +6,7 @@ import { Badge, DataTable, Kpi, KpiStrip, SectionCard } from '@/components/platf
 import type { OutreachLead, TodaySnapshot } from '@/lib/platform/notion-outreach';
 import type { DraftInbox, SendOutcome } from '@/lib/platform/outreach-drafts';
 
-type SendResult = { sent: number; failed: SendOutcome[]; dropped: number; account: string };
+type SendResult = { sent: number; failed: SendOutcome[]; dropped: number; held?: { company: string | null; to: string; reason: string }[]; account: string };
 
 const CAMPAIGN_COLOUR: Record<string, { bg: string; fg: string }> = {
   'Pricing Refined': { bg: '#EAF7EF', fg: '#2F7D5B' },
@@ -178,6 +178,13 @@ export function TodayOutreach({
           <div className="mb-4 rounded-xl border border-[#B7DCC7] bg-[#F3FAF6] px-4 py-3 text-[13px] text-[#2F7D5B]">
             Sent {result.sent} {result.sent === 1 ? 'email' : 'emails'} from {result.account}.
             {result.dropped > 0 ? ` ${result.dropped} were skipped as no longer sendable.` : ''}
+            {result.held && result.held.length > 0 ? (
+              <ul className="mt-2 space-y-1 text-[#B4342B]">
+                {result.held.map((h) => (
+                  <li key={h.to}>Held, not sent — {h.company ?? h.to}: {h.reason}</li>
+                ))}
+              </ul>
+            ) : null}
             {result.failed.length > 0 ? (
               <ul className="mt-2 space-y-1 text-[#B4342B]">
                 {result.failed.map((f) => (
@@ -200,13 +207,13 @@ export function TodayOutreach({
 
         
 
-        {inbox && inbox.sendable.length === 0 ? (
+        {inbox && inbox.sendable.length === 0 && inbox.held.length === 0 ? (
           <p className="text-[13px] text-[#A0A49C]">
             No outreach drafts waiting. Run the lead engine, or everything today has already gone out.
           </p>
         ) : null}
 
-        {inbox && inbox.sendable.length > 0 ? (
+        {inbox && (inbox.sendable.length > 0 || inbox.held.length > 0) ? (
           <div className="space-y-3">
             {!inbox.canSend ? (
               <div className="rounded-lg border border-[#E7B4AF] bg-[#FCF3F2] px-3 py-2 text-[13px] text-[#B4342B]">
@@ -236,6 +243,25 @@ export function TodayOutreach({
                 </li>
               ))}
             </ul>
+
+            {inbox.held.length > 0 ? (
+              <div className="rounded-xl border border-[#E7B4AF] bg-[#FCF3F2] px-4 py-3">
+                <div className="text-[13px] font-medium text-[#B4342B]">
+                  {inbox.held.length} {inbox.held.length === 1 ? 'draft is' : 'drafts are'} held and will not be sent
+                </div>
+                <ul className="mt-2 space-y-1.5">
+                  {inbox.held.map((d) => (
+                    <li key={d.id} className="text-[12px] text-[#7A2E27]">
+                      <span className="font-medium text-[#171A17]">{d.company ?? d.to}</span>
+                      <span className="text-[#A0A49C]"> · {d.to}</span> — {d.reason}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-[12px] text-[#7A2E27]">
+                  These stay in Gmail for you to read and delete. If a hold is wrong, untick Replied on the lead and reload.
+                </p>
+              </div>
+            ) : null}
 
             {inbox.unrecognised > 0 ? (
               <p className="text-[12px] text-[#A0A49C]">

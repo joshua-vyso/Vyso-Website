@@ -8,6 +8,11 @@ const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me';
  *  2000 on Workspace; stopping well short of it keeps a misfire recoverable. */
 export const SEND_BATCH_LIMIT = 60;
 
+export type HeldDraft = OutreachDraft & {
+  /** Why ServiceDen refuses to send it. The draft stays in Gmail for Josh to judge. */
+  reason: string;
+};
+
 export type OutreachDraft = {
   id: string;
   messageId: string;
@@ -27,6 +32,11 @@ export type DraftInbox = {
   account: string;
   canSend: boolean;
   sendable: OutreachDraft[];
+  /** Drafts addressed to a lead we will NOT send: the lead has replied, been
+   *  marked bounced, or the mailbox shows a reply since the draft was made.
+   *  This is the last gate before a send, and it re-checks live rather than
+   *  trusting whatever the morning run knew. */
+  held: HeldDraft[];
   /** Drafts we will not touch because the recipient is not a lead. Surfaced as a
    *  count so an unrelated personal draft is visibly excluded rather than
    *  silently swept into a bulk send. */
@@ -48,6 +58,48 @@ function header(headers: GmailHeader[] | undefined, name: string): string {
 export function addressOf(value: string): string {
   const match = value.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+/);
   return match ? match[0].toLowerCase() : '';
+}
+
+const FREE_MAIL = new Set([
+  'gmail.com', 'googlemail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'live.com', 'icloud.com', 'me.com',
+  'mail.com', 'aol.com', 'protonmail.com', 'proton.me', 'mweb.co.za', 'telkomsa.net', 'vodamail.co.za', 'lantic.net',
+  'webmail.co.za', 'iafrica.com', 'absamail.co.za', 'polka.co.za', 'mailbox.co.za',
+]);
+const SYSTEM_SENDER = /^(mailer-daemon|postmaster|no-?reply|noreply|donotreply|do-not-reply|bounce|bounces|notification|notifications|mail|admin|hostmaster|abuse)@/i;
+
+/**
+ * Sender addresses (and their domains) that have written to us in the last N
+ * days. Used to catch a reply that landed after the morning run and before Send:
+ * the n8n gate cannot see those, so this is the only place they can be caught.
+ * Same rule as the automation's matcher — a reply from anyone at the lead's own
+ * (non free-mail) domain counts.
+ */
+async function recentSenders(accessToken: string, days: number): Promise<{ addresses: Set<string>; domains: Set<string> }> {
+  const addresses = new Set<string>();
+  const domains = new Set<string>();
+  const q = encodeURIComponent(`-in:sent -in:draft -in:chats newer_than:${days}d`);
+  let pageToken = '';
+  for (let page = 0; page < 5; page += 1) {
+    const list = await gmail<{ messages?: { id?: string }[]; nextPageToken?: string }>(
+      accessToken,
+      `/messages?q=${q}&maxResults=100${pageToken ? `&pageToken=${pageToken}` : ''}`,
+    );
+    for (const m of list.messages ?? []) {
+      if (!m.id) continue;
+      const msg = await gmail<{ payload?: { headers?: GmailHeader[] } }>(
+        accessToken,
+        `/messages/${m.id}?format=metadata&metadataHeaders=From`,
+      );
+      const from = addressOf(header(msg.payload?.headers, 'From'));
+      if (!from || SYSTEM_SENDER.test(from)) continue;
+      addresses.add(from);
+      const domain = from.split('@')[1];
+      if (domain && !FREE_MAIL.has(domain)) domains.add(domain);
+    }
+    if (!list.nextPageToken) break;
+    pageToken = list.nextPageToken;
+  }
+  return { addresses, domains };
 }
 
 async function gmail<T>(accessToken: string, path: string, init?: RequestInit): Promise<T> {
@@ -98,7 +150,12 @@ export async function listOutreachDrafts(
     pageToken = list.nextPageToken;
   }
 
+  // Cheap when the mailbox is quiet, and it is the only check that can see a
+  // reply that arrived after the automation ran this morning.
+  const recent = await recentSenders(accessToken, 7);
+
   const sendable: OutreachDraft[] = [];
+  const held: HeldDraft[] = [];
   let unrecognised = 0;
   for (const id of ids) {
     const draft = await gmail<GmailDraft>(
@@ -112,7 +169,7 @@ export async function listOutreachDrafts(
       unrecognised += 1;
       continue;
     }
-    sendable.push({
+    const entry: OutreachDraft = {
       id,
       messageId: draft.message?.id ?? '',
       to,
@@ -121,14 +178,28 @@ export async function listOutreachDrafts(
       company: lead.company,
       campaign: lead.campaign,
       stage: lead.outreachStage,
-    });
+    };
+
+    // The hard gates. Any one of these holds the draft; none of them delete it.
+    const domain = to.split('@')[1] ?? '';
+    let reason = '';
+    if (lead.replied) reason = 'Lead has replied — marked in Notion.';
+    else if (lead.emailStatus === 'Bounced' || lead.emailStatus === 'Do Not Contact') reason = `Email status is ${lead.emailStatus}.`;
+    else if (lead.signed) reason = 'Lead is signed.';
+    else if (recent.addresses.has(to)) reason = 'This address has emailed us in the last 7 days.';
+    else if (domain && !FREE_MAIL.has(domain) && recent.domains.has(domain)) reason = `Someone at ${domain} has emailed us in the last 7 days.`;
+
+    if (reason) held.push({ ...entry, reason });
+    else sendable.push(entry);
   }
 
   sendable.sort((a, b) => (a.company ?? '').localeCompare(b.company ?? ''));
+  held.sort((a, b) => (a.company ?? '').localeCompare(b.company ?? ''));
   return {
     account: String(connection.email_address ?? connection.email ?? 'unknown'),
     canSend: connectionHasSendScope(connectionScopes),
     sendable,
+    held,
     unrecognised,
   };
 }
