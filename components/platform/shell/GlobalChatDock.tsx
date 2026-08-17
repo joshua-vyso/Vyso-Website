@@ -8,6 +8,8 @@ import { ChatComposer } from '@/components/platform/chat/ChatComposer';
 import { ChatDropZone } from '@/components/platform/chat/ChatDropZone';
 import { ChatTranscript } from '@/components/platform/chat/ChatTranscript';
 import { SuggestionChips } from '@/components/platform/chat/SuggestionChips';
+import { isBubbleRoute } from '@/lib/ai/finch/module-route';
+import { FinchBubble } from './FinchBubble';
 import { useFinchChat } from './FinchChatProvider';
 
 /**
@@ -36,15 +38,21 @@ import { useFinchChat } from './FinchChatProvider';
  * table underneath it — only the pill and the transcript panel take pointer
  * events.
  *
- * THREE VARIANTS, ONE COMPOSER (§12 D1; W2 adds the third).
+ * THREE VARIANTS, ONE COMPOSER (§12 D1; W2 adds the third, W4 replaces it).
  *   - `/app` — full 680px pill, the caption, the floating transcript panel,
  *     and (while nothing has been said) the suggestion chips above the pill.
  *   - `/app/chat/*` — COMPOSER ONLY. The transcript is the page; a floating
  *     copy of it hovering over itself would be two scroll boxes showing the
  *     same words. The pill stays wide because a reply box that shrinks on a
  *     screen dedicated to replying would be perverse.
- *   - everywhere else — compact ~420px ring that expands on focus or on the
- *     first turn, with the floating panel for the answer.
+ *   - everywhere else — the module BUBBLE (W4). The wide pill floating across
+ *     the bottom of every module screen was chat-first taken literally: it sat
+ *     over the tables the owner had come to read, on thirteen routes where the
+ *     conversation is the second thing they want. `FinchBubble` collapses it to
+ *     the gradient pill the design asks for and expands to a corner panel —
+ *     same provider, same composer, same drop zone, so nothing about the
+ *     conversation changes, only how much room it takes when nobody asked it
+ *     anything.
  *
  * The route tests are `pathname === '/app'` and `startsWith('/app/chat')`,
  * which covers `/app?view=history` for free — history is a search param on the
@@ -75,6 +83,10 @@ export function GlobalChatDock() {
   const hasConversation = turns.length > 0 || streaming || !!error || attaching.length > 0;
 
   if (!finchEnabled || !email || trial?.expired) return null;
+
+  // Module screens get the bubble instead of the bar (W4). Same gates above it,
+  // same provider behind it — this is the dock collapsed, not a second chat.
+  if (isBubbleRoute(pathname)) return <FinchBubble />;
 
   const isBrief = pathname === '/app';
   const isNewChat = pathname === '/app/chat/new';

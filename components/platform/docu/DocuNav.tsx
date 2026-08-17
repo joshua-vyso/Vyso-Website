@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { FinchLauncher } from '@/components/platform/finch/FinchLauncher';
 
 const TABS = [
   { href: '/app/docu', label: 'Documents', match: 'documents' },
@@ -48,9 +47,9 @@ export function DocuNav({ reviewCount = 0 }: { reviewCount?: number }) {
           </Link>
         );
       })}
-      <div className="ml-auto self-center pb-1.5">
-        <FinchLauncher module="docu" />
-      </div>
+      {/* The Finch pill that used to sit here is gone (W4): the shell's bubble
+          is bottom-right on every module screen and carries the same
+          conversation the Brief has, so Doc-U no longer launches a second one. */}
     </div>
   );
 }

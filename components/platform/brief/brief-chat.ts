@@ -174,9 +174,10 @@ export function onBriefAsk(fn: AskListener): () => void {
 }
 
 /**
- * Called by a finding card. A no-op if no pill is listening — the cards gate
- * on the same `finchEnabled` session flag the pill does (see FinchLauncher),
- * so they only offer the tap when there is somewhere for it to land.
+ * Called by a finding card. A no-op if no composer is listening — the cards
+ * gate on the same `finchEnabled` session flag the dock does (see
+ * GlobalChatDock), so they only offer the tap when there is somewhere for it to
+ * land.
  *
  * `findingId` rides along from W2 (plan §2.5): the chat this becomes is filed
  * against that finding (`finch_chats.finding_id`), so a conversation that

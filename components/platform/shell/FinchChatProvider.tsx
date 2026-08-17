@@ -16,6 +16,16 @@ import { onBriefAsk } from '@/components/platform/brief/brief-chat';
 import { usePlatform } from '@/lib/platform/session';
 import { createClient } from '@/lib/platform/supabase-browser';
 import { attachmentMessage, uploadDocument, validateUploadFile } from '@/lib/platform/docu/upload-client';
+import {
+  MAX_ORDER_FILES,
+  ingestOrderDocument,
+  validateOrderFile,
+  type OrderIngestResult,
+} from '@/lib/platform/docu/order-ingest-client';
+import { agentModuleForPathname, isBubbleRoute } from '@/lib/ai/finch/module-route';
+import { looksLikeOrderRequest } from '@/lib/ai/finch/order-intent';
+import type { ParsedOrder } from '@/lib/ai/finch/order-handoff';
+import type { AgentModule } from '@/lib/ai/finch/config';
 import type { Suggestion } from '@/lib/platform/finch-suggestions';
 
 /**
@@ -93,8 +103,36 @@ import type { Suggestion } from '@/lib/platform/finch-suggestions';
  * sends, so reading a finding and changing your mind does not leave an empty
  * chat in the rail.
  *
- * `module` is still the hardcoded 'brief' the dock has always sent — module
- * awareness is W4.
+ * ── ONE FINCH (W4) ──────────────────────────────────────────────────────────
+ * `module` is no longer hardcoded: it is `agentModuleForPathname(pathname)`, so
+ * the conversation the owner opens on an OrderFlow screen reaches OrderFlow's
+ * tools and the one they open on Doc-U reaches Doc-U's, without a second chat
+ * component existing to provide it. That is what let FinchLauncher/FinchButton/
+ * FinchModal be deleted this wave; everything those three did that survives
+ * lives here or in the two components this provider feeds (FinchBubble,
+ * chat/OrderCards).
+ *
+ * WHAT CAME ACROSS FROM THE MODAL, AND WHY IT HAD TO. Three things:
+ *   1. `orderMode` — the sticky workflow arm. The server escalates a turn to
+ *      the Sonnet tier (and offers `orderflow_prepare_order`) when the message
+ *      LOOKS like an order request, but "Bakers, 3 crates" — the owner's answer
+ *      to Finch's own clarifying question — does not look like one. Without the
+ *      arm, the follow-up drops to Haiku with no order tool offered and the
+ *      order is silently never built. It is set by the same regex the route
+ *      uses (order-intent.ts, one copy now), cleared the moment a draft arrives
+ *      or the conversation is emptied.
+ *   2. `orderDraft` SSE events — previously dropped on the floor here. They are
+ *      the prepared order, and without a card carrying them into the New Order
+ *      builder the workflow tier can talk about an order it can never hand over.
+ *   3. The OrderFlow drop path (see `order-ingest-client.ts` for why W5's Doc-U
+ *      route cannot invoice a dropped customer order).
+ * Both card kinds are provider state rather than transcript turns: they are
+ * live UI, and nothing server-side persists what they point at.
+ *
+ * THE BUBBLE'S OWN STATE lives here for the reason everything else does —
+ * GlobalChatDock re-renders per route, so collapsed/expanded held in the bubble
+ * would reset every time the owner walked from Suppliers to Stock, and the
+ * whole point of the surface is that it is the same conversation everywhere.
  *
  * ── ATTACHMENTS (W5) ────────────────────────────────────────────────────────
  * `attach()` is the whole drag-and-drop feature; `ChatDropZone` and the
@@ -139,11 +177,40 @@ export interface AttachmentProgress {
   label: string;
 }
 
+/** An order Finch prepared through `orderflow_prepare_order`, waiting to be
+ *  carried into the New Order builder. */
+export interface OrderDraftDockCard {
+  kind: 'draft';
+  id: string;
+  order: ParsedOrder;
+}
+
+/** A document dropped on an OrderFlow screen, after the ingest route filed it
+ *  (and, when it was a customer order, invoiced it). */
+export interface IngestDockCard {
+  kind: 'ingest';
+  id: string;
+  filename: string;
+  result: OrderIngestResult;
+}
+
+/** The non-sentence things Finch hands back. Drawn by chat/OrderCards.tsx under
+ *  the bubble's transcript; see that file for why they are not messages. */
+export type DockCard = OrderDraftDockCard | IngestDockCard;
+
+interface OrderDraftEvent {
+  customerName?: string | null;
+  items?: Array<{ name: string; qty: number; unit_price: number }>;
+}
+
 interface SseEvent {
   text?: string;
   tool?: string;
   done?: boolean;
   error?: string;
+  /** The workflow tier's prepared order (W4). Dropped by this provider until
+   *  this wave, because nothing here could draw it. */
+  orderDraft?: OrderDraftEvent;
 }
 
 /** The transcript as GET /api/finch/chats/[id] returns it. Mirrors
@@ -270,6 +337,22 @@ interface FinchChatValue {
   /** True when this session can upload at all (an org on the profile). The
    *  paperclip and the drop target hide rather than fail when it is false. */
   canAttach: boolean;
+  /** Which Finch this route is talking to (W4). Read by the bubble for its
+   *  header and by anything that needs to know an OrderFlow-only affordance is
+   *  reachable. */
+  agentModule: AgentModule;
+  /** Prepared orders and filed documents waiting for a decision. */
+  cards: DockCard[];
+  /** Throw one away. The order it described was never saved server-side, so
+   *  this is the whole of "no thanks". */
+  dismissCard: (id: string) => void;
+  /** Is the module bubble open? Held here so walking between module screens
+   *  doesn't collapse a conversation the owner left open. */
+  bubbleOpen: boolean;
+  /** Open/collapse the bubble. Opening also clears the unread dot. */
+  setBubbleOpen: (open: boolean) => void;
+  /** An answer landed on a module screen while the bubble was shut. */
+  bubbleUnread: boolean;
   /** Sends `text`, or whatever is in `input` when it is omitted. No-op while
    *  streaming or when there is nothing to send. */
   send: (text?: string, opts?: { attachments?: ChatAttachment[] }) => void;
@@ -328,6 +411,9 @@ export function FinchChatProvider({
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [attaching, setAttaching] = useState<AttachmentProgress[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
+  const [cards, setCards] = useState<DockCard[]>([]);
+  const [bubbleOpen, setBubbleOpenState] = useState(false);
+  const [bubbleUnread, setBubbleUnread] = useState(false);
 
   const { org, userId } = usePlatform();
 
@@ -345,9 +431,36 @@ export function FinchChatProvider({
    *  the moment it is spent (or the conversation is emptied) so the NEXT
    *  question doesn't get filed against a finding it has nothing to do with. */
   const pendingFindingRef = useRef<string | null>(null);
+  /** The sticky workflow arm (W4, ported from FinchModal). A ref, not state:
+   *  `send` must read the CURRENT value at the moment it fires, and a re-render
+   *  per arm/disarm would buy nothing — nothing draws it. */
+  const orderModeRef = useRef(false);
+  /** Sequence for card keys. Two drafts in one conversation are two cards. */
+  const cardSeq = useRef(0);
 
   const router = useRouter();
   const pathname = usePathname() ?? '';
+  /** The agent this screen talks to (plan §2.5). Recomputed per render, which
+   *  is per navigation — layouts don't re-render on one, but this client
+   *  component does, because `usePathname()` subscribes it to the route. */
+  const agentModule = agentModuleForPathname(pathname);
+
+  /** `pathname` and `bubbleOpen` as an async tail can read them. A turn started
+   *  on OrderFlow can finish after the owner has walked to Doc-U and opened the
+   *  bubble there; the unread dot must answer to where they ARE, not to where
+   *  the closure was built. */
+  const pathnameRef = useRef(pathname);
+  const bubbleOpenRef = useRef(bubbleOpen);
+  useEffect(() => {
+    pathnameRef.current = pathname;
+    bubbleOpenRef.current = bubbleOpen;
+  }, [pathname, bubbleOpen]);
+
+  /** Opening the bubble is what "reading" an answer means. */
+  const setBubbleOpen = useCallback((open: boolean) => {
+    setBubbleOpenState(open);
+    if (open) setBubbleUnread(false);
+  }, []);
 
   // A finding card was tapped: name it in the composer and hand over the caret,
   // so the owner writes the actual question. (Verbatim from BriefChatPill; the
@@ -378,6 +491,13 @@ export function FinchChatProvider({
     pendingFindingRef.current = null;
     setAttaching([]);
     setAttachError(null);
+    // Sign-out: a prepared order names a real customer, so it must not be on
+    // screen for whoever signs in next on a shared workstation — the same
+    // reason `clearParsedOrder()` is called there.
+    setCards([]);
+    orderModeRef.current = false;
+    setBubbleOpenState(false);
+    setBubbleUnread(false);
     // The reader's `finally` skips this when the signal is aborted, so the
     // reset has to lower the flag itself or the composer stays disabled.
     setStreaming(false);
@@ -394,6 +514,18 @@ export function FinchChatProvider({
     setActiveChatId(null);
     setAttachError(null);
     pendingFindingRef.current = null;
+    // The cards belong to the conversation that produced them; a blank page
+    // that still showed yesterday's order draft would be offering to open
+    // something the next question has nothing to do with.
+    setCards([]);
+    orderModeRef.current = false;
+  }, []);
+
+  /** Throw a card away. Nothing server-side holds what it described (the route
+   *  streams the draft as display data and saves no order), so this is a local
+   *  delete by design. */
+  const dismissCard = useCallback((id: string) => {
+    setCards((prev) => prev.filter((c) => c.id !== id));
   }, []);
 
   /**
@@ -418,6 +550,8 @@ export function FinchChatProvider({
       setError(null);
       setActiveChatId(id);
       pendingFindingRef.current = null;
+      setCards([]);
+      orderModeRef.current = false;
     },
     [streaming, activeChatId],
   );
@@ -454,6 +588,8 @@ export function FinchChatProvider({
       setTurns(loaded);
       setError(null);
       setActiveChatId(id);
+      setCards([]);
+      orderModeRef.current = false;
     } catch {
       /* offline / aborted — keep what's on screen */
     }
@@ -494,6 +630,19 @@ export function FinchChatProvider({
       content: i === 0 && context ? `${context}\n\n${m.content}` : m.content,
     }));
 
+    // Stay in the order workflow for the whole exchange (W4, from FinchModal):
+    // once armed by an order-looking message, every later turn keeps routing to
+    // the workflow tier — so the model's clarifying question ("which customer?")
+    // and the owner's one-word answer to it are not dropped back to the Q&A
+    // tier, where `orderflow_prepare_order` isn't even offered. Disarmed when a
+    // draft arrives (below) or the conversation is emptied. OrderFlow only:
+    // it is the only module with a workflow tool, and the route agrees
+    // (`module === 'orderflow' && …`), so arming it anywhere else would ask for
+    // an escalation the server would refuse.
+    const isOrderText = agentModule === 'orderflow' && looksLikeOrderRequest(text);
+    if (isOrderText) orderModeRef.current = true;
+    const workflow = agentModule === 'orderflow' && orderModeRef.current;
+
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     let acc = '';
@@ -511,7 +660,10 @@ export function FinchChatProvider({
         const res = await fetch('/api/finch/chats', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ module: 'brief', findingId: pendingFindingRef.current }),
+          // The module the conversation STARTED in, stored on the row: it
+          // labels the chat in the rail and is what the owner will recognise
+          // it by ("that one I started in OrderFlow").
+          body: JSON.stringify({ module: agentModule, findingId: pendingFindingRef.current }),
           signal: ctrl.signal,
         });
         if (res.ok) {
@@ -545,8 +697,9 @@ export function FinchChatProvider({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: outbound,
-          module: 'brief',
+          module: agentModule,
           orgName,
+          ...(workflow ? { workflow: true } : {}),
           ...(chatId ? { chatId } : {}),
           ...(wireAttachments.length ? { attachments: wireAttachments } : {}),
         }),
@@ -580,6 +733,24 @@ export function FinchChatProvider({
           else if (evt.tool) {
             usedTools.push(evt.tool);
             setStreamTools([...usedTools]);
+          }
+          // The workflow tier prepared an order. It is display data — the route
+          // saves nothing — so the card IS the handover: it stashes the draft
+          // and opens the New Order builder, which reads it back through
+          // order-handoff.ts. Disarms the workflow mode: the order is built,
+          // and the next question is a question.
+          else if (evt.orderDraft) {
+            const draft = evt.orderDraft;
+            const items = Array.isArray(draft.items) ? draft.items : [];
+            setCards((prev) => [
+              ...prev,
+              {
+                kind: 'draft',
+                id: `draft_${cardSeq.current++}`,
+                order: { customerName: draft.customerName ?? null, items },
+              },
+            ]);
+            orderModeRef.current = false;
           } else if (evt.text) {
             acc += evt.text;
             setStreamText(acc);
@@ -592,6 +763,14 @@ export function FinchChatProvider({
         ...prev,
         { role: 'assistant', content: acc || '…', ...(usedTools.length ? { tools: usedTools } : {}) },
       ]);
+
+      // An answer nobody saw. Only on a bubble route and only while the bubble
+      // is shut — on the Brief and the chat pages the answer arrives in front
+      // of the owner, so a dot there would be telling them about something they
+      // are looking at. Both facts are read from refs because this line runs
+      // however many seconds after the closure was built, by which time the
+      // owner may have walked to another screen.
+      if (!bubbleOpenRef.current && isBubbleRoute(pathnameRef.current)) setBubbleUnread(true);
 
       // The rail has a new row to draw, and the agent route's `after()` has by
       // now named it. ONCE per chat — every later turn changes only
@@ -619,12 +798,69 @@ export function FinchChatProvider({
       // minute for a stream that ended when the owner signed out.
       streamingRef.current = false;
     }
-  }, [input, streaming, turns, context, orgName, activeChatId, pathname, router]);
+  }, [input, streaming, turns, context, orgName, activeChatId, agentModule, pathname, router]);
 
   // The attach flow calls through this rather than closing over `send`.
   useEffect(() => {
     sendRef.current = (text?: string, opts?: { attachments?: ChatAttachment[] }) => void send(text, opts);
   }, [send]);
+
+  /**
+   * A document dropped on an OrderFlow screen goes through Finch's ingest route
+   * (W4, from FinchModal) — and comes back as an invoice.
+   *
+   * WHY NOT W5's DOC-U PATH. `order-ingest-client.ts` carries the full reason;
+   * the short version is that `/api/ai/extract` only builds the OrderFlow order
+   * when the `documents` row was typed `'order'` BEFORE extraction, and the
+   * Doc-U upload helper files rows untyped, so a customer order dropped through
+   * it is read and filed and then stops. The ingest route classifies first and
+   * runs the shared pipeline, so the drop still lands in Doc-U — it just also
+   * becomes an order.
+   *
+   * NO CHAT MESSAGE, ON PURPOSE. This is the modal's behaviour kept: filing a
+   * document is not a question, and the card says everything a model turn could
+   * ("read as a customer order for Bakers · 6 lines · invoice INV-1042
+   * created") without a second of latency or a cent of tokens. The owner can
+   * then ask about it in their own words, and `orderflow_find_customer` /
+   * the invoice tools answer.
+   *
+   * SEQUENTIAL, NOT CONCURRENT — FinchModal's rule, and it is load-bearing:
+   * each file's create-on-upload (a new customer, a new product) must commit
+   * before the next runs, or a batch that is several pages of ONE new
+   * customer's order races into duplicate customer / order / invoice rows.
+   */
+  const attachAsOrders = useCallback(async (picked: File[]) => {
+    const problems: string[] = [];
+    const queue: File[] = [];
+    for (const file of picked.slice(0, MAX_ORDER_FILES)) {
+      const problem = validateOrderFile(file);
+      if (problem) problems.push(problem);
+      else queue.push(file);
+    }
+    if (picked.length > MAX_ORDER_FILES) problems.push(`Only the first ${MAX_ORDER_FILES} files were read.`);
+    setAttachError(problems.length ? problems.join(' ') : null);
+    if (queue.length === 0) return;
+
+    for (const file of queue) {
+      const key = `${Date.now()}-${file.name}-${cardSeq.current}`;
+      setAttaching((prev) => [...prev, { key, filename: file.name, label: `Reading & filing ${file.name}…` }]);
+      try {
+        const result = await ingestOrderDocument(file);
+        setCards((prev) => [
+          ...prev,
+          { kind: 'ingest', id: `ingest_${cardSeq.current++}`, filename: file.name, result },
+        ]);
+      } catch (err) {
+        problems.push(
+          err instanceof Error && err.message ? `${file.name}: ${err.message}` : `Couldn’t file ${file.name}.`,
+        );
+      } finally {
+        setAttaching((prev) => prev.filter((a) => a.key !== key));
+      }
+    }
+
+    setAttachError(problems.length ? problems.join(' ') : null);
+  }, []);
 
   /**
    * A dropped (or picked) file becomes a turn of conversation.
@@ -645,6 +881,15 @@ export function FinchChatProvider({
     async (files: FileList | File[] | null) => {
       const picked = Array.from(files ?? []);
       if (picked.length === 0) return;
+
+      // One drop zone, two destinations — decided by where the owner is
+      // standing, which is the only signal available at drop time and the right
+      // one: a document dropped on an OrderFlow screen is being dropped INTO
+      // OrderFlow.
+      if (agentModule === 'orderflow') {
+        await attachAsOrders(picked);
+        return;
+      }
 
       const problems: string[] = [];
       const queue: File[] = [];
@@ -693,7 +938,7 @@ export function FinchChatProvider({
       }
       sendRef.current(attachmentMessage(attached.map((a) => a.filename)), { attachments: attached });
     },
-    [org?.id, userId],
+    [org?.id, userId, agentModule, attachAsOrders],
   );
 
   const value = useMemo<FinchChatValue>(
@@ -710,6 +955,12 @@ export function FinchChatProvider({
       attaching,
       attachError,
       canAttach: !!org?.id,
+      agentModule,
+      cards,
+      dismissCard,
+      bubbleOpen,
+      setBubbleOpen,
+      bubbleUnread,
       send: (text?: string, opts?: { attachments?: ChatAttachment[] }) => void send(text, opts),
       attach: (files: FileList | File[] | null) => void attach(files),
       openChat: (id: string) => void openChat(id),
@@ -730,6 +981,12 @@ export function FinchChatProvider({
       attaching,
       attachError,
       org?.id,
+      agentModule,
+      cards,
+      dismissCard,
+      bubbleOpen,
+      setBubbleOpen,
+      bubbleUnread,
       send,
       attach,
       openChat,

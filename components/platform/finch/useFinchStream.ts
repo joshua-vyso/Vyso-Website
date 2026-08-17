@@ -6,15 +6,18 @@ import type { AgentModule } from '@/lib/ai/finch/config';
 /**
  * Shared Finch chat streaming hook — a plain text conversation over the
  * `/api/ai/agent` SSE endpoint (events `{text}|{tool}|{done}|{error}`). This is
- * the small, self-contained reader FinchModal open-codes inline; it's extracted
- * here so simpler surfaces (the onboarding data stage) can stream a Finch reply
- * without re-deriving the fetch → getReader → split('\n\n') → parse loop.
+ * the small, self-contained reader the chat surfaces open-code inline; it's
+ * extracted here so simpler surfaces can stream a Finch reply without
+ * re-deriving the fetch → getReader → split('\n\n') → parse loop.
  *
- * NOTE (Phase D): FinchModal was intentionally NOT refactored onto this hook —
- * its `send` carries extra branches (deferred file attachments, order-draft
- * cards, the order-workflow tier arming) that don't belong in a generic text
- * chat. Duplicating the ~15-line reader here is cleaner than widening the hook
- * to cover those cases. See .ai/plan_finch-onboarding.md §4 Phase D.
+ * ITS ONE CALLER IS ONBOARDING (StageData). FinchModal was the other reader and
+ * was deliberately never refactored onto this hook — its `send` carried
+ * branches (file attachments, order-draft cards, the workflow-tier arming) that
+ * don't belong in a generic text chat. That reasoning outlived the modal: the
+ * platform chat now lives in FinchChatProvider, whose `send` carries those same
+ * branches plus persistence, so it is not a candidate either. Keep this hook
+ * small and for surfaces that only need text. See .ai/plan_finch-onboarding.md
+ * §4 Phase D.
  */
 
 export interface FinchChatMessage {

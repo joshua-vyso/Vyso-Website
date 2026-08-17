@@ -5,7 +5,6 @@ import { ModuleHeader } from '@/components/platform/module-ui';
 import { MODULE_META } from '@/lib/platform/module-meta';
 import { SubNav } from '@/components/platform/SubNav';
 import { OrderFlowSetupBanner } from '@/components/platform/orderflow/OrderFlowSetupBanner';
-import { FinchLauncher } from '@/components/platform/finch/FinchLauncher';
 
 const M = MODULE_META.orderflow;
 
@@ -51,12 +50,12 @@ export default async function OrderFlowLayout({ children }: { children: React.Re
       {needsSetup ? <OrderFlowSetupBanner /> : null}
       <ModuleHeader icon={M.icon} title={M.name} description={M.description} />
       <div className="mt-5">
-        <SubNav
-          tabs={TABS}
-          rootHref="/app/orderflow"
-          accent="#E5651F"
-          right={<FinchLauncher module="orderflow" />}
-        />
+        {/* No Finch pill here from W4 on: the shell's own bubble is bottom-right
+            on every module screen, module-aware, and shares the Brief's
+            conversation (components/platform/shell/FinchBubble.tsx). A second
+            launcher in this sub-nav was the OTHER Finch — a separate transcript
+            in a full-screen modal — and having two was the bug. */}
+        <SubNav tabs={TABS} rootHref="/app/orderflow" accent="#E5651F" />
       </div>
       <div className="mt-6">{children}</div>
     </div>

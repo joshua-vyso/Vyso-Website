@@ -1523,6 +1523,221 @@ Nothing in W4's files was touched: `components/platform/{shell,chat,finch}/*`,
 Runtime verification still needs a signed-in session with a Debtors Watch and a
 Stock Cover finding in the org — nothing here ran against a live database.
 
+## Brief chat v2 — W4 (module bubble + one Finch)
+
+Implements `.ai/plan_brief_chat_v2.md` §1.5, §2.5, §3, §4 W4, §5.
+
+There were two Finches. The dock (Brief-scoped, `module:'brief'` hardcoded at
+`FinchChatProvider.tsx:179`) floated its 420px pill across the bottom of all
+thirteen platform routes; a second one — `FinchLauncher` → `FinchButton` →
+`FinchModal`, mounted in OrderFlow's sub-nav and DocuNav — was module-aware, had
+tool status lines, order building and document ingest, and kept a transcript
+that shared **nothing** with the dock's. An owner who asked the Brief about a
+supplier and then opened the pill in OrderFlow met a blank stranger who had
+never heard of it.
+
+W4 collapses that into one. `GlobalChatDock` renders `FinchBubble` on every
+route except `/app` and `/app/chat/*`: the same gradient pill, now pinned
+bottom-right of the main column instead of drifting with each module's chrome,
+expanding into a corner panel that draws the **same provider's** conversation
+through the **same** transcript, drop zone and composer the other two surfaces
+use. The provider sends the real module, so the panel on OrderFlow reaches
+OrderFlow's tools without a second chat component existing to provide them —
+which is what made the three legacy files deletable rather than restylable.
+
+### Parity checklist — every FinchModal capability
+
+Written before anything was deleted; the table is the argument that nothing was
+lost by accident.
+
+| FinchModal capability | Where it lives now |
+|---|---|
+| Gradient "Finch" pill (`FinchButton`) | `FinchBubble` collapsed state — same `finch-gradient` + `FinchMark` markup, moved from a module sub-nav to `right:24px; bottom:24px` of the main column on every route |
+| Module-scoped agent (a `module` prop per mount site) | `agentModuleForPathname(pathname)` in the provider — no prop, no mount site, and therefore no way for a screen to be given the wrong one |
+| Its own `messages` transcript | The provider's `turns` — one conversation across the whole shell, persisted since W1 |
+| SSE reader, abort on unmount | The provider's, unchanged (it aborts on shell teardown and `reset()`, deliberately not on navigation) |
+| Tool status lines (`streamStatus`) | `ChatTranscript` → `ToolStatusLine` (W2), and stored on the assistant turn so a reopened chat still shows them |
+| `**bold**` rendering (`renderContent`) | `MessageBubble.AssistantMessage` (W2), which does more |
+| Autoscroll to the newest message | `ChatTranscript`'s `scrollIntoView({block:'nearest'})` |
+| Escape closes | `FinchBubble`'s keydown effect, bound only while open |
+| Focus the composer on open | `FinchBubble`'s focus effect, through the provider's shared `inputRef` |
+| Order-workflow arming (`orderMode`, sticky across the exchange) | `orderModeRef` in the provider + `lib/ai/finch/order-intent.ts` (one regex, read by the client AND `app/api/ai/agent/route.ts`) |
+| `orderDraft` SSE → parsed-order card | `DockCard{kind:'draft'}` + `chat/OrderCards.tsx` → `OrderDraftCard` (moved) |
+| "Open in a new order" → `stashParsedOrder` + `/app/orderflow/orders/new` | `DockCards` — `order-handoff.ts` and the builder's `FinchOrderPrefill` are untouched |
+| Copy an order to the clipboard | `OrderCards.copyOrder` (moved) |
+| Dismiss a card | `dismissCard` in the provider |
+| Attach → base64 → `/api/ai/agent/ingest-document` | `attachAsOrders` in the provider + `lib/platform/docu/order-ingest-client.ts`, on OrderFlow routes only (see the ruling below) |
+| Image downscale to ≤2000px JPEG; 13 MB image / 3 MB PDF caps; 8-file batch | moved verbatim into `order-ingest-client.ts`, with the validation loop extracted as the testable `validateOrderFile` |
+| Sequential ingest (no duplicate customer/order/invoice race) | kept, and the reason is in the docblock |
+| `IngestResultCard` — filed / invoiced / draft-held / not-built, "View order & invoice", "Open in Doc-U" | `chat/OrderCards.tsx` (moved, markup and copy intact) |
+| Drag-over highlight on the panel | `ChatDropZone` (W5) |
+| Empty-state paragraph | `FinchBubble`'s, minus the "/" sentence |
+| **`/` customer picker** + `/api/ai/agent/customers` | **DROPPED** — plan §1 non-goal. Finch resolves customers by name with `orderflow_find_customer`, which also works from a sentence rather than only from a menu. The ROUTE survives: the dead `components/platform/vyso-ai/VysoAIModal.tsx` still calls it and the plan reserves that tree for a separate cleanup |
+| **Pending attachment chips ("attach, type, send")** and the typed `note` that guided the order reader | **DROPPED** — the drop-zone model files immediately, so there is no moment between attaching and sending in which to type. Real, if small: a note like "this one's for Bakers" no longer helps the reader disambiguate a customer. The card now says what it read, and the owner can correct it in the order. Flagged rather than smuggled |
+| Modal chrome: portal to `document.body`, `PORTAL_STYLE`, backdrop, click-outside close, `body { overflow: hidden }` | **DROPPED with the modal.** The panel is not modal — the whole point is that the owner can read the table underneath while Finch answers. It renders inside the shell subtree, which already carries the font and the `--radius` override the portal had to re-declare |
+| "Finch can make mistakes — double-check anything important." | **DROPPED** — the platform chat W2 shipped (dock, `/app/chat/*`) has never carried one, and a disclaimer on one of three surfaces is worse than none. If it should exist it belongs on all three; noted for a product call, not decided here |
+
+### Files
+
+**Created**
+
+- `lib/ai/finch/module-route.ts` — `agentModuleForPathname` (pathname → the
+  agent's unit of knowledge) and `isBubbleRoute` (which screens get the bubble),
+  shared by the provider and the dock so the two cannot disagree about where the
+  bubble is.
+- `lib/ai/finch/order-intent.ts` — `CREATE_ORDER_RE` / `looksLikeOrderRequest`,
+  the escalation regex, now in one place.
+- `lib/platform/docu/order-ingest-client.ts` — FinchModal's base64 conversion,
+  canvas downscale, size caps and ingest call, moved; plus `validateOrderFile`.
+- `components/platform/shell/FinchBubble.tsx` — the collapsed pill and the
+  expanded panel.
+- `components/platform/chat/OrderCards.tsx` — `DockCards` + the two moved cards.
+- `tests/finch-module-route.test.ts`, `tests/order-intent.test.ts`,
+  `tests/order-ingest-validate.test.ts` — 39 tests.
+
+**Modified**
+
+- `components/platform/shell/FinchChatProvider.tsx` — real `module`; the sticky
+  workflow arm; `orderDraft` events kept instead of dropped; the OrderFlow
+  branch of `attach`; the bubble's open/unread state.
+- `components/platform/shell/GlobalChatDock.tsx` — renders `FinchBubble` on
+  bubble routes; `/app` and `/app/chat/*` untouched.
+- `app/api/ai/agent/route.ts` — imports the shared regex (its local copy is
+  gone; behaviour identical).
+- `app/app/orderflow/layout.tsx`, `components/platform/docu/DocuNav.tsx` —
+  `FinchLauncher` mounts removed.
+- `components/platform/finch/useFinchStream.ts`,
+  `components/platform/brief/brief-chat.ts`, `app/api/ai/agent/route.ts` —
+  comments that named the deleted files corrected.
+
+**Deleted** — `components/platform/finch/{FinchLauncher,FinchButton,FinchModal}.tsx`.
+`FinchMark`, `BouncingDots`, `FinchOrderPrefill` and `useFinchStream` stay: the
+first two are used by the bubble, onboarding and the transcript, the third is
+the New Order builder's half of the handoff, and the fourth is onboarding's
+streamer.
+
+### Decisions
+
+**The OrderFlow drop path keeps `/api/ai/agent/ingest-document`; everything else
+uses W5's Doc-U path.** The plan asked whether the two could be unified. They
+cannot, and the reason is one branch: `syncOrderFromDocument` — the call that
+turns a read customer order into an `of_orders` row and auto-invoices it — runs
+in `app/api/ai/extract/route.ts` only when the `documents` row was **already
+typed `'order'` before extraction** (`:69`, `:121`). `uploadDocument` files rows
+untyped, because on every other surface the classifier decides the type, so a
+customer order dropped through the W5 path is read, filed, and then stops: no
+order, no invoice. `ingest-document` classifies FIRST and then runs the shared
+pipeline (`lib/platform/document-ingest.ts`, also the inbound-email worker's).
+So `attach()` branches on `agentModule === 'orderflow'`, which is the only
+signal available at drop time and the right one — a document dropped on an
+OrderFlow screen is being dropped *into* OrderFlow. It still lands in Doc-U
+either way.
+
+**The OrderFlow drop sends no chat message.** FinchModal's didn't either, and it
+is the better behaviour: filing a document is not a question. The card says
+"read as a customer order for Bakers · 6 lines · invoice INV-1042 created"
+immediately, with no model turn, no latency and no tokens; the owner can then
+ask about it in their own words. (It also sidesteps a real gap: the `orderflow`
+module has no `docu_*` tools, so W5's "I've uploaded invoice.pdf" prelude would
+point the model at a `docu_get_document_summary` it was never offered.)
+
+**The workflow arm is sticky, not per-message.** The plan allowed "always let the
+route's regex decide". That drops a real capability: the model's clarifying
+question ("which customer?") gets a one-word answer that no order regex will ever
+match, so the follow-up would fall back to Haiku with `orderflow_prepare_order`
+withheld and the order would silently never be built. `orderModeRef` is armed by
+the regex, disarmed when a draft arrives or the conversation is emptied — exactly
+FinchModal's rule, minus the `/` picker that used to be its other trigger.
+
+**Cards are provider state, not messages.** Nothing server-side holds what they
+point at (the route streams `orderDraft` as display data and saves no order), so
+persisting them would mean reopening a chat tomorrow to a live "Open in a new
+order" button for a draft that never existed. The answer text beside them is what
+survives.
+
+**A chat started on the Brief and continued in the bubble keeps its original
+`module`.** The row records where the conversation *started* — that is what the
+owner recognises it by in the rail — while the tools follow where they are
+standing now. A chat can therefore span tool sets, which is the point of one
+Finch rather than four.
+
+**The unread dot is route-aware.** It is set only when a complete answer lands
+while the bubble is shut AND the owner is on a bubble route, read from refs at
+completion time rather than from the closure — a turn started on OrderFlow can
+finish after they have walked to Doc-U. On `/app` and the chat pages the answer
+arrives in front of them, so a dot there would be pointing at something they are
+looking at.
+
+**The bubble's state lives in the provider**, not in the component: the dock
+re-renders per route, so collapsed/expanded held locally would reset every time
+the owner walked from Suppliers to Stock — and "the same conversation everywhere"
+is the whole feature.
+
+### Edge cases covered (plan §5)
+
+- `/app/settings`, `/app/organisation`, `/app/notifications` — bubble shows,
+  `'brief'` tools, header reads just "Finch" (they are not MODULES entries, so
+  there is no honest label to add).
+- `prefers-reduced-motion` — the pill's hover scale and the panel's open
+  animation both drop out (`motion-reduce:` utilities + the existing
+  `@media` block beside `vyso-pop-in-up` in globals.css).
+- Mobile — full-width bottom sheet with a rounded top edge; the bubble is inside
+  the column *below* the mobile top bar, and the 62vh cap keeps the panel clear
+  of it.
+- Trial expired / Finch disabled / no email — the bubble is behind
+  `GlobalChatDock`'s existing gate, so it inherits all three (§8 E6).
+- Rate limit, failed chat creation, aborted stream — unchanged from W1/W2; the
+  bubble is a view onto the same `send()`.
+
+### Gates
+
+`npx tsc --noEmit` clean · `npm test` **376/376** (337 on this tree before the
+wave — W3b's commit included — plus 39 new) · `npm run build` passes · `npx
+eslint` **50 errors / 38 warnings**, down from the 53/38 baseline: deleting
+FinchModal took three pre-existing errors with it, and none of the new or
+changed files lint at all.
+
+Runtime verification needs a signed-in session and is W6's job — nothing in this
+wave ran against a live database or a browser.
+
+### W6 click list
+
+1. `/app/orderflow` (and `/app/docu`, `/app/procurepulse`, `/app/settings`) — the
+   gradient **Finch** pill sits bottom-right, same spot on every one, above the
+   page content and clear of the sub-nav. No pill in OrderFlow's sub-nav or on
+   DocuNav any more.
+2. Click it → panel opens bottom-right, 420px, header reads "Finch · OrderFlow".
+   Escape collapses it; the ✕ collapses it; clicking the table behind it does
+   **not** (it is not a modal).
+3. Ask "how many invoices did I raise this week?" on `/app/orderflow` → ✦ tool
+   status lines appear ("Reading recent invoices…") and the answer uses OrderFlow
+   data. The same question on `/app` still answers as the Brief.
+4. Collapse mid-answer → the dot appears on the pill when the reply lands;
+   opening it clears the dot and the full answer is there.
+5. Navigate OrderFlow → Doc-U → ProcurePulse with the panel open: it stays open,
+   same transcript, header label changes with the screen.
+6. Send from the bubble → the chat appears in the rail (module dot), and the
+   page does **not** navigate to `/app/chat/<id>` (only the Brief does that).
+   Reload → `/app/chat/<id>` replays it.
+7. "Create an order for {a real customer}: 3 crates tomatoes, 2 boxes onions" in
+   the OrderFlow bubble → workflow tier, "Putting the order together…", an
+   **Order draft** card. Answer a clarifying question with a bare name and check
+   it still builds (this is the sticky arm).
+8. Card → "Open in a new order" → the bubble collapses and
+   `/app/orderflow/orders/new` opens with the lines prefilled; "Copy" copies;
+   "Dismiss" removes it.
+9. Drop a customer-order PDF on the OrderFlow panel → "Reading & filing …" → a
+   **Filed in Doc-U** card naming the customer, the line count and the invoice
+   number; the order exists in OrderFlow and the document in Doc-U.
+10. Drop the same PDF on the Doc-U or ProcurePulse panel → W5's path instead:
+    attachment card, "Reading …", and Finch summarises it (no invoice — correct).
+11. Drop a 4 MB PDF on OrderFlow → refused inline with "too large (max 3MB for
+    PDFs)", nothing uploaded. Drop a `.xlsx` → "not a PDF or image."
+12. `/app` and `/app/chat/*` are visibly unchanged: full pill + chips + floating
+    panel on the Brief, composer-only on a chat page.
+13. Mobile width — pill bottom-right above the safe area, panel opens as a
+    full-width sheet, top bar still reachable.
+
 ---
 
 # Phase C agents — Debtors Watch, Stock Cover, Doc Watch (branch feat/agents-phase-c)

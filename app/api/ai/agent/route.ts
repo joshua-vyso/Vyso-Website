@@ -6,6 +6,7 @@ import { AGENT_MODEL, WORKFLOW_MODEL, AGENT_MAX_TOKENS, isAgentModule, isFinchAl
 import { buildSystemPrompt } from '@/lib/ai/finch/knowledge';
 import { buildTitlePrompt, normaliseChatTitle } from '@/lib/ai/finch/chat-title';
 import { attachmentContextLine } from '@/lib/ai/finch/attachments';
+import { CREATE_ORDER_RE } from '@/lib/ai/finch/order-intent';
 import { toolDefsFor, runTool, type ToolContext } from '@/lib/ai/finch/tools';
 import { rateLimitAllowed } from '@/lib/platform/rate-limit';
 import {
@@ -25,13 +26,11 @@ export const maxDuration = 60;
 // Safety cap on the agentic loop (each iteration = one model turn ± tool calls).
 const MAX_TURNS = 5;
 
-/**
- * Cheap router: does the latest user message look like a request to CREATE an
- * order? If so we escalate to the Sonnet workflow tier and offer the order-
- * building tool. A false positive only means a pricier model for one Q&A turn.
- */
-const CREATE_ORDER_RE =
-  /\b(create|creating|make|making|start|place|build|draft|new|set up|put together|prepare)\b[\s\S]{0,24}\border\b|\border\s+for\b/i;
+/* The cheap "is this an order request?" router now lives in
+ * lib/ai/finch/order-intent.ts — the client arms the same escalation from the
+ * chat dock (W4), and two copies of this regex that disagree mean a turn the
+ * client flagged as workflow and the server then answered on the Q&A tier with
+ * no order tool offered. */
 
 /** A short, user-facing status shown while a tool runs. */
 const TOOL_ACTIVITY: Record<string, string> = {
@@ -210,8 +209,8 @@ export async function POST(req: Request) {
 
   /* ── Persistence (plan_brief_chat_v2 §2.3, W1) ────────────────────────────
    * `chatId` is optional and everything below is additive: without it this
-   * route behaves exactly as it did before, which is what the legacy
-   * FinchModal and the mobile client still expect.
+   * route behaves exactly as it did before, which is what the mobile client
+   * and the onboarding stage (useFinchStream) still expect.
    *
    * The chat is verified NOW, before a single token is generated, so a request
    * naming someone else's conversation is refused rather than answered and
