@@ -1,7 +1,5 @@
 @import "tailwindcss";
-@import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "swiper/swiper-bundle.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -28,15 +26,6 @@
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.4);
-}
-
-/* ── Gradient-text blob colors (orange family, tuned to #BE5D23) ── */
-:root {
-  --color-1: 22  69% 44%;   /* #BE5D23 — base orange */
-  --color-2: 30  82% 57%;   /* lighter warm amber */
-  --color-3: 14  72% 36%;   /* deeper burnt orange */
-  --color-4: 35  88% 64%;   /* bright golden orange */
-  --color-5: 10  62% 28%;   /* deep rust */
 }
 
 /* ── Mesh background animations ─────────────────────────────────────────── */
@@ -511,152 +500,442 @@ html, body {
   from { opacity: 0; transform: translateY(-6px) scale(0.985); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
-.vyso-fade-in { animation: vyso-fade-in 0.18s ease; }
-.vyso-pop-in  { animation: vyso-pop-in 0.2s cubic-bezier(0.2, 0.8, 0.3, 1); }
+/* Mirror of vyso-pop-in for menus anchored to the BOTTOM of their trigger
+   (the shell rail's user-chip menu opens upward) — same token-driven timing,
+   opposite translateY origin. Added in the chat-first shell wave; .vyso-pop-in
+   itself is untouched/reused everywhere it already applies (plan §5). */
+@keyframes vyso-pop-in-up {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* The shell rail's "live" indicator (Today's brief dot) — promoted from the
+   design mock's inline `vysoPulse` keyframe (.ai/design/vyso-brief/Vyso - The
+   Brief.dc.html:25). The only other continuous loop the motion spec sanctions
+   is the chat streaming caret (components/platform/shell/GlobalChatDock.tsx,
+   a later wave) — nothing else should loop (plan §5 "Continuous loops"). */
+@keyframes vyso-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+.vyso-fade-in   { animation: vyso-fade-in 0.18s ease; }
+.vyso-pop-in    { animation: vyso-pop-in var(--dur-pop) var(--ease-pop); }
+.vyso-pop-in-up { animation: vyso-pop-in-up var(--dur-pop) var(--ease-pop); transform-origin: bottom left; }
+.vyso-pulse     { animation: vyso-pulse 2.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
   .vyso-fade-in,
-  .vyso-pop-in { animation: none; }
+  .vyso-pop-in,
+  .vyso-pop-in-up,
+  .vyso-pulse { animation: none; }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   UNIVERSAL REACTIVE TEXT BLEND — marketing surface only
+   PLATFORM (in-app) DESIGN TOKENS — "Brief" reskin, Wave 1
    ══════════════════════════════════════════════════════════════════════════
+   Verbatim copies of the --pf-* custom properties from the Brief design
+   system (.ai/design/vyso-brief/_ds/.../tokens/{colors,radius,spacing,
+   elevation}.css), plus the semantic tone-pair variables from tokens/colors.css.
+   Names and values are copied as-is — do not rename. Additive only: no
+   marketing value above this block (--primary, --accent, --ring, --radius,
+   the :root theme block) is touched. Consumed by app/app/layout.tsx and,
+   in Wave 2, components/platform/{module-ui,ui}.tsx.
+   `.of-num` / `.of-display` (tokens/base.css helpers) already exist above
+   at lines ~497-503, so they are not duplicated here. */
+:root {
+  /* tokens/colors.css — platform surfaces, text ramp, accent */
+  --pf-page:#F6F6F4;
+  --pf-wash:linear-gradient(180deg,#F3F8FF 0%,#FFFFFF 340px);
+  --pf-surface:#FFFFFF;
+  --pf-surface-tint:#F5F9FE;
+  --pf-surface-tint-faint:#FBFCFE;
+  --pf-border:#EAEDF2;
+  --pf-border-strong:#E4E9F0;
+  --pf-border-soft:#EEF1F5;
+  --pf-border-chrome:#E9EEF4;
+  --pf-border-warm:#E7E7E2;
 
-   The global WebGL canvas (components/WebGLShaderBackground.tsx) paints a
-   white field with a single dark sine band that sweeps across the viewport.
-   The canvas is `position: fixed`, so the band sits at a fixed screen height
-   and *different page content* slides behind it as you scroll. Historically
-   only the display headings opted into `mix-blend-mode: difference`, so every
-   other text run (body copy, list items, card copy, labels, nav, footer)
-   rendered a static dark colour and went unreadable whenever the band passed
-   behind it.
+  --pf-text:#171A17;
+  --pf-text-alt:#1A1C1E;
+  --pf-text-body:#2C333B;
+  --pf-text-control:#3E4A57;
+  --pf-text-secondary:#6B6F68;
+  --pf-text-muted:#8A8E86;
+  --pf-text-faint:#A0A49C;
+  --pf-text-disabled:#9A9DA1;
 
-   MECHANISM — `filter: invert(1)` + `mix-blend-mode: difference`
-   -------------------------------------------------------------
-   `filter: invert(1)` renders the element's own pixels as their complement,
-   then `mix-blend-mode: difference` composites that against the page backdrop:
+  --pf-accent:#3E7BC4;
+  --pf-accent-strong:#1F5FA8;
+  --pf-accent-deep:#174C87;
+  --pf-accent-weak:#EAF2FC;
+  --pf-accent-weak-hover:#DCEBFB;
+  --pf-accent-ring:#C9DEF7;
+  --pf-accent-nav:#E6F0FB;
 
-       result = |backdrop − (1 − C)|
+  /* tokens/colors.css — semantic tone pairs (module-ui Badge / StatusPill) */
+  --tone-neutral-bg:#EEF1F5;   --tone-neutral-fg:#6B6F68;
+  --tone-positive-bg:#E1F5EE;  --tone-positive-fg:#0F6E56;
+  --tone-warning-bg:#FBEEDA;   --tone-warning-fg:#854F0B;
+  --tone-critical-bg:#FCEBEB;  --tone-critical-fg:#A32D2D;
+  --tone-info-bg:#E6F1FB;      --tone-info-fg:#0C447C;
 
-   Over the shader's white field (backdrop = 1) the two cancel *exactly*:
-   |1 − (1 − C)| = C. So on every light region the page is pixel-identical to
-   before — black body copy stays black, orange accents stay orange, gradient
-   text keeps its gradient. Over the dark band the difference no longer
-   cancels and the run lifts to (roughly) its complement — light on dark.
+  /* tokens/radius.css — platform radii */
+  --pf-radius-sm:8px;
+  --pf-radius:10px;
+  --pf-radius-control:11px;
+  --pf-radius-tile:14px;
+  --pf-radius-card:16px;
+  --pf-radius-panel:20px;
+  --pf-radius-pill:9999px;
 
-   The win over the old `color: white; mix-blend-mode: difference` recipe is
-   that it needs NO per-element colour maths: it works for inherited colours,
-   `background-clip: text` gradients and inline styles alike, so one rule set
-   covers the whole surface instead of one hand-tuned class per heading.
+  /* tokens/spacing.css — platform page frame + spacing */
+  --pf-pad-page-x:32px;
+  --pf-pad-page-y:28px;
+  --pf-pad-card:20px;
+  --pf-gap-stack:20px;
+  --pf-gap-grid:12px;
+  /* Repointed W3 (plan §7): TopBar (66px) is unmounted everywhere as of Wave 3
+     — its only living consumer now is MobileTopBar.tsx's own `<lg` header, so
+     the var tracks that height (56px) instead. BriefRail.tsx's old
+     `calc(100dvh-var(--pf-topbar-h))` consumer was deleted with the file in
+     Wave 2; TopBar.tsx itself hardcodes h-[66px] and never read this var, so
+     nothing else observes this change. */
+  --pf-topbar-h:56px;
+  /* 216px, not the design system's 248px — the mock (.ai/design/vyso-brief/Vyso
+     - The Brief.dc.html, rail div) hardcodes 216px and that measured value wins
+     over tokens/spacing.css per plan_chat_first_shell.md §7. Zero consumers
+     before the shell wave (Wave 1) — components/platform/shell/AppRail.tsx is
+     the first. */
+  --pf-sidebar-w:216px;
+  --pf-nav-h:64px;
 
-   SCOPING — `.blend-surface`
-   --------------------------
-   Only roots that actually render the shader carry `.blend-surface`
-   (PublicPageShell, /, /pricing, /faq, /contact, /privacy). The class itself
-   declares nothing, so it never creates a stacking context of its own. The
-   product platform under app/app/** never gets it and is untouched.
+  /* tokens/elevation.css — platform shadows + scrim */
+  --pf-shadow-card:0 1px 2px rgba(20,24,20,0.03);
+  --pf-shadow-card-hover:0 6px 18px -10px rgba(20,24,20,0.28);
+  --pf-shadow-menu:0 16px 50px -12px rgba(20,30,50,0.28);
+  --pf-shadow-overlay:0 30px 80px -20px rgba(20,30,50,0.4);
+  --pf-shadow-tab-active:0 1px 2px rgba(20,24,20,0.06);
+  --pf-scrim:rgba(23,30,40,0.32);
+  --pf-scrim-blur:blur(3px);
 
-   OPT-OUT — `.blend-exempt`
-   -------------------------
-   Put `.blend-exempt` on any subtree that must render literally: screenshot
-   frames, logos, media. Text elements that *contain* media or form controls
-   (`:has(img, svg, input, …)`) are auto-excluded so a picture is never
-   inverted just because it sits inside a link or a list item.
-
-   INTERACTION WITH STACKING CONTEXTS
-   ----------------------------------
-   `filter`/`mix-blend-mode` are set on the *leaf-most* text element only (see
-   the "nested runs" reset below), never on a wrapper, so the existing mobile
-   Safari fixes above — which strip `opacity`/`transform`/`position: relative`
-   from section wrappers so the blend can reach the canvas — keep working
-   unchanged and now benefit every text run rather than just the headings.
-   Text inside a glass card (`backdrop-filter`) blends against the card's own
-   frosted surface, which is what you want: the card is a light surface, so
-   the copy reads dark on it and lifts when the band darkens the card.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/* 1 — every text-bearing element on the marketing surface blends. */
-.blend-surface :is(p, h1, h2, h3, h4, h5, h6, li, dt, dd, blockquote, figcaption,
-  caption, th, td, summary, address, label, legend, a, span, strong, em, b, i,
-  small, code, time, cite, q, abbr) {
-  filter: invert(1);
-  mix-blend-mode: difference;
+  /* tokens/motion.css — durations + eases (chat-first shell, Wave 1). Only the
+     four durations + three eases the shell wave's motion spec names (plan §5)
+     are ported — tokens/motion.css also defines --dur-reveal, --dur-count and
+     --ease-mark-pop, which nothing in this product uses yet. */
+  --dur-hover:.16s;
+  --dur-fade:.18s;
+  --dur-pop:.2s;
+  --dur-control:.22s;
+  --ease-standard:cubic-bezier(0.4,0,0.2,1);
+  --ease-pop:cubic-bezier(0.2,0.8,0.3,1);
+  --ease-out-soft:cubic-bezier(0.22,1,0.36,1);
 }
 
-/* 2 — nested runs inherit the ancestor's blend instead of blending again.
-   Double-blending would composite the inner run against its (transparent)
-   parent group rather than the canvas, which paints it as its own complement
-   — i.e. light grey text on white. Specificity (0,1,2) beats rule 1 (0,1,1). */
-.blend-surface :is(p, h1, h2, h3, h4, h5, h6, li, dt, dd, blockquote, figcaption,
-  caption, th, td, summary, address, label, legend, a, span, strong, em, b, i,
-  small, code, time, cite, q, abbr)
-  :is(p, h1, h2, h3, h4, h5, h6, li, dt, dd, blockquote, figcaption,
-  caption, th, td, summary, address, label, legend, a, span, strong, em, b, i,
-  small, code, time, cite, q, abbr) {
-  filter: none;
-  mix-blend-mode: normal;
+/* ══════════════════════════════════════════════════════════════════════════
+   Finch marketing tokens (homepage redesign, 2026-08)
+   ══════════════════════════════════════════════════════════════════════════
+   Scoped by convention to the `.finch-site` wrapper (components/finch/**).
+   Additive only — nothing above this block is touched, and the marketing
+   `--primary/--accent/--radius` theme keeps applying to every other route. */
+:root {
+  --fn-bg: #FAF9F6;        /* page */
+  --fn-surface: #FFFFFF;   /* cards */
+  --fn-surface-2: #F2EEE6; /* phone screen */
+  --fn-ink: #14120E;       /* text, dark band */
+  --fn-ink-2: #4A463C;
+  --fn-ink-3: #6B6659;
+  --fn-muted: #756F59;     /* was #8A8474 — 3.54:1 on --fn-bg, failed WCAG AA
+                              (Lighthouse `color-contrast`, phase-4 audit D)
+                              at every size it's used (9–20px, all normal
+                              weight); this value holds the same hue and
+                              measures 4.78:1 on --fn-bg / 5.03:1 on
+                              --fn-surface. */
+  --fn-muted-2: #A39D8E;
+  --fn-faint: #B9B3A3;
+  --fn-line: #E7E3DA;      /* borders */
+  --fn-line-2: #F0EDE5;    /* hairlines */
+  --fn-line-3: #D8D3C6;    /* dividers */
+  --fn-line-hover: #C9C3B4;
+  --fn-orange: #FF7727;    /* agent dot / bar / chart dot */
+  --fn-orange-cta: #BD4A0E; /* was #E05A12 — its #FFF7F0-on-orange CTA text
+                               (nav + every "Book your audit" button) measured
+                               3.51:1, failing WCAG AA; no text color, however
+                               light, can reach 4.5:1 against the old value
+                               (its own luminance is too high), so the
+                               background had to move. Same hue, darkened;
+                               4.78:1 with #FFF7F0 text / 5.06:1 with white. */
+  --fn-orange-deep: #A8410C; /* was #C94F0E — darkened by the same factor as
+                                 -cta above it so the hover state stays
+                                 visibly darker than the (now darker) rest
+                                 state; also used as light-on-dark impact
+                                 text, where darkening only improves contrast.
+                                 5.78:1 with #FFF7F0 text / 6.13:1 with white. */
+  --fn-orange-tint: #F3D9C6; /* NEW chip border, ::selection */
+  --fn-blue: #4B96DD;      /* chart line, ONLINE */
+  --fn-blue-deep: #2F6FAE; /* extracted rows, evidence text */
+  --fn-blue-tint: #EDF4FB; /* evidence chip bg */
+  --fn-blue-hl: #D9E9F8;   /* invoice line highlight */
+  --fn-green-bubble: #E8F5E1;
+  --fn-shadow-card: 0 1px 2px rgba(20,18,14,.05), 0 8px 24px rgba(20,18,14,.06);
+  --fn-shadow-card-hover: 0 2px 4px rgba(20,18,14,.07), 0 18px 40px rgba(20,18,14,.12);
+  --fn-shadow-float: 0 14px 44px rgba(20,18,14,.10);
+  --fn-shadow-phone: 0 24px 60px rgba(20,18,14,.12);
+  --fn-shadow-invoice: 0 12px 36px rgba(20,18,14,.08);
+  --fn-grad: linear-gradient(90deg, #FF7727, #4B96DD);
+
+  /* ── v3 deep-contrast grounds (phase 6a) ────────────────────────────────────
+     Appended, never reordered: everything above is the paper ground the whole
+     site is built on and its values are load-bearing in ~40 components. These
+     add the two *dark* grounds from `.ai/vyso_v3_design.md` §2 — a blue band
+     and an ink band — plus the one orange that is legible as text on ink.
+
+     Measured contrast (§2): #FAF9F6 on #1F5FA8 = 6.6:1, on #14120E = 17:1;
+     #8FB0DC mono on blue passes AA at ≥ 12px; #FF7727 on ink is for glows and
+     hairlines only — orange *text* on ink uses #FFB27A (8:1). */
+  --fn-blue-900: #163F7A;  /* band gradient top */
+  --fn-blue-700: #1F5FA8;  /* band gradient bottom, and the contrast reference */
+  /* ── 6b: the blue band's contrast, re-measured ────────────────────────────
+     §2 claims "#8FB0DC mono on blue passes for ≥ 12px" and treats #1F5FA8 as
+     "the contrast reference". Measured against WCAG 2.1 on the composed pages,
+     neither held:
+
+       #8FB0DC on #1F5FA8   2.89:1   (AA needs 4.5 for text under 18.7px bold)
+       #BFD3EE on #1F5FA8   4.22:1
+       …and the band's real worst case was never #1F5FA8 at all — `FacetPlane`'s
+       lightest step was #2F6FAE, where the same pairs fall to 2.35 and 3.44.
+
+     Two changes, both the smallest that reach AA. The facet range no longer
+     overshoots the gradient it sits on (a "lightest step" that is lighter than
+     anything §2 costed is what opened the hole), and the two secondary text
+     ramps move up until they pass against that new worst case:
+
+       #FAF9F6 on #27649F   5.85:1   primary
+       #E2ECF9 on #27649F   5.16:1   secondary body
+       #D9E4F6 on #27649F   4.80:1   mono labels
+
+     Note the order: body copy is now *brighter* than a mono label, which is
+     the correct hierarchy and was inverted before. On blue the three steps are
+     close in lightness by necessity — the separation is carried by family,
+     size and tracking, which is how the ink ramp (17.8 / 8.9 / 5.0, plenty of
+     room) never had to.                                                       */
+  --fn-blue-500: #27649F;  /* lightest facet step */
+  --fn-blue-300: #3E7BC4;  /* grid/wave strokes on blue */
+  --fn-blue-text: #FAF9F6;
+  --fn-blue-text-2: #E2ECF9;
+  --fn-blue-mono: #D9E4F6;
+  --fn-ink: #14120E;       /* same value as --fn-ink above; named for the ground */
+  /* The plan names this fill `--fn-ink-2`, but that token is already the paper
+     ramp's body-ink (#4A463C) and ~30 components read it. Redefining it here
+     would have darkened every paragraph on the site, so the fill gets its own
+     name and the plan's name is honoured *scoped to an ink ground* below. */
+  --fn-ink-fill: #1B1915;  /* the `ink` finding-card fill */
+  --fn-ink-line: #2A2722;  /* hairlines and card borders on ink */
+  --fn-ink-text: #FAF9F6;
+  --fn-ink-text-2: #B9B3A3;
+  --fn-ink-mono: #8A8474;
+  --fn-orange-on-ink: #FFB27A;
+  /* Focus ring on dark grounds (§9) — the paper ring is invisible there. */
+  --fn-focus-dark: #C9DEF7;
+
+  /* Static film grain for ink bands. An inline `feTurbulence` rather than a
+     PNG: it costs no request, scales to any band and cannot be cached stale.
+     Static by definition — an animated grain is the "crypto landing page"
+     failure mode §1.3 warns about, and it would also defeat `content-visibility`. */
+  --fn-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23g)'/%3E%3C/svg%3E");
 }
 
-/* 3 — opt-outs. Anything under `.blend-exempt`, plus any text element that
-   wraps media or a form control (inverting those would wreck screenshots,
-   logos and inputs). Specificity (0,2,1) beats rules 1 and 2. */
-.blend-surface .blend-exempt,
-.blend-surface .blend-exempt :is(p, h1, h2, h3, h4, h5, h6, li, dt, dd, blockquote,
-  figcaption, caption, th, td, summary, address, label, legend, a, span, strong,
-  em, b, i, small, code, time, cite, q, abbr),
-.blend-surface :is(p, h1, h2, h3, h4, h5, h6, li, dt, dd, blockquote, figcaption,
-  caption, th, td, summary, address, label, legend, a, span, strong, em, b, i,
-  small, code, time, cite, q, abbr):has(:is(img, svg, canvas, video, picture,
-  iframe, object, input, textarea, select, .blend-exempt)) {
-  filter: none;
-  mix-blend-mode: normal;
+@theme inline {
+  --color-fn-ink-fill: var(--fn-ink-fill);
+  --color-fn-blue-900: var(--fn-blue-900);
+  --color-fn-blue-700: var(--fn-blue-700);
+  --color-fn-blue-500: var(--fn-blue-500);
+  --color-fn-blue-300: var(--fn-blue-300);
+  --color-fn-blue-text: var(--fn-blue-text);
+  --color-fn-blue-text-2: var(--fn-blue-text-2);
+  --color-fn-blue-mono: var(--fn-blue-mono);
+  --color-fn-ink-line: var(--fn-ink-line);
+  --color-fn-ink-text: var(--fn-ink-text);
+  --color-fn-ink-text-2: var(--fn-ink-text-2);
+  --color-fn-ink-mono: var(--fn-ink-mono);
+  --color-fn-orange-on-ink: var(--fn-orange-on-ink);
 }
 
-/* 3b — glass surfaces built with an inline `backdrop-filter`.
-   `backdrop-filter` establishes a *backdrop root*: mix-blend-mode inside it
-   can no longer see the shader canvas and instead composites against the
-   card's own translucent fill, which flattens every run to a constant
-   mid-grey (measured: ~#7a7a7a regardless of the colour underneath) and
-   strips the orange from accent text. Opt those subtrees out — a frosted
-   card is a light surface in its own right, so its copy stays readable
-   without the blend.
-
-   The attribute selector is the reliable hook here because every glass
-   surface on this site is composed from a shared inline `GLASS` style object
-   (PricingSection, ContactSection, SystemsShowcase, AuditBanner), which React
-   serialises into the style attribute as `backdrop-filter: …`. */
-.blend-surface [style*="backdrop-filter"],
-.blend-surface [style*="backdrop-filter"] :is(p, h1, h2, h3, h4, h5, h6, li, dt,
-  dd, blockquote, figcaption, caption, th, td, summary, address, label, legend,
-  a, span, strong, em, b, i, small, code, time, cite, q, abbr) {
-  filter: none;
-  mix-blend-mode: normal;
+/* The grain sits on a `::before` rather than the band's own background so the
+   band keeps its gradient/`background-image` slot free for a device. */
+.fn-ground-grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--fn-grain);
+  opacity: 0.07;
+  pointer-events: none;
 }
 
-/* 4 — legacy hand-tuned blend spans.
-   `.blend-h-plain` / `.blend-h-orange` / `.blend-para` carry an inline
-   `mix-blend-mode: difference` (set in HeroSection, ContactSection,
-   PricingSection, HowItWorks, AppsShowcase, TrustStrip, SystemsShowcase and
-   app/contact). Inline styles outrank rule 2, so the nested spans have to be
-   neutralised with `!important` or they would blend a second time inside
-   their already-blending heading.
+/* ── Nav inversion (§8) ──────────────────────────────────────────────────────
+   `NavGround.tsx` writes `data-nav-ground` on <html>; the nav reads it here.
+   CSS rather than props so `FinchNav` stays a server component: the inversion
+   is a paint, and a paint does not need hydration.
 
-   Their colours were pre-inverted for the old recipe (white text that reads
-   black through `difference`); now that the parent supplies the inversion
-   they carry the colour they are meant to LOOK like. The orange gradient is
-   the exact per-channel complement of the blue gradient those spans used, so
-   the rendered result is unchanged:
-     hsl(219 72% 50%) → #db9b24 · hsl(202 69% 56%) → #be5c23 · hsl(199 66% 64%) → #98461f */
-.blend-surface :is(p, h1, h2, h3, h4, h5, h6, li, dt, dd, blockquote, figcaption,
-  caption, th, td, summary, address, label, legend, a, span, strong, em, b, i,
-  small, code, time, cite, q, abbr) :is(.blend-h-plain, .blend-h-orange) {
-  mix-blend-mode: normal !important;
+   Only the link colours move. The CTA stays orange on every ground — it is the
+   one element whose colour is a decision, not a context.
+
+   ── 6b fixes r2: the same rules, three ways in ───────────────────────────────
+   The `:is()` prefix below is the whole inversion condition, written once:
+   `<html>` says blue, `<html>` says ink, **or** nothing has hydrated yet and
+   the page has declared a dark hero on its own wrapper (`data-nav-hero`).
+
+   That third arm is the fix for the first paint of a hard load. Before it, a
+   page whose hero is a dark `underNav` band shipped server HTML with no
+   inversion at all and got it back a frame after hydration — dark-on-dark nav
+   text for as long as the client bundle took to arrive. It is scoped by
+   `html:not([data-nav-ground])`, so it stops applying the instant `NavGround`
+   mounts and writes that attribute (which it does unconditionally, including
+   for `paper`). The static answer can therefore never outlive the measured
+   one, and there is no window where the two disagree. */
+:is(
+  html[data-nav-ground="blue"] .finch-site,
+  html[data-nav-ground="ink"] .finch-site,
+  html:not([data-nav-ground]) .finch-site[data-nav-hero]
+) nav[aria-label="Primary"] {
+  color: var(--fn-ink-text);
+}
+:is(
+  html[data-nav-ground="blue"] .finch-site,
+  html[data-nav-ground="ink"] .finch-site,
+  html:not([data-nav-ground]) .finch-site[data-nav-hero]
+) nav[aria-label="Primary"] a:not([data-nav-cta]):not([data-nav-sheet] *) {
+  color: var(--fn-ink-text);
+}
+:is(
+  html[data-nav-ground="blue"] .finch-site,
+  html[data-nav-ground="ink"] .finch-site,
+  html:not([data-nav-ground]) .finch-site[data-nav-hero]
+) nav[aria-label="Primary"] a:not([data-nav-cta]):not([data-nav-sheet] *):hover {
+  color: var(--fn-orange-on-ink);
+}
+/* The wordmark is a dark SVG; over a dark band it needs inverting, not
+   recolouring — there is no `currentColor` inside an <img>. */
+:is(
+  html[data-nav-ground="blue"] .finch-site,
+  html[data-nav-ground="ink"] .finch-site,
+  html:not([data-nav-ground]) .finch-site[data-nav-hero]
+) nav[aria-label="Primary"] img:not([data-nav-sheet] *) {
+  filter: invert(1) brightness(1.6);
+}
+/* The divider between wordmark and "Finch". */
+:is(
+  html[data-nav-ground="blue"] .finch-site,
+  html[data-nav-ground="ink"] .finch-site,
+  html:not([data-nav-ground]) .finch-site[data-nav-hero]
+) nav[aria-label="Primary"] span.bg-fn-line-3:not([data-nav-sheet] *) {
+  background: var(--fn-ink-line);
+}
+/* 6b: the hamburger. Its two hairlines are `bg-fn-ink`, i.e. exactly the ink
+   ground's own fill — over `/pricing`'s dark hero the button was a 40px square
+   of nothing. Same inversion as the links, same exclusion for the sheet. */
+:is(
+  html[data-nav-ground="blue"] .finch-site,
+  html[data-nav-ground="ink"] .finch-site,
+  html:not([data-nav-ground]) .finch-site[data-nav-hero]
+) nav[aria-label="Primary"] [data-nav-bar]:not([data-nav-sheet] *) {
+  background: var(--fn-ink-text);
+}
+/* 6b: the mobile sheet is a child of <nav>, so it inherits the inverted `color`
+   above. It is always a solid paper panel, so it takes the paper ink back —
+   every link inside it carries its own class and is excluded from the
+   inversion, and this covers the few spans that do not. */
+:is(
+  html[data-nav-ground="blue"] .finch-site,
+  html[data-nav-ground="ink"] .finch-site,
+  html:not([data-nav-ground]) .finch-site[data-nav-hero]
+) nav[aria-label="Primary"] [data-nav-sheet] {
+  color: var(--fn-ink);
+}
+.finch-site nav[aria-label="Primary"],
+.finch-site nav[aria-label="Primary"] a:not([data-nav-cta]) {
+  transition: color 180ms ease-out;
 }
 
-.blend-surface :is(.blend-h-plain, .blend-para) {
-  color: #0d0d0d !important;
+/* Focus rings are the one thing that must survive the ground change. */
+[data-ground="blue"] :focus-visible,
+[data-ground="ink"] :focus-visible {
+  outline: 2px solid var(--fn-focus-dark);
+  outline-offset: 2px;
 }
 
-.blend-surface .blend-h-orange {
-  background-image: linear-gradient(135deg, #db9b24, #be5c23, #98461f) !important;
+@theme inline {
+  --color-fn-bg: var(--fn-bg); --color-fn-surface: var(--fn-surface);
+  --color-fn-surface-2: var(--fn-surface-2); --color-fn-ink: var(--fn-ink);
+  --color-fn-ink-2: var(--fn-ink-2); --color-fn-ink-3: var(--fn-ink-3);
+  --color-fn-muted: var(--fn-muted); --color-fn-muted-2: var(--fn-muted-2);
+  --color-fn-faint: var(--fn-faint); --color-fn-line: var(--fn-line);
+  --color-fn-line-2: var(--fn-line-2); --color-fn-line-3: var(--fn-line-3);
+  --color-fn-line-hover: var(--fn-line-hover); --color-fn-orange: var(--fn-orange);
+  --color-fn-orange-cta: var(--fn-orange-cta); --color-fn-orange-deep: var(--fn-orange-deep);
+  --color-fn-orange-tint: var(--fn-orange-tint); --color-fn-blue: var(--fn-blue);
+  --color-fn-blue-deep: var(--fn-blue-deep); --color-fn-blue-tint: var(--fn-blue-tint);
+  --color-fn-blue-hl: var(--fn-blue-hl); --color-fn-green-bubble: var(--fn-green-bubble);
+  --font-fn-serif: var(--font-stix), "STIX Two Text", Georgia, serif;
+  --font-fn-sans: var(--font-instrument), "Instrument Sans", system-ui, sans-serif;
+  --font-fn-mono: var(--font-plex-mono), "IBM Plex Mono", ui-monospace, monospace;
+}
+
+@keyframes fn-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,119,39,.5); }
+  50%      { box-shadow: 0 0 0 6px rgba(255,119,39,0); }
+}
+
+.finch-site ::selection { background: var(--fn-orange-tint); }
+
+/* The link reset lives in `base` on purpose. Written unlayered it outranks
+   every Tailwind utility (utilities are layered, this file is not), which
+   silently killed `text-fn-ink-2` and every `hover:text-*` on an `<a>` in the
+   Finch surface — the nav, the footer and the pricing links all rendered plain
+   ink with no hover. In `base` the default still applies wherever a link sets
+   no colour of its own, and a utility now wins when one does. */
+@layer base {
+  .finch-site a { color: inherit; text-decoration: none; }
+}
+
+/* `html, body { overflow-x: hidden }` above turns both into scroll containers,
+   which silently disables `position: sticky` inside them — measured: the scroll
+   sequence's sticky stage scrolled straight past. `clip` gives the same
+   "never scroll sideways" guarantee without creating a scroll container.
+   Scoped with :has() so only the Finch surface is affected. */
+html:has(.finch-site),
+body:has(.finch-site) {
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
+/* The global mobile rule above (`section { padding-inline: 1rem !important }`)
+   was written for the old homepage's sections; the Finch layout carries its own
+   20px gutter, so it is restated here at the same weight rather than fought. */
+@media (max-width: 767px) {
+  .finch-site section {
+    padding-left:  20px !important;
+    padding-right: 20px !important;
+  }
+}
+
+/* The agent pulse is the only looping animation on the page. */
+@media (prefers-reduced-motion: reduce) {
+  .finch-site * { animation: none !important; }
+}
+
+/* ── Lenis (§11.1, behind the `/design` toggle) ──────────────────────────────
+   The three rules from `lenis/dist/lenis.css`, restated here rather than
+   `@import`ed: the stylesheet is loaded unconditionally by an import, and the
+   whole point of the toggle is that a reader who never switches Lenis on pays
+   nothing for it. Three rules is cheaper than a conditional stylesheet, and
+   they are inert unless Lenis puts its classes on <html>. */
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+.lenis.lenis-stopped { overflow: hidden; }
+
+/* ── The reduced-motion emulation switch (`/design` only) ────────────────────
+   The kitchen sink's toggle has to freeze the *CSS* half of motion the same way
+   the OS setting does; the JS half is handled by the components reading the
+   toggle. Same declaration as the media query above, opted into by a class. */
+.fn-force-static, .fn-force-static * {
+  animation: none !important;
+  transition: none !important;
 }

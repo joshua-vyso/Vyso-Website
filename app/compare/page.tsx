@@ -1,198 +1,120 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Building2, FileSpreadsheet } from "lucide-react";
 
-import {
-  AbstractFlowBackdrop,
-  Breadcrumbs,
-  JsonLd,
-  MarketingCta,
-  PublicPageShell,
-  marketingStyles as styles,
-} from "@/components/marketing/PublicMarketing";
+import { AuditBand } from "@/components/finch/AuditBand";
+import { FinchFooter } from "@/components/finch/FinchFooter";
+import { FinchNav } from "@/components/finch/FinchNav";
+import { ArrowLink, HonestyNote } from "@/components/finch/compare/CompareBits";
+import { CompareHero } from "@/components/finch/compare/CompareHero";
+import { buildCompareHubSchema } from "@/components/finch/compare/compare-jsonld";
+import { HUB } from "@/lib/marketing/compare";
 
-const PAGE_TITLE = "Vyso Comparisons | Spreadsheets, ERP Systems & Vyso";
-const PAGE_DESCRIPTION =
-  "Fair, problem-led comparisons for South African SMEs deciding between spreadsheets, enterprise ERP systems and Vyso's configurable operations platform.";
+/* 46 chars before the sitewide "| Vyso" template. */
+const title = "Compare Finch — vs a COO, an ERP, spreadsheets";
+/* 152 chars. Leads with the comparison intent, carries the price and the place. */
+const description =
+  "Honest comparisons for South African operators: Finch at R6,000 per location per month versus hiring a COO, running an ERP, or living in spreadsheets.";
 
 export const metadata: Metadata = {
-  title: PAGE_TITLE,
-  description: PAGE_DESCRIPTION,
-  alternates: {
-    canonical: "/compare",
-  },
+  title,
+  description,
+  alternates: { canonical: HUB.canonical },
+  robots: { index: true, follow: true },
   openGraph: {
-    title: PAGE_TITLE,
-    description: PAGE_DESCRIPTION,
-    url: "/compare",
+    title,
+    description,
+    url: HUB.canonical,
     siteName: "Vyso",
     locale: "en_ZA",
     type: "website",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "Vyso — Operations, connected." }],
   },
-  twitter: {
-    card: "summary_large_image",
-    title: PAGE_TITLE,
-    description: PAGE_DESCRIPTION,
-    images: ["/og.png"],
-  },
+  twitter: { card: "summary_large_image", title, description },
 };
 
-type ComparisonEntry = {
-  slug: string;
-  icon: typeof FileSpreadsheet;
-  label: string;
-  title: string;
-  bestReadWhen: string;
-  summary: string;
-};
-
-const COMPARISONS: readonly ComparisonEntry[] = [
-  {
-    slug: "vyso-vs-spreadsheets",
-    icon: FileSpreadsheet,
-    label: "Vyso vs Spreadsheets",
-    title: "When spreadsheets stop being enough",
-    bestReadWhen:
-      "You're running purchasing, stock, orders or reporting out of Google Sheets or Excel, and it's starting to show.",
-    summary:
-      "Where spreadsheets genuinely work well, where they quietly break down as a team grows, and what changes with a connected workflow instead.",
-  },
-  {
-    slug: "vyso-vs-erp-systems",
-    icon: Building2,
-    label: "Vyso vs ERP Systems",
-    title: "When a full ERP programme isn't the right first step",
-    bestReadWhen:
-      "You're weighing a traditional enterprise ERP against a lighter, faster way to fix one operational problem first.",
-    summary:
-      "What ERP systems are built for, why they can be slow for a growing SME to adopt, and how a modular approach compares.",
-  },
+const TRAIL = [
+  { label: "Home", href: "/" },
+  { label: "Compare", href: "/compare" },
 ];
 
-const url = "https://vyso.co.za/compare";
+/* `/compare` — the hub. Three cards, each with the verdict on its own page and
+   the case against it in a finding-card frame: a comparison page that never
+   says "not us" is an advert, and an operator can tell. No signature widget
+   here — the hub's job is to route, and the day strip belongs to the COO page
+   (`.ai/vyso_v2.md` §1: no widget is reused across pages).
 
-const structuredData = {
-  "@context": "https://schema.org",
-  "@graph": [
-    {
-      "@type": "WebPage",
-      "@id": `${url}#webpage`,
-      url,
-      name: PAGE_TITLE,
-      description: PAGE_DESCRIPTION,
-      isPartOf: { "@id": "https://vyso.co.za/#website" },
-      about: { "@id": "https://vyso.co.za/#organization" },
-      breadcrumb: { "@id": `${url}#breadcrumb` },
-      inLanguage: "en-ZA",
-    },
-    {
-      "@type": "BreadcrumbList",
-      "@id": `${url}#breadcrumb`,
-      itemListElement: [
-        { "@type": "ListItem", position: 1, name: "Home", item: "https://vyso.co.za/" },
-        { "@type": "ListItem", position: 2, name: "Compare", item: url },
-      ],
-    },
-    {
-      "@type": "ItemList",
-      "@id": `${url}#comparisons`,
-      itemListElement: COMPARISONS.map((entry, index) => ({
-        "@type": "ListItem",
-        position: index + 1,
-        name: entry.label,
-        url: `${url}/${entry.slug}`,
-      })),
-    },
-  ],
-};
-
+   Server component throughout; the only client code is the finding-card frame's
+   hover shadow. */
 export default function ComparePage() {
   return (
-    <PublicPageShell>
-      <JsonLd data={structuredData} />
+    <div className="finch-site min-h-screen bg-fn-bg font-fn-sans text-fn-ink antialiased">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(
+            buildCompareHubSchema({
+              canonical: HUB.canonical,
+              trail: TRAIL,
+              items: HUB.cards.map(({ href, title: cardTitle }) => ({ href, title: cardTitle })),
+            }),
+          ).replace(/</g, "\\u003c"),
+        }}
+      />
+      <FinchNav />
+      <main id="main">
+        <CompareHero
+          trail={TRAIL}
+          eyebrow="CHOOSING WELL"
+          title={HUB.h1}
+          answer={HUB.answer}
+          secondary={{ label: "See the pricing", href: "/pricing" }}
+        />
 
-      <section className={styles.compactHero} aria-labelledby="compare-heading">
-        <AbstractFlowBackdrop />
-        <div className={styles.shell}>
-          <Breadcrumbs items={[{ label: "Home", href: "/" }, { label: "Compare" }]} />
-          <p className={styles.eyebrow}>Choosing well</p>
-          <h1 id="compare-heading" className={styles.compactTitle}>
-            <span className={styles.blendPlain}>Which tool actually fits</span>{" "}
-            <span className={styles.blendAccent}>your stage of growth?</span>
-          </h1>
-          <p className={styles.compactLead}>
-            Spreadsheets, ERP systems and Vyso are all reasonable choices—just for
-            different situations. These pages compare them honestly, so you can work
-            out which one fits your business today, not just which one sounds bigger.
-          </p>
-          <div className={styles.actions}>
-            <Link className={styles.primaryButton} href="/contact">
-              Join Waitlist <span aria-hidden="true">→</span>
-            </Link>
-            <Link className={styles.glassButton} href="/faq#comparison">
-              See the full fit comparison
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      <section className={styles.section} aria-labelledby="compare-approach-heading">
-        <div className={styles.shell}>
-          <div className={styles.sectionIntro}>
-            <div>
-              <p className={styles.sectionKicker}>How to use this page</p>
-              <h2 id="compare-approach-heading" className={`${styles.sectionTitle} ${styles.blendPlain}`}>
-                No tool is right for every business.
-              </h2>
-            </div>
-            <p className={styles.sectionCopy}>
-              Every option below solves real problems for real businesses. The useful
-              question isn&apos;t which one is universally better—it&apos;s which one
-              matches the size, complexity and stage of the operation you&apos;re
-              running right now.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section className={styles.section} aria-labelledby="compare-pages-heading">
-        <div className={styles.shell}>
-          <p className={styles.sectionKicker}>Pick a comparison</p>
-          <h2 id="compare-pages-heading" className={`${styles.sectionTitle} ${styles.blendPlain}`}>
-            Start with what you use today.
-          </h2>
-          <div className={styles.answerGrid} style={{ marginTop: "2.5rem" }}>
-            {COMPARISONS.map(({ slug, icon: Icon, label, title, bestReadWhen, summary }) => (
-              <article key={slug} className={styles.glassCard}>
-                <span className={styles.cardIcon}>
-                  <Icon aria-hidden="true" size={19} />
-                </span>
-                <p className={styles.cardKicker}>{label}</p>
-                <h3 className={styles.cardTitle}>{title}</h3>
-                <p className={styles.cardCopy}>{summary}</p>
-                <p className={styles.cardCopy} style={{ marginTop: "0.75rem", fontWeight: 700 }}>
-                  Read this if: {bestReadWhen}
-                </p>
-                <div className={styles.cardFoot}>
-                  <Link className={styles.textLink} href={`/compare/${slug}`}>
-                    Compare now <span aria-hidden="true">→</span>
-                  </Link>
-                </div>
+        <section className="mx-auto max-w-[1160px] px-[20px] pt-[64px] lg:px-[40px] lg:pt-[96px]">
+          <div className="grid grid-cols-1 gap-[20px] border-t border-fn-line pt-[40px] lg:grid-cols-3 lg:gap-[24px] lg:pt-[56px]">
+            {HUB.cards.map((card) => (
+              <article key={card.href} className="flex flex-col">
+                <Link
+                  href={card.href}
+                  className="group flex flex-1 flex-col rounded-[10px] border border-fn-line bg-fn-surface px-[24px] py-[24px] transition-[border-color,box-shadow,transform] duration-200 ease-out hover:-translate-y-[2px] hover:border-fn-line-hover hover:shadow-[var(--fn-shadow-card-hover)]"
+                >
+                  <div className="mb-[14px] font-fn-mono text-[10px] tracking-[0.12em] text-fn-muted">
+                    {card.eyebrow}
+                  </div>
+                  <h2 className="m-0 mb-[12px] font-fn-serif text-[22px] font-medium tracking-[-0.02em] text-fn-ink lg:text-[24px]">
+                    {card.title}
+                  </h2>
+                  <p className="m-0 mb-[20px] flex-1 text-[14.5px] leading-[1.6] text-fn-ink-3 text-pretty">
+                    {card.verdict}
+                  </p>
+                  <span className="inline-flex items-center gap-[7px] text-[14px] font-medium text-fn-ink-2 transition-colors duration-150 group-hover:text-fn-orange-deep">
+                    Read the comparison
+                    <span
+                      aria-hidden="true"
+                      className="transition-transform duration-150 ease-out group-hover:translate-x-[2px]"
+                    >
+                      →
+                    </span>
+                  </span>
+                </Link>
+                <HonestyNote>{card.notTheAnswer}</HonestyNote>
               </article>
             ))}
           </div>
-        </div>
-      </section>
+        </section>
 
-      <MarketingCta
-        eyebrow="Still not sure?"
-        title="Tell us what you're using today—we'll help you work out the honest answer."
-        copy="If a spreadsheet or an off-the-shelf tool already fits, we'll say so. If your operation has outgrown it, we'll show you where Vyso fits instead."
-        primaryLabel="Join Waitlist"
-        secondaryLabel="View the platform"
-        secondaryHref="/platform"
-      />
-    </PublicPageShell>
+        <section className="mx-auto max-w-[1160px] px-[20px] pt-[64px] lg:px-[40px] lg:pt-[96px]">
+          <div className="flex flex-wrap items-center gap-x-[28px] gap-y-[14px] border-t border-fn-line pt-[28px]">
+            <ArrowLink href="/faq#fit">The full fit-and-alternatives FAQ</ArrowLink>
+            <ArrowLink href="/pricing">What R6,000 per location includes</ArrowLink>
+            <ArrowLink href="/operations-audit">How the one-week audit works</ArrowLink>
+          </div>
+        </section>
+
+        <AuditBand />
+      </main>
+      <div className="pt-[56px] lg:pt-[88px]">
+        <FinchFooter />
+      </div>
+    </div>
   );
 }

@@ -10,8 +10,9 @@ import { usePlatform } from '@/lib/platform/session';
  * `session.trial.expired` is true. Mirrors ModuleLockGuard's lock-screen visual
  * grammar (icon chip, heading, copy, mailto CTA) so the two locked states read
  * as the same product language. Data is retained — only access is paused — and
- * the CTA copy says so. TopBar renders above this in app/app/layout.tsx so
- * sign-out stays reachable.
+ * the CTA copy says so. AppRail (desktop) and MobileTopBar+MobileDrawer
+ * (mobile) mount outside this gate in app/app/layout.tsx so sign-out stays
+ * reachable.
  *
  * Degrades gracefully: `trial` is null for orgs with no trial dates (existing
  * orgs, or onboarding not yet run), so nothing is ever gated for them.

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,500;1,400&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+body { margin: 0; background: #FAF9F6; color: #14120E; font-family: 'Instrument Sans', sans-serif; -webkit-font-smoothing: antialiased; }
+a { color: #14120E; text-decoration: none; } a:hover { color: #C94F0E; }
+@keyframes fPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,119,39,0.5); } 50% { box-shadow: 0 0 0 6px rgba(255,119,39,0); } }
+::selection { background: #F3D9C6; }
+</style>
+</helmet>
+
+<div style="max-width: 390px; margin: 0 auto; background: #FAF9F6; min-height: 100vh; border-left: 1px solid #E7E3DA; border-right: 1px solid #E7E3DA;">
+
+  <nav style="display: flex; align-items: center; padding: 18px 20px;">
+    <a href="Homepage.dc.html" style="display: flex; align-items: center; gap: 10px;">
+      <img src="assets/vyso-wordmark.svg" alt="Vyso" style="height: 13px; display: block;">
+      <span style="width: 1px; height: 14px; background: #D8D3C6;"></span>
+      <span style="font-family: 'STIX Two Text', serif; font-size: 16px;">Finch</span>
+    </a>
+    <a href="Pricing.dc.html" style="margin-left: auto; background: #E05A12; color: #FFF7F0; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600;">Book your audit</a>
+  </nav>
+
+  <header style="padding: 44px 20px 40px;">
+    <div style="width: 44px; height: 3px; border-radius: 2px; background: linear-gradient(90deg, #FF7727, #4B96DD); margin-bottom: 22px;"></div>
+    <h1 style="font-family: 'STIX Two Text', serif; font-weight: 500; font-size: 36px; line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 18px; text-wrap: pretty;">Meet Finch. Your company's own COO — at a tenth of the cost.</h1>
+    <p style="font-size: 15px; line-height: 1.65; color: #4A463C; margin: 0 0 24px; text-wrap: pretty;">Your business runs on WhatsApp, spreadsheets and gut feel. Finch's AI agents watch your invoices, stock, suppliers and margins — catch money leaking, and tell you what to do about it. Built by Vyso for South African food businesses. R6,000 per location, everything included.</p>
+    <a href="Pricing.dc.html" style="display: block; text-align: center; background: #E05A12; color: #FFF7F0; padding: 15px; border-radius: 10px; font-size: 16px; font-weight: 600; min-height: 44px; box-sizing: border-box;">Book your audit</a>
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.06em; color: #8A8474; text-align: center; margin-top: 12px;">ONE-WEEK OPERATIONS AUDIT · R2,000</div>
+  </header>
+
+  <section style="padding: 32px 20px 0; border-top: 1px solid #E7E3DA;">
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #8A8474; margin-bottom: 22px;">01 AN INVOICE COMES IN → 04 A FINDING COMES OUT</div>
+    <div class="mReveal" style="background: #FFFFFF; border: 1px solid #E7E3DA; border-radius: 6px; padding: 18px 18px; box-shadow: 0 8px 24px rgba(20,18,14,0.06); opacity: 0; transform: translateY(24px); transition: opacity 500ms ease-out, transform 500ms ease-out;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 500;">FRESHCO PRODUCE MARKET (PTY) LTD</div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #8A8474; margin: 3px 0 12px;">CITY DEEP · JHB · INV-38412 · 14 JUN 2026</div>
+      <div style="display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; padding: 7px 5px; background: #D9E9F8; border-radius: 3px;"><span>Butternut 10kg bag × 24</span><span>R 1,488.00</span></div>
+      <div style="display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; padding: 7px 5px;"><span>Tomatoes Gr.1 6kg × 18</span><span>R 1,611.00</span></div>
+      <div style="display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; padding: 7px 5px;"><span>Cooking oil 20L × 6</span><span>R 4,488.00</span></div>
+      <div style="display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 500; border-top: 1px solid #14120E; margin-top: 4px; padding: 8px 5px 0;"><span>TOTAL INCL VAT</span><span>R 8,439.00</span></div>
+    </div>
+    <div class="mReveal" style="display: flex; justify-content: center; padding: 14px 0; opacity: 0; transform: translateY(24px); transition: opacity 500ms ease-out 150ms, transform 500ms ease-out 150ms;">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8A8474;">↓ FINCH READS IT</span>
+    </div>
+    <div class="mReveal" style="opacity: 0; transform: translateY(24px); transition: opacity 500ms ease-out 300ms, transform 500ms ease-out 300ms;">
+      <dc-import name="FindingCard" hint-size="100%,250px" tilt="{{ false }}"></dc-import>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; color: #B9B3A3; margin-top: 10px; text-align: right;">ILLUSTRATIVE EXAMPLE</div>
+    </div>
+  </section>
+
+  <section style="padding: 56px 20px 48px;">
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #8A8474; margin-bottom: 22px;">05 YOUR MONDAY BRIEF · ON WHATSAPP</div>
+    <div class="mReveal" style="background: #F2EEE6; border: 1px solid #E7E3DA; border-radius: 18px; overflow: hidden; opacity: 0; transform: translateY(24px); transition: opacity 500ms ease-out, transform 500ms ease-out;">
+      <div style="background: #FFFFFF; border-bottom: 1px solid #E7E3DA; padding: 14px 16px; display: flex; align-items: center; gap: 10px;">
+        <img src="assets/finch-bird.svg" alt="" style="width: 32px; height: 32px; background: #FAF9F6; border: 1px solid #E7E3DA; border-radius: 50%; padding: 2px;">
+        <div>
+          <div style="font-size: 14px; font-weight: 600;">Finch</div>
+          <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: #4B96DD;">● ONLINE · MON 06:45</div>
+        </div>
+      </div>
+      <div style="padding: 16px 14px 20px; display: flex; flex-direction: column; gap: 10px;">
+        <div style="background: #FFFFFF; border-radius: 12px 12px 12px 3px; padding: 12px 14px; font-size: 14px; line-height: 1.5; box-shadow: 0 1px 2px rgba(20,18,14,0.06); max-width: 88%;">Morning. 3 things need your attention — one's worth <strong style="color: #C94F0E;">R4,200</strong>.</div>
+        <div style="background: #FFFFFF; border-radius: 12px 12px 12px 3px; padding: 14px; box-shadow: 0 1px 2px rgba(20,18,14,0.06);">
+          <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 8px;">
+            <span style="width: 6px; height: 6px; border-radius: 50%; background: #FF7727; animation: fPulse 2s ease-out infinite;"></span>
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: #6B6659;">PRICE WATCH</span>
+          </div>
+          <div style="font-size: 14px; line-height: 1.45; margin-bottom: 6px;">Butternut up 12% at FreshCo since June.</div>
+          <div style="font-size: 16px; font-weight: 600; color: #C94F0E; margin-bottom: 8px;">≈ R4,200/yr at current volumes</div>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #2F6FAE; background: #EDF4FB; border-radius: 6px; padding: 3px 9px;">3 invoices ↗</span>
+        </div>
+        <div style="background: #E8F5E1; border-radius: 12px 12px 3px 12px; padding: 10px 14px; font-size: 14px; align-self: flex-end; max-width: 70%;">Draft the supplier email</div>
+        <div style="background: #FFFFFF; border-radius: 12px 12px 12px 3px; padding: 10px 14px; font-size: 14px; max-width: 70%; box-shadow: 0 1px 2px rgba(20,18,14,0.06);">Done. It's in your drafts.</div>
+      </div>
+    </div>
+  </section>
+
+  <footer style="padding: 8px 20px 40px; display: flex; align-items: center; gap: 14px; border-top: 1px solid #E7E3DA; padding-top: 24px;">
+    <img src="assets/vyso-wordmark.svg" alt="Vyso" style="height: 11px; opacity: 0.7;">
+    <span style="font-size: 12px; color: #8A8474;">Built by Vyso in Johannesburg.</span>
+    <a href="Homepage.dc.html" style="margin-left: auto; font-size: 12px; color: #6B6659;">Desktop site</a>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 390, &quot;height&quot;: 844}}">
+class Component extends DCLogic {
+  componentDidMount() {
+    this.io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) { e.target.style.opacity = 1; e.target.style.transform = 'translateY(0)'; this.io.unobserve(e.target); }
+      });
+    }, { threshold: 0.25 });
+    document.querySelectorAll('.mReveal').forEach(el => this.io.observe(el));
+  }
+  componentWillUnmount() { if (this.io) this.io.disconnect(); }
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

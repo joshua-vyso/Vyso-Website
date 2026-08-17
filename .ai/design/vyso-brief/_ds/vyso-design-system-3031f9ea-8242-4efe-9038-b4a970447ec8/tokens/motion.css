@@ -1,0 +1,26 @@
+:root{
+    --dur-hover:0.16s; /* @kind other */
+    --dur-fade:0.18s; /* @kind other */
+    --dur-pop:0.2s; /* @kind other */
+    --dur-control:0.22s; /* @kind other */
+    --dur-reveal:0.65s; /* @kind other */
+    --dur-count:0.7s; /* @kind other */
+
+    --ease-standard:cubic-bezier(0.4,0,0.2,1); /* @kind other */
+    --ease-pop:cubic-bezier(0.2,0.8,0.3,1); /* @kind other */
+    --ease-out-soft:cubic-bezier(0.22,1,0.36,1); /* @kind other */
+    --ease-mark-pop:cubic-bezier(0.2,0.7,0.2,1); /* @kind other */
+
+  /* Named transitions used across the system */
+    --transition-hover:background var(--dur-hover) ease,color var(--dur-hover) ease,border-color var(--dur-hover) ease; /* @kind other */
+    --transition-reveal:opacity var(--dur-reveal) ease,transform var(--dur-reveal) ease; /* @kind other */
+}
+
+@keyframes vyso-fade-in{from{opacity:0}to{opacity:1}}
+@keyframes vyso-pop-in{from{opacity:0;transform:translateY(-6px) scale(0.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes vyso-arrow-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@keyframes finch-gradient{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+@keyframes finch-dot{0%,80%,100%{transform:translateY(0);opacity:.45}40%{transform:translateY(-4px);opacity:1}}
+.vyso-fade-in{animation:vyso-fade-in var(--dur-fade) ease}
+.vyso-pop-in{animation:vyso-pop-in var(--dur-pop) var(--ease-pop)}
+@media (prefers-reduced-motion:reduce){.vyso-fade-in,.vyso-pop-in{animation:none}}

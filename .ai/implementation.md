@@ -1,391 +1,423 @@
-# Implementation log — Module flesh-out + web performance overhaul (2026-07-29)
-
-Plan: `.ai/plan_module_fleshout_and_web_performance.md`
-Research input: `.ai/pain-point-solutions.md`
-Executed as: WF1 (research + audit) → WF2 (performance) → WF3 (7 parallel module agents) → integration verification (this log).
-
----
-
-## Verification results
-
-| Command | Result |
-| --- | --- |
-| `npx tsc --noEmit --incremental false` | **exit 0** — zero errors repo-wide |
-| `npm run build` (Next 16.2.7, Turbopack) | **passes** — all routes compiled, incl. the four new `/app/reportgen/*` and `/app/suppliers/credits` |
-| `npm run lint` | **65 problems (51 errors, 14 warnings)** — down from ~87 pre-existing. Every remaining problem was verified against `git diff` / `git show HEAD:` and is pre-existing. |
-| `npm run test` | **26/26 pass, 0 fail** — unchanged from the pre-workflow baseline |
-
-The build initially **failed**; see "Integration fixes" below.
-
-### Lint audit method
-The lint baseline is noisy, so each remaining problem in a file an agent touched was checked against its `HEAD` version:
-
-- `app/app/docu/recent/page.tsx:45`, `app/app/pricepilot/analytics/page.tsx:57`, `app/app/pricepilot/notifications/page.tsx:48` — `Cannot call impure function during render`: all three are unmodified `Date.now()` lines that merely shifted line numbers.
-- `components/platform/wastewatch/{WasteLog,categories,shared}.tsx` — `set-state-in-effect`: all present verbatim at `HEAD`.
-- `lib/platform/wastewatch-data.ts:783` — `no-unused-expressions`: the same statement existed at `HEAD:122`; the file was restructured around it, the line itself is unchanged.
-- `components/platform/{planwise/AddBudgetLineModal,supplysync/AddSupplierWizard,supplysync/History,serviceden/ui}.tsx` — flagged but **not modified** by any agent.
-- Every file *created* by an agent lints clean (0 problems).
-- One problem **was** newly introduced and has been fixed (below).
-
----
-
-## Integration fixes made during verification
-
-**1. Build-breaking server/client boundary violation (InsightGen) — fixed.**
-`components/platform/insightgen/Anomalies.tsx` is a `'use client'` component that imported the rule thresholds as *values* from `lib/platform/insightgen-data.ts`. That module imports `supabase-server` → `next/headers`, so Turbopack pulled a server-only API into the browser bundle and the production build aborted:
-
-```
-./lib/platform/supabase-server.ts:2:1
-You're importing a module that depends on "next/headers"...
-  Client Component Browser:
-    ./lib/platform/supabase-server.ts → ./lib/platform/insightgen-data.ts
-    → ./components/platform/insightgen/Anomalies.tsx
-```
-
-`tsc` cannot catch this — the import is type-valid; only the bundler enforces the boundary.
-
-Fix follows the convention every other module already uses (`pricepilot.ts` vs `pricepilot-data.ts`, `planwise.ts` vs `planwise-data.ts`), which InsightGen was missing:
-- **Created** `lib/platform/insightgen.ts` — the pure, client-safe layer holding the ten tunables (`WINDOW_DAYS`, `DEFAULT_TARGET_MARGIN_PCT`, `MARGIN_WARN_PP`/`_CRITICAL_PP`, `PRICE_JUMP_*`, `WASTE_SPIKE_*`, `LABOUR_*`).
-- `lib/platform/insightgen-data.ts` now imports them and **re-exports every one**, so server call sites are untouched.
-- `Anomalies.tsx` takes the constants from `@/lib/platform/insightgen` and the `Anomaly` shape as a **type-only** import (fully erased, no runtime edge).
-
-No thresholds, rules or rendered values changed — this is a module split only.
-
-**2. Newly introduced lint error (ShiftBoard) — fixed.**
-`components/platform/shiftboard/shared.tsx:65` — the agent's new `ModalShell` used `useState(false)` + `useEffect(() => setMounted(true), [])` as its `createPortal` SSR guard, tripping `react-hooks/set-state-in-effect` (the file had no `useEffect` at all at `HEAD`, so this was new). Replaced with `useSyncExternalStore(subscribeNever, () => true, () => false)` — identical two-pass server/client result, no cascading render. `useState` dropped from the import as it became unused.
-
-**No reverts were required.** Nothing was `git checkout`-ed; every agent's work is intact.
-
----
-
-## Per-module outcomes
-
-### PlanWise / MarginView (`/app/marginview`)
-- `MOCK_GOALS` and the mock state literal removed. The three strategic goals are real `pw_goals` rows (`cash` / `growth` / `outstanding`), persisted update-if-exists-then-insert (no `onConflict`, so no unique-index dependency), each showing a **measured** "now" figure: cash = GP banked MTD + receivables − overhead consumed; growth = revenue MTD vs the *same elapsed days* last month; outstanding = open `of_invoices`, falling back to invoiced-not-paid `of_orders`.
-- `getPlanWiseData` overwrites `current` on any goal it can measure and flags it `derived` (surfaced as a "● Live" chip) so a stale seed can't pose as today's position. `GOAL_TIMELINE`'s hard-coded 70/95 replaced by real elapsed fraction + revenue run-rate, labelled Measured vs Illustrative.
-- New `BudgetVsActual.tsx`: every row compares actuals against the budget **pro-rated to today** (a whole-month budget vs a part-month actual always reads "under" otherwise) and projects a month-end run rate. Per-category source labelled (OrderFlow sales / order cost / WasteWatch / from plan). Sales maths deliberately mirrors PricePilot's dashboard exactly — invoiced+paid only, only lines with a known `avg_unit_price` contribute to COGS/margin — so the two modules cannot disagree about the same month.
-- Overview gains `BudgetPaceStrip` (worst 3); "Budget used" / "Expense variance" KPIs are now pace-based.
-- `DecisionsPanel` persisted to new `pw_decisions`, with derived suggestions (overspend vs pace, unpaid invoices, waste, margin gap vs `pl_targets`) alongside stored rows.
-- Files: `components/platform/planwise/{BudgetVsActual,Chrome,EditForecastModal}.tsx` (new); `DecisionsPanel,Forecast,GoalsDashboard,GoalsView,views}.tsx`, `lib/platform/{planwise,planwise-data}.ts` (modified); `lib/platform/planwise-actuals.ts` (new).
-
-### PricePilot (`/app/pricepilot`)
-- **Re-price alerts**: `computeRepriceAlerts(pms, target, unitsByItem)` emits products that crossed *below* target **and still sell** (no-sales products stay "opportunities", not alerts), carrying current sell → target-margin sell → per-unit delta → monthly impact. New `NotificationKind: 'reprice'`, surfaced on the Dashboard alerts strip, a new "Re-price now" panel, and Notifications.
-- **Cost-spike detection**: `detectCostSpikes()` reads `pp_stock_items.price_history` + live `avg_unit_price` and flags two shapes — **step** (≥10% vs previous observation) and **creep** (≥8% sustained across the series). Ranked by rand impact (units × cost delta). Fills the previously-empty `costSpikes: []` and replaces the inline 15% rule on Notifications.
-- **Variance attribution** (Analytics): `attributeVariance()` decomposes realized-margin drift into **cost inflation / selling price / sales mix**, computed on the current window's quantities so the three sum *exactly* to the drift. Waste (`ww_waste_events`, cross-module read) is deliberately **outside** that identity — reported as its own drag in points plus "margin after waste" — because waste cost never touches invoice-line COGS.
-- Thin tabs fleshed out: `RecentSalesView` (per-order cost/profit/margin, period + customer + status + margin-health filters, 4 sorts, part-costed disclosure) and `SalesHubView`.
-- Files: `components/platform/pricepilot/{Live,RecentSalesView,SalesHubView,VariancePanel}.tsx` (new); `AnalyticsView,ProfitSnapshot}.tsx`, `lib/platform/pricepilot.ts`, `app/app/pricepilot/{page,analytics,notifications,recent-sales,sales-hub,layout}` (modified).
-
-### InsightGen / ReportGen (`/app/reportgen`)
-- Real `layout.tsx` (async server component: `getPlatformSession` guard → provider → `Chrome` → `SubNav`), following the SupplySync idiom. The fake local-state `AREAS` tabs are gone — four **bookmarkable routes**: `/app/reportgen`, `/insights`, `/reports`, `/anomalies`. All four verified present and matching `InsightGenChrome`'s `TABS` hrefs.
-- `getInsightGenBrain(orgId)` does one parallel server-side pass over `of_orders`+`of_order_items`, `ww_waste_events`, `sb_employees`+`sb_attendance`, `pp_stock_items`+`pp_stock_thresholds`, `ss_suppliers`/`_risks`/`_documents`/`_pricing`, `pl_targets`, plus `ig_*`. Revenue rebuilt from order line items on non-draft orders (same derivation PricePilot uses, since `of_orders` carries no total); COGS from `avg_unit_price` on stock-linked lines. 60-day window, `ROW_LIMIT`-capped.
-- Hard-coded KPIs killed: "9 modules" → `connected/total` from actual row counts per source table; "2m ago" → `brain.generatedAt`.
-- Daily Ops Brief on Overview (yesterday's sales + day-on-day delta, waste and preventable share, staff on shift + labour % of sales, stock alerts, open supplier risks + expiring docs) with 14-day sparklines.
-- Report builder with per-dataset and whole-selection CSV export over five real datasets, live row counts, on-screen preview.
-- Files: `components/platform/insightgen/{Anomalies,Chrome,CreateReportModal,Insights,Overview,Reports,context,shared}.tsx` (new), `View.tsx` (deleted — see deviations); `app/app/reportgen/{layout,page,insights,reports,anomalies}` (new/modified); `lib/platform/insightgen-data.ts` (modified) + `lib/platform/insightgen.ts` (added during integration).
-
-### ServiceDen (`/app/serviceden`) — light touch, by design
-- `useRealtimeRefresh(['sd_leads','sd_mail_messages','sd_lead_activities'])` mounted once in `ServiceDenProvider` (the single client component wrapping every tab), so the Gmail sync's background writes move the leads board / thread view / activity timeline without a per-page mount. `LeadsView` / `TemplatesView` confirmed to read `initialData` straight off props (no `useState` seed), so `router.refresh()` actually propagates.
-- New `lib/platform/serviceden-access.ts`: `isServiceDenAccount()`, `requireServiceDenSession()` (org may be null — the layout case), `requireServiceDenOrgSession()` + `ServiceDenOrgSession`. Replaces three hand-rolled copies of the email gate that **had already drifted** — the layout trimmed the email, the two pages did not; the helper trims on both sides.
-- Bespoke header, tabs and all existing behaviour untouched.
-
-### ShiftBoard (`/app/shiftboard`)
-- **Roster write path**: every grid cell is an editor — create/edit/clear a shift (Working/Off/Leave, 30-min start/end steps, department) writing `sb_roster_shifts.days`; staff with no roster row get one on first assignment (`ensureRosterRow`). Added a "+ Create shift" picker and a per-row hours-vs-contract column. Overview cells route into the same editor. The existing "✦ Generate best roster" demo modal preserved.
-- **RosterWeek read fix (latent bug)**: `label` / `openShifts` were read off `rosterRaw[0]`, so whichever employee sorted first decided the whole week's heading and open shifts — a row with a blank label silently emptied the tab. Now takes the first *non-empty* label and **unions** open shifts across all rows, de-duplicated by `id` (falling back to `day|dept|time`). `days` is normalised to exactly 7 cells.
-- **Swap & cover**: new `sb_shift_swaps` with `propose → accept → manager-approve`. Only approval rewrites the roster — `approveSwap` builds both employees' full weeks in memory and writes each row once (two sequential single-cell writes would read stale `days`), handles the same-day trade, retires the matching open offer, and flips status to `approved` only after the roster writes succeed.
-- **Call-out coverage**: "Mark call-out" releases the cell to `status:'open'` (keeping its time) and creates an offer carrying `reason` / `fromName` / `note`. `CoverDrawer` ranks staff by skill (department→skill mapping), stated availability, department familiarity, OT headroom and attendance, with green/amber justification chips.
-- Files: `components/platform/shiftboard/{Chrome,CoverDrawer,ShiftEditor,Swaps}.tsx` (new); `{Insights,LiveOps,Overview,Roster,context,shared}.tsx`, `lib/platform/{shiftboard,shiftboard-data}.ts` (modified); `lib/platform/shiftboard-write.ts` (new).
-
-### SupplySync / Suppliers (`/app/suppliers`)
-- **Price-change detection** merges two signals: Doc-U invoice/price-list line items (`documents.extracted_data.line_items.unit_price`, bridged core `supplier_id` → `ss_suppliers.supplier_id`) and `ss_supplier_pricing` current-vs-previous. Invoice-derived moves suppress the price-list duplicate for the same supplier+item. Each alert carries old→new, %, and **annualised impact** with an honest `impactBasis`: `measured` (annualised from observed invoice quantities, ≥7-day span required) or `estimated` (avg monthly spend ÷ tracked lines ÷ unit price).
-- **Cross-supplier comparison** on a normalised `itemKey()` (pack sizes / plurals folded): cheapest vs dearest, spread %, annual saving claimed *only* where measured volume exists.
-- **Credit & dispute tracker** — new tab `/app/suppliers/credits`: claimed → acknowledged → credited | written-off, with a settle modal capturing the *actual* credited amount (partial credits are the point). Unresolved total + oldest-claim age on an Overview KPI. Logging a claim also writes a `delivery_issue` / `complaint` timeline event (best-effort) so measured performance reflects it.
-- **Rebate tracker**: received is always `sum(receipts)`, never a stored counter; expected is explicit or estimated from rate × avg spend × period months (labelled); status recomputed from receipts + calendar (`received` / `missed` beat the stored value).
-- **Measured performance** counted off `ss_supplier_history` over a 90-day window (late deliveries, delivery issues, quality/complaints, compliance, issues/30d, last issue, days since contact) with a new KPI strip and table on Performance.
-- Files: `components/platform/supplysync/{CreditModals,Credits,DocExpiry,PriceAlerts}.tsx` (new); `{Chrome,Overview,Performance,Pricing,Risk,SupplierProfileDrawer,context,shared}.tsx`, `lib/platform/supplysync-data.ts` (modified); `lib/platform/{supplysync-credits,supplysync-insights,supplysync-pricing}.ts` (new); `app/app/suppliers/credits/` (new route).
-
-### WasteWatch / WasteLog (`/app/wastelog`)
-- **Aggregate drift fixed**: `recomputeCategories` now derives category `cost` / `pct` / `trend` from `ww_waste_events` on every read; the stored `ww_waste_categories` columns survive only for categories with no events. Categories present in the log but with no row are synthesised (`WasteCategoryRow.derived`) so the donut sums to exactly what the Waste log shows; derived rows render a "from the log" badge and hide edit/remove since there is no row to write to.
-- **Waste-in-margin loop**: `FoodCostContext` divides a waste *rate* by a food-cost *rate* (rand/day both sides). Denominator preference: `pp_stock_orders` purchases → else `of_orders`×`of_order_items` revenue × (100 − `pl_targets.target_margin_pct`) → else `pct: null` with an honest "add purchases or a target margin" hint. Surfaces as the real "Waste %" KPI plus a panel stating R/day on both sides, the basis in words, and the annualised figure — explicitly labelled as what PricePilot's variance panel consumes.
-- Weekly waste report card on Overview (7-day window, preventable ring, delta vs prior week, top causes by reason code preventable-first, costliest items with dominant reason, derived "what to change next week").
-- Reason-code insights on Analytics: over-portioning by recipe (`expectedQty` vs `qty`, excess cost counting *only* the quantity above spec); a coaching list ordered by **preventable** cost with unavoidable spoilage deliberately excluded and a `praise` tone below team average; day-of-week bars split preventable vs unavoidable.
-- `useRealtimeRefresh(['ww_waste_events','ww_devices'])` in `WasteWatchProvider`.
-- Files: `components/platform/wastewatch/{Analytics,Devices,Overview,WasteLog,categories,shared}.tsx`, `lib/platform/{wastewatch,wastewatch-data}.ts` (modified).
-
-### Performance (WF2, shared shell)
-- `next.config.ts`: `optimizePackageImports` corrected to `['motion','lucide-react','@radix-ui/react-icons']` (`framer-motion` dropped — transitive-only, never imported by name); `experimental.staleTimes` set to `{ dynamic: 30, static: 180 }`.
-- Route-level loading states: `components/platform/RouteSkeleton.tsx` + **ten** `loading.tsx` files (`/app` root, docu, marginview, orderflow, pricepilot, procurepulse, serviceden, shiftboard, suppliers, wastelog).
-- `SubNav` gains a `TabLabel` using `useLinkStatus()` for per-tab pending feedback (dim + dot, both delay-150 with the dot always in the DOM at fixed size, so a prefetched tab never flickers and nothing reflows).
-- `useRealtimeRefresh` reconcile-on-return gated: skip while data is <60s fresh, skip while the channel reports `SUBSCRIBED` unless the absence exceeded 5 min, and dedupe the `focus`/`visibilitychange` pair within 1s. A plain refocus on a live channel now costs nothing.
-- Marketing shader/3D work split out via `components/marketing/LazyShaderBackground.tsx`.
-- RSC payload narrowing on Doc-U inbox queries (`DOC_INBOX_COLS` replaces `select('*')`; `extracted_data` deliberately kept because `documentTypeLabel()`, `deriveFlags()` and `applySearch()`/`docTotal()` all read it).
-- 18 `public/` images recompressed (e.g. `og.png` 1,033,804 → 281,584 bytes).
-- `package.json`: `dev` now runs Turbopack; the old webpack command preserved as `dev:webpack`.
-
----
-
-## SQL files added
-
-All new, all additive; **no existing SQL file was modified** and nothing is dropped or altered.
-
-| File | Purpose |
-| --- | --- |
-| `supabase/ss-supplier-credits.sql` | `ss_supplier_credits` — credit & dispute tracker |
-| `supabase/ss-supplier-rebates.sql` | `ss_supplier_rebates` + `ss_supplier_rebate_receipts` |
-| `supabase/planwise-realtime.sql` | adds PlanWise tables to the `supabase_realtime` publication |
-| `supabase/pricepilot-realtime.sql` | ditto, PricePilot |
-| `supabase/serviceden-realtime.sql` | ditto, `sd_leads` / `sd_mail_messages` / `sd_lead_activities` — none were in the publication in `supabase/realtime.sql` or any sibling |
-| `supabase/wastewatch-realtime.sql` | ditto, `ww_waste_events` / `ww_devices` |
-| `supabase/demo-fresh-valley/1-shiftboard-swaps.sql` | `sb_shift_swaps` schema + demo rows |
-| `supabase/demo-fresh-valley/10-planwise-decisions-schema.sql` | `pw_decisions` schema |
-| `supabase/demo-fresh-valley/10-planwise-decisions-seed.sql` | `pw_decisions` demo rows |
-| `supabase/demo-fresh-valley/4b-supplysync-credits-rebates-seed.sql` | credits/rebates demo rows |
-| `supabase/demo-fresh-valley/5b-insightgen-runs-acks.sql` | `ig_report_runs` / `ig_anomaly_acks` |
-
-The realtime scripts are idempotent guarded `alter publication ... add table` blocks. Demo seeds use the repo's existing convention of a `delete ... where org_id = (select id from organisations where name = 'Fresh Valley Produce')` preamble so re-running is safe and scoped to the demo org only.
-
----
-
-## Deviations from the plan
-
-1. **`components/platform/insightgen/View.tsx` was deleted**, against the plan's "do NOT delete any code anywhere" constraint. It was the old single-file fake-tabs view, fully superseded by the seven new `insightgen/*` components; nothing in the repo references it (`grep` clean, `tsc` clean). It remains recoverable from `HEAD` — **not restored**, since restoring it would reintroduce an unreferenced dead file, but flagged here for the record. This is the only deletion in the changeset.
-2. **`app/app/docu/*` was modified** (`page.tsx`, `recent/page.tsx`, `flagged/page.tsx`) by the performance pass, which the plan nominally fenced off. The edits are query-projection only (`select('*')` → an explicit column list) with no feature-logic change, which falls under the plan's "perf-neutral shared-shell changes affecting them are allowed" carve-out. Behaviour risk is low but non-zero: if any consumer reads a column outside `DOC_INBOX_COLS`, it will now be `undefined`. Worth a manual pass over the Doc-U inbox before release.
-3. **Shared files were touched beyond the per-module folders** — `components/platform/{SubNav,ModulesOverlay}.tsx`, `lib/platform/{supabase-server,useRealtimeRefresh,orderflow-data,procurepulse-queries}.ts`, `app/layout.tsx`, `app/app/page.tsx`, `next.config.ts`, `package.json`, and the marketing pages/components. All of these trace to WF2 (performance), not to the seven module agents, whose diffs stayed inside their own folders as instructed.
-4. **New schema was introduced** (`pw_decisions`, `sb_shift_swaps`, `ss_supplier_credits`, `ss_supplier_rebates` + receipts, `ig_report_runs`, `ig_anomaly_acks`), where the plan said "no schema migrations in this task". All additive, all in new files, nothing existing altered — but this is a real scope expansion the agents took on to persist the workflows they built.
-5. **PlanWise lint**: the two errors in `AddBudgetLineModal.tsx` are pre-existing in a file no agent touched; left as-is.
-
----
-
-## Open follow-ups
-
-1. **`/app/reportgen` has no `loading.tsx`** — the only platform module without one. It falls back to the `/app` root boundary, so it is covered but not module-styled. Add `app/app/reportgen/loading.tsx` mirroring the other nine.
-2. **Run the new SQL.** None of the eleven scripts have been applied to any environment. The four `*-realtime.sql` publication scripts in particular are required for the realtime hooks the agents mounted (ServiceDen, WasteWatch, PlanWise, PricePilot) to fire at all — until then those `useRealtimeRefresh` calls subscribe to channels that deliver nothing, silently.
-3. **The client/server boundary is unguarded.** `tsc` cannot see it and only a full `npm run build` catches it — as it did here, after all seven agents reported green. Consider adding `import 'server-only'` to the `lib/platform/*-data.ts` modules that touch `supabase-server`, so the violation surfaces at the import site with a clear message instead of as a bundler trace.
-4. **Doc-U inbox manual check** — see deviation 2.
-5. **Lint baseline is still 51 errors / 14 warnings**, dominated by `react-hooks/set-state-in-effect` and `Cannot call impure function during render` across OrderFlow, Doc-U, ProcurePulse and the Finch/Vyso-AI modals. All pre-existing and out of scope here, but the rule is now firing widely enough that new code keeps tripping it (ShiftBoard did, and was fixed with `useSyncExternalStore` — that is the pattern to standardise on for portal mount guards).
-6. **No visual/browser verification was run** in this pass. Build/typecheck/lint/test are green; nothing here confirms the new panels render correctly against real org data.
-7. **Perf measurement not captured in this pass.** The plan's acceptance criterion asked for before/after timing against `next start`; this verification covered correctness only.
-8. **Nothing committed** — the entire changeset is uncommitted working-tree state.
-
----
----
-
-# Implementation log — Module identity header above the tab nav (2026-07-29)
-
-Plan: `.ai/plan_module_header_consistency.md`
-Executed as: 2 parallel agents (agent A = Doc-U / OrderFlow / ProcurePulse, agent B = PricePilot / PlanWise / ShiftBoard / WasteWatch) → verification (this section).
-
-## Verification results
-
-| Command | Result |
-| --- | --- |
-| `npx tsc --noEmit --incremental false` | **exit 0** — zero output, zero errors |
-| `npm run build` (Next 16.2.7) | **exit 0** — every module route compiled |
-| `npm run lint` | **65 problems (51 errors, 14 warnings)** — identical to the pre-existing baseline; no new problems |
-
-### Lint audit method
-`eslint` was re-run against only the 24 changed/added files. Every problem reported in a changed
-file was traced to code the diff does not touch:
-
-- `app/app/procurepulse/stock/[id]/page.tsx:25` — unused `orgId`; confirmed present at `HEAD`
-  (`git show HEAD:…`), the diff only demotes an `h1` to an `h2` at line 70.
-- `InboxView.tsx`, `docu/FolderGridView.tsx`, `orderflow/Dashboard.tsx`, `docu/review/page.tsx` —
-  all `react-hooks/set-state-in-effect` / impure-render errors on pre-existing effect bodies.
-- The two **new** files (`docu/Chrome.tsx`, `wastewatch/Chrome.tsx`) lint completely clean.
-
-## Structure confirmation — all 10 modules
-
-Every module renders exactly one identity header, positioned before the tab nav in the tree.
-No module name is rendered as a heading anywhere below a nav (`grep` for every module name in a
-JSX text position returns only one prose mention inside `AddSupplierWizard`).
-
-| Module | Header host | Arrangement |
-| --- | --- | --- |
-| docu | `components/platform/docu/Chrome.tsx` (new) | `ModuleHeader` → `mt-5` `DocuNav` |
-| orderflow | `app/app/orderflow/layout.tsx` | `SetupBanner` → `ModuleHeader` → `mt-5` `SubNav` → `mt-6` children |
-| procurepulse | `app/app/procurepulse/layout.tsx` | `ModuleHeader` → `mt-5` `PpSubnav` → `mt-6` children |
-| pricepilot | `app/app/pricepilot/layout.tsx` | `PricePilotLive` → `ModuleHeader` (+`LiveChip`) → `mt-5` `SubNav` → `mt-6` children |
-| marginview (PlanWise) | `components/platform/planwise/Chrome.tsx` | `ModuleHeader` (+ Add budget line) → `mt-5` `SubNav` → `mt-6` children |
-| shiftboard | `components/platform/shiftboard/Chrome.tsx` | `ModuleHeader` (+ Create shift) → `mt-5` `SubNav` → `mt-6` children |
-| wastelog (WasteWatch) | `components/platform/wastewatch/Chrome.tsx` (new) | `ModuleHeader` (+ Log waste) → `mt-5` `SubNav` → `mt-6` children |
-| reportgen (InsightGen) | `insightgen/Chrome.tsx` | unchanged — was already correct |
-| suppliers (SupplySync) | `supplysync/Chrome.tsx` | unchanged — the reference pattern |
-| serviceden | `app/app/serviceden/layout.tsx` | unchanged — bespoke header, already above the nav |
-
-`ModuleHeader` was confirmed removed from all five views that previously rendered it below the
-tabs (`wastewatch/Overview`, `shiftboard/Overview`, `planwise/views`, `orderflow/Dashboard`,
-`procurepulse/ui`) — each now greps to zero references.
-
-### Doc-U detail routes
-Doc-U deliberately has **no** `layout.tsx`; `DocuChrome` replaced `DocuNav` 1:1 at its 6 mount
-sites. Each of the 15 Doc-U routes was traced to the component it renders and mounts the chrome
-exactly once — never twice, never zero where tabs were previously shown:
-
-- `page` → `FolderGridView`; `recent`/`awaiting`/`confidence`/`flagged`/`folder/[key]` → `InboxView`;
-  `reconciliation` → `ReconciliationView`; `review`, `settings`, `databases` → chrome inline.
-- `[id]`, `upload`, `databases/[entity]`, `databases/import` render **no** chrome — as before. This
-  is why a `layout.tsx` was rejected: it would have forced the nav onto these four and broken the
-  `[id]` view's own `h-full overflow-y-auto` scroll container. These four keep their own 28px `h1`,
-  which is correct — no module header sits above them to compete with.
-- `loading.tsx` was updated to `RouteSkeleton chrome` so the fallback draws header + tabs.
-
-## Open follow-up — heading hierarchy diverged between the two agents
-
-The two agents resolved the plan's "section titles may remain as **smaller** in-page headings
-below the nav" clause differently, and the result is inconsistent:
-
-- **Agent A demoted** its page titles — Doc-U 28px `h1` → 20px/18px `h2`, ProcurePulse `PageHead`
-  → 20px `h2`, `procurepulse/stock/[id]` → 20px `h2`. OrderFlow's were already 22–26px and were
-  left alone.
-- **Agent B did not.** 21 view files across PricePilot, PlanWise, ShiftBoard and WasteWatch still
-  render their per-tab section title as a **28px `h1`** — the exact size and heading level of the
-  `ModuleHeader` `h1` now sitting directly above them (`planwise/views.tsx` `PageTitle`,
-  `planwise/GoalsView`, all six `shiftboard/*` views, `wastewatch/{Analytics,Devices,WasteLog}`,
-  and nine `pricepilot/*` views plus `pricepilot/notifications` and `products/[id]`).
-
-Before this change those tabs had no module header above them, so the 28px title was the page's
-only heading. Now each renders two same-size `h1`s stacked — a visual-hierarchy regression this
-change set introduced, and two `h1`s per document. The reference modules (SupplySync, InsightGen)
-keep `h1` exclusively for `ModuleHeader` and use 16–18px `h2` below the nav.
-
-**Not fixed here** — it is a 21-file presentational change across files agent B deliberately left
-untouched, so it is flagged for a decision rather than applied unilaterally. The fix is mechanical:
-`h1`/28px → `h2`/20px in those 21 files, matching agent A and the `PageHead` precedent. Note
-`wastewatch/Overview.tsx:173,192` are `of-num` stat *values*, not headings — leave them.
-
-Nothing committed; the changeset remains uncommitted working-tree state on `finch-onboarding`.
-
----
-
-# 2026-08-04 — Demo-day fixes: Doc-U header overlap + price-list picker with order-wide re-pricing
-
-Plan: `.ai/plan_demo-pricelist-fixes.md`. All six steps implemented in order. Nothing committed —
-the changeset is uncommitted working-tree state.
-
-## What changed, per file
-
-**`components/platform/ExtractionEditor.tsx`** (Step 1 — header collision)
-- `COLS`: 5th track (Units/box) widened `56px` → `80px`; the `1fr` Description column absorbs it.
-  Grid is now `[1fr_64px_48px_70px_80px_76px_88px_24px]`.
-- Added a `HEAD_CELL = 'min-w-0 truncate'` constant applied to all seven header spans, so any
-  future tight column degrades to an ellipsis instead of overlapping its neighbour.
-- Data-row cells were not touched: they are fixed grid tracks with `w-full` inputs, so alignment
-  follows the header automatically.
-
-**`app/app/docu/[id]/page.tsx`** (Step 2 — fetch)
-- Three org-scoped queries added to the existing `Promise.all` block: `pl_price_lists.select('*')`,
-  `pl_overrides.select('*')`, and `pp_stock_items.select('id, name, avg_unit_price, unit')` —
-  the exact table + fields `orderflow-from-doc.ts` matches lines against (`StockLite`).
-- Results destructured as `priceListData` / `overrideData` / `productData`, typed as
-  `CdPriceList[]` / `CdPriceOverride[]` / `StockLite[]`, and passed to `DocumentDetailPanel`.
-- Overrides are fetched org-wide (not per-list, as the server sync does) because the reviewer can
-  pick ANY list client-side; `resolvePrice` already filters by `price_list_id`.
-
-**`components/platform/docu/DocumentDetailPanel.tsx`** (Step 2 — pass-through)
-- Props extended with `priceLists` / `overrides` / `products`; forwarded verbatim to
-  `OrderReviewEditor`. No other behaviour touched.
-
-**`components/platform/docu/OrderReviewEditor.tsx`** (Step 3 — picker + order-wide re-price)
-- New optional props `priceLists` / `overrides` / `products` (default `[]`, so the component is
-  still usable without them).
-- New state `priceListId: string | null`, initialised from the persisted
-  `extractedData.price_list_id` — but only when that id still exists in `priceLists`, so a pin at a
-  deleted list is treated as absent (plan edge case).
-- New `applyPriceList(id)`: sets the ONE order-level `priceListId`, then re-prices EVERY line whose
-  description matches a product via `matchStockItem` (imported from `lib/platform/orderflow-from-doc.ts`
-  — reused, not duplicated) using `resolvePrice(product, list, overrides).price`. Unmatched lines and
-  `source === 'none'` results are left untouched, so a user-entered price is never overwritten with a
-  blank/zero. Choosing the empty "from list" option just unpins; prices already applied stay.
-- Row grid retracked `[1fr_64px_72px_84px_24px]` → `[1fr_52px_72px_76px_92px_24px]` (extracted to a
-  `rowCols` constant shared by the header and the rows) with a new "Price list" column. Every line
-  renders a native `<select>` bound to the single order-level `priceListId`, options = "from list"
-  (empty) + every `pl_price_lists` row by name. Header spans got `min-w-0 truncate`, matching Step 1.
-- Manual typing still calls `updateLine` and does NOT reset `priceListId`.
-- `confirm()` now writes `price_list_id: priceListId` into the document's `extracted_data` alongside
-  `line_items` / `customer_name`.
-
-**`lib/platform/types.ts`** (interface — see deviation 1)
-- `ExtractedData` gains `price_list_id?: string | null` (additive, optional; older docs simply lack it).
-
-**`lib/platform/orderflow-from-doc.ts`** (Step 4 — honour the persisted list)
-- `plRows` hoisted to a `priceLists` const; a `pinnedList` lookup from `ed.price_list_id` now wins
-  over `customerPriceList(...)`. Absent id, or an id that no longer resolves, falls through to the
-  exact prior behaviour. Six lines, fully guarded. `matchStockItem` / `StockLite` were already
-  exported — nothing had to be extracted or duplicated for client reuse.
-
-**`components/platform/orderflow/builder.tsx`** (Step 5 — picker UI)
-- `LineItemsEditor` gains two OPTIONAL props: `priceLists?: CdPriceList[]` and
-  `onPriceListChange?: (id: string | null) => void`. When both are supplied the read-only
-  "Pricing from <name>" label becomes a `<select>` over all org lists; when they are omitted the
-  original label renders unchanged — so `QuoteBuilder` and `InvoiceBuilder` are untouched.
-- The select's empty option is labelled "Default (from customer)" (value `''` → `onPriceListChange(null)`),
-  because clearing the pin restores the caller's derived list rather than removing pricing.
-
-**`components/platform/orderflow/OrdersView.tsx`** (Step 5 — state + re-price)
-- `NewOrderBuilder`: the pure `useMemo` price list became `derivedList` (unchanged formula), plus new
-  `pinnedListId` state; the effective `priceList` is the pinned list when set, else `derivedList`.
-- The re-price loop from `pickCustomer` was factored out to `repriceLines(list)` — same body
-  (skip lines without `stock_item_id`, skip lines with a non-empty `override_note`) — and is now
-  called from both `pickCustomer` and the new `pickPriceList`.
-- `pickCustomer` additionally clears `pinnedListId`, so picking a customer resets to their derived
-  list (today's behaviour wins, per the plan's edge case).
-- `LineItemsEditor` wired with `priceLists={context.priceLists}` and `onPriceListChange={pickPriceList}`.
-- `CdPriceList` added to the existing `coredata` type import.
-
-**`lib/platform/orderflow-data.ts`** — NOT modified. `BuilderContext` already carries
-`priceLists: CdPriceList[]` and `overrides: CdPriceOverride[]` (lines 245–246), as the plan predicted.
-
-## Deviations from the plan
-
-1. **`lib/platform/types.ts` edited (not in the plan's file list).** The plan's "Data/API/interface
-   changes" section requires the extracted order payload to gain `price_list_id?: string`, but
-   `ExtractedData` — the type both the client editor (via `DocuExtractedData extends ExtractedData`)
-   and the server sync read — lives in `types.ts`. Declaring it there is the single additive change
-   that types both sides; the alternative (an `as` cast in `orderflow-from-doc.ts` plus a duplicate
-   field on `DocuExtractedData`) would have been strictly worse. One optional field, no behaviour.
-
-2. **`LineItemsEditor`'s new props are optional, and the parent owns the re-price.** The plan says
-   "replace the read-only label with a select over `priceLists` (already in builder context)", but
-   `LineItemsEditor` never received `priceLists` — only a single resolved `priceList`. Making the two
-   new props optional keeps `QuoteBuilder` / `InvoiceBuilder` byte-for-byte behaviourally unchanged
-   (they keep the label), and the re-price loop stays in `OrdersView` where the lines state and
-   `context.products` / `context.overrides` live, exactly as the plan's "reuse the `pickCustomer`
-   loop" instruction implies.
-
-3. **Doc-U order review got a dedicated narrow "Price list" column rather than a control crammed
-   inside the 84px unit-price cell.** The plan explicitly delegated this ("chevron on the right of the
-   cell or an adjacent narrow select — implementer's choice, must not break the row grid"). The row
-   grid was retracked to fit the extra 92px track inside the half-width panel; the numeric unit-price
-   input and its "from list" placeholder semantics are untouched.
-
-4. **Doc-U overrides are fetched org-wide** instead of per-selected-list (as the server does). The
-   reviewer can pick any list at any time, so scoping the fetch to one list would break the picker.
-   `resolvePrice` filters by `price_list_id` internally, so results are identical.
-
-## Verification (Step 6)
-
-```
-$ npx tsc --noEmit
-TSC_EXIT=0            # no output at all — clean
-```
-
-```
-$ npm run lint
-✖ 65 problems (51 errors, 14 warnings)
-  0 errors and 1 warning potentially fixable with the `--fix` option.
-LINT_EXIT=1
-```
-Lint FAILS, but it fails identically on a clean tree — verified by stashing the changeset and
-re-running: baseline is also `✖ 65 problems (51 errors, 14 warnings)`. Zero regression. Linting only
-the eight changed files reports 2 errors, both in `OrdersView.tsx` at lines 139 (`Date.now()` during
-render) and 242 (`tempRef.n++`) — pre-existing code neither of which this change touched. All other
-findings are in unrelated files (wastewatch, supplysync, vyso-ai, pricepilot pages, …).
-
-```
-$ npm run build
-✓ Compiled successfully in 9.9s
-… full route table printed …
-BUILD_EXIT=0
-```
-
-Not run: manual dev-server walkthrough of the Fresh Valley demo data (Doc-U invoice headers,
-per-line dropdown, order re-pricing, OrderFlow order edit) — left for the demo-day smoke test.
+# Price Watch Agent — implementation log
+
+## Step 0 — Gate check (run 2026-08-13, read-only, service key)
+
+Org: Turn 'n Slice `a24f858b-b40b-4824-bc29-8818f034d44b`.
+Sample: 20 most recent invoice/statement documents → 439 line items (invoice sample),
+plus a statement-only deep pass → 491 statement lines.
+
+### Structured-field quality (all sampled lines)
+
+| Field | Coverage | Note |
+|---|---|---|
+| description | 100% | clean produce names ("Tomatoes Saladette", "Onions Brown") |
+| unit_price | 100% parseable, >0 | |
+| quantity | ~99.8% parseable, >0 | |
+| amount | ~99.8% | 1 zero/negative line |
+| weight (pack kg) | 99.6% of statement lines | enables per-kg normalisation: unit_price ÷ weight |
+| unit string | 7.3% overall / 5.1% of statement lines | absent on legacy statements — NOT a blocker, `weight` covers it |
+
+### The blocker: the 2026-06-25 legacy statement backlog
+
+16 of 17 statements (~430 lines — the bulk of all history) were bulk-uploaded
+2026-06-25 09:38–09:48 and have:
+- **no `supplier_id`**, no per-line `supplier`, no document-level supplier field →
+  lines cannot be attributed to a vendor;
+- **no extracted statement-period/date field** → the only date is the shared upload
+  timestamp, so all their prices collapse onto one day;
+- no `unit`, no `total_kg` — consistent with an older extraction prompt version.
+
+By contrast, everything extracted since (5 Country Mushrooms invoices Jul 14–20 and
+the JHB Fresh Produce Market statement of Jul 05) is fully structured: supplier linked,
+per-line market agents ("Botha Roodt", "C L De Villiers", …), weight, unit, dates.
+
+### Verdict
+
+**Conditional fail, exactly the case the plan gates on.** Current Doc-U extraction is
+good enough for Price Watch going forward, but acceptance criterion 4 (backfill ALL
+history) cannot be met from stored JSON: the legacy statements are supplier-less and
+date-less. Proceeding on attributed docs only would leave ~2 items × ~5 price points —
+too thin for the ≥3-point / 60-day-median rules to ever fire.
+
+**Recommended pre-task (bounded, not a full extraction upgrade):** re-run the CURRENT
+Doc-U extractor over the 16 legacy statements (all status `extracted`, none reviewed,
+originals in `storage_path` — no human work is destroyed), confirm supplier + statement
+date + weight land, then backfill per plan. Requires Josh's approval; also confirm the
+extractor emits a statement date (none of the sampled statements had a date field —
+verify on the Jul 05 one too, which only showed created_at).
+
+Decisions D1–D4 resolved by Josh 2026-08-13 (see plan). Re-extraction pre-task approved.
+
+## Pre-task — legacy statement re-extraction
+
+### Phase 1: pilot (doc 2e21f9c7, run 2026-08-13) — PASS
+
+- Reused the app's own path: `extractDocument()` (`claude-haiku-4-5`, matches prod) +
+  `resolveSupplierProfile()`; storage bucket `documents`. No repo changes; scripts in
+  scratchpad; full 16-doc backup at
+  `scratchpad/backup-legacy-statements.json` (rollback source).
+- Recovered: per-line supplier 28/28 (was 0), unit 28/28, total_kg 28/28;
+  `supplier_id` linked to existing "Johannesburg Fresh Produce Market" row;
+  confidence 92→94.
+- Bonus fix: old extraction contained 14 exact-duplicate lines (sum R214,860 vs the
+  statement's own R150,700). New extraction reconciles to the cent. Legacy extractions
+  over-count purchases — relevant beyond Price Watch.
+- **Premise correction**: statement dates were never missing — `summary.statement_date`
+  exists on 15/16 legacy docs (only edda8e8f is null). Backfill uses
+  `summary.statement_date` for statements, extracted invoice-date field for invoices,
+  `created_at` as last resort.
+- Note: `ensureSupplySyncProfile` no-ops in prod (ss_supplier_profiles table absent) —
+  SupplySync tables are not deployed for TnS. Irrelevant to Price Watch (D4 coexist).
+
+### New issues surfaced
+
+1. **Truncated per-line names** (~15–19 chars: "Botha Roodt & Ki", "R S A Market Ag",
+   some descriptions). Extraction prompt already asks for de-truncation; the model
+   doesn't comply. Handling: Price Watch normalisation will alias names
+   deterministically by prefix-merge (≥12-char prefix match) — no Doc-U prompt change
+   in this plan's scope. Architect decision, testable, logged here.
+2. **Two legacy docs are status `reviewed`** (edda8e8f, b1186349) — human-signed-off.
+   Excluded from the batch; separate decision from Josh required (their old data
+   carries the duplicate-line over-count).
+3. **Market-agent granularity**: per-line supplier (market agent) pricing differs per
+   agent; keying price series only on the document supplier (JHB market) mixes agents
+   and could cause false moves. Decision put to Josh: nullable `line_supplier` column
+   on pw_price_points vs document-supplier-only v1.
+
+### Phase 2: batch of 13 `extracted`-status docs — running (same procedure,
+per-doc reconciliation check, auto-restore from backup on regression).
+
+# UI Brief reskin — implementation log (branch feat/ui-brief-reskin)
+
+- W0 `5505f4b`: design bundle imported to `.ai/design/vyso-brief/` + plans committed.
+- W1 `e9979f4`: `--pf-*`/`--tone-*` token layer added to globals.css; /app shell
+  wash + text de-hardcoded. `lib/platform/tokens.ts` already matched tokens
+  value-for-value (design system was extracted from this codebase) — no sync needed.
+  Flag: `VYSO` export in tokens.ts has zero consumers (dead export, untouched).
+- W2 `a32cc60`: primitives tokenized (module-ui.tsx, ui.tsx). Visual deltas:
+  DataTable hairline #F5F9FE→#EEF1F5 (spec correction), ModuleWidgetCard gains card
+  shadow + 20px padding, SecondaryAction border snapped to --pf-border-strong,
+  donut/ring tracks unified on --pf-border-soft. W2 agent was killed mid-run by a
+  usage limit and resumed from transcript — partial edits reconciled, no loss.
+- W3 descoped to login-only after hex inventory (see plan). Mass hex→var conversion
+  skipped: values already on-palette; churn without visual change.
+- Known pre-existing failures (NOT ours): tsc errors in lib/platform/whatsapp-ingest.ts
+  (untracked WIP), lint errors in vyso-ai/*, wastewatch/*, module-ui.tsx:289.
+- W3 `9d57e54`: login restyled to platform blue (the reskin's biggest visible
+  change). Panel kept edge-to-edge (no card radius — architect-accepted deviation).
+- W4 verification: node tests 0 fail; tsc/lint clean for all touched files
+  (pre-existing failures unchanged); login visually verified in browser —
+  Log in button computes to rgb(31,95,168) = --pf-accent-strong; marketing home
+  provably unaffected (globals.css had zero --pf-/--tone- vars pre-W1 and no
+  marketing component references them; shader hero renders normally).
+  NOT visually verified: /app/* module screens (behind auth — Josh should eyeball
+  a Doc-U + OrderFlow screen after login; changes there are token-value swaps
+  plus three deliberate deltas: DataTable hairline, ModuleWidgetCard shadow/padding,
+  SecondaryAction border).
+
+# The Brief landing page (branch feat/ui-brief-reskin)
+
+- `7957c8f` plan; `da882ef` Wave A: /app renders the Brief (was a redirect) —
+  rail, greeting, finding cards off agent_findings (RLS reads), dismiss/restore,
+  truthful evidence nouns, empty + table-missing states, POST_LOGIN_ROUTE → /app.
+  Migration file committed. isMissingRelation added to db-errors (42P01 + PGRST205).
+- `d194727` Wave B: chat pill wired to Finch ('brief' module via the documented
+  extension point; findings serialised server-side, bounded prelude on first user
+  turn; tap-a-finding prefill; inert when FINCH_ENABLED off). Live-tested signed-in:
+  three streamed answers, 200s. NOT yet exercised with real finding rows (table
+  empty until Price Watch runs) — tap flow verified at unit level.
+- Deviations from mock (deliberate): top bar retained (rail lives inside the page);
+  per-finding action buttons (draft email, trends) deferred; chat is text-only v1.
+- Discovery: agent_findings table already existed in prod → Josh applied the
+  migration. Remaining manual step for data: the three phase2 re-extraction slices,
+  then backfill → detection → crons.
+
+## Price Watch build (branch feat/ui-brief-reskin)
+
+- pw(1) `7ef9beb`: normalize + detect, 34 tests. pw(2): match + observe, 36 tests
+  (5.x models get no temperature param). pw(3): run.ts orchestrator + cron route +
+  digest route + backfill CLI + 28 tests — 141/141 total.
+- Key behaviours: matcher called once per (supplier, raw_description) ever (review
+  rows are cached decisions); in-run proposed items cannot auto-link (no stacked
+  guesses); dry-run writes nothing and skips the observe model; digest sends
+  nothing on zero findings and has no default recipient; dedupe key carries the
+  market agent and is parsed back for open-finding suppression; statement guard
+  skips statements covered by invoices within 31 days.
+- Env needed in Vercel: PRICE_WATCH_ORG_IDS (TnS org id), PRICE_WATCH_DIGEST_TO
+  (Josh + Roberto), CRON_SECRET (exists), RESEND_API_KEY (exists).
+- vercel.json: price-watch 45 3 * * *, digest 0 4 * * 1 — LEFT UNCOMMITTED
+  (file carries unrelated whatsapp-cron WIP; Josh commits both together).
+- BLOCKERS for first findings: (1) Josh re-runs the phase2 slices — DB confirmed
+  the earlier attempt never landed; (2) re-paste supabase/agents-price-watch.sql —
+  live DB has the pre-amendment schema, pw_price_points.line_supplier is MISSING
+  and every point write fails until then (deliberately no degraded path: mixing
+  agents would manufacture false findings); (3) backfill dry-run → live → Josh
+  clears the item-match review queue; (4) env vars above.
+
+## Backfill diagnosis (2026-08-14) — 6 of 7 findings are artifacts
+
+- Root causes: (1) sub-pack lines — extraction stores per-BOX price against per-PUNNET
+  weight (contract in anthropic.ts says "do NOT multiply by units_per_box" — right for
+  loose boxes, wrong for punnet boxes); (2) units_per_box polysemy — pack multiplier on
+  punnet lines, fruit COUNT CODE on cartons (apples 18.5kg/135ct); (3) 54/381 points
+  (14%) are duplicates: same purchase on two same-day statements + one double-uploaded
+  invoice; (4) statements are DAILY, not monthly — STATEMENT_PERIOD_DAYS=31 guard ~30x
+  too wide. Verdicts: Musk Melons PLAUSIBLE; Saladette = different SKU compared to
+  loose (R857/kg printed, R42.86 real); Baby Sweet Corn Wenpro is SIGN-INVERTED (real
+  move was -20%); Peppers + Lemons findings vanish entirely on dedupe.
+- Experimentally proven: blind units_per_box correction is WORSE than none (new R1.8m
+  broccoli artifact) — mis-scaled-but-CONSISTENT series keep honest percentages
+  (scale cancels in deltaPct and randImpact); inconsistent series are what explode.
+  Hence the series-consistency gate is load-bearing in the fix.
+- SECOND root cause: neither Claude call (match/observe) has EVER succeeded — both use
+  `await import('@/lib/ai/anthropic')` which fails under node and tsx CLIs ('@/' alias
+  + server-only). Silently absorbed by the designed fallbacks (review queue / template
+  observations). Writer proven fine via one real validated call. Fix: dependency-inject
+  model calls from callers; loud warning on zero successful calls.
+- Remediation in flight: full fix spec to the assembly agent; then wipe pw_price_points
+  + the 7 agent_findings (KEEP pw_items + 112 confirmed matches — sound and free to
+  reuse) and re-run. Expected: ~263 points, 1-2 findings. MIN_ANNUALISE_SPAN_DAYS 7→14
+  (architect decision: honesty floor without muting v1 entirely).
+
+## pw(5) — normalization basis seam + fix completion (2026-08-14, resumed)
+
+Completed the seam the assembly agent died mid-write on twice
+(`.ai/plan_pw_fix_completion.md`).
+
+- `run.ts:964` (was `:950`) now calls `normalizeLine(...)` instead of the removed
+  `normalizeLineUnitPrice` — the tsc TS2304 error and the 3 failing tests
+  (`runPriceWatch dry run: …`, tests 96–98) are fixed. `result.rejection ===
+  'sub_pack_unresolvable'` → `linesSkippedUnnormalisable += 1`; every other null
+  value → `linesSkippedNoPrice += 1`, matching the plan exactly.
+- **Found and fixed a gap the plan didn't call out**: `PriceWatchLine` (the
+  `documents.extracted_data.line_items` shape run.ts reads) never carried
+  `units_per_box`, and the `normalizeLine(...)` call never passed it through —
+  so `NormalizationBasis 'sub_pack'` could never fire from real data no matter
+  what else was fixed (boxKg is only computed when `units_per_box` is present).
+  Added the field to `PriceWatchLine` and threaded `line.units_per_box` into the
+  call (`run.ts:82-92`, `:964-976`).
+- `basis`/`packsPerBox` now threaded from `normalizeLine`'s result into:
+  `PricePointDraft` (write payload — used only in-memory, NOT sent to the DB
+  insert, per the plan), the `PwPricePoint` objects built from `drafts` for
+  detection input, and `SamplePricePoint` (the backfill's printout). Points read
+  back from `pw_price_points` still have no `basis` column by design — they
+  collapse to `detect.ts`'s `'unknown'` bucket, unchanged from pre-fix behaviour.
+- **Found and fixed a second gap**: `detectPriceFindings(...)` was called
+  without its optional third `stats` argument, so `summary.detect` — the
+  mixed-basis-suppression counts that are the entire diagnostic value of this
+  fix — was always all-zero in the returned summary, silently. Now passed as
+  `detectPriceFindings(dedupedPoints, openFindings, summary.detect)`.
+- Audited the two remaining fix-spec items (plan step 3) — neither existed yet,
+  both implemented:
+  - **Content-level dedupe before detection**: keyed on `(pw_item_id,
+    line_supplier, invoice_date, unit_price, quantity_base)` — org is implicit
+    (one org per run), document/line_index deliberately excluded (that's
+    exactly what's duplicated). Runs over the merged stored+draft point map,
+    first occurrence wins (stored history before this run's own points), and
+    only affects what `detectPriceFindings` sees — NOT what gets written to
+    `pw_price_points` (every line still gets its own row; two documents
+    describing one purchase is a detection-input problem, not a write
+    problem). `summary.pointsDeduped` counts the collapsed points.
+  - **Zero-successful-model-calls warning**: `summary.modelOutage` is true
+    when `matchModelCalls + observeModelCalls > 0` and every one of them
+    failed (`matchModelFailures` + `observeModelFailures` — added the actual
+    increments too; both fields existed in the interface but were never
+    written). Pushes a specific warning naming the 2026-08-14 root cause.
+    Deliberately **not** gated on `dryRun`: the matcher is called for real
+    even on a dry run (only the DB write of its result and the separate
+    observe call are skipped), and the 2026-08-14 outage was first hidden
+    behind exactly a dry run — a `!dryRun` guard would have re-hidden it.
+- Gates: `npx tsc --noEmit` clean except the pre-existing exempt
+  `lib/platform/whatsapp-ingest.ts` errors (3, unchanged). `npm run lint`: 85
+  pre-existing problems (53 errors/32 warnings), all in exempt files
+  (vyso-ai/*, wastewatch/*, module-ui.tsx, plus unrelated whatsapp/component
+  files already failing before this change) — zero in any price-watch or
+  `lib/ai/anthropic.ts`/`price-watch-model.ts` file. `npm run test`: 148/148
+  (145 pre-existing + 3 added for the seam: `sub_pack_unresolvable` → counter,
+  content dedupe → `seriesBelowPointFloor`, total match-outage → warning).
+- No deviations from the plan's ordered steps; the two "found and fixed" items
+  above are additions the plan's own wording anticipated ("Verify how drafts
+  flow into the detect call and thread accordingly"; "ensure output is
+  truthful") rather than departures from it.
+
+## Chat-first shell (W1–W5, branch feat/ui-brief-reskin)
+
+Plan: `.ai/plan_chat_first_shell.md`. Replaces TopBar/ModulesOverlay as the
+`/app/*` navigation with a persistent rail (desktop) / header+drawer (mobile)
+and a chat dock whose conversation survives client-side navigation.
+
+- W1 `f962932`: motion tokens (`--dur-*`, `--ease-*`, `vyso-pulse`) ported into
+  `app/globals.css`; all `components/platform/shell/*` built except
+  `GlobalChatDock`/`FinchChatProvider`, rendered nowhere yet — zero visual
+  change, tsc/lint green.
+- W2 `16206df`: `app/app/layout.tsx` rewritten flex-row with `AppRail` as a
+  full-height sibling column outside `TrialGate`/`ModuleLockGuard` (same
+  sign-out-stays-reachable guarantee TopBar gave from above `<main>`, now
+  given from beside it — plan §8 E1). `BriefRail.tsx` deleted, its usage
+  dropped from `app/app/page.tsx`. TopBar still rendered `<lg` only during
+  this transitional wave so mobile never broke mid-migration.
+- W3 `383e77a`: `MobileTopBar` + `MobileDrawer` replace TopBar below `lg`;
+  TopBar unmounted everywhere (file still present, deleted in W5).
+- W3.1 `8205e37`: architect-accepted deviation — drawer locked module rows
+  now open `ModuleLockNotice` instead of navigating, matching `AppRail`'s
+  desktop behaviour (plan §8 E2 conformance gap found during W3 verification).
+- W4 `9756e58`: `FinchChatProvider` lifts chat state (`turns`/`streaming`/
+  `error`, the SSE reader, and the `onBriefAsk` pub/sub subscription) above
+  the whole shell in `app/app/layout.tsx` so it survives navigation;
+  `GlobalChatDock` renders it as a bottom-docked pill — full variant on
+  `/app` (+ `?view=history`), compact elsewhere, expanding on focus/first
+  turn. `page.tsx` stops mounting `BriefChatPill` directly. Architect-accepted
+  deviations from the plan's literal geometry sketch, both load-bearing for
+  correctness, documented in the components' own docblocks:
+  - **Dock-as-sibling geometry**: the dock is a sibling of `<main>` (inside
+    the shell's flex column, `position: relative` container), not a child of
+    `<main>`. `<main>` is the scroll container; an absolutely-positioned
+    child of a scroller lays out against the scrolled padding box, which
+    would park the dock at the bottom of the full scrollable document instead
+    of pinning it to the viewport-visible bottom edge. Sibling placement
+    keeps the plan's intended visual geometry (§4.3) while fixing this.
+  - **`DisabledPill` retirement**: the old pill's separate "disabled" render
+    branch (shown when `finchEnabled === false`) was retired — `GlobalChatDock`
+    now renders nothing at all in that case (plan §8 E6's stated behaviour),
+    rather than carrying forward a distinct disabled-but-visible state that
+    the plan never asked for.
+  - **Transcript Hide control**: the transcript overlay panel gained an
+    explicit "Hide" affordance beyond the plan's spec, since it now persists
+    across navigation (§8 E8) and can otherwise be stuck open across route
+    changes with no way to dismiss it short of a hard reload.
+  - **Brief-only bottom padding**: `/app/page.tsx`'s feed column keeps bottom
+    padding reserved for the pill (a pre-existing Brief-specific treatment);
+    this was NOT extended to other modules per plan §8 E5 ("do NOT add global
+    bottom padding to modules — no module edits").
+- W5 (this commit): deleted `components/platform/TopBar.tsx`,
+  `ModulesOverlay.tsx`, `Sidebar.tsx` — confirmed zero non-comment imports of
+  any of the three before deletion (`Sidebar.tsx` had zero references of any
+  kind; `TopBar.tsx`/`ModulesOverlay.tsx` had only the comment/docblock
+  attribution mentions swept below, plus `TopBar.tsx`'s own now-deleted
+  `import { ModulesOverlay } from './ModulesOverlay'`). Kept
+  `FeedbackModal.tsx` and `ModuleLockNotice.tsx` — both still mounted by the
+  new shell (`UserChipMenu`, `AppRail`/`UnderTheHood`, `MobileDrawer`).
+  Comment sweep (behavior-only-safe edits, no logic changes):
+  - `app/app/docu/[id]/page.tsx` — the "flex child under the 66px TopBar"
+    sizing comment rewritten to describe the current shell (`<main>` is a
+    flex-1 child of the layout's column; full height beside `AppRail` on
+    desktop, 100dvh minus the 56px `MobileTopBar` below `lg`).
+  - `components/platform/TrialGate.tsx` — "TopBar renders above this... so
+    sign-out stays reachable" rewritten to name `AppRail` (desktop) and
+    `MobileTopBar`+`MobileDrawer` (mobile) as the components now giving that
+    guarantee.
+  - `components/platform/onboarding/OnboardingSignOut.tsx` — "Mirrors the
+    TopBar sign-out idiom" rewritten to "Mirrors the shell's sign-out idiom
+    (UserChipMenu / MobileDrawer)".
+  - `app/app/layout.tsx` — a W3-era comment noting TopBar.tsx was merely
+    unmounted (not yet deleted) updated to state both TopBar.tsx and
+    ModulesOverlay.tsx are now deleted.
+  - Left untouched (correct as historical attribution, not describing
+    currently-live architecture): docblocks in `UserChipMenu.tsx`,
+    `AppRail.tsx`, `shell-data.ts`, `MobileDrawer.tsx`, `MobileTopBar.tsx`,
+    `RailNav.tsx`, `UnderTheHood.tsx`, `brief-display.ts` that say things
+    like "ported from TopBar.tsx verbatim" or "mirrors ModulesOverlay's
+    locked-tile branch" — these correctly describe where today's logic came
+    from, not a claim that TopBar/ModulesOverlay still exist. Also left
+    untouched: `--pf-topbar-h` comments in `app/globals.css` and
+    `AppRail.tsx` (already correctly past-tense — "BriefRail.tsx's old
+    calc(...) consumer was deleted with the file in W2"), and `--pf-nav-h`
+    (plan §7: leave untouched, no consumer changes).
+  - Gates: `npx tsc --noEmit` clean except the exempt
+    `lib/platform/whatsapp-ingest.ts` (3 pre-existing errors, unchanged).
+    `npm run lint`: 84 problems (53 errors/31 warnings), all pre-existing in
+    already-exempt files (vyso-ai/*, wastewatch/*, module-ui.tsx, unrelated
+    whatsapp/component files) — zero new problems, zero in any file this
+    wave touched. `npm run test`: 148/148.
+
+## W6 verification (branch feat/ui-brief-reskin)
+
+### Gates (re-run 2026-08-15, full chained pass)
+
+`npx tsc --noEmit; npm run lint; npm run test`
+
+- `tsc --noEmit`: 3 errors, all in `lib/platform/whatsapp-ingest.ts`
+  (pre-existing/exempt WIP: `extractOrderFromText` missing export, an
+  implicit-`any` param, an `IngestDocumentInput` shape mismatch). Zero
+  errors anywhere else.
+- `lint`: 84 problems (53 errors, 31 warnings) — matches the W5 baseline
+  exactly. Spread across `vyso-ai/*`, `wastewatch/*`, `module-ui.tsx`,
+  `.ai/design/vyso-brief/**` bundle files, and a wide pre-existing set of
+  `react-hooks/set-state-in-effect` / `react-hooks/purity` /
+  `react-hooks/immutability` findings in orderflow/planwise/procurepulse/
+  serviceden/shiftboard/supplysync/docu/finch components — none of it new,
+  none of it touched by this task. Confirmed **zero** problems in
+  `components/platform/shell/**`, `components/platform/brief/**`,
+  `app/app/layout.tsx`, or `app/app/page.tsx` (grepped the lint output for
+  those paths directly).
+- `test`: 148/148 passing, 0 failed.
+
+All three gates match the expected baseline. Nothing fixed, nothing
+unexpected.
+
+### Screenshot inventory (`.ai/verification/shell-w6/`, 10 files)
+
+**Important caveat, found while mapping these to plan §11**: only
+`login-1440.png` / `login-390.png` are screenshots of the real, unmodified
+`/login` route. The other 8 were captured against a **synthetic harness
+page**, not the real authenticated `/app/*` routes — every one of them
+carries visible on-page copy reading "W6 harness placeholder — this stands
+in for `app/app/page.tsx`'s Brief feed column (finding cards)/a module
+screen's own ModuleHeader/SubNav/table chrome, which needs a real
+org/session to render." The harness appears to mount the real shell
+components (rail, nav, under-the-hood, user-chip menu, mobile drawer,
+global chat dock/pill, transcript overlay) around fabricated data (3
+"Placeholder finding" cards, a canned "What moved this week?" Q&A instead
+of a live Finch SSE stream, a "SupplySync — Suppliers" screen with 3
+"Placeholder row" entries standing in for any real module route). No
+harness source file exists anywhere in the current working tree
+(`grep -r "harness placeholder"` across the whole repo, tracked and
+untracked, returns nothing) — it was built and used outside the tracked
+codebase, so there's nothing left to clean up, but it also means **no
+`/app/*` screenshot here is evidence about the real authenticated app.**
+It only confirms the shell components themselves render their intended
+layout/active/motion states in isolation.
+
+| Plan §11 item | Screenshot | Real or harness |
+|---|---|---|
+| `/app` rail active, under-the-hood collapsed (1440) | `brief-rail-active-collapsed-1440.png` | harness |
+| `/app` rail active, under-the-hood expanded (1440) | `brief-rail-active-expanded-1440.png` | harness |
+| `/app` pill / transcript open (1440) | `brief-transcript-open-1440.png` | harness — canned Q&A, not a real SSE stream |
+| `/app` at 390px | `brief-mobile-390.png` | harness |
+| `/app?view=history` | — not captured | — |
+| `/app/docu` | — not captured | — |
+| `/app/orderflow` (compact pill + `FinchLauncher` coexistence) | — not captured; no `FinchLauncher` visible in any screenshot | — |
+| `/app/suppliers` (active module row) | `module-compact-pill-active-row-1440.png` (labeled "SupplySync — Suppliers") stands in | harness |
+| module screen at 390px | `module-mobile-390.png` (same placeholder screen) | harness |
+| `/app/settings` | — not captured | — |
+| user-chip menu open (1440) | `user-chip-menu-open-1440.png` | harness |
+| mobile drawer open (390) | `mobile-drawer-open-390.png` | harness |
+| chat mid-stream on a module screen, navigate, transcript persists | — not captured (needs real cross-route navigation; no single screenshot can show it) | — |
+| `/login` (1440, 390) | `login-1440.png`, `login-390.png` | **real** |
+| `/onboarding` | — not captured | — |
+| marketing home unchanged | — not captured | — |
+| reduced-motion spot check | — not performed | — |
+
+### Explicitly UNVERIFIED
+
+- **Marketing home** — no screenshot exists; not visually re-checked this
+  wave (W4 already argued it's provably unaffected by construction — see
+  above — but that's not a substitute for an eyeball check).
+- **Reduced-motion emulation** — not performed.
+- **Everything under `/app/*`** — only exercised via the synthetic harness
+  described above. No screenshot here comes from a real authenticated
+  session, real module chrome, or a real Finch response.
+- `/app?view=history`, `/app/settings`, `/onboarding`, `/app/orderflow`,
+  `/app/docu` — no screenshot evidence in either direction.
+
+### REMAINING FOR JOSH
+
+- Authenticated at 1280px+: all 13 route groups rendering inside the new
+  shell
+- Real Finch SSE chat on `/app` and on a module route
+- Tap-a-finding on a real `FindingCard`
+- Sign-out mid-stream (desktop + mobile)
+- Trial-expired org (dock hidden, sign-out reachable)
+- E5 dock-vs-sticky-footer on ShiftBoard/OrderFlow
+- Reduced motion
+- Marketing home unchanged

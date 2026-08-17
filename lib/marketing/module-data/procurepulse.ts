@@ -230,4 +230,9 @@ export const procurepulse: MarketingModule = {
   relatedSolutionHrefs: ["/solutions/procurement-automation", "/solutions/reduce-money-leakage"],
   relatedIndustryHrefs: ["/industries/restaurants", "/industries/wholesale"],
   appUrlLabel: "app.vyso.co.za/procurepulse",
+  group: "suppliers-stock",
+  status: "LIVE",
+  agents: ["STOCK SENSE", "PRICE WATCH", "RECON"],
+  howFinchUsesIt:
+    "Stock Sense reads ProcurePulse's live stock levels and thresholds to watch what's on hand against what's already on order. Price Watch reads the same supplier price-comparison matrix to catch a line that's crept up, and Recon checks what ProcurePulse recorded as delivered against the invoice Doc-U extracted.",
 };

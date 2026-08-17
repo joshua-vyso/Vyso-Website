@@ -1,8 +1,55 @@
-// Learn / Blog content data module.
-//
-// Additive-only: this file introduces the `/learn` content hub described in
-// WEBSITE_EXPANSION_PLAN.md §1. Nothing here is imported by, or changes the
-// behaviour of, any existing route.
+/* ── Learn content ───────────────────────────────────────────────────────────
+   The eight articles behind `/learn` and `/learn/[slug]`.
+
+   Phase 3 (workstream D) reframed this file rather than rewriting it. What
+   changed and — more importantly — what deliberately did not:
+
+   - **Claims are untouched.** Every figure, range and sentence of analysis is
+     what it was, with one exception: the old tiered-pricing paragraph in
+     `how-much-time-can-workflow-automation-save`, which described a package
+     that no longer exists (`.ai/vyso_v2.md` §0 — the site sells one offer
+     now). It is rewritten to the single offer, and it is the only body text
+     whose meaning moved.
+   - **Vyso → Finch** where the sentence is about the product doing the
+     watching. Vyso is the company; Finch is the thing that reads the invoice.
+     Section headings became "How Finch helps"; the prose under them follows.
+   - **`author`** is the founder from `lib/marketing/site.ts`, replacing the
+     "Vyso Team" byline. Vyso is a one-person company at this stage (see
+     `.ai/vyso_v2.md` §2.3 — "Founder (Josh Moreira, Johannesburg)"), so the
+     named byline is the more honest of the two, and E-E-A-T wants a person
+     (§7.4).
+   - **Dates** are derived, not invented. `datePublished` is the per-article
+     date this file already carried. `dateModified` is `LEARN_LAST_MODIFIED`
+     below — the file's only commit date, read from git. See its comment.
+   - **`sources`** is present only on the four articles whose own text states
+     where a range came from. None of the eight cites an external study, so
+     none gets an external citation here; inventing one would be the exact
+     failure the honesty rules exist to prevent.
+   - **`agents`**, `endFinding` and `keyTerms` are new presentation data (the
+     related-agent rows, the closing finding card, the glossary links §7.5
+     asks every article to carry). They add no claim the site doesn't already
+     make: agent labels and statuses are copied from
+     `components/finch/agents/agents-data.ts` verbatim.                        */
+
+import { SITE } from "@/lib/marketing/site";
+
+/** The byline on every article, and the `Person` in each `Article` schema. */
+export const ARTICLE_AUTHOR = SITE.founder.name;
+
+/* Derived, not chosen. `lib/marketing/learn-articles.ts` has exactly one
+   commit in this repo:
+
+       $ git log --follow --format=%aI -- lib/marketing/learn-articles.ts
+       2026-08-03T15:52:11+02:00
+
+   — so there is no per-article modification history to read, and the plan's
+   fallback applies: the file's single commit date stands as `dateModified`
+   for all eight. It is deliberately NOT today's date: this phase's edits are
+   uncommitted, and a `dateModified` that runs ahead of the repository would be
+   a claim git cannot support.
+
+   TODO(user): bump this when the file is next committed. */
+export const LEARN_LAST_MODIFIED = "2026-08-03";
 
 export const LEARN_CATEGORIES = [
   "Operations",
@@ -21,16 +68,57 @@ export type ArticleSection = {
   list?: readonly string[];
 };
 
+/** One row of the article's "related agents" block. Label and status are
+    copied from `components/finch/agents/agents-data.ts` — the roster the
+    `/#agents` anchor these rows link to actually renders. */
+export type ArticleAgent = {
+  label: string;
+  status: "ROLLING OUT" | "FROM YOUR AUDIT ROADMAP";
+  /** What this agent does *for the problem this article describes*. */
+  role: string;
+};
+
+/** Where a figure in the article came from. Only used where the article's own
+    body names its basis; there is no external citation on any of the eight, so
+    there is no `href` on this type yet — adding one when a real source exists
+    is the additive change, inventing one now is not. */
+export type ArticleSource = {
+  label: string;
+  basis: string;
+};
+
+/** The closing finding card. Rand figures in these are worked examples and
+    every render captions them `ILLUSTRATIVE EXAMPLE`, exactly as `/solutions`
+    and the homepage hero do. */
+export type ArticleFinding = {
+  agent: string;
+  observation: string;
+  impact: string;
+  evidence: string;
+  meta: string;
+  actions: readonly string[];
+};
+
 export type LearnArticle = {
   slug: string;
   title: string;
   category: LearnCategory;
   description: string;
   author: string;
-  publishedDate: string;
+  /** ISO date. Carried over from this file's original `publishedDate`. */
+  datePublished: string;
+  /** ISO date. `LEARN_LAST_MODIFIED` for all eight — see its comment. */
+  dateModified: string;
   readingTime: string;
   heroLead: string;
+  /** What the `Article` schema's `about` names — the subject, in plain words. */
+  about: string;
   sections: readonly ArticleSection[];
+  agents: readonly ArticleAgent[];
+  endFinding: ArticleFinding;
+  /** Glossary slugs. §7.5: every article links to at least one term. */
+  keyTerms: readonly string[];
+  sources?: readonly ArticleSource[];
   relatedArticleSlugs: readonly string[];
   relatedSolutionHrefs: readonly string[];
   relatedIndustryHrefs: readonly string[];
@@ -43,8 +131,9 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
     category: "Operations",
     description:
       "Most South African SMEs are not losing money in one dramatic event. They are losing it in small, repeated, invisible ways across procurement, stock and admin. Here is where to look first.",
-    author: "Vyso Team",
-    publishedDate: "2026-07-06",
+    author: ARTICLE_AUTHOR,
+    datePublished: "2026-07-06",
+    dateModified: LEARN_LAST_MODIFIED,
     readingTime: "7 min read",
     heroLead:
       "Owners rarely discover money leakage from a single bad decision. They discover it eighteen months later, when the bank balance does not match the story the business has been telling itself.",
@@ -84,11 +173,45 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
         ],
       },
       {
-        heading: "How Vyso helps",
+        heading: "How Finch helps",
         body: [
-          "Vyso exists specifically to close this visibility gap. Rather than replacing every tool your team already uses, Vyso connects procurement, stock, supplier records and reporting into one operating picture, so the small gaps that hide in disconnected systems become visible in a connected one.",
+          "Finch exists specifically to close this visibility gap. Rather than replacing every tool your team already uses, Finch connects procurement, stock, supplier records and reporting into one operating picture, so the small gaps that hide in disconnected systems become visible in a connected one.",
           "InsightGen surfaces the patterns — a supplier whose pricing has crept up, a stock line with abnormal variance, a workflow generating repeated manual corrections — before they cost another quarter of margin. ProcurePulse keeps purchasing and stock intelligence in one place so duplicated or uncontrolled buying is caught at the point of order rather than discovered at month-end. For businesses ready to see their full leakage picture, our dedicated solution page on reducing money leakage walks through exactly how this works in practice.",
         ],
+      },
+    ],
+    about: "Money leakage in South African SMEs",
+    agents: [
+      {
+        label: "PRICE WATCH",
+        status: "ROLLING OUT",
+        role: "Compares every supplier price against six months of your own invoices, so a quiet increase is caught on the invoice it starts on.",
+      },
+      {
+        label: "RECON",
+        status: "FROM YOUR AUDIT ROADMAP",
+        role: "Matches what was invoiced against what actually arrived, line by line, so short deliveries stop being paid for.",
+      },
+      {
+        label: "THE BRIEF",
+        status: "FROM YOUR AUDIT ROADMAP",
+        role: "Puts the week's leaks in front of you on a Monday instead of leaving them to a year-end conversation.",
+      },
+    ],
+    endFinding: {
+      agent: "PRICE WATCH",
+      observation: "Cooking oil up 9% at your main supplier since May — three invoices, no notification.",
+      impact: "\u2248 R3,100/yr at current volumes",
+      evidence: "3 invoices",
+      meta: "SUPPLIER \u00b7 +9% \u00b7 MAY\u2013AUG",
+      actions: ["Draft supplier email", "Show 6-month trend", "Dismiss"],
+    },
+    keyTerms: ["money-leakage", "price-creep", "operations-audit"],
+    sources: [
+      {
+        label: "Vyso's own conversations with South African operators",
+        basis:
+          "First-party, and the article says so in the sentence the range appears in. These are patterns seen in operator conversations, not a measured statistic from a published study.",
       },
     ],
     relatedArticleSlugs: [
@@ -105,8 +228,9 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
     category: "Operations",
     description:
       "Operational chaos rarely announces itself. It shows up as small, familiar frustrations that owners learn to live with. Here are 15 signs worth taking seriously.",
-    author: "Vyso Team",
-    publishedDate: "2026-07-08",
+    author: ARTICLE_AUTHOR,
+    datePublished: "2026-07-08",
+    dateModified: LEARN_LAST_MODIFIED,
     readingTime: "6 min read",
     heroLead:
       "Most operators do not describe their business as chaotic. They describe it as \"just how it is\" — which is usually the first sign that chaos has become the default operating state.",
@@ -163,13 +287,40 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
         body: [],
       },
       {
-        heading: "How Vyso helps",
+        heading: "How Finch helps",
         body: [
-          "Vyso is built around exactly this pattern: growing businesses that have outgrown spreadsheets, WhatsApp and paper, but are not ready for — or do not need — a full enterprise system. The one-week operational audit maps where chaos is concentrated in your business specifically, rather than assuming every business has the same gaps. From there, modules like ShiftBoard, ProcurePulse and InsightGen give the team one place to plan, track and report, instead of five disconnected ones.",
+          "Finch is built around exactly this pattern: growing businesses that have outgrown spreadsheets, WhatsApp and paper, but are not ready for — or do not need — a full enterprise system. The one-week Operations Audit maps where chaos is concentrated in your business specifically, rather than assuming every business has the same gaps. From there, modules like ShiftBoard, ProcurePulse and InsightGen give the team one place to plan, track and report, instead of five disconnected ones.",
           "Our operations dashboard solution page shows what a single, connected operating view actually looks like once the chaos has been mapped and addressed.",
         ],
       },
     ],
+    about: "Operational chaos in growing SMEs",
+    agents: [
+      {
+        label: "THE BRIEF",
+        status: "FROM YOUR AUDIT ROADMAP",
+        role: "Replaces the report someone rebuilds by hand every Friday with the same numbers, in the same order, every Monday.",
+      },
+      {
+        label: "STOCK SENSE",
+        status: "FROM YOUR AUDIT ROADMAP",
+        role: "Holds stock on hand against orders already on their way, so two people cannot order the same thing twice.",
+      },
+      {
+        label: "RECON",
+        status: "FROM YOUR AUDIT ROADMAP",
+        role: "Turns invoice checking from a memory exercise into a documented match against the order and the delivery note.",
+      },
+    ],
+    endFinding: {
+      agent: "THE BRIEF",
+      observation: "Monday\u2019s report took four hours to compile and was six days old by the time it was read.",
+      impact: "\u2248 R5,200/month in admin hours",
+      evidence: "4 weeks of reports",
+      meta: "REPORTING \u00b7 4H/WEEK \u00b7 JUL\u2013AUG",
+      actions: ["Show what a brief replaces", "Book your audit", "Dismiss"],
+    },
+    keyTerms: ["weekly-brief", "operations-audit", "money-leakage"],
     relatedArticleSlugs: [
       "why-businesses-lose-money-without-realising-it",
       "why-weekly-reports-are-usually-too-late",
@@ -184,8 +335,9 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
     category: "Automation",
     description:
       "A realistic look at how many hours a week South African SMEs spend on repeatable admin, and what actually happens to that time once workflows are automated.",
-    author: "Vyso Team",
-    publishedDate: "2026-07-10",
+    author: ARTICLE_AUTHOR,
+    datePublished: "2026-07-10",
+    dateModified: LEARN_LAST_MODIFIED,
     readingTime: "6 min read",
     heroLead:
       "\"How much time will automation actually save us?\" is usually the second question owners ask, right after \"is this going to be worth it?\" Both deserve a specific, honest answer.",
@@ -220,11 +372,52 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
         body: [],
       },
       {
-        heading: "How Vyso helps",
+        heading: "How Finch helps",
         body: [
-          "Vyso's Start tier is built for exactly this first step: automating the tools your team already uses — WhatsApp, Google Sheets, Outlook — without requiring a full platform migration. Up to five automations, delivered on a monthly cycle, targeting the highest-frequency manual tasks first. As the highest-value workflow becomes clear, it can move into a dedicated module like OrderFlow or Doc-U, with Finch giving your team a lighter interface to work from day to day.",
+          /* Rewritten in Phase 3. The paragraph this replaces named the old
+             entry-level package and its "up to five automations" cap — pricing
+             the business no longer sells (`.ai/vyso_v2.md` §0: one offer,
+             R6,000 per location per month, everything included). The claims
+             below are the ones `/pricing`, `/operations-audit` and `/faq`
+             already make. */
+          "Finch is built for exactly this first step: agents that watch the tools your team already uses — WhatsApp, Xero, spreadsheets, email — without a platform migration. The one-week Operations Audit ranks where the repeatable work actually is in your operation, and agents are activated against that roadmap in the order the findings justify, rather than by a package you picked before anyone had looked. One price per location per month, everything included.",
+          "As the highest-value workflow becomes clear, it moves into a dedicated module like OrderFlow or Doc-U, with Finch giving your team a lighter interface to work from day to day.",
           "Our procurement automation and reporting automation solution pages go into more detail on the two areas where South African SMEs typically see the fastest time savings.",
         ],
+      },
+    ],
+    about: "Workflow automation and admin time in SMEs",
+    agents: [
+      {
+        label: "RECON",
+        status: "FROM YOUR AUDIT ROADMAP",
+        role: "Removes the retyping step: the invoice, the order and the delivery note are matched without anyone keying them twice.",
+      },
+      {
+        label: "THE BRIEF",
+        status: "FROM YOUR AUDIT ROADMAP",
+        role: "Removes the compilation step: the weekly report assembles itself from what already moved through the operation.",
+      },
+      {
+        label: "PRICE WATCH",
+        status: "ROLLING OUT",
+        role: "Removes the checking step: prices are compared against your own history on every invoice, not when someone has time.",
+      },
+    ],
+    endFinding: {
+      agent: "RECON",
+      observation: "Eleven invoices this month were typed into two systems, by two different people.",
+      impact: "\u2248 R7,400/month in duplicated admin",
+      evidence: "3 days of task logs",
+      meta: "ADMIN \u00b7 9H/WEEK \u00b7 AUG",
+      actions: ["List the repeated tasks", "Book your audit", "Dismiss"],
+    },
+    keyTerms: ["operations-audit", "invoice-line-item", "weekly-brief"],
+    sources: [
+      {
+        label: "Vyso's own conversations with South African operators",
+        basis:
+          "First-party, and the article says so in the sentence the range appears in. These are patterns seen in operator conversations, not a measured statistic from a published study.",
       },
     ],
     relatedArticleSlugs: [
@@ -241,8 +434,9 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
     category: "Procurement",
     description:
       "Manual procurement rarely fails loudly. It fails quietly — through duplicated orders, missed price checks and approvals nobody can trace. Here is what that actually costs.",
-    author: "Vyso Team",
-    publishedDate: "2026-07-13",
+    author: ARTICLE_AUTHOR,
+    datePublished: "2026-07-13",
+    dateModified: LEARN_LAST_MODIFIED,
     readingTime: "7 min read",
     heroLead:
       "Procurement is one of the few places in a business where a small process gap turns directly into a Rand figure — and it is usually the last place owners think to look.",
@@ -277,11 +471,45 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
         body: [],
       },
       {
-        heading: "How Vyso helps",
+        heading: "How Finch helps",
         body: [
           "ProcurePulse gives your team one shared view of purchasing and stock intelligence, so reorder points, current pricing and outstanding orders are visible to everyone who needs them — not held in one person's head. Doc-U captures supplier documents and extracts the detail automatically, so invoices can be checked against the original quote without manual retyping. Together they turn procurement from an individual judgement call into a consistent, auditable process.",
           "If procurement is where you suspect the biggest leakage is happening, our procurement automation solution page walks through the full workflow, from approval to reconciliation.",
         ],
+      },
+    ],
+    about: "Manual procurement in South African food and wholesale businesses",
+    agents: [
+      {
+        label: "PRICE WATCH",
+        status: "ROLLING OUT",
+        role: "Checks every invoiced price against the agreed list, so paying above it stops depending on who had time that day.",
+      },
+      {
+        label: "RECON",
+        status: "FROM YOUR AUDIT ROADMAP",
+        role: "Matches the order, the delivery note and the invoice, so a short or substituted line is caught before it is paid.",
+      },
+      {
+        label: "STOCK SENSE",
+        status: "FROM YOUR AUDIT ROADMAP",
+        role: "Shows what is already ordered and already held, which is what stops the same order going out twice.",
+      },
+    ],
+    endFinding: {
+      agent: "RECON",
+      observation: "Two orders for the same 20kg of tomatoes went out on Tuesday, from two people.",
+      impact: "\u2248 R2,800 in excess stock",
+      evidence: "2 purchase orders",
+      meta: "PROCUREMENT \u00b7 DUPLICATE \u00b7 TUE",
+      actions: ["Show both orders", "Book your audit", "Dismiss"],
+    },
+    keyTerms: ["price-creep", "delivery-note-reconciliation", "invoice-line-item"],
+    sources: [
+      {
+        label: "Vyso's own conversations with South African operators",
+        basis:
+          "First-party, and the article says so in the sentence the range appears in. These are patterns seen in operator conversations, not a measured statistic from a published study.",
       },
     ],
     relatedArticleSlugs: [
@@ -298,8 +526,9 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
     category: "Procurement",
     description:
       "Most SMEs judge suppliers on gut feel. A simple scorecard turns that gut feel into a record you can act on — here is what to track and why it matters.",
-    author: "Vyso Team",
-    publishedDate: "2026-07-16",
+    author: ARTICLE_AUTHOR,
+    datePublished: "2026-07-16",
+    dateModified: LEARN_LAST_MODIFIED,
     readingTime: "6 min read",
     heroLead:
       "Ask most operators which supplier is their most reliable, and they will have an answer. Ask them to prove it with numbers, and most cannot.",
@@ -346,13 +575,40 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
         body: [],
       },
       {
-        heading: "How Vyso helps",
+        heading: "How Finch helps",
         body: [
           "SupplySync keeps supplier records and relationship history in one place, so scorecard data builds automatically from the orders, deliveries and invoices already flowing through the system — rather than requiring a separate manual log that inevitably falls away. Paired with ProcurePulse, it gives your team an evidence-based view of which suppliers are actually earning their place in your business.",
           "This connects directly to our procurement automation solution — worth a look if supplier reliability has been a recurring source of frustration.",
         ],
       },
     ],
+    about: "Supplier performance measurement for SMEs",
+    agents: [
+      {
+        label: "PRICE WATCH",
+        status: "ROLLING OUT",
+        role: "Supplies the price-accuracy column of the scorecard from the invoices themselves, rather than a memory of the last dispute.",
+      },
+      {
+        label: "DELIVERY WATCH",
+        status: "FROM YOUR AUDIT ROADMAP",
+        role: "Supplies on-time and in-full delivery rates from the delivery notes as they arrive.",
+      },
+      {
+        label: "RECON",
+        status: "FROM YOUR AUDIT ROADMAP",
+        role: "Supplies order accuracy: which lines arrived as ordered, and which needed a follow-up.",
+      },
+    ],
+    endFinding: {
+      agent: "DELIVERY WATCH",
+      observation: "On-time delivery at your second-largest supplier fell from 94% to 78% over two months.",
+      impact: "\u2248 R4,600 in emergency purchases",
+      evidence: "36 deliveries",
+      meta: "SUPPLIER \u00b7 \u221216PP \u00b7 JUN\u2013AUG",
+      actions: ["Open the scorecard", "Draft supplier email", "Dismiss"],
+    },
+    keyTerms: ["delivery-note-reconciliation", "price-creep", "operations-audit"],
     relatedArticleSlugs: [
       "hidden-cost-of-manual-procurement",
       "the-real-cost-of-poor-stock-control",
@@ -367,8 +623,9 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
     category: "Reporting",
     description:
       "By the time a weekly report reaches leadership, the problem it describes is already a week old. Here is why that delay is expensive, and what real-time visibility changes.",
-    author: "Vyso Team",
-    publishedDate: "2026-07-20",
+    author: ARTICLE_AUTHOR,
+    datePublished: "2026-07-20",
+    dateModified: LEARN_LAST_MODIFIED,
     readingTime: "6 min read",
     heroLead:
       "A weekly report is a photograph of last week, delivered this week, to be acted on next week. For fast-moving operational problems, that lag is where the real cost hides.",
@@ -403,11 +660,45 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
         body: [],
       },
       {
-        heading: "How Vyso helps",
+        heading: "How Finch helps",
         body: [
           "InsightGen replaces the manual compilation step with live dashboards built from the data already moving through your operation — procurement, stock, sales and staffing — so the report your team currently spends hours building by hand exists automatically, and updates continuously rather than weekly. That turns a five-to-seven-day decision lag into something closer to real time.",
           "Our reporting automation and operations dashboard solution pages show what this looks like once weekly compilation is replaced with a live operating view.",
         ],
+      },
+    ],
+    about: "Operational reporting lag in SMEs",
+    agents: [
+      {
+        label: "THE BRIEF",
+        status: "FROM YOUR AUDIT ROADMAP",
+        role: "Sends the same handful of numbers, in the same shape, on a schedule \u2014 so a change stands out instead of being compiled.",
+      },
+      {
+        label: "STOCK SENSE",
+        status: "FROM YOUR AUDIT ROADMAP",
+        role: "Flags a wastage or variance spike on the day it happens, not in the report four days later.",
+      },
+      {
+        label: "DEBTORS",
+        status: "FROM YOUR AUDIT ROADMAP",
+        role: "Watches accounts thinning out as they age, rather than at the month-end review.",
+      },
+    ],
+    endFinding: {
+      agent: "THE BRIEF",
+      observation: "Wastage spiked on Monday. Friday\u2019s report was the first anyone saw of it.",
+      impact: "\u2248 R3,900 across four extra days",
+      evidence: "1 week of stock movement",
+      meta: "WASTAGE \u00b7 4 DAYS LATE \u00b7 AUG",
+      actions: ["Show the daily view", "Book your audit", "Dismiss"],
+    },
+    keyTerms: ["weekly-brief", "debtors-ageing", "money-leakage"],
+    sources: [
+      {
+        label: "Vyso's own conversations with South African operators",
+        basis:
+          "First-party, and the article says so in the sentence the range appears in. These are patterns seen in operator conversations, not a measured statistic from a published study.",
       },
     ],
     relatedArticleSlugs: [
@@ -424,8 +715,9 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
     category: "Inventory",
     description:
       "Stock variance feels like a small operational annoyance until you add it up. Here is what poor stock control actually costs South African food and wholesale businesses.",
-    author: "Vyso Team",
-    publishedDate: "2026-07-23",
+    author: ARTICLE_AUTHOR,
+    datePublished: "2026-07-23",
+    dateModified: LEARN_LAST_MODIFIED,
     readingTime: "7 min read",
     heroLead:
       "Ask most operators how accurate their stock counts are and you will hear \"pretty close.\" Pretty close, multiplied across a year of stock movement, is rarely cheap.",
@@ -460,13 +752,40 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
         body: [],
       },
       {
-        heading: "How Vyso helps",
+        heading: "How Finch helps",
         body: [
           "WasteWatch captures wastage and shrinkage close to the moment it happens, with a reason attached, so the pattern is visible instead of estimated. Combined with ProcurePulse's stock intelligence, your team gets a stock picture that reflects what is actually happening in the operation, not what the last full count assumed. InsightGen then surfaces variance trends automatically, rather than requiring a manual investigation every time a number looks off.",
           "This connects directly to our reduce money leakage solution, and if food or hospitality wastage specifically is your biggest concern, our restaurant industry page covers the same problem from an operational angle.",
         ],
       },
     ],
+    about: "Stock control and variance in food and wholesale businesses",
+    agents: [
+      {
+        label: "STOCK SENSE",
+        status: "FROM YOUR AUDIT ROADMAP",
+        role: "Holds counted stock against deliveries, sales and recorded wastage, so a gap has a week rather than a quarter attached to it.",
+      },
+      {
+        label: "RECON",
+        status: "FROM YOUR AUDIT ROADMAP",
+        role: "Confirms that what the stock record thinks arrived is what the delivery note says arrived.",
+      },
+      {
+        label: "THE BRIEF",
+        status: "FROM YOUR AUDIT ROADMAP",
+        role: "Puts variance in front of the person who can act on it while the trail is still warm.",
+      },
+    ],
+    endFinding: {
+      agent: "STOCK SENSE",
+      observation: "Butternut counted 38kg short against deliveries, sales and recorded wastage for the week.",
+      impact: "\u2248 R1,900 unaccounted, this week",
+      evidence: "1 stock count",
+      meta: "STOCK \u00b7 \u221238KG \u00b7 WK 33",
+      actions: ["Trace the two weeks", "Book your audit", "Dismiss"],
+    },
+    keyTerms: ["stock-cover-days", "money-leakage", "delivery-note-reconciliation"],
     relatedArticleSlugs: [
       "hidden-cost-of-manual-procurement",
       "why-businesses-lose-money-without-realising-it",
@@ -481,8 +800,9 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
     category: "AI in Business",
     description:
       "Beyond the hype, AI already does specific, practical work for South African SMEs today — finding bottlenecks, reading documents, and flagging problems before they grow. Here is what that looks like.",
-    author: "Vyso Team",
-    publishedDate: "2026-07-27",
+    author: ARTICLE_AUTHOR,
+    datePublished: "2026-07-27",
+    dateModified: LEARN_LAST_MODIFIED,
     readingTime: "7 min read",
     heroLead:
       "Most SME owners have heard enough AI hype to be sceptical of it, and rightly so. The useful question is not whether AI is impressive — it is what it actually does for a business your size, today.",
@@ -528,13 +848,40 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
         body: [],
       },
       {
-        heading: "How Vyso helps",
+        heading: "How Finch helps",
         body: [
-          "Vyso applies AI at exactly this practical, workflow level. Doc-U reads and extracts supplier documents and order screenshots automatically. InsightGen applies pattern detection to your operational data to catch variance and drift early. None of this is presented as a general AI platform — it is AI applied to specific, named operational problems, which is where SMEs actually see a return.",
+          "Finch applies AI at exactly this practical, workflow level. Doc-U reads and extracts supplier documents and order screenshots automatically. InsightGen applies pattern detection to your operational data to catch variance and drift early. None of this is presented as a general AI platform — it is AI applied to specific, named operational problems, which is where SMEs actually see a return.",
           "Our AI vs Spreadsheets comparison and operations dashboard solution page go further into how this plays out once AI-assisted reporting replaces manual compilation.",
         ],
       },
     ],
+    about: "Practical AI use cases for South African SMEs",
+    agents: [
+      {
+        label: "PRICE WATCH",
+        status: "ROLLING OUT",
+        role: "Pattern detection applied to one narrow job: pricing drift across a run of invoices for the same item.",
+      },
+      {
+        label: "RECON",
+        status: "FROM YOUR AUDIT ROADMAP",
+        role: "Document extraction applied to one narrow job: reading an invoice and a delivery note and disagreeing with them.",
+      },
+      {
+        label: "THE BRIEF",
+        status: "FROM YOUR AUDIT ROADMAP",
+        role: "Triage applied to one narrow job: which three things this week actually need you.",
+      },
+    ],
+    endFinding: {
+      agent: "RECON",
+      observation: "A delivery note and its invoice disagreed on two lines. Doc-U read both without retyping.",
+      impact: "\u2248 R840 on one delivery",
+      evidence: "1 invoice \u00b7 1 delivery note",
+      meta: "RECON \u00b7 2 LINES \u00b7 AUG",
+      actions: ["Open both documents", "Book your audit", "Dismiss"],
+    },
+    keyTerms: ["operations-audit", "invoice-line-item", "money-leakage"],
     relatedArticleSlugs: [
       "why-weekly-reports-are-usually-too-late",
       "how-much-time-can-workflow-automation-save",

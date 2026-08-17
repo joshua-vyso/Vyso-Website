@@ -243,4 +243,9 @@ export const supplysync: MarketingModule = {
   relatedSolutionHrefs: ["/solutions/procurement-automation"],
   relatedIndustryHrefs: ["/industries/wholesale", "/industries/hospitality"],
   appUrlLabel: "app.vyso.co.za/supplysync",
+  group: "suppliers-stock",
+  status: "LIVE",
+  agents: ["PRICE WATCH", "THE BRIEF"],
+  howFinchUsesIt:
+    "Price Watch reads SupplySync's detected price changes and their annualised rand impact — the same numbers the module shows you, not a separate calculation. The Brief pulls the highest-impact ones into your weekly summary alongside SupplySync's open supplier risks.",
 };

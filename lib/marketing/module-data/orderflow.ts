@@ -230,4 +230,9 @@ export const orderflow: MarketingModule = {
   relatedSolutionHrefs: ["/solutions/reduce-money-leakage", "/solutions/operations-dashboard"],
   relatedIndustryHrefs: ["/industries/food-suppliers", "/industries/farms"],
   appUrlLabel: "app.vyso.co.za/orderflow",
+  group: "orders-money",
+  status: "LIVE",
+  agents: ["RECON", "DEBTORS", "THE BRIEF"],
+  howFinchUsesIt:
+    "Recon reads OrderFlow's orders, invoices and delivery notes to check what was invoiced against what actually left the warehouse. Debtors reads the same outstanding-balance and ageing data to watch accounts before they turn into bad debt, and the Brief carries both into your weekly summary.",
 };

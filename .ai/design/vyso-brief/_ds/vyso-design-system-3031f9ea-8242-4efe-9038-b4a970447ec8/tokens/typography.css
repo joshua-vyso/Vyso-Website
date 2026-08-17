@@ -1,0 +1,51 @@
+:root{
+  /* Families — production names in comments (next/font CSS variables) */
+  --font-display:"Barlow Condensed",ui-sans-serif,system-ui,sans-serif; /* --font-sans  */
+  --font-body:"DM Sans",ui-sans-serif,system-ui,sans-serif;             /* --font-body  */
+  --font-ui:"Instrument Sans",ui-sans-serif,system-ui,sans-serif;       /* --font-instrument, platform chrome */
+  --font-num:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;        /* --font-grotesk, .of-num / .of-display */
+  --font-inter:"Inter",ui-sans-serif,system-ui,sans-serif;              /* /login + legacy platform */
+
+  /* Marketing display scale (fluid, Barlow Condensed 700) */
+  --type-hero:clamp(2.8rem,7.5vw,6.4rem);
+  --type-hero-mobile:clamp(2.2rem,9vw,3.2rem);
+  --type-section:clamp(2.2rem,5vw,4rem);
+  --type-h3:1.4rem;
+  --type-lead:clamp(1.05rem,1.9vw,1.3rem);
+  --type-body:0.9rem;
+  --type-body-sm:0.83rem;
+  --type-caption:0.75rem;
+  --type-eyebrow:0.68rem;
+
+  /* Platform scale (px, Instrument Sans) */
+  --pf-type-module-title:28px;
+  --pf-type-kpi-lg:30px;
+  --pf-type-kpi:22px;
+  --pf-type-card-title:16px;
+  --pf-type-base:14px;
+  --pf-type-sm:13px;
+  --pf-type-xs:12px;
+  --pf-type-2xs:11px;
+  --pf-type-3xs:10px;
+
+  /* Weights */
+  --weight-regular:400;
+  --weight-medium:500;
+  --weight-semibold:600;
+  --weight-display-bold:700;
+  --weight-display-black:900;
+
+  /* Tracking */
+  --track-hero:-0.015em;
+  --track-tight:-0.02em;
+  --track-eyebrow:0.18em;
+  --track-label:0.05em;
+  --track-caps:0.08em;
+  --track-caps-wide:0.16em;
+
+  /* Leading */
+  --leading-hero:1.0;
+  --leading-tight:1.1;
+  --leading-body:1.6;
+  --leading-compact:1.45;
+}

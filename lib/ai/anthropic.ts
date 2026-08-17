@@ -21,6 +21,8 @@ const SUMMARY_MODEL = process.env.ANTHROPIC_SUMMARY_MODEL || 'claude-haiku-4-5';
 const CATEGORISE_MODEL = process.env.ANTHROPIC_CATEGORISE_MODEL || 'claude-haiku-4-5';
 // Product-name matching: pick the right canonical from a short candidate list.
 const MATCH_MODEL = process.env.ANTHROPIC_MATCH_MODEL || 'claude-haiku-4-5';
+// (Price Watch's OBSERVE_MODEL moved to lib/ai/price-watch-model.ts along with
+// the transport — ANTHROPIC_OBSERVE_MODEL still overrides it there.)
 
 export const aiConfigured = Boolean(apiKey);
 
@@ -687,3 +689,29 @@ export async function suggestProductMatches(items: MatchSuggestionInput[]): Prom
     };
   });
 }
+
+// ---------------------------------------------------------------------------
+// Price Watch (lib/platform/price-watch/*)
+//
+// The transport for these two moved to lib/ai/price-watch-model.ts and this
+// file re-exports it, so there is STILL exactly one place an Anthropic client is
+// constructed — it just isn't this file for these two calls.
+//
+// The move was forced by a real outage: the price-watch modules used to reach
+// the model through `await import('@/lib/ai/anthropic')`, which resolves only
+// under Next's bundler, and this file's `import 'server-only'` throws outright
+// in a plain node/tsx process. The backfill CLI is exactly that, so every match
+// and observation call it made failed silently into the designed fallbacks. The
+// transport now lives in a module with no alias imports and no server-only
+// marker, importable from a route handler and a script alike.
+//
+// Both remain deliberately DUMB: prompt in, raw model text out. All the contract
+// logic — shortlisting, JSON parsing, the ≥0.9 auto-link rule, the number-
+// fidelity validator — lives in the pure price-watch modules.
+// ---------------------------------------------------------------------------
+
+export type { ModelPrompt } from './price-watch-model';
+export {
+  priceWatchMatchCall as runPriceWatchMatch,
+  priceWatchObservationCall as runPriceWatchObservation,
+} from './price-watch-model';

@@ -226,4 +226,9 @@ export const pricepilot: MarketingModule = {
   relatedSolutionHrefs: ["/solutions/reduce-money-leakage", "/solutions/reporting-automation"],
   relatedIndustryHrefs: ["/industries/food-suppliers", "/industries/farms"],
   appUrlLabel: "app.vyso.co.za/pricepilot",
+  group: "orders-money",
+  status: "LIVE",
+  agents: ["PRICE WATCH", "THE BRIEF"],
+  howFinchUsesIt:
+    "Price Watch is built on PricePilot's own numbers: it reads the cost, margin and variance data PricePilot already computes and flags the moves worth acting on. The Brief carries PricePilot's rand-impact figures into your weekly summary rather than recalculating them.",
 };

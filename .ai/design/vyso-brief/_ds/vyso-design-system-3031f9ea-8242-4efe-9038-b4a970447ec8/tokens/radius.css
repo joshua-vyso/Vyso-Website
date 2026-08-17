@@ -1,0 +1,19 @@
+:root{
+  /* Marketing: sharp by default (globals sets --radius: 0rem). Glass elements
+     are the exception — pills and generous 14–22px panels. */
+  --radius-sharp:0;
+  --radius-glass-sm:12px;
+  --radius-glass:14px;
+  --radius-glass-lg:18px;
+  --radius-glass-xl:22px;
+  --radius-pill:9999px;
+
+  /* Platform: consistently rounded (--radius: 0.625rem inside /app) */
+  --pf-radius-sm:8px;
+  --pf-radius:10px;
+  --pf-radius-control:11px;
+  --pf-radius-tile:14px;
+  --pf-radius-card:16px;
+  --pf-radius-panel:20px;
+  --pf-radius-pill:9999px;
+}

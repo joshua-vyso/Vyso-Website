@@ -35,12 +35,14 @@ import { serviceden } from "./module-data/serviceden";
 import { shiftboard } from "./module-data/shiftboard";
 import { supplysync } from "./module-data/supplysync";
 import { wastewatch } from "./module-data/wastewatch";
-import type { MarketingModule } from "./module-types";
+import type { MarketingModule, ModuleGroup } from "./module-types";
 
 export type {
   MarketingModule,
+  ModuleAvailability,
   ModuleFaq,
   ModuleFeatureSection,
+  ModuleGroup,
   ModuleIndustryFit,
   ModuleScreenshot,
   ModuleWorkflowStep,
@@ -79,3 +81,42 @@ export function getAdjacentModules(slug: string): {
   const next = MARKETING_MODULES[(index + 1) % count];
   return { previous, next };
 }
+
+/**
+ * Index-page grouping (Phase 2, Workstream A). Order and membership are the
+ * plan's, verbatim: `.ai/plan_phase2_product_cluster.md` "Groups (H2 mono
+ * labels): Documents (Doc-U) · Orders & money (OrderFlow, PricePilot) ·
+ * Suppliers & stock (ProcurePulse, SupplySync, WasteWatch, PlanWise) · People
+ * (ShiftBoard, ServiceDen LIMITED ROLLOUT) · Insight (InsightGen)." Slugs, not
+ * module objects, so this stays a plain data table independent of
+ * `MARKETING_MODULES`' own (unrelated) array order.
+ */
+export const MODULE_GROUPS: readonly { id: ModuleGroup; label: string; slugs: readonly string[] }[] = [
+  { id: "documents", label: "Documents", slugs: ["doc-u"] },
+  { id: "orders-money", label: "Orders & money", slugs: ["orderflow", "pricepilot"] },
+  {
+    id: "suppliers-stock",
+    label: "Suppliers & stock",
+    slugs: ["procurepulse", "supplysync", "wastewatch", "planwise"],
+  },
+  { id: "people", label: "People", slugs: ["shiftboard", "serviceden"] },
+  { id: "insight", label: "Insight", slugs: ["insightgen"] },
+] as const;
+
+/**
+ * The status of a Finch *agent* — distinct from a module's own availability
+ * (`ModuleAvailability`). Verbatim from `.ai/vyso_v2.md` §4's copy rule:
+ * "Doc-U (live), ROLLING OUT (Price Watch), FROM YOUR AUDIT ROADMAP (Recon,
+ * Debtors, Stock Sense, The Brief)." Kept here (not imported from
+ * `components/finch/agents/agents-data.ts`) because that module is the
+ * homepage roster's own copy — a module's availability table should not
+ * depend on what one marketing section happens to list.
+ */
+export const AGENT_STATUS: Record<string, "LIVE" | "ROLLING OUT" | "FROM YOUR AUDIT ROADMAP"> = {
+  "DOC-U": "LIVE",
+  "PRICE WATCH": "ROLLING OUT",
+  "RECON": "FROM YOUR AUDIT ROADMAP",
+  "DEBTORS": "FROM YOUR AUDIT ROADMAP",
+  "STOCK SENSE": "FROM YOUR AUDIT ROADMAP",
+  "THE BRIEF": "FROM YOUR AUDIT ROADMAP",
+};

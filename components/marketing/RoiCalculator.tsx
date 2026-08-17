@@ -1,10 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import Link from "next/link";
-import { ArrowRight, Clock, PiggyBank, RotateCcw, TrendingUp, Wallet } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { animate, useReducedMotion } from "motion/react";
 
-import { marketingStyles as styles } from "@/components/marketing/PublicMarketing";
+import {
+  FindingCardFrame,
+  FindingEvidence,
+  FindingHeader,
+  FindingImpact,
+  FindingObservation,
+} from "@/components/finch/FindingCard";
+import { BOOK_HREF } from "@/components/finch/audit/audit-content";
 
 // ── Formatting helpers ──────────────────────────────────────────────────
 // en-ZA locale gives us "12 500" (narrow-no-break-space thousands separator)
@@ -143,49 +149,33 @@ function computeResults(inputs: Inputs, assumptions: Assumptions): Results {
   };
 }
 
-// ── Shared field styling (mirrors ContactForm's inline-styled inputs) ────
-const BODY_FONT: React.CSSProperties = { fontFamily: "var(--font-body, var(--font-sans))" };
+/* ── Everything above this line is the calculator as it shipped ──────────────
+   Formulas, defaults, parsing guards and the Start-tier framing constants are
+   byte-for-byte what they were on `/roi-calculator`; only the presentation
+   below changed — glass cards, lucide icons and the marketing stylesheet are
+   gone, replaced by the Finch surface so this sits next to the self-assessment
+   on `/operations-audit` as one system.                                      */
 
-const FIELD_INPUT: React.CSSProperties = {
-  ...BODY_FONT,
-  width: "100%",
-  padding: "0.65rem 0.85rem",
-  fontSize: "0.9rem",
-  color: "#0d0d0d",
-  background: "rgba(255,255,255,0.7)",
-  border: "1px solid #e0ddd9",
-  borderRadius: 12,
-  outline: "none",
-  boxSizing: "border-box",
-  transition: "border-color 0.2s, box-shadow 0.2s",
-};
+/* ── Finch surfaces ──────────────────────────────────────────────────────── */
 
-const FIELD_LABEL: React.CSSProperties = {
-  ...BODY_FONT,
-  display: "block",
-  marginBottom: "0.4rem",
-  fontSize: "0.8rem",
-  fontWeight: 600,
-  color: "#444",
-};
+const CARD =
+  "rounded-[12px] border border-fn-line bg-fn-surface p-[20px] shadow-[var(--fn-shadow-card)] lg:p-[28px]";
 
-const FIELD_HINT: React.CSSProperties = {
-  ...BODY_FONT,
-  margin: "0.35rem 0 0",
-  fontSize: "0.72rem",
-  color: "#8a8a8a",
-  lineHeight: 1.5,
-};
+const MONO = "font-fn-mono tracking-[0.12em] text-fn-muted";
 
-function focusField(e: React.FocusEvent<HTMLInputElement>) {
-  e.currentTarget.style.borderColor = "hsl(22,69%,44%)";
-  e.currentTarget.style.boxShadow = "0 0 0 3px hsl(22 69% 44% / 0.12)";
-}
+/* Spinners eat the space the suffix sits in, and a stepper on a "monthly
+   revenue" field is not a control anyone wants. */
+const FIELD =
+  "w-full rounded-[8px] border border-fn-line bg-fn-surface px-[12px] py-[9px] text-[14px] text-fn-ink " +
+  "outline-none transition-[border-color,box-shadow] duration-200 " +
+  "focus:border-fn-line-hover focus:shadow-[0_0_0_3px_#C9DEF7] " +
+  "[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none " +
+  "[&::-webkit-outer-spin-button]:appearance-none";
 
-function blurField(e: React.FocusEvent<HTMLInputElement>) {
-  e.currentTarget.style.borderColor = "#e0ddd9";
-  e.currentTarget.style.boxShadow = "none";
-}
+/* auto-fit rather than a breakpoint: this widget renders in a ~520px column at
+   xl and full width below it, so it has to lay itself out from its own size,
+   not the viewport's. */
+const FIELD_GRID = "grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[16px]";
 
 function NumberField({
   id,
@@ -204,10 +194,10 @@ function NumberField({
 }) {
   return (
     <div>
-      <label htmlFor={id} style={FIELD_LABEL}>
+      <label htmlFor={id} className="mb-[6px] block text-[12.5px] leading-[1.4] font-medium text-fn-ink-2">
         {label}
       </label>
-      <div style={{ position: "relative" }}>
+      <div className="relative">
         <input
           id={id}
           name={id}
@@ -217,53 +207,77 @@ function NumberField({
           step="1"
           value={value}
           onChange={onChange}
-          onFocus={focusField}
-          onBlur={blurField}
-          style={{ ...FIELD_INPUT, paddingRight: suffix ? "2.6rem" : FIELD_INPUT.padding }}
+          className={FIELD + (suffix ? " pr-[54px]" : "")}
         />
         {suffix ? (
           <span
-            style={{
-              position: "absolute",
-              top: "50%",
-              right: "0.85rem",
-              transform: "translateY(-50%)",
-              fontSize: "0.78rem",
-              fontWeight: 600,
-              color: "#9b9b9b",
-              pointerEvents: "none",
-            }}
+            aria-hidden="true"
+            className="pointer-events-none absolute right-[12px] top-1/2 -translate-y-1/2 font-fn-mono text-[10.5px] tracking-[0.06em] text-fn-faint"
           >
             {suffix}
           </span>
         ) : null}
       </div>
-      {hint ? <p style={FIELD_HINT}>{hint}</p> : null}
+      {hint ? <p className="m-0 mt-[6px] text-[11.5px] leading-[1.5] text-fn-muted">{hint}</p> : null}
     </div>
   );
 }
 
-// Auto-fit/minmax grids stay responsive without any media queries, which
-// keeps this component self-contained (the shared marketing stylesheet is
-// off-limits to edits in this workstream).
-const FIELD_GRID: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-  gap: "1.15rem",
-};
+/* ── Tweened output ──────────────────────────────────────────────────────────
+   The outputs interpolate over 400ms rather than snapping: the point of the
+   thing is watching your own numbers move when you nudge an assumption, and a
+   snap reads as a re-render rather than as a consequence. The tween starts from
+   wherever the last one got to (`from`), so typing "1", "15", "150" chases the
+   value instead of restarting from zero each keystroke. Reduced motion gets the
+   number with no interpolation at all.                                       */
+function TweeningNumber({ value, format }: { value: number; format: (n: number) => string }) {
+  const from = useRef(value);
+  const [shown, setShown] = useState(value);
 
-const SPLIT_GRID: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
-  gap: "clamp(1.75rem, 4vw, 3rem)",
-  alignItems: "start",
-};
+  useEffect(() => {
+    const controls = animate(from.current, value, {
+      duration: 0.4,
+      ease: "easeOut",
+      /* `onUpdate` fires from motion's frame loop, never synchronously from
+         this effect body — the tween is a subscription, which is what an effect
+         is for. */
+      onUpdate: (next) => {
+        from.current = next;
+        setShown(next);
+      },
+    });
+    return () => controls.stop();
+  }, [value]);
 
-const RESULT_STAT_GRID: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-  gap: "0.9rem",
-};
+  /* First render is the initial computed value on both sides of the wire, so
+     the server markup and the first client render agree. */
+  return <>{format(shown)}</>;
+}
+
+function Tweened({ value, format }: { value: number; format: (n: number) => string }) {
+  const reduceMotion = useReducedMotion();
+
+  /* Reduced motion renders the number outright — no tween, so no interpolation
+     state and no effect to hold it. The split is a separate component rather
+     than a branch inside one because the hooks only belong to the animated
+     half. */
+  if (reduceMotion) return <>{format(value)}</>;
+
+  return <TweeningNumber value={value} format={format} />;
+}
+
+function Stat({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="border-t border-fn-line-2 pt-[12px]">
+      <div className="font-fn-serif text-[23px] font-medium leading-[1.15] tracking-[-0.02em] tabular-nums text-fn-ink">
+        {children}
+      </div>
+      <div className="mt-[7px] font-fn-mono text-[9.5px] leading-[1.5] tracking-[0.1em] text-fn-muted">
+        {label}
+      </div>
+    </div>
+  );
+}
 
 export default function RoiCalculator() {
   const [inputs, setInputs] = useState<Inputs>(INITIAL_INPUTS);
@@ -310,83 +324,75 @@ export default function RoiCalculator() {
         : `Roughly ${results.paybackMonths.toFixed(1)} months, based on Vyso's Start tier (R 10 000 once-off + R 8 000/month).`;
 
   return (
-    <div style={SPLIT_GRID}>
-      {/* Inputs column */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "1.75rem" }}>
-        <div className={styles.glassCard} style={{ minHeight: 0 }}>
-          <p className={styles.cardKicker}>Your operation, roughly</p>
-          <h2 className={styles.cardTitle} style={{ fontSize: "1.4rem" }}>
-            Tell us how the work is spread today
-          </h2>
-          <p className={styles.cardCopy} style={{ marginBottom: "1.4rem" }}>
-            Rough numbers are fine — every figure below can be adjusted, and the
-            estimate updates as you type.
-          </p>
-
-          <div style={FIELD_GRID}>
-            <NumberField
-              id="employees"
-              label="Employees involved in admin/ops"
-              value={inputs.employees}
-              onChange={updateInput("employees")}
-              suffix="people"
-            />
-            <NumberField
-              id="hoursReporting"
-              label="Hours/week each spends on manual reporting"
-              value={inputs.hoursReporting}
-              onChange={updateInput("hoursReporting")}
-              suffix="hrs"
-            />
-            <NumberField
-              id="hoursProcurement"
-              label="Hours/week each spends on procurement/supplier coordination"
-              value={inputs.hoursProcurement}
-              onChange={updateInput("hoursProcurement")}
-              suffix="hrs"
-            />
-            <NumberField
-              id="hourlyCost"
-              label="Average hourly cost of admin/ops staff"
-              value={inputs.hourlyCost}
-              onChange={updateInput("hourlyCost")}
-              suffix="R/hr"
-            />
-            <NumberField
-              id="wastageLoss"
-              label="Estimated monthly stock/wastage loss"
-              value={inputs.wastageLoss}
-              onChange={updateInput("wastageLoss")}
-              suffix="R/mo"
-            />
-            <NumberField
-              id="monthlyRevenue"
-              label="Estimated monthly revenue"
-              value={inputs.monthlyRevenue}
-              onChange={updateInput("monthlyRevenue")}
-              suffix="R/mo"
-            />
-            <NumberField
-              id="locations"
-              label="Number of locations/departments"
-              value={inputs.locations}
-              onChange={updateInput("locations")}
-              suffix="sites"
-            />
-          </div>
+    <div className="flex flex-col gap-[20px] lg:gap-[24px]">
+      {/* ── Inputs ────────────────────────────────────────────────────────── */}
+      <div className={CARD}>
+        <div className={MONO + " mb-[16px] text-[10px] lg:text-[10.5px]"}>
+          YOUR OPERATION, ROUGHLY · NOTHING IS SENT ANYWHERE
         </div>
 
-        <div className={styles.glassCard} style={{ minHeight: 0 }}>
-          <p className={styles.cardKicker}>Assumptions you can adjust</p>
-          <h2 className={styles.cardTitle} style={{ fontSize: "1.2rem" }}>
-            Nothing here is hidden
-          </h2>
-          <p className={styles.cardCopy} style={{ marginBottom: "1.4rem" }}>
-            These percentages drive every number to the right. Change them to
-            match how conservative or optimistic you want the estimate to be.
+        <div className={FIELD_GRID}>
+          <NumberField
+            id="employees"
+            label="Employees involved in admin/ops"
+            value={inputs.employees}
+            onChange={updateInput("employees")}
+            suffix="people"
+          />
+          <NumberField
+            id="hoursReporting"
+            label="Hours/week each spends on manual reporting"
+            value={inputs.hoursReporting}
+            onChange={updateInput("hoursReporting")}
+            suffix="hrs"
+          />
+          <NumberField
+            id="hoursProcurement"
+            label="Hours/week each spends on procurement/supplier coordination"
+            value={inputs.hoursProcurement}
+            onChange={updateInput("hoursProcurement")}
+            suffix="hrs"
+          />
+          <NumberField
+            id="hourlyCost"
+            label="Average hourly cost of admin/ops staff"
+            value={inputs.hourlyCost}
+            onChange={updateInput("hourlyCost")}
+            suffix="R/hr"
+          />
+          <NumberField
+            id="wastageLoss"
+            label="Estimated monthly stock/wastage loss"
+            value={inputs.wastageLoss}
+            onChange={updateInput("wastageLoss")}
+            suffix="R/mo"
+          />
+          <NumberField
+            id="monthlyRevenue"
+            label="Estimated monthly revenue"
+            value={inputs.monthlyRevenue}
+            onChange={updateInput("monthlyRevenue")}
+            suffix="R/mo"
+          />
+          <NumberField
+            id="locations"
+            label="Number of locations/departments"
+            value={inputs.locations}
+            onChange={updateInput("locations")}
+            suffix="sites"
+          />
+        </div>
+
+        <div className="mt-[24px] border-t border-fn-line pt-[24px]">
+          <div className={MONO + " mb-[8px] text-[10px] lg:text-[10.5px]"}>
+            ASSUMPTIONS YOU CAN ADJUST
+          </div>
+          <p className="m-0 mb-[18px] max-w-[520px] text-[13.5px] leading-[1.6] text-fn-ink-3 text-pretty">
+            These percentages drive every number below. Change them to match how conservative or
+            optimistic you want the estimate to be.
           </p>
 
-          <div style={FIELD_GRID}>
+          <div className={FIELD_GRID}>
             <NumberField
               id="automatablePct"
               label="% of manual admin hours automatable"
@@ -416,120 +422,98 @@ export default function RoiCalculator() {
           <button
             type="button"
             onClick={resetAll}
-            style={{
-              ...BODY_FONT,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.4rem",
-              marginTop: "1.4rem",
-              padding: "0.55rem 1rem",
-              border: "1px solid #e0ddd9",
-              borderRadius: 999,
-              background: "rgba(255,255,255,0.6)",
-              color: "#666",
-              fontSize: "0.78rem",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
+            className="mt-[20px] cursor-pointer text-[13px] font-medium text-fn-ink-3 transition-colors duration-150 hover:text-fn-orange-deep"
           >
-            <RotateCcw size={14} aria-hidden="true" />
             Reset to example numbers
           </button>
         </div>
       </div>
 
-      {/* Results column */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-        <div className={styles.glassCard} style={{ minHeight: 0 }}>
-          <p className={styles.cardKicker}>Estimated impact</p>
-          <h2 className={styles.cardTitle} style={{ fontSize: "1.4rem" }}>
-            What this could be worth
-          </h2>
+      {/* ── Results ───────────────────────────────────────────────────────── */}
+      <div className={CARD}>
+        <div className={MONO + " mb-[18px] text-[10px] lg:text-[10.5px]"}>ESTIMATED IMPACT</div>
 
-          <div style={{ ...RESULT_STAT_GRID, marginTop: "1.3rem" }}>
-            <div className={styles.statCard}>
-              <span className={styles.cardIcon} style={{ marginBottom: "0.6rem" }}>
-                <Clock aria-hidden="true" size={17} />
-              </span>
-              <p className={styles.statValue} style={{ fontSize: "clamp(1.4rem, 2.6vw, 2rem)" }}>
-                {formatHours(results.monthlyHoursSaved)}
-              </p>
-              <p className={styles.statLabel}>Estimated hours saved / month</p>
-            </div>
-            <div className={styles.statCard}>
-              <span className={styles.cardIcon} style={{ marginBottom: "0.6rem" }}>
-                <Wallet aria-hidden="true" size={17} />
-              </span>
-              <p className={styles.statValue} style={{ fontSize: "clamp(1.4rem, 2.6vw, 2rem)" }}>
-                {formatCurrency(results.totalMonthlySavings)}
-              </p>
-              <p className={styles.statLabel}>Estimated monthly savings</p>
-            </div>
-            <div className={styles.statCard}>
-              <span className={styles.cardIcon} style={{ marginBottom: "0.6rem" }}>
-                <PiggyBank aria-hidden="true" size={17} />
-              </span>
-              <p className={styles.statValue} style={{ fontSize: "clamp(1.4rem, 2.6vw, 2rem)" }}>
-                {formatCurrency(results.annualSavings)}
-              </p>
-              <p className={styles.statLabel}>Estimated annual savings</p>
-            </div>
-            <div className={styles.statCard}>
-              <span className={styles.cardIcon} style={{ marginBottom: "0.6rem" }}>
-                <TrendingUp aria-hidden="true" size={17} />
-              </span>
-              <p className={styles.statValue} style={{ fontSize: "clamp(1.4rem, 2.6vw, 2rem)" }}>
-                {formatPercent(results.revenueImpactPct)}
-              </p>
-              <p className={styles.statLabel}>Of monthly revenue</p>
-            </div>
-          </div>
-
-          <div style={{ marginTop: "1.4rem", paddingTop: "1.4rem", borderTop: "1px solid rgb(13 13 13 / 8%)" }}>
-            <p className={styles.cardKicker} style={{ marginBottom: "0.5rem" }}>
-              Payback framing
-            </p>
-            <p className={styles.cardCopy}>{paybackText}</p>
-          </div>
+        <div
+          /* 180px is the number that makes this 2×2 in the xl column and one
+             row across when the widget is stacked full width — 130 left a lone
+             fourth stat hanging under a row of three. */
+          className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-x-[20px] gap-y-[18px]"
+          aria-live="polite"
+        >
+          <Stat label="ESTIMATED HOURS SAVED / MONTH">
+            <Tweened value={results.monthlyHoursSaved} format={formatHours} />
+          </Stat>
+          <Stat label="ESTIMATED MONTHLY SAVINGS">
+            <Tweened value={results.totalMonthlySavings} format={formatCurrency} />
+          </Stat>
+          <Stat label="ESTIMATED ANNUAL SAVINGS">
+            <Tweened value={results.annualSavings} format={formatCurrency} />
+          </Stat>
+          <Stat label="OF MONTHLY REVENUE">
+            <Tweened value={results.revenueImpactPct} format={formatPercent} />
+          </Stat>
         </div>
 
-        <div className={styles.glassCard} style={{ minHeight: 0 }}>
-          <p className={styles.cardKicker}>Where savings would come from</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginTop: "0.9rem" }}>
+        <div className="mt-[24px] border-t border-fn-line pt-[20px]">
+          <div className={MONO + " mb-[10px] text-[10px] lg:text-[10.5px]"}>PAYBACK FRAMING</div>
+          <p className="m-0 text-[13.5px] leading-[1.6] text-fn-ink-3 text-pretty">{paybackText}</p>
+        </div>
+
+        <div className="mt-[20px] border-t border-fn-line pt-[20px]">
+          <div className={MONO + " mb-[14px] text-[10px] lg:text-[10.5px]"}>
+            WHERE THE SAVINGS WOULD COME FROM
+          </div>
+          <div className="flex flex-col">
             {savingsAreas.map((area) => (
-              <div key={area.key}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem" }}>
-                  <span style={{ ...BODY_FONT, fontSize: "0.86rem", fontWeight: 700, color: "#0d0d0d" }}>
-                    {area.label}
-                  </span>
-                  <span style={{ ...BODY_FONT, fontSize: "0.86rem", fontWeight: 700, color: "hsl(22,69%,44%)" }}>
-                    {formatCurrency(area.value)}
+              <div key={area.key} className="border-b border-fn-line-2 py-[12px] first:pt-0 last:border-b-0 last:pb-0">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-[12px] gap-y-[4px]">
+                  <span className="text-[14px] font-medium text-fn-ink">{area.label}</span>
+                  {/* Blue, not orange: on this surface a figure is evidence, and
+                      orange is reserved for the CTA and a finding's impact. */}
+                  <span className="shrink-0 whitespace-nowrap font-fn-mono text-[13px] tabular-nums text-fn-blue-deep">
+                    <Tweened value={area.value} format={formatCurrency} />
                   </span>
                 </div>
-                <p className={styles.cardCopy} style={{ marginTop: "0.3rem" }}>
+                <p className="m-0 mt-[4px] text-[13px] leading-[1.55] text-fn-muted text-pretty">
                   {area.description}
                 </p>
               </div>
             ))}
           </div>
         </div>
-
-        <div className={styles.ctaCard} style={{ textAlign: "left", padding: "clamp(1.5rem, 3vw, 2.2rem)" }}>
-          <p className={styles.eyebrow}>Validate these numbers</p>
-          <h3 className={styles.cardTitle} style={{ fontSize: "1.25rem" }}>
-            See how close this is to reality
-          </h3>
-          <p className={styles.cardCopy} style={{ marginBottom: "1.3rem" }}>
-            This estimate is a starting point. Book a call and we&apos;ll test it
-            against your actual workflow.
-          </p>
-          <div className={styles.actions} style={{ marginTop: 0 }}>
-            <Link className={styles.primaryButton} href="/contact">
-              Join Waitlist <ArrowRight aria-hidden="true" size={16} />
-            </Link>
-          </div>
-        </div>
       </div>
+
+      {/* ── The finding ─────────────────────────────────────────────────────
+          The calculator ends the way every other Finch surface ends: in a card
+          that states one thing and what to do about it. The rand figure here is
+          the reader's own arithmetic, not a claim we are making about their
+          business — which is why the meta line says so out loud. Composed from
+          the pieces rather than <FindingCard> because its action is a real
+          anchor into the booking form. */}
+      <FindingCardFrame state="new" className="max-w-none">
+        <FindingHeader agent="CALCULATOR" state="new" />
+        <FindingObservation>
+          Manual work is costing about{" "}
+          <Tweened value={results.monthlyHoursSaved} format={formatHours} /> a month.
+        </FindingObservation>
+        <FindingImpact>
+          ≈ <Tweened value={results.annualSavings} format={formatCurrency} />/yr at your numbers
+        </FindingImpact>
+        <FindingEvidence evidence="your inputs" meta="BASED ON YOUR INPUTS · AN ESTIMATE, NOT A QUOTE" />
+        {/* One action. "Reset" already sits under the assumptions, where the
+            numbers you would want to undo are. */}
+        <div className="flex flex-wrap items-center gap-x-[6px] gap-y-[4px] border-t border-fn-line-2 pt-[13px]">
+          {/* A path, not a bare `#book`: the calculator is its own page now
+              (`/operations-audit/calculator`) and the booking form is on the
+              parent. */}
+          <a
+            href={BOOK_HREF}
+            className="rounded-[5px] px-[6px] py-[3px] text-[13px] font-medium text-fn-ink-2 transition-all duration-[120ms] hover:bg-[#F5F2EA] hover:text-fn-ink"
+          >
+            Book the audit <span aria-hidden="true">→</span>
+          </a>
+        </div>
+      </FindingCardFrame>
     </div>
   );
 }

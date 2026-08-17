@@ -21,7 +21,28 @@ const CALENDLY_LINK = "https://calendly.com/joshua-vyso/new-meeting";
  *    instance — a real limiter needs a shared store; this is a stopgap, not the ceiling.)
  */
 
-const MAX_LEN: Record<string, number> = { name: 120, business: 160, email: 254, challenge: 4000, tier: 60 };
+/* `whatsapp`, `locations` and `variant` are the audit booking form's extra
+   fields (components/ContactForm.tsx); `businessType` is the academy interest
+   form's (same file, `variant: "academy"`). All are optional: the general
+   variant and every older caller omit them, and the required set is unchanged
+   except that the academy variant does not send — and so does not require —
+   `business` or `challenge` (see the check below). They are capped and
+   escaped like everything else — `whatsapp` is a free-text phone number, so
+   it is treated as hostile input, not validated into a shape that would
+   reject a legitimate "+27 82 000 0000"; `businessType` is a value from a
+   fixed `<select>`, but is still capped/escaped like any other string field
+   since nothing stops a direct POST from sending something else. */
+const MAX_LEN: Record<string, number> = {
+  name: 120,
+  business: 160,
+  email: 254,
+  challenge: 4000,
+  tier: 60,
+  whatsapp: 40,
+  locations: 20,
+  variant: 20,
+  businessType: 60,
+};
 const EMAIL_RE = /^[^\s@,;<>"]+@[^\s@,;<>"]+\.[^\s@,;<>"]+$/;
 
 function escapeHtml(s: string): string {
@@ -52,11 +73,30 @@ export async function POST(req: Request) {
     const email = field("email");
     const challenge = field("challenge");
     const tier = field("tier");
+    const whatsapp = field("whatsapp");
+    const locations = field("locations");
+    const variant = field("variant");
+    const businessType = field("businessType");
 
-    if (!name || !business || !email || !challenge) {
+    const isAudit = variant === "audit";
+    const isAcademy = variant === "academy";
+
+    // Academy sends nothing to book — just name + email (+ businessType) — so
+    // `business`/`challenge` are only required for the other two variants.
+    if (!name || !email || (!isAcademy && (!business || !challenge))) {
       return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
     }
-    for (const [k, v] of Object.entries({ name, business, email, challenge, tier })) {
+    for (const [k, v] of Object.entries({
+      name,
+      business,
+      email,
+      challenge,
+      tier,
+      whatsapp,
+      locations,
+      variant,
+      businessType,
+    })) {
       if (v.length > MAX_LEN[k]) {
         return NextResponse.json({ error: `${k} is too long.` }, { status: 400 });
       }
@@ -77,25 +117,46 @@ export async function POST(req: Request) {
     const eTier = escapeHtml(tier);
     const eChallenge = escapeHtml(challenge).replace(/\n/g, "<br>");
     const tierLine = tier && tier !== "Not sure" ? `<strong>Tier interest:</strong> ${eTier}<br>` : "";
+    const whatsappLine = whatsapp ? `<p><strong>WhatsApp:</strong> ${escapeHtml(whatsapp)}</p>` : "";
+    const locationsLine = locations ? `<p><strong>Locations:</strong> ${escapeHtml(locations)}</p>` : "";
+    // Academy sends no business name — only a business type from the select —
+    // so the "Business:" line becomes conditional rather than always printing
+    // an empty value, and businessType gets its own line when present.
+    const businessLine = eBusiness ? `<p><strong>Business:</strong> ${eBusiness}</p>` : "";
+    const businessTypeLine = businessType
+      ? `<p><strong>Business type:</strong> ${escapeHtml(businessType)}</p>`
+      : "";
+    // The challenge field is the audit form's "where do you think it leaks?" —
+    // same field, different question, so the internal email says which it was.
+    // Academy never sends one, so the whole block is conditional.
+    const challengeLabel = isAudit ? "Where they think it leaks:" : "Operational challenge:";
+    const challengeBlock = challenge
+      ? `
+            <p style="margin-top: 16px;"><strong>${challengeLabel}</strong></p>
+            <blockquote style="border-left: 3px solid #10b981; padding-left: 12px; color: #374151; margin: 8px 0;">
+              ${eChallenge}
+            </blockquote>`
+      : "";
+    const kind = isAudit ? "audit request" : isAcademy ? "Academy interest" : "enquiry";
 
     await Promise.all([
       // Notify Joshua
       resend.emails.send({
         from: "Vyso Website <noreply@vyso.co.za>",
         to: RECIPIENT,
-        subject: `New enquiry from ${sName} — ${sBusiness}`.slice(0, 200),
+        subject: `New ${kind} from ${sName}${sBusiness ? ` — ${sBusiness}` : ""}`.slice(0, 200),
         html: `
           <div style="font-family: sans-serif; max-width: 600px; color: #111;">
-            <h2 style="margin-bottom: 4px;">New enquiry via vyso.co.za</h2>
+            <h2 style="margin-bottom: 4px;">New ${kind} via vyso.co.za</h2>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;">
             <p><strong>Name:</strong> ${eName}</p>
-            <p><strong>Business:</strong> ${eBusiness}</p>
+            ${businessLine}
             <p><strong>Email:</strong> <a href="mailto:${eEmail}">${eEmail}</a></p>
+            ${whatsappLine}
+            ${locationsLine}
+            ${businessTypeLine}
             ${tierLine}
-            <p style="margin-top: 16px;"><strong>Operational challenge:</strong></p>
-            <blockquote style="border-left: 3px solid #10b981; padding-left: 12px; color: #374151; margin: 8px 0;">
-              ${eChallenge}
-            </blockquote>
+            ${challengeBlock}
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
             <p style="color: #6b7280; font-size: 13px;">Sent from the Vyso contact form.</p>
           </div>

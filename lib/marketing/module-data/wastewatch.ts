@@ -205,4 +205,9 @@ export const wastewatch: MarketingModule = {
   relatedSolutionHrefs: ["/solutions/reduce-money-leakage", "/solutions/operations-dashboard"],
   relatedIndustryHrefs: ["/industries/restaurants", "/industries/catering-companies"],
   appUrlLabel: "app.vyso.co.za/wastewatch",
+  group: "suppliers-stock",
+  status: "LIVE",
+  agents: ["THE BRIEF"],
+  howFinchUsesIt:
+    "The Brief is the only agent that currently reads WasteWatch — it carries the weekly preventable-waste total into your summary when it's worth flagging. A dedicated waste agent isn't live yet; like the rest of Finch's agents beyond Doc-U and Price Watch, it would be activated from your audit roadmap.",
 };

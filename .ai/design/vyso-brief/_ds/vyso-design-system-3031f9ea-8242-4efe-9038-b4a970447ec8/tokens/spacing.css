@@ -1,0 +1,22 @@
+:root{
+  /* Marketing rhythm — "breathing room is the design": 80–120px between sections */
+  --space-section:6.5rem;
+  --space-section-tight:4rem;
+  --space-gutter:clamp(16px,4vw,40px);
+  --space-page-max:1160px;
+  --space-copy-max:820px;
+
+  /* Platform: modules sit in a 32px / 28px page frame */
+  --pf-pad-page-x:32px;
+  --pf-pad-page-y:28px;
+  --pf-pad-card:20px;
+  --pf-gap-stack:20px;
+  --pf-gap-grid:12px;
+  --pf-topbar-h:66px;
+  --pf-sidebar-w:248px;
+  --pf-nav-h:64px;
+
+  /* Generic 4px-based steps used inside components */
+  --s-1:4px; --s-2:8px; --s-3:12px; --s-4:16px; --s-5:20px;
+  --s-6:24px; --s-8:32px; --s-10:40px; --s-12:48px;
+}

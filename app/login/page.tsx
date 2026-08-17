@@ -5,25 +5,22 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/platform/supabase-browser';
 import { supabaseConfigured } from '@/lib/platform/env';
-import { MODULES } from '@/lib/platform/modules';
 import { VysoMark } from '@/components/platform/VysoMark';
 
-/* Where a successful login lands. /app exists purely to resolve the first
-   enabled module and redirect, so pushing to it costs an extra server render +
-   redirect on every sign-in — go straight to the module instead.
-   Auth behaviour is untouched: this route sits under the same app/app/layout.tsx,
-   so the signed-out → /login and onboarding-incomplete → /onboarding guards (and
-   ModuleLockGuard) still run exactly as before.
-   Mirrors app/app/page.tsx's `?? MODULES[0]` fallback. While getPlatformSession
-   force-enables every feature the two always agree; if per-org feature gating is
-   restored there, point this back at '/app'. */
-const POST_LOGIN_ROUTE = (MODULES.find((m) => m.status === 'active') ?? MODULES[0]).screens
-  .desktop;
+/* Where a successful login lands. This used to skip /app because /app was a
+   pure redirect to the first enabled module — an extra server render on every
+   sign-in for nothing. /app is now The Brief (app/app/page.tsx): what the
+   agents found overnight is the first thing an owner should see, so sign-in
+   goes there and the modules are one click away in the Brief's rail.
+   Auth behaviour is untouched — /app sits under the same app/app/layout.tsx,
+   so the signed-out → /login and onboarding-incomplete → /onboarding guards
+   still run exactly as before. */
+const POST_LOGIN_ROUTE = '/app';
 
 /* Shared field chrome. Explicit rounded-[10px] rather than the rounded-* scale —
    globals set --radius: 0, which would square these. */
 const FIELD =
-  'w-full rounded-[10px] border border-[#ece7e0] bg-[#faf9f7] px-[14px] py-[13px] text-[15px] text-[#141310] outline-none transition duration-150 placeholder:text-[#b5ada3] focus:border-[#BE5D23] focus:bg-white focus:shadow-[0_0_0_3px_rgba(190,93,35,0.12)]';
+  'w-full rounded-[10px] border border-[#ece7e0] bg-[#faf9f7] px-[14px] py-[13px] text-[15px] text-[#141310] outline-none transition duration-150 placeholder:text-[#b5ada3] focus:border-[var(--pf-accent-strong)] focus:bg-white focus:shadow-[0_0_0_3px_var(--pf-accent-ring)]';
 
 const LABEL = 'mb-[7px] block text-[12.5px] font-medium text-[#57524c]';
 
@@ -268,7 +265,7 @@ export default function LoginPage() {
     >
       {/* ── Left: editorial ─────────────────────────────────────────────────── */}
       <div className="hidden min-w-0 flex-1 flex-col justify-between px-[6vw] py-14 lg:flex">
-        <VysoMark width={104} color="#141310" />
+        <VysoMark width={104} color="var(--pf-text)" />
 
         <div className="max-w-[440px]">
           <p
@@ -279,11 +276,11 @@ export default function LoginPage() {
               letterSpacing: '-0.015em',
               textWrap: 'balance',
             }}
-            className="m-0 mb-[18px] font-bold text-[#141310]"
+            className="m-0 mb-[18px] font-bold text-[var(--pf-text)]"
           >
             Stop running your business on gut feel.
           </p>
-          <p className="m-0 max-w-[360px] text-[15px] leading-[1.6] text-[#6b645c]">
+          <p className="m-0 max-w-[360px] text-[15px] leading-[1.6] text-[var(--pf-text-muted)]">
             Sign in to track stock, log wastage, manage suppliers and watch your margins — live.
           </p>
         </div>
@@ -295,20 +292,20 @@ export default function LoginPage() {
       </div>
 
       {/* ── Right: form panel ───────────────────────────────────────────────── */}
-      <div className="flex flex-1 flex-col justify-center border-[#eae4dc] bg-white px-[clamp(24px,6vw,64px)] py-14 lg:w-[min(46%,520px)] lg:flex-none lg:border-l lg:shadow-[-24px_0_60px_-40px_rgba(60,40,20,0.25)]">
+      <div className="flex flex-1 flex-col justify-center border-[var(--pf-border)] bg-white px-[clamp(24px,6vw,64px)] py-14 lg:w-[min(46%,520px)] lg:flex-none lg:border-l lg:shadow-[-24px_0_60px_-40px_rgba(20,24,20,0.25)]">
         <div className="mx-auto w-full max-w-[340px]">
           {/* Mark only shows here on small screens — the editorial column owns it on desktop. */}
           <div className="mb-8 lg:hidden">
-            <VysoMark width={96} color="#141310" />
+            <VysoMark width={96} color="var(--pf-text)" />
           </div>
 
           <p
             style={{ fontFamily: 'var(--font-sans)' }}
-            className="m-0 mb-1 text-[26px] font-semibold text-[#141310]"
+            className="m-0 mb-1 text-[26px] font-semibold text-[var(--pf-text)]"
           >
             {heading}
           </p>
-          <p className="m-0 mb-[26px] text-[13.5px] text-[#8a837b]">{subheading}</p>
+          <p className="m-0 mb-[26px] text-[13.5px] text-[var(--pf-text-muted)]">{subheading}</p>
 
           {/* ── LOGIN PANE (behavior unchanged) ─────────────────────────────── */}
           {pane === 'login' ? (
@@ -332,7 +329,7 @@ export default function LoginPage() {
                   <label htmlFor="password" className="text-[12.5px] font-medium text-[#57524c]">
                     Password
                   </label>
-                  <Link href="/contact" className="text-[12px] text-[#BE5D23] transition hover:text-[#9c4a1a]">
+                  <Link href="/contact" className="text-[12px] text-[var(--pf-accent-strong)] transition hover:text-[var(--pf-accent-deep)]">
                     Forgot?
                   </Link>
                 </div>
@@ -352,7 +349,7 @@ export default function LoginPage() {
                     type="checkbox"
                     checked={remember}
                     onChange={(e) => setRemember(e.target.checked)}
-                    className="accent-[#BE5D23]"
+                    className="accent-[var(--pf-accent-strong)]"
                   />
                   Remember me on this device
                 </label>
@@ -370,7 +367,7 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={loading || !email || !password}
-                  className="w-full cursor-pointer rounded-[10px] bg-[#141310] py-[14px] text-[15px] font-semibold text-white transition hover:bg-[#2a2521] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full cursor-pointer rounded-[var(--pf-radius-control)] bg-[var(--pf-accent-strong)] py-[14px] text-[15px] font-semibold text-white transition-colors hover:bg-[var(--pf-accent-deep)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {loading ? 'Signing in…' : 'Log in'}
                 </button>
@@ -387,7 +384,7 @@ export default function LoginPage() {
                 onClick={() =>
                   setError('Google sign-in isn’t enabled yet — please sign in with your email and password.')
                 }
-                className="w-full cursor-pointer rounded-[10px] border border-[#e3ded7] bg-white py-3 text-[15px] font-medium text-[#3a352f] transition hover:bg-[#faf9f7]"
+                className="w-full cursor-pointer rounded-[var(--pf-radius-control)] border border-[var(--pf-border-strong)] bg-white py-3 text-[15px] font-medium text-[var(--pf-text-control)] transition-all hover:border-[var(--pf-accent-ring)] hover:bg-[var(--pf-accent-weak)] hover:text-[var(--pf-accent-deep)]"
               >
                 Continue with Google
               </button>
@@ -398,7 +395,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => goTo('signup')}
-                    className="cursor-pointer font-semibold text-[#BE5D23] transition hover:text-[#9c4a1a]"
+                    className="cursor-pointer font-semibold text-[var(--pf-accent-strong)] transition hover:text-[var(--pf-accent-deep)]"
                   >
                     Create an account
                   </button>
@@ -482,7 +479,7 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={loading || !supabaseConfigured || !fullName || !signupEmail || !signupPassword || !confirmPassword}
-                  className="w-full cursor-pointer rounded-[10px] bg-[#141310] py-[14px] text-[15px] font-semibold text-white transition hover:bg-[#2a2521] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full cursor-pointer rounded-[var(--pf-radius-control)] bg-[var(--pf-accent-strong)] py-[14px] text-[15px] font-semibold text-white transition-colors hover:bg-[var(--pf-accent-deep)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {loading ? 'Creating account…' : 'Start your 14-day free trial'}
                 </button>
@@ -503,7 +500,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => goTo('login')}
-                  className="cursor-pointer font-semibold text-[#BE5D23] transition hover:text-[#9c4a1a]"
+                  className="cursor-pointer font-semibold text-[var(--pf-accent-strong)] transition hover:text-[var(--pf-accent-deep)]"
                 >
                   Log in
                 </button>
@@ -530,7 +527,7 @@ export default function LoginPage() {
                       onChange={(e) => handleCodeChange(i, e.target.value)}
                       onKeyDown={(e) => handleCodeKeyDown(i, e)}
                       aria-label={`Digit ${i + 1} of ${CODE_LENGTH}`}
-                      className="h-[54px] min-w-0 flex-1 rounded-[10px] border border-[#ece7e0] bg-[#faf9f7] text-center text-[20px] font-semibold text-[#141310] outline-none transition duration-150 focus:border-[#BE5D23] focus:bg-white focus:shadow-[0_0_0_3px_rgba(190,93,35,0.12)]"
+                      className="h-[54px] min-w-0 flex-1 rounded-[10px] border border-[#ece7e0] bg-[#faf9f7] text-center text-[20px] font-semibold text-[#141310] outline-none transition duration-150 focus:border-[var(--pf-accent-strong)] focus:bg-white focus:shadow-[0_0_0_3px_var(--pf-accent-ring)]"
                     />
                   ))}
                 </div>
@@ -557,7 +554,7 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={loading || !supabaseConfigured || code.join('').length !== CODE_LENGTH}
-                  className="w-full cursor-pointer rounded-[10px] bg-[#141310] py-[14px] text-[15px] font-semibold text-white transition hover:bg-[#2a2521] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full cursor-pointer rounded-[var(--pf-radius-control)] bg-[var(--pf-accent-strong)] py-[14px] text-[15px] font-semibold text-white transition-colors hover:bg-[var(--pf-accent-deep)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {loading ? 'Verifying…' : 'Verify & continue'}
                 </button>
@@ -569,7 +566,7 @@ export default function LoginPage() {
                   type="button"
                   onClick={handleResend}
                   disabled={cooldown > 0 || !supabaseConfigured}
-                  className="cursor-pointer font-semibold text-[#BE5D23] transition hover:text-[#9c4a1a] disabled:cursor-not-allowed disabled:text-[#c6bcb0]"
+                  className="cursor-pointer font-semibold text-[var(--pf-accent-strong)] transition hover:text-[var(--pf-accent-deep)] disabled:cursor-not-allowed disabled:text-[var(--pf-text-disabled)]"
                 >
                   {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
                 </button>
@@ -595,7 +592,7 @@ export default function LoginPage() {
           ) : null}
 
           <p className="mt-6 text-center text-[12.5px] text-[#9a938c]">
-            <Link href="/" className="text-[#BE5D23] transition hover:text-[#9c4a1a]">
+            <Link href="/" className="text-[var(--pf-accent-strong)] transition hover:text-[var(--pf-accent-deep)]">
               ← Back to vyso.co.za
             </Link>
           </p>

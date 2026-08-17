@@ -70,6 +70,27 @@ export interface ModuleFaq {
   answer: string;
 }
 
+/**
+ * Index grouping for `/platform/modules` (Phase 2, Workstream A — added, not
+ * part of the original data set). Matches `.ai/plan_phase2_product_cluster.md`
+ * exactly: Documents (Doc-U) · Orders & money (OrderFlow, PricePilot) ·
+ * Suppliers & stock (ProcurePulse, SupplySync, WasteWatch, PlanWise) · People
+ * (ShiftBoard, ServiceDen) · Insight (InsightGen).
+ */
+export type ModuleGroup = "documents" | "orders-money" | "suppliers-stock" | "people" | "insight";
+
+/**
+ * Availability of the module itself on the public site — distinct from an
+ * agent's status (see `AGENT_STATUS` in `modules.ts`, which is about whether a
+ * Finch *agent* reading this module is live, rolling out or on a customer's
+ * audit roadmap). Every module here is built and running; the only question is
+ * who can see it. All ten currently have real screenshots except ServiceDen,
+ * which is gated to a single internal Vyso account (see
+ * `lib/platform/serviceden-access.ts`) — hence `LIMITED ROLLOUT`, the exact
+ * chip text the plan specifies for it.
+ */
+export type ModuleAvailability = "LIVE" | "LIMITED ROLLOUT";
+
 export interface MarketingModule {
   slug: string;
   name: string;
@@ -86,4 +107,22 @@ export interface MarketingModule {
   relatedSolutionHrefs: readonly string[];
   relatedIndustryHrefs: readonly string[];
   appUrlLabel: string;
+  /** Index grouping — see `ModuleGroup`. */
+  group: ModuleGroup;
+  /** Module-level availability chip — see `ModuleAvailability`. */
+  status: ModuleAvailability;
+  /**
+   * Which of Finch's named example agents (`AGENT_STATUS` in `modules.ts`)
+   * genuinely read or write this module's data today, grounded in the
+   * `worksWith`/feature copy above — not every module has one. Order is
+   * display order for the "used by" chips.
+   */
+  agents: readonly string[];
+  /**
+   * 2–3 sentences, server copy, for the detail page's "How Finch uses it"
+   * section: which agents read/write this module's data and what they do
+   * with it. Describes the data relationship, not an outcome the module
+   * itself can't show — matches the honesty rule in `.ai/vyso_v2.md` §4.
+   */
+  howFinchUsesIt: string;
 }

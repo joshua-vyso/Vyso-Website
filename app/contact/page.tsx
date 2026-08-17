@@ -1,274 +1,149 @@
-import { Mail, MessageCircle } from "lucide-react";
-import ContactForm from "@/components/ContactForm";
-import { LazyShaderBackground } from "@/components/marketing/LazyShaderBackground";
-import { Navbar } from "@/components/Navbar";
-import { SiteFooter } from "@/components/sections/SiteFooter";
 import type { Metadata } from "next";
+import Link from "next/link";
+
+import ContactForm from "@/components/ContactForm";
+import { FinchFooter } from "@/components/finch/FinchFooter";
+import { FinchNav } from "@/components/finch/FinchNav";
+
+const CANONICAL_URL = "https://vyso.co.za/contact";
+const EMAIL = "joshua@vyso.co.za";
+
+const title = "Contact Vyso — Johannesburg | Vyso";
+/* 141 chars. The page's job in search is to answer "how do I reach Vyso", so
+   the description leads with the address and points the audit intent away. */
+const description =
+  "Email Vyso in Johannesburg about Finch, pricing or how your operation runs. Booking the one-week Operations Audit? Start on the audit page.";
 
 export const metadata: Metadata = {
-  title: "Contact Vyso | Discuss Your Operations",
-  description:
-    "Tell Vyso where your operations are breaking down. Send an enquiry and get a practical response about the clearest next step.",
-  alternates: {
-    canonical: "/contact",
-  },
+  /* Absolute for the same reason as /operations-audit: the sitewide template
+     appends "| Vyso", which this title already carries. */
+  title: { absolute: title },
+  description,
+  alternates: { canonical: CANONICAL_URL },
+  robots: { index: true, follow: true },
   openGraph: {
-    title: "Contact Vyso | Discuss Your Operations",
-    description:
-      "Tell Vyso where your operations are breaking down. Send an enquiry and get a practical response about the clearest next step.",
-    url: "/contact",
+    title,
+    description,
+    url: CANONICAL_URL,
     siteName: "Vyso",
     locale: "en_ZA",
     type: "website",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "Vyso — Operations, connected." }],
   },
-  twitter: {
-    card: "summary_large_image",
-    title: "Contact Vyso | Discuss Your Operations",
-    description:
-      "Tell Vyso where your operations are breaking down. Send an enquiry and get a practical response about the clearest next step.",
-    images: ["/og.png"],
-  },
+  twitter: { card: "summary_large_image", title, description },
 };
 
-const FONT: React.CSSProperties = { fontFamily: "var(--font-sans)" };
-const BODY: React.CSSProperties = { fontFamily: "var(--font-body, var(--font-sans))" };
-
-const blendText: React.CSSProperties = {
-  color: "white",
-  mixBlendMode: "difference",
-  display: "inline",
-};
-
-const blendOrange: React.CSSProperties = {
-  background:
-    "linear-gradient(135deg, hsl(219,72%,50%), hsl(202,69%,56%), hsl(199,66%,64%))",
-  WebkitBackgroundClip: "text",
-  backgroundClip: "text",
-  WebkitTextFillColor: "transparent",
-  color: "transparent",
-  mixBlendMode: "difference",
-  display: "inline",
-};
-
-// Liquid-glass card — same recipe as SystemsShowcase
-const GLASS: React.CSSProperties = {
-  backdropFilter:       "blur(20px) saturate(1.8)",
-  WebkitBackdropFilter: "blur(20px) saturate(1.8)",
-  background:           "rgba(255,255,255,0.72)",
-  border:               "1px solid rgba(255,255,255,0.85)",
-  boxShadow: [
-    "inset 0 1.5px 0 rgba(255,255,255,0.90)",
-    "inset 0 -1px 0 rgba(0,0,0,0.04)",
-    "0 0 0 0.5px rgba(255,255,255,0.30)",
-    "0 8px 40px rgba(0,0,0,0.07)",
-  ].join(", "),
-  borderRadius: 20,
-  padding:      "2rem",
-};
-
-const ICON_WRAP: React.CSSProperties = {
-  width:           36,
-  height:          36,
-  borderRadius:    10,
-  background:      "hsl(22 69% 44% / 0.1)",
-  display:         "flex",
-  alignItems:      "center",
-  justifyContent:  "center",
-  marginBottom:    "1rem",
-  flexShrink:      0,
-};
-
-const contactSchema = {
+const schema = {
   "@context": "https://schema.org",
-  "@type": "ContactPage",
-  "@id": "https://vyso.co.za/contact#webpage",
-  url: "https://vyso.co.za/contact",
-  name: "Contact Vyso",
-  description:
-    "Contact Vyso about a broken or inefficient operational workflow in a South African SME.",
-  isPartOf: { "@id": "https://vyso.co.za/#website" },
-  about: { "@id": "https://vyso.co.za/#organization" },
-  inLanguage: "en-ZA",
+  "@graph": [
+    {
+      "@type": "ContactPage",
+      "@id": `${CANONICAL_URL}#webpage`,
+      url: CANONICAL_URL,
+      name: title,
+      description,
+      inLanguage: "en-ZA",
+      about: { "@id": "https://vyso.co.za/#organization" },
+      breadcrumb: { "@id": `${CANONICAL_URL}#breadcrumbs` },
+    },
+    {
+      "@type": "BreadcrumbList",
+      "@id": `${CANONICAL_URL}#breadcrumbs`,
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Home", item: "https://vyso.co.za" },
+        { "@type": "ListItem", position: 2, name: "Contact", item: CANONICAL_URL },
+      ],
+    },
+  ],
 };
 
+/* `/contact` in the Finch language — general enquiries only. Anyone who came
+   to book the audit is sent to `/operations-audit`, which is the front door and
+   the only place the booking form lives. The WebGL shader, the glass cards and
+   the waitlist framing are all gone. */
 export default function ContactPage() {
   return (
-    // `blend-surface` — universal reactive text blend, see app/globals.css.
-    <div className="blend-surface" style={{ position: "relative", isolation: "isolate" }}>
+    <div className="finch-site min-h-screen bg-fn-bg font-fn-sans text-fn-ink antialiased">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify(contactSchema).replace(/</g, "\\u003c"),
+          __html: JSON.stringify(schema).replace(/</g, "\\u003c"),
         }}
       />
-      <LazyShaderBackground global />
-      <Navbar visible />
+      <FinchNav />
 
-      <main style={{ minHeight: "100vh" }}>
-        {/* Hero text */}
-        <section
-          style={{
-            paddingTop:    "8rem",
-            paddingBottom: "3.5rem",
-            paddingLeft:   "clamp(1.25rem, 5vw, 4rem)",
-            paddingRight:  "clamp(1.25rem, 5vw, 4rem)",
-            maxWidth:      1160,
-            margin:        "0 auto",
-          }}
-        >
-          <p style={{
-            ...BODY,
-            fontSize:      "0.7rem",
-            fontWeight:    600,
-            letterSpacing: "0.24em",
-            textTransform: "uppercase",
-            color:         "hsl(22,69%,44%)",
-            marginBottom:  "1.1rem",
-          }}>
-            Join the waitlist
-          </p>
-
-          <h1 className="contact-headline" style={{
-            ...FONT,
-            fontSize:      "clamp(3rem, 7vw, 5.6rem)",
-            fontWeight:    700,
-            lineHeight:    1.0,
-            letterSpacing: "-0.03em",
-            margin:        "0 0 1.2rem",
-            maxWidth:      660,
-          }}>
-            <span className="blend-h-plain" style={blendText}>Let&apos;s solve your </span>
-            <span className="blend-h-orange" style={blendOrange}>ops</span>
-            <span className="blend-h-plain" style={blendText}> together.</span>
-          </h1>
-
-          <p style={{
-            ...BODY,
-            fontSize:   "clamp(1rem, 1.8vw, 1.18rem)",
-            fontWeight: 400,
-            lineHeight: 1.65,
-            color:      "#555",
-            maxWidth:   480,
-            margin:     0,
-          }}>
-            Tell us what is breaking down — orders, stock, suppliers, staffing,
-            documents or reporting. Send the messy version; we&apos;ll reply within
-            24 hours with the clearest useful next step.
-          </p>
-        </section>
-
-        {/* Form + sidebar */}
-        <section
-          style={{
-            paddingBottom: "7rem",
-            paddingLeft:   "clamp(1.25rem, 5vw, 4rem)",
-            paddingRight:  "clamp(1.25rem, 5vw, 4rem)",
-            maxWidth:      1160,
-            margin:        "0 auto",
-          }}
-        >
+      <main id="main">
+        <header className="mx-auto max-w-[1160px] px-[20px] pt-[44px] lg:px-[40px] lg:pt-[72px]">
           <div
-            className="contact-grid"
-            style={{
-              display:             "grid",
-              gridTemplateColumns: "minmax(0,1.8fr) minmax(0,1fr)",
-              gap:                 "1.8rem",
-              alignItems:          "start",
-            }}
-          >
-            {/* ── Form card ─────────────────────────────────────────────────── */}
-            <div style={{ ...GLASS, padding: "2.6rem" }}>
-              <h2 style={{
-                ...FONT,
-                fontSize:      "1.3rem",
-                fontWeight:    600,
-                color:         "#0d0d0d",
-                margin:        "0 0 1.8rem",
-                letterSpacing: "-0.015em",
-              }}>
-                Join the waitlist
-              </h2>
-              <ContactForm />
-            </div>
+            className="mb-[22px] h-[3px] w-[44px] rounded-[2px] lg:mb-[28px] lg:w-[52px]"
+            style={{ background: "var(--fn-grad)" }}
+          />
+          <div className="mb-[14px] font-fn-mono text-[10px] tracking-[0.14em] text-fn-muted lg:text-[11px]">
+            CONTACT
+          </div>
+          <h1 className="m-0 mb-[16px] font-fn-serif text-[38px] font-medium leading-[1.08] tracking-[-0.02em] lg:mb-[20px] lg:text-[58px] lg:leading-[1.05] lg:tracking-[-0.025em]">
+            Talk to Vyso.
+          </h1>
+          <p className="m-0 max-w-[520px] text-[15px] leading-[1.65] text-fn-ink-2 text-pretty lg:text-[17px]">
+            Questions about Finch, pricing, or whether any of this fits how your business actually
+            runs. Send the messy version — we reply within one business day.
+          </p>
+        </header>
 
-            {/* ── Sidebar ───────────────────────────────────────────────────── */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
-
-              {/* Email */}
-              <div style={GLASS}>
-                <div style={ICON_WRAP}>
-                  <Mail size={16} color="hsl(22,69%,44%)" />
+        <section className="mx-auto max-w-[1160px] px-[20px] pt-[40px] pb-[24px] lg:px-[40px] lg:pt-[72px]">
+          <div className="grid grid-cols-1 gap-[32px] border-t border-fn-line pt-[40px] lg:grid-cols-[0.85fr_1.15fr] lg:gap-[72px] lg:pt-[56px]">
+            {/* ── Where we are ───────────────────────────────────────────── */}
+            <div>
+              <div className="border-b border-fn-line-2 pb-[20px]">
+                <div className="mb-[8px] font-fn-mono text-[10.5px] tracking-[0.14em] text-fn-muted">
+                  EMAIL
                 </div>
-                <h3 style={{ ...FONT, fontSize: "0.98rem", fontWeight: 600, color: "#0d0d0d",
-                  margin: "0 0 0.45rem" }}>Email us directly</h3>
-                <p style={{ ...BODY, fontSize: "0.84rem", color: "#666", lineHeight: 1.6,
-                  margin: "0 0 0.75rem" }}>
-                  For anything that doesn&apos;t fit the form.
-                </p>
                 <a
-                  href="mailto:joshua@vyso.co.za"
-                  style={{ ...BODY, fontSize: "0.85rem", fontWeight: 600,
-                    color: "hsl(22,69%,44%)", textDecoration: "none" }}
+                  href={`mailto:${EMAIL}`}
+                  className="text-[16px] font-medium text-fn-ink transition-colors duration-150 hover:text-fn-orange-deep"
                 >
-                  joshua@vyso.co.za
+                  {EMAIL}
                 </a>
               </div>
 
-              {/* What to expect */}
-              <div style={GLASS}>
-                <div style={ICON_WRAP}>
-                  <MessageCircle size={16} color="hsl(22,69%,44%)" />
+              <div className="border-b border-fn-line-2 py-[20px]">
+                <div className="mb-[8px] font-fn-mono text-[10.5px] tracking-[0.14em] text-fn-muted">
+                  WHERE WE ARE
                 </div>
-                <h3 style={{ ...FONT, fontSize: "0.98rem", fontWeight: 600, color: "#0d0d0d",
-                  margin: "0 0 0.75rem" }}>What to expect</h3>
-                <ul style={{ listStyle: "none", margin: 0, padding: 0,
-                  display: "flex", flexDirection: "column", gap: "0.55rem" }}>
-                  {[
-                    "Reply within 24 hours",
-                    "No hard sell — just an honest conversation",
-                    "A practical view on whether Vyso fits",
-                    "A clear next step, with no commitment",
-                  ].map(item => (
-                    <li key={item} style={{ ...BODY, fontSize: "0.83rem", color: "#666",
-                      lineHeight: 1.5, display: "flex", gap: "0.5rem" }}>
-                      <span style={{ color: "hsl(22,69%,44%)", flexShrink: 0, fontWeight: 600 }}>—</span>
-                      {item}
-                    </li>
-                  ))}
-                </ul>
+                <p className="m-0 text-[15px] leading-[1.6] text-fn-ink-2">
+                  Johannesburg, South Africa. We work with businesses across the country.
+                </p>
               </div>
 
-              {/* Trust strip */}
-              <div style={{
-                ...GLASS,
-                padding: "1.4rem 1.6rem",
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "1rem 1.4rem",
-              }}>
-                {[
-                  { icon: "🔒", label: "Your data stays yours", sub: "We never sell your data" },
-                  { icon: "⚡", label: "Real people. Fast replies.", sub: "No bots, no runaround." },
-                  { icon: "🛡️", label: "Secure by design", sub: "Access-controlled platform" },
-                  { icon: "⚙️", label: "Every operation is unique", sub: "Solutions built around you" },
-                ].map(t => (
-                  <div key={t.label}>
-                    <div style={{ fontSize: "1rem", marginBottom: "0.2rem" }}>{t.icon}</div>
-                    <p style={{ ...BODY, fontSize: "0.72rem", fontWeight: 600, color: "#333",
-                      margin: "0 0 0.12rem", lineHeight: 1.3 }}>{t.label}</p>
-                    <p style={{ ...BODY, fontSize: "0.68rem", color: "#888", margin: 0,
-                      lineHeight: 1.3 }}>{t.sub}</p>
-                  </div>
-                ))}
+              {/* The pointer card: most people arriving here want the audit. */}
+              <div className="mt-[24px] rounded-[12px] border border-fn-line bg-fn-surface p-[20px] shadow-[var(--fn-shadow-card)] lg:p-[24px]">
+                <div className="mb-[10px] font-fn-mono text-[10.5px] tracking-[0.14em] text-fn-muted">
+                  WANT THE AUDIT?
+                </div>
+                <p className="m-0 mb-[14px] text-[15px] leading-[1.6] text-fn-ink-3 text-pretty">
+                  The one-week Operations Audit is R2,000, credited to your first month. It is booked
+                  on its own page, with the details we need to start.
+                </p>
+                <Link
+                  href="/operations-audit"
+                  className="text-[14px] font-semibold text-fn-orange-deep transition-colors duration-150 hover:text-fn-orange-cta"
+                >
+                  Book your audit <span aria-hidden="true">→</span>
+                </Link>
               </div>
+            </div>
 
+            {/* ── The form ───────────────────────────────────────────────── */}
+            <div className="rounded-[12px] border border-fn-line bg-fn-surface p-[20px] shadow-[var(--fn-shadow-card)] lg:p-[32px]">
+              <h2 className="m-0 mb-[20px] font-fn-serif text-[22px] font-medium tracking-[-0.02em] lg:text-[24px]">
+                Send us a message
+              </h2>
+              <ContactForm variant="general" />
             </div>
           </div>
         </section>
       </main>
 
-      <SiteFooter />
+      <FinchFooter />
     </div>
   );
 }

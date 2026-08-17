@@ -26,8 +26,8 @@ export function ModuleHeader({
       <div className="flex min-w-0 items-center gap-3">
         <AppIcon name={icon} size={40} />
         <div className="min-w-0">
-          <h1 className="of-display text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#171A17]">{title}</h1>
-          <p className="mt-1.5 text-[14px] text-[#8A8E86]">{description}</p>
+          <h1 className="of-display text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[var(--pf-text)]">{title}</h1>
+          <p className="mt-1.5 text-[14px] text-[var(--pf-text-muted)]">{description}</p>
         </div>
       </div>
       {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
@@ -38,14 +38,14 @@ export function ModuleHeader({
 /** Primary action used across skeleton modules. */
 export function PrimaryAction({ onClick, children }: { onClick: () => void; children: ReactNode }) {
   return (
-    <button type="button" onClick={onClick} className="inline-flex h-[42px] items-center rounded-[11px] bg-[#1F5FA8] px-[18px] text-[14px] font-semibold text-white transition-colors hover:bg-[#174C87]">
+    <button type="button" onClick={onClick} className="inline-flex h-[42px] items-center rounded-[var(--pf-radius-control)] bg-[var(--pf-accent-strong)] px-[18px] text-[14px] font-semibold text-white transition-colors hover:bg-[var(--pf-accent-deep)]">
       {children}
     </button>
   );
 }
 export function SecondaryAction({ onClick, children }: { onClick: () => void; children: ReactNode }) {
   return (
-    <button type="button" onClick={onClick} className="inline-flex h-[42px] items-center rounded-[11px] border border-[#E2E6EC] bg-white px-[18px] text-[14px] font-medium text-[#3E4A57] transition-all hover:border-[#C9DEF7] hover:bg-[#EAF2FC] hover:text-[#174C87]">
+    <button type="button" onClick={onClick} className="inline-flex h-[42px] items-center rounded-[var(--pf-radius-control)] border border-[var(--pf-border-strong)] bg-white px-[18px] text-[14px] font-medium text-[var(--pf-text-control)] transition-all hover:border-[var(--pf-accent-ring)] hover:bg-[var(--pf-accent-weak)] hover:text-[var(--pf-accent-deep)]">
       {children}
     </button>
   );
@@ -61,12 +61,12 @@ export function KpiStrip({ children }: { children: ReactNode }) {
 
 export function Kpi({ label, value, accent, sub }: { label: string; value: string; accent?: string; sub?: ReactNode }) {
   return (
-    <div className="rounded-2xl border border-[#EAEDF2] bg-white px-5 py-4 shadow-[0_1px_2px_rgba(20,24,20,0.03)]">
-      <div className="text-[12px] font-medium uppercase tracking-[0.05em] text-[#8A8E86]">{label}</div>
-      <div className="of-num mt-2 text-[22px] font-semibold leading-none tracking-[-0.02em]" style={accent ? { color: accent } : { color: '#171A17' }}>
+    <div className="rounded-2xl border border-[var(--pf-border)] bg-white px-5 py-4 shadow-[var(--pf-shadow-card)]">
+      <div className="text-[12px] font-medium uppercase tracking-[0.05em] text-[var(--pf-text-muted)]">{label}</div>
+      <div className="of-num mt-2 text-[22px] font-semibold leading-none tracking-[-0.02em]" style={accent ? { color: accent } : { color: 'var(--pf-text)' }}>
         {value}
       </div>
-      {sub != null ? <div className="mt-1.5 text-[12px] text-[#A0A49C]">{sub}</div> : null}
+      {sub != null ? <div className="mt-1.5 text-[12px] text-[var(--pf-text-faint)]">{sub}</div> : null}
     </div>
   );
 }
@@ -77,11 +77,11 @@ export function Kpi({ label, value, accent, sub }: { label: string; value: strin
 
 export type Tone = 'neutral' | 'positive' | 'warning' | 'critical' | 'info';
 const TONE_STYLE: Record<Tone, { bg: string; fg: string }> = {
-  neutral: { bg: '#EEF1F5', fg: '#6B6F68' },
-  positive: { bg: '#E1F5EE', fg: '#0F6E56' },
-  warning: { bg: '#FBEEDA', fg: '#854F0B' },
-  critical: { bg: '#FCEBEB', fg: '#A32D2D' },
-  info: { bg: '#E6F1FB', fg: '#0C447C' },
+  neutral: { bg: 'var(--tone-neutral-bg)', fg: 'var(--tone-neutral-fg)' },
+  positive: { bg: 'var(--tone-positive-bg)', fg: 'var(--tone-positive-fg)' },
+  warning: { bg: 'var(--tone-warning-bg)', fg: 'var(--tone-warning-fg)' },
+  critical: { bg: 'var(--tone-critical-bg)', fg: 'var(--tone-critical-fg)' },
+  info: { bg: 'var(--tone-info-bg)', fg: 'var(--tone-info-fg)' },
 };
 
 export function Badge({ label, tone = 'neutral' }: { label: string; tone?: Tone }) {
@@ -99,9 +99,9 @@ export function Badge({ label, tone = 'neutral' }: { label: string; tone?: Tone 
 
 export function SectionCard({ title, right, children, className = '' }: { title: string; right?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <div className={`rounded-2xl border border-[#EAEDF2] bg-white shadow-[0_1px_2px_rgba(20,24,20,0.03)] ${className}`}>
-      <div className="flex items-center justify-between gap-3 border-b border-[#EEF1F5] px-5 py-4">
-        <h2 className="of-display text-[16px] font-semibold text-[#171A17]">{title}</h2>
+    <div className={`rounded-2xl border border-[var(--pf-border)] bg-white shadow-[var(--pf-shadow-card)] ${className}`}>
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--pf-border-soft)] px-5 py-4">
+        <h2 className="of-display text-[16px] font-semibold text-[var(--pf-text)]">{title}</h2>
         {right ? <div className="flex shrink-0 items-center gap-2">{right}</div> : null}
       </div>
       <div className="p-5">{children}</div>
@@ -115,11 +115,11 @@ export function SectionCard({ title, right, children, className = '' }: { title:
 
 const SAMPLE = [12, 18, 15, 22, 19, 27, 24, 31, 28, 35];
 
-export function PlaceholderChart({ data = SAMPLE, color = '#3E7BC4', fill = '#EAF2FC', height = 120, caption = 'Illustrative — live data once connected' }: { data?: number[]; color?: string; fill?: string; height?: number; caption?: string }) {
+export function PlaceholderChart({ data = SAMPLE, color = 'var(--pf-accent)', fill = 'var(--pf-accent-weak)', height = 120, caption = 'Illustrative — live data once connected' }: { data?: number[]; color?: string; fill?: string; height?: number; caption?: string }) {
   return (
     <div>
       <AreaChart data={data} color={color} fill={fill} height={height} />
-      <p className="mt-2 text-[11px] text-[#8A8E86]">{caption}</p>
+      <p className="mt-2 text-[11px] text-[var(--pf-text-muted)]">{caption}</p>
     </div>
   );
 }
@@ -135,11 +135,11 @@ export interface Column {
 
 export function DataTable({ columns, rows, empty }: { columns: Column[]; rows: ReactNode[][]; empty: string }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-[#EAEDF2] bg-white shadow-[0_1px_2px_rgba(20,24,20,0.03)]">
+    <div className="overflow-hidden rounded-2xl border border-[var(--pf-border)] bg-white shadow-[var(--pf-shadow-card)]">
       <div className="overflow-x-auto">
         <table className="w-full text-[14px]">
           <thead>
-            <tr className="border-b border-[#EEF1F5] bg-[#FBFCFE] text-[11px] uppercase tracking-[0.06em] text-[#A0A49C]">
+            <tr className="border-b border-[var(--pf-border-soft)] bg-[var(--pf-surface-tint-faint)] text-[11px] uppercase tracking-[0.06em] text-[var(--pf-text-faint)]">
               {columns.map((c, i) => (
                 <th key={i} className={`px-3 py-2.5 font-medium ${c.align === 'right' ? 'text-right' : 'text-left'}`}>{c.label}</th>
               ))}
@@ -147,12 +147,12 @@ export function DataTable({ columns, rows, empty }: { columns: Column[]; rows: R
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <tr><td colSpan={columns.length} className="px-5 py-12 text-center text-[14px] text-[#8A8E86]">{empty}</td></tr>
+              <tr><td colSpan={columns.length} className="px-5 py-12 text-center text-[14px] text-[var(--pf-text-muted)]">{empty}</td></tr>
             ) : (
               rows.map((r, ri) => (
-                <tr key={ri} className="border-b border-[#F5F9FE] last:border-0 hover:bg-[#F5F9FE]">
+                <tr key={ri} className="border-b border-[var(--pf-border-soft)] last:border-0 hover:bg-[var(--pf-surface-tint)]">
                   {r.map((cell, ci) => (
-                    <td key={ci} className={`px-3 py-3 ${columns[ci]?.align === 'right' ? 'of-num text-right' : 'text-left'} ${ci === 0 ? 'font-semibold text-[#171A17]' : 'text-[#2C333B]'}`}>{cell}</td>
+                    <td key={ci} className={`px-3 py-3 ${columns[ci]?.align === 'right' ? 'of-num text-right' : 'text-left'} ${ci === 0 ? 'font-semibold text-[var(--pf-text)]' : 'text-[var(--pf-text-body)]'}`}>{cell}</td>
                   ))}
                 </tr>
               ))
@@ -193,7 +193,7 @@ export function ProgressRing({
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#EEF1F5" strokeWidth={thickness} />
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--pf-border-soft)" strokeWidth={thickness} />
           <circle
             cx={size / 2}
             cy={size / 2}
@@ -292,7 +292,7 @@ export function InteractiveDonut({
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <circle cx={size / 2} cy={size / 2} r={(rOuter + rInner) / 2} fill="none" stroke="#F4F4F1" strokeWidth={thickness} />
+        <circle cx={size / 2} cy={size / 2} r={(rOuter + rInner) / 2} fill="none" stroke="var(--pf-border-soft)" strokeWidth={thickness} />
         {arcs.map((s) => {
           const isActive = activeKey === s.key;
           const dimmed = activeKey != null && !isActive;
@@ -325,16 +325,16 @@ export function InteractiveDonut({
 export function ModuleWidgetCard({ widget, onAction }: { widget: ModuleWidget; onAction?: (w: ModuleWidget) => void }) {
   const s = WIDGET_SEVERITY_STYLE[widget.severity ?? 'neutral'];
   return (
-    <div className="rounded-2xl border border-[#EAEDF2] bg-white p-4">
+    <div className="rounded-2xl border border-[var(--pf-border)] bg-white p-5 shadow-[var(--pf-shadow-card)]">
       <div className="flex items-center gap-2">
         <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: s.dot }} />
-        <span className="text-[12px] text-[#8A8E86]">{widget.title}</span>
+        <span className="text-[12px] text-[var(--pf-text-muted)]">{widget.title}</span>
       </div>
       <div className="mt-1.5 text-[20px] font-bold leading-none" style={{ color: s.fg }}>{widget.value}</div>
-      {widget.subtitle ? <div className="mt-1.5 text-[11px] text-[#8A8E86]">{widget.subtitle}</div> : null}
+      {widget.subtitle ? <div className="mt-1.5 text-[11px] text-[var(--pf-text-muted)]">{widget.subtitle}</div> : null}
       {widget.trend ? <div className="mt-1 text-[11px]" style={{ color: s.fg }}>{widget.trend}</div> : null}
       {widget.actionLabel && onAction ? (
-        <button type="button" onClick={() => onAction(widget)} className="mt-2 text-[12px] font-medium text-[#1F5FA8] hover:underline">
+        <button type="button" onClick={() => onAction(widget)} className="mt-2 text-[12px] font-medium text-[var(--pf-accent-strong)] hover:underline">
           {widget.actionLabel} →
         </button>
       ) : null}

@@ -1,0 +1,4 @@
+/* Vyso webfonts — the production app loads these through next/font/google,
+   so there are no font binaries in the repo. Same five families, from the
+   Google Fonts CDN. */
+@import url("https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;900&family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600&display=swap");
