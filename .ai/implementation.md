@@ -421,3 +421,141 @@ layout/active/motion states in isolation.
 - E5 dock-vs-sticky-footer on ShiftBoard/OrderFlow
 - Reduced motion
 - Marketing home unchanged
+
+---
+
+# Phase C agents — Debtors Watch, Stock Cover, Doc Watch (branch feat/agents-phase-c)
+
+Implements `.ai/plan_agents_phase_c.md` in full. Built in an isolated worktree
+because the W1–W5 chat waves were on `main` at the same time; the only shared
+files touched are the append-only spots the plan lists.
+
+Gates at every step: `npx tsc --noEmit` clean, `npm test` green, `npm run build`
+succeeds, and the lint count held at **53 errors / 38 warnings** from first
+commit to last (identical to `main` at 7b2adde — nothing new was introduced and
+nothing pre-existing was fixed). Tests grew 130 → 252.
+
+`next build` could not run against a symlinked `node_modules` (Turbopack:
+"Symlink [project]/node_modules is invalid, it points out of the filesystem
+root"), so the worktree has its own `npm ci` install.
+
+## Decisions the plan left open
+
+**Where "shared" work landed in the commits.** The plan asked for one
+`agents: shared allowlist + evidence resolver + digest copy` commit, but the
+evidence resolver is a prerequisite for C1's cards rendering and the digest copy
+depends on C3 existing. Split into `agents: shared allowlist` (first) and
+`agents: digest copy + BRIEF knowledge` (last), with the resolver restructure
+inside the C1 commit that needed it.
+
+**`parseEnvList` is imported, not re-implemented.** `agents/org-allowlist.ts`
+imports it from `price-watch/run.ts` — the digest route already did the same, so
+"how a comma-separated env var is split" still has one definition. Importing is
+not "touching `price-watch/*`".
+
+**`AGENTS_ORG_IDS` falls back only when it is EMPTY.** An operator who clears the
+new var has turned the agents off and must not be silently overridden by the
+legacy one.
+
+**Two new shared modules the plan did not name.**
+- `lib/platform/agents/dedupe-keys.ts` — every Phase C key builder/parser. A
+  Stock Cover finding's only record of WHICH stock line it concerns is its key
+  (its `evidence_refs` is empty, per the plan), so the Brief's resolver has to
+  parse one on the render path. A dependency-free leaf keeps a detector — and
+  its transitive weight — out of the page bundle.
+- `lib/platform/agents/finding-kinds.ts` — the pure decisions
+  `agent-findings.ts` makes (receipt vs finding, which table the refs point at,
+  the evidence nouns). `agent-findings.ts` imports `supabase-server` →
+  `next/headers` and cannot be unit tested; these can, and they are what
+  `tests/agent-findings-evidence.test.ts` pins.
+- `lib/platform/sast.ts` — the SAST clock, lifted out of
+  `components/platform/brief/brief-display.ts` and now shared with Doc Watch's
+  detector, so a card's "Found this morning" label and the sentence inside it
+  cannot disagree about the owner's hour. `brief-display` re-exports `SAST`.
+
+**Relative, `.ts`-suffixed imports in every unit-tested module.** `node --test`
+cannot resolve the `@/` alias — the 2026-08-14 Price Watch model outage in
+person. Route handlers keep using `@/`.
+
+**Extra test file.** `tests/agents-org-allowlist.test.ts` (a fifth, beyond the
+four the plan lists) — the allowlist is the one thing standing between "ran for
+Meridian" and "wrote into every customer's Brief", so its truth table is pinned.
+
+### C1 — Debtors Watch
+
+- **The "their longest ever" clause is OMITTED.** The plan offered it "if
+  derivable from history". It is not: `loadInvoiceRows` yields a paid TOTAL per
+  invoice, never a settlement date, so "the longest they have ever taken" cannot
+  be computed without a second read of `of_payments` and a definition of
+  "settled" nothing else in the product has. Say nothing rather than
+  approximate.
+- **The evidence link is the first cited INVOICE, not a filtered list.** The
+  plan's `/app/orderflow/invoices?customer=…` would silently do nothing —
+  `app/app/orderflow/invoices/page.tsx` reads no search params. The
+  single-invoice route exists and is exact, and matches the shape the document
+  branch already uses.
+- **`loadInvoiceRows`'s child reads gained `.eq('org_id', orgId)`.** They were
+  narrowed only by an invoice-id list before. Harmless for the RLS-scoped chat
+  caller; load-bearing for the agent's service-role one.
+- **No auto-close in v1** (as the plan says). A card stays until dismissed, and
+  the dedupe key then stops it returning for the same invoice. Auto-resolving on
+  payment needs a payment watcher this phase does not have.
+
+### C2 — Stock Cover
+
+- **`pp_stock_thresholds.low_threshold` wins over the catalogue's** when a row
+  exists and carries a value — the precedence InsightGen's stock-low rule
+  already uses.
+- **"Reorder before {weekday}" only inside the coming week.** Beyond six days a
+  weekday names an ambiguous date ("before Saturday", said twelve days out), so
+  the copy becomes "Reorder before 29 August". A line already at zero gets
+  "Reorder now — nothing is left on this line" instead of a "before".
+- **Units are pluralised** ("14 boxes", not "14 box"); measurement
+  abbreviations (kg, g, l, ml…) are left alone.
+- **Consumption excludes count adjustments**, so a stock count can never
+  masquerade as demand and shorten a line's days of cover.
+- **The evidence link is the stock ITEM page** (`/app/procurepulse/stock/<id>`),
+  verified against the catalogue first — the plan said the stock list; the item
+  page is exact and the id is right there in the key.
+- **`isoWeekOf` is imported from `price-watch/run.ts`** rather than duplicated.
+
+### C3 — Doc Watch
+
+- **Statement total is the LINES' own sum**, worded "N lines worth R x". The
+  plan's "{N} lines, R{total}" next to a market sheet's stated closing balance
+  would invite the reader to think the lines add up to it; a closing balance
+  carries last month's opening figure, payments and pallet charges.
+- **"read {this morning|overnight}" is a four-way phrase.** Afternoon, evening,
+  yesterday, "3 days ago" and "on 30 June" each get an honest wording rather
+  than being rounded into one of the plan's two.
+- **`priceListChanges` counts only lines that EXISTED on the previous list.** A
+  new line has no previous price to have moved from. No previous list at all
+  yields `null`, not `0`, and the clause is dropped.
+- **Informational rule is belt-and-braces**: slug in `INFORMATIONAL_AGENTS` AND
+  `rand_impact == null` AND `recommended_action == null`. If Doc Watch ever
+  learns to price something, that row starts counting without anyone editing a
+  list.
+- **48-hour ageing is computed at READ TIME**, no cron, no status write. An aged
+  receipt is PRESENTED as `resolved` in History (its stored status is still
+  `new`) so History's card does not label a row nobody dismissed as
+  "Dismissed". Restore writes `new` and it ages out again on the next render —
+  harmless, and the honest consequence of a rule with no state behind it.
+- **The `after()` hook uses the CALLER'S RLS-scoped client**, not the service
+  role: `/api/ai/extract` is a signed-in request with a session to scope.
+  Failures are logged only; the nightly sweep is the backstop.
+- **The Brief's empty-state copy** no longer credits Price Watch alone — four
+  agents write there now.
+
+## Cron schedule (vercel.json)
+
+| Path | Schedule (UTC) | Why there |
+|---|---|---|
+| `/api/email/process` | `0 3 * * *` | unchanged |
+| `/api/agents/doc-watch` | `40 3 * * *` | BEFORE Price Watch — the price agent reads the same paper, and "read overnight" appearing after the finding raised from it reads backwards |
+| `/api/agents/price-watch` | `45 3 * * *` | unchanged |
+| `/api/agents/debtors-watch` | `50 3 * * *` | |
+| `/api/agents/stock-cover` | `55 3 * * *` | |
+| `/api/agents/digest` | `0 4 * * 1` | unchanged |
+
+Every agent route is idempotent, so the ordering is a courtesy to the reader of
+the Brief, not a correctness requirement.
