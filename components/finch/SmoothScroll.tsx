@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useSyncExternalStore } from "react";
+import { usePathname } from "next/navigation";
 import { useReducedMotion } from "motion/react";
 
 /* ── Lenis smooth scroll — now the default ───────────────────────────────────
@@ -107,13 +108,59 @@ export function useLenisEnabled(): boolean {
   return useSyncExternalStore(subscribeLenis, readEnabled, () => true);
 }
 
+/* ── Marketing only — never `/app/*` ─────────────────────────────────────────
+   This component is mounted by the ROOT layout, which wraps the signed-in
+   platform as well as the marketing site, and that turned out to be the whole
+   of the "you cannot scroll anywhere under /app" bug (2026-08-17).
+
+   Lenis takes over the DOCUMENT scroll: `wrapper` defaults to `window` and
+   `content` to `document.documentElement` (node_modules/lenis/dist/lenis.mjs
+   :434). On every wheel event it walks the composed path looking for an
+   opt-out, and finding none it calls `event.preventDefault()` and re-applies
+   the delta to the document (same file, ~:609-628). `allowNestedScroll` also
+   defaults to `false`, so a nested scroller is NOT auto-detected — the
+   library's contract is that you mark it yourself.
+
+   That is fine on the marketing pages, where the document is the scroller. It
+   is fatal under `/app/*`: the shell root is `flex h-screen … overflow-hidden`
+   (app/app/layout.tsx:85) and the real scroller is the `<main
+   class="… overflow-y-auto">` inside it (:127-130). The document there has
+   nothing to scroll, so Lenis swallowed the wheel event and then animated a
+   scroll of zero pixels — and because `preventDefault()` had already run,
+   `<main>` never got the native scroll either. Wheel and trackpad were dead on
+   the Brief and on every module page; keyboard, scrollbar drag and touch
+   (`syncTouch: false`) still worked, which is exactly the shape of the report.
+
+   W0 (commit 2d0c160) chased a different theory — html/body as a competing
+   scroll container — and its `overflow-y: visible` override is still correct,
+   so it stays. It just was not this.
+
+   Two defences, deliberately both:
+
+   - **Here**, the instance is not created under `/app/*` at all. The platform
+     has no momentum-scroll design; it is a dense operations UI, and running a
+     scroll library over it buys nothing to offset the risk.
+   - **There**, `<main>` carries `data-lenis-prevent` (app/app/layout.tsx) so
+     that even a Lenis that somehow is running — the tail of a marketing→
+     platform client navigation before this effect tears down, a future mount
+     from somewhere else — hands the wheel back to the native scroller.
+
+   `isPlatform` is a BOOLEAN in the dep array rather than `pathname` itself:
+   marketing→marketing navigation must not destroy and rebuild the instance
+   (that would drop momentum mid-scroll on every internal link), so the effect
+   may only re-run when the marketing/platform boundary is actually crossed. */
 export function SmoothScroll() {
   const reduceMotion = useReducedMotion() ?? false;
+  const pathname = usePathname();
+  // Not a bare `startsWith("/app")` — that would also match a future marketing
+  // route like `/apply` or `/appointments`. The platform is `/app` exactly, or
+  // anything below it.
+  const isPlatform = pathname === "/app" || pathname.startsWith("/app/");
 
   useEffect(() => {
     const root = document.documentElement;
 
-    if (reduceMotion) {
+    if (reduceMotion || isPlatform) {
       delete root.dataset.lenis;
       delete root.dataset.lenisSnappy;
       return;
@@ -168,7 +215,7 @@ export function SmoothScroll() {
       window.removeEventListener("storage", sync);
       stop();
     };
-  }, [reduceMotion]);
+  }, [reduceMotion, isPlatform]);
 
   return null;
 }

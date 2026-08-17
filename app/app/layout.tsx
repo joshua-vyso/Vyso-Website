@@ -123,10 +123,28 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             />
 
             {/* The cool wash every module sits on. It lives here rather than in each
-                module layout so the nine of them can't drift apart. */}
+                module layout so the nine of them can't drift apart.
+
+                `data-lenis-prevent`: THIS is the scroll container for the whole
+                platform, and the root layout mounts Lenis (components/finch/
+                SmoothScroll.tsx) above both surfaces. Lenis drives the DOCUMENT
+                scroll and, with `allowNestedScroll` at its default `false`, does
+                not discover a nested scroller on its own — it calls
+                preventDefault() on the wheel event and applies the delta to a
+                document that `overflow-hidden` above has made unscrollable, so
+                wheel/trackpad scrolling died everywhere under `/app/*`
+                (2026-08-17). SmoothScroll now refuses to instantiate on these
+                routes at all, which is the actual fix; this attribute is the
+                second lock — it makes the wheel event bypass any Lenis that IS
+                running (the tail of a marketing→platform client navigation
+                before that effect tears down) and reach this element natively.
+                Lenis checks it on the composed path from the event target up to
+                <html> (node_modules/lenis/dist/lenis.mjs:606-611), and <main>
+                is on that path for every scrollable thing the platform draws. */}
             <main
               className="min-h-0 min-w-0 flex-1 overflow-y-auto"
               style={{ background: 'var(--pf-wash)' }}
+              data-lenis-prevent
             >
               <TrialGate>
                 <ModuleLockGuard>{children}</ModuleLockGuard>

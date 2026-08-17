@@ -252,8 +252,13 @@ export default function RootLayout({
               writes `paper` and nothing changes.
             - `RouteFade` fades the page in on navigation, first paint
               untouched.
-            - `SmoothScroll` mounts Lenis only if `localStorage["fn:lenis"]`
-              is "1" — off by default, toggled on `/design` for review. */}
+            - `SmoothScroll` mounts Lenis. On by default since 2026-08-16
+              (`localStorage["fn:lenis"] === "0"` is the opt-out the `/design`
+              switch writes), and — since 2026-08-17 — MARKETING ROUTES ONLY.
+              It is mounted here, above both surfaces, but it gates itself off
+              under `/app/*`: the platform's scroller is a nested `<main>`, and
+              a document-level Lenis ate the wheel event there and scrolled
+              nothing. See that file's "Marketing only" docblock. */}
         <NavGround />
         <SmoothScroll />
         <RouteFade>{children}</RouteFade>
