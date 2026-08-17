@@ -52,7 +52,11 @@ export async function POST(request: Request) {
   }
 
   const wanted = new Set(requested);
+  // Held drafts are never sendable, whatever ids the client passes: this route
+  // re-derives the inbox at send time precisely so a reply that arrived since
+  // the page loaded still stops the send.
   const toSend = result.inbox.sendable.filter((d) => wanted.has(d.id));
+  const heldRequested = result.inbox.held.filter((d) => wanted.has(d.id));
   if (toSend.length === 0) {
     return NextResponse.json({ error: 'Those drafts are no longer sendable. Reload and try again.' }, { status: 409 });
   }
@@ -62,6 +66,7 @@ export async function POST(request: Request) {
     sent: outcomes.filter((r) => r.ok).length,
     failed: outcomes.filter((r) => !r.ok),
     dropped: requested.length - toSend.length,
+    held: heldRequested.map((d) => ({ company: d.company, to: d.to, reason: d.reason })),
     account: result.inbox.account,
   });
 }
