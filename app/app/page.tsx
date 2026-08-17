@@ -6,6 +6,7 @@ import { rand } from '@/lib/platform/procurepulse';
 import { OlderChats } from '@/components/platform/chat/OlderChats'; // W2 · "Older chats"
 import { BriefEmpty } from '@/components/platform/brief/BriefEmpty';
 import { FindingCard, ResolvedFindingCard } from '@/components/platform/brief/FindingCard';
+import { ReadOvernightBand } from '@/components/platform/brief/ReadOvernightBand';
 import {
   AI_GRADIENT_TEXT,
   briefDateLine,
@@ -24,10 +25,15 @@ import {
  *
  * TRUTHFULNESS. Every sentence on this page is derived from rows that exist:
  * the counts come from `agent_findings`, the rand figure is the biggest real
- * `rand_impact`, the supplier count comes from the evidence documents. There is
- * no "overnight I read 12 invoices" line like the mock's, because nothing in
- * the schema records that the agent read anything. When a number can't be
- * established the clause is dropped rather than invented.
+ * `rand_impact`, the supplier count comes from the evidence documents. When a
+ * number can't be established the clause is dropped rather than invented.
+ *
+ * The mock's "overnight I read 12 invoices" line used to be absent for exactly
+ * that reason — nothing in the schema recorded that an agent had READ anything.
+ * Phase C's Doc Watch does record it, one row per document, so the line exists
+ * now and is derived from those rows (ReadOvernightBand). Those rows are
+ * informational: `fetchFindings` keeps them out of `open` entirely, so twelve
+ * invoices read overnight never inflate "N things need your attention".
  *
  * The page is now just the feed column. The 216px rail it used to own moved to
  * app/app/layout.tsx as AppRail, so it persists across every /app/* route
@@ -50,7 +56,10 @@ import {
  *  because "your ops software isn't finished" is not their problem. */
 const EMPTY_BRIEF = {
   title: 'No findings yet',
-  body: 'Price Watch reads your invoices nightly and compares every line against what you paid before. Anything worth your attention lands here.',
+  // Named the agents rather than Price Watch alone from Phase C: four of them
+  // write here now, and an empty state that credits one would misdescribe the
+  // silence of the other three.
+  body: 'Vyso reads your invoices, your debtors book and your stock every night — supplier prices against what you paid before, who is past terms, and what is about to run out. Anything worth your attention lands here.',
 };
 const EMPTY_HISTORY = {
   title: 'Nothing closed yet',
@@ -165,6 +174,12 @@ export default async function AppIndex({
         {isHistory && olderChats.length > 0 ? <OlderChats chats={olderChats} /> : null}
         {/* ── end W2 ───────────────────────────────────────────────────────── */}
 
+        {/* Doc Watch's receipts — "Read this morning". Informational only, below
+            the findings and counted in none of them; the band renders nothing
+            when there are none, and nothing at all under History. */}
+        {isHistory ? null : (
+          <ReadOvernightBand findings={feed.informational} evidence={feed.evidence} now={now} />
+        )}
       </div>
     </div>
   );

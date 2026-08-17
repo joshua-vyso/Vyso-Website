@@ -20,6 +20,8 @@
  * else it is still a bug.
  */
 
+import { SAST, sastDay, sastDayDiff, sastHour } from '@/lib/platform/sast';
+
 /** Orange → blue, angled for text runs (greeting figure). */
 export const AI_GRADIENT_TEXT = 'linear-gradient(100deg,#BE5D23,#3E8FE0)';
 /** Vertical, for the new-finding accent bar down a card's left edge. */
@@ -29,17 +31,31 @@ export const AI_GRADIENT_CHROME = 'linear-gradient(115deg,#BE5D23,#D9730D 35%,#3
 /** Horizontal, for the hairline over the finding detail's "Recommended" block. */
 export const AI_GRADIENT_RULE = 'linear-gradient(90deg,#BE5D23,#3E8FE0)';
 
-/** Every platform figure is quoted in SAST — Vyso's customers are all en-ZA. */
-export const SAST = 'Africa/Johannesburg';
+/** Every platform figure is quoted in SAST — Vyso's customers are all en-ZA.
+ *  The conversion itself lives in lib/platform/sast.ts now, shared with Doc
+ *  Watch's detector so a card's "Found this morning" label and the sentence
+ *  inside it can never disagree about what hour it is for the owner. Re-exported
+ *  here because this module was where the constant used to live. */
+export { SAST };
 
 /**
  * Agent chip styling, keyed by the `agent_findings.agent` slug. The column is
  * free text (every future agent shares the table), so an unknown slug degrades
  * to a title-cased label on the neutral tone pair rather than rendering blank.
  * Price Watch takes the warning pair — it reports money leaking, not an error.
+ *
+ * The tones say how hard a card pushes, and they are not interchangeable:
+ * Price Watch and Debtors Watch both report money going the wrong way (warning);
+ * Stock Cover reports a level, which is information the owner acts on at their
+ * own pace (neutral); Doc Watch reports nothing wrong at all — it is a receipt
+ * for paper Vyso read — so it takes the info pair and lives in its own band
+ * below the findings (ReadOvernightBand), never among them.
  */
 const AGENT_CHIPS: Record<string, { label: string; bg: string; fg: string; dot: string }> = {
   price_watch: { label: 'Price Watch', bg: 'var(--tone-warning-bg)', fg: 'var(--tone-warning-fg)', dot: '#BE5D23' },
+  debtors_watch: { label: 'Debtors', bg: 'var(--tone-warning-bg)', fg: 'var(--tone-warning-fg)', dot: '#BE5D23' },
+  stock_cover: { label: 'Stock', bg: 'var(--tone-neutral-bg)', fg: 'var(--tone-neutral-fg)', dot: '#8A8E86' },
+  doc_watch: { label: 'Read', bg: 'var(--tone-info-bg)', fg: 'var(--tone-info-fg)', dot: '#3E8FE0' },
 };
 
 export interface AgentChip {
@@ -63,19 +79,6 @@ export function agentChip(agent: string): AgentChip {
     fg: 'var(--tone-neutral-fg)',
     dot: '#8A8E86',
   };
-}
-
-/** The SAST calendar day of an instant, as 'YYYY-MM-DD' (sorts and compares as
- *  a string, which is all the day-difference maths below needs). */
-function sastDay(d: Date): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: SAST }).format(d);
-}
-
-/** The SAST hour (0–23) of an instant. */
-function sastHour(d: Date): number {
-  return Number(
-    new Intl.DateTimeFormat('en-GB', { timeZone: SAST, hour: '2-digit', hour12: false }).format(d),
-  );
 }
 
 /** "Morning" | "Afternoon" | "Evening" for the greeting, in SAST — the owner's
@@ -120,7 +123,7 @@ export function foundLabel(createdAt: string, now: Date): string {
 
   // Day difference from the SAST calendar dates, so a finding written at 23:50
   // is "yesterday" at 00:10 the next morning rather than "13 hours ago".
-  const days = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${day}T00:00:00Z`)) / 86_400_000);
+  const days = sastDayDiff(day, today);
   if (days === 1) return 'Yesterday';
   if (days > 1 && days < 7) return `${days} days ago`;
   return new Intl.DateTimeFormat('en-ZA', { timeZone: SAST, day: 'numeric', month: 'short' }).format(created);
@@ -191,6 +194,28 @@ export function unitPrice(value: number, baseUnit: string | null): string {
     maximumFractionDigits: 2,
   });
   return baseUnit ? `R${amount}/${baseUnit}` : `R${amount}`;
+}
+
+/**
+ * How many of these instants fall on TODAY's SAST calendar day — i.e. since
+ * midnight in the owner's timezone, not the server's.
+ *
+ * This is what makes design 1a's "✦ Overnight I read 12 new invoices…" line
+ * data-driven instead of decorative: it counts Doc Watch receipts, so the
+ * sentence can only ever state a number of documents that actually have cards
+ * behind them. A count of 0 means the band drops the line rather than saying
+ * "read 0 documents" — the same "say nothing rather than claim nothing" rule the
+ * greeting follows.
+ */
+export function countSinceSastMidnight(createdAts: readonly string[], now: Date): number {
+  const today = sastDay(now);
+  let n = 0;
+  for (const iso of createdAts) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) continue;
+    if (sastDay(d) === today) n += 1;
+  }
+  return n;
 }
 
 /** First name for the greeting; falls back to nothing rather than "there". */
