@@ -3,6 +3,7 @@ import { Resend } from 'resend';
 import { createServiceSupabase } from '@/lib/platform/supabase-service';
 import { parseEnvList } from '@/lib/platform/price-watch/run';
 import { agentOrgIds, NO_ORGS_MESSAGE } from '@/lib/platform/agents/org-allowlist';
+import { isInformationalFinding } from '@/lib/platform/agents/finding-kinds';
 
 export const maxDuration = 300;
 
@@ -15,6 +16,31 @@ const OPEN_STATUSES = ['new', 'in_progress'];
 /** Five, per acceptance criterion 9. A weekly email that lists everything is an
  *  email nobody opens; the five biggest rand figures are the week's decisions. */
 const MAX_FINDINGS = 5;
+
+/**
+ * How many rows to READ before the five are chosen.
+ *
+ * The cap used to be applied by the query, because only one agent wrote here.
+ * Four do now, and one of them (Doc Watch) writes a receipt per document — up to
+ * dozens a day — which must never appear in a weekly digest of things to decide.
+ * Those rows are dropped in memory (`isInformationalFinding`), so the read has
+ * to be wider than the five it will end up sending or a busy week of scanning
+ * would push every real finding out of the email.
+ */
+const FINDING_PROBE_LIMIT = 60;
+
+/**
+ * Human labels for the agent slugs, for the one-word attribution on each item.
+ * Deliberately a local map rather than an import from
+ * components/platform/brief/brief-display.ts: those labels are sized for a chip
+ * in a 220px column ("Debtors", "Stock"), and an email has room to name the
+ * agent properly. An unknown slug is simply not attributed.
+ */
+const AGENT_LABELS: Record<string, string> = {
+  price_watch: 'Price Watch',
+  debtors_watch: 'Debtors Watch',
+  stock_cover: 'Stock Cover',
+};
 
 /** Where a recipient goes to act on a finding. The Brief IS /app (see
  *  app/app/page.tsx); the base is hardcoded exactly as in app/robots.ts and
@@ -35,6 +61,7 @@ function formatRand(n: number): string {
 }
 
 interface DigestFinding {
+  agent: string;
   observation: string;
   recommended_action: string | null;
   rand_impact: number | string | null;
@@ -42,13 +69,24 @@ interface DigestFinding {
 }
 
 /**
- * The weekly Price Watch brief (plan step 9, acceptance criterion 9).
+ * The weekly Vyso brief (plan step 9, acceptance criterion 9; broadened to every
+ * agent by `.ai/plan_agents_phase_c.md`).
  *
  * Monday 04:00 UTC (06:00 SAST) via Vercel Cron — the findings themselves are
- * written by /api/agents/price-watch overnight, so this route only READS and
- * emails. Nothing about the agent's state changes here: re-running it re-sends
- * the same email rather than corrupting anything, which is why it is safe to
- * curl by hand when a send is missed.
+ * written by /api/agents/* overnight, so this route only READS and emails.
+ * Nothing about any agent's state changes here: re-running it re-sends the same
+ * email rather than corrupting anything, which is why it is safe to curl by hand
+ * when a send is missed.
+ *
+ * IT IS NO LONGER A PRICE WATCH EMAIL. Four agents write to `agent_findings`
+ * now, so the subject line, the heading and the sign-off say "Vyso" — an email
+ * headed "Price Watch" listing a customer who is 40 days past terms would be
+ * wrong about its own contents. Each item is attributed instead.
+ *
+ * DOC WATCH IS EXCLUDED. Its findings are receipts — one per document read — and
+ * a weekly email of "we read 84 invoices" is the definition of a digest nobody
+ * opens. An org whose only open findings are receipts gets NO EMAIL, which is
+ * the same behaviour an org with no findings at all has always had.
  *
  * Env:
  *   AGENTS_ORG_IDS        — comma-separated org uuids (the shared allowlist every
@@ -106,14 +144,16 @@ export async function GET(req: Request) {
 
     const { data: rows, error } = await supabase
       .from('agent_findings')
-      .select('observation, recommended_action, rand_impact, evidence_refs')
+      .select('agent, observation, recommended_action, rand_impact, evidence_refs')
       .eq('org_id', orgId)
-      .eq('agent', 'price_watch')
+      // Every agent, not just Price Watch — but see the informational filter
+      // below, which is what keeps Doc Watch's receipts out.
       .in('status', OPEN_STATUSES)
       // Nulls last: a finding with no rand figure must never outrank one that
       // carries a number the owner can act on.
       .order('rand_impact', { ascending: false, nullsFirst: false })
-      .limit(MAX_FINDINGS)
+      .order('created_at', { ascending: false })
+      .limit(FINDING_PROBE_LIMIT)
       .returns<DigestFinding[]>();
 
     if (error) {
@@ -122,7 +162,16 @@ export async function GET(req: Request) {
       continue;
     }
 
-    const findings = rows ?? [];
+    const findings = (rows ?? [])
+      .filter(
+        (f) =>
+          !isInformationalFinding({
+            agent: f.agent,
+            rand_impact: f.rand_impact == null ? null : Number(f.rand_impact),
+            recommended_action: f.recommended_action,
+          }),
+      )
+      .slice(0, MAX_FINDINGS);
     if (findings.length === 0) {
       // No email at all. A weekly "nothing to report" trains the recipient to
       // archive the digest unread, which is exactly how a real finding gets
@@ -134,7 +183,7 @@ export async function GET(req: Request) {
     const html = renderDigest(orgName, findings);
     try {
       await resend.emails.send({
-        from: 'Vyso Price Watch <noreply@vyso.co.za>',
+        from: 'Vyso <noreply@vyso.co.za>',
         to: recipients,
         subject: `Vyso weekly brief — ${orgName} — ${findings.length} finding${
           findings.length === 1 ? '' : 's'
@@ -156,23 +205,35 @@ export async function GET(req: Request) {
  * Plain HTML — inline styles only, no images, no tracking. It has to survive
  * Gmail, Outlook and a phone, and its whole job is to get the reader to /app.
  *
- * Everything printed here comes from a row Price Watch wrote after validating
- * its own numbers (observe.ts); this function adds no arithmetic of its own, so
- * the email cannot state a figure the finding does not.
+ * Everything printed here comes from a row an agent wrote after validating its
+ * own numbers; this function adds no arithmetic of its own, so the email cannot
+ * state a figure the finding does not.
+ *
+ * NOTE ON "annual". Price Watch's `rand_impact` is an annualised estimate; a
+ * Debtors Watch figure is money already owed today, and a Stock Cover write-off
+ * is a loss already taken. Calling all three "estimated annual impact" would
+ * have been false for two of them, so the label is now simply "Worth" — the one
+ * word that is true of every kind of finding in the table.
  */
 function renderDigest(orgName: string, findings: DigestFinding[]): string {
   const items = findings
     .map((f, i) => {
       const impact = f.rand_impact == null ? null : Number(f.rand_impact);
       const evidence = f.evidence_refs?.length ?? 0;
+      const label = AGENT_LABELS[f.agent];
       return `
         <div style="margin: 0 0 20px; padding: 16px; border: 1px solid #E3E8EF; border-radius: 8px;">
+          ${
+            label
+              ? `<p style="margin: 0 0 6px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: #6b7280;">${escapeHtml(label)}</p>`
+              : ''
+          }
           <p style="margin: 0 0 8px; font-size: 15px; line-height: 1.5; color: #111;">
             ${i + 1}. ${escapeHtml(f.observation)}
           </p>
           ${
             impact != null && Number.isFinite(impact)
-              ? `<p style="margin: 0 0 8px; font-size: 14px; color: #0C447C;"><strong>Estimated annual impact:</strong> ${formatRand(impact)}</p>`
+              ? `<p style="margin: 0 0 8px; font-size: 14px; color: #0C447C;"><strong>Worth:</strong> ${formatRand(impact)}</p>`
               : ''
           }
           ${
@@ -180,20 +241,24 @@ function renderDigest(orgName: string, findings: DigestFinding[]): string {
               ? `<p style="margin: 0 0 8px; font-size: 14px; color: #374151;"><strong>Suggested next step:</strong> ${escapeHtml(f.recommended_action)}</p>`
               : ''
           }
-          <p style="margin: 0; font-size: 13px; color: #6b7280;">
-            Based on ${evidence} source document${evidence === 1 ? '' : 's'}.
-          </p>
+          ${
+            // Dropped entirely at zero. Stock Cover cites no rows at all, and
+            // "Based on 0 source records" is a sentence that says nothing.
+            evidence > 0
+              ? `<p style="margin: 0; font-size: 13px; color: #6b7280;">Based on ${evidence} source record${evidence === 1 ? '' : 's'}.</p>`
+              : ''
+          }
         </div>`;
     })
     .join('');
 
   return `
     <div style="font-family: sans-serif; max-width: 640px; color: #111;">
-      <h2 style="margin: 0 0 4px;">Price Watch — weekly brief</h2>
+      <h2 style="margin: 0 0 4px;">Vyso — your week in one page</h2>
       <p style="margin: 0 0 16px; color: #6b7280; font-size: 14px;">${escapeHtml(orgName)}</p>
       <p style="margin: 0 0 20px; font-size: 15px; line-height: 1.5;">
         ${findings.length} open finding${findings.length === 1 ? '' : 's'} from your supplier documents,
-        biggest rand impact first.
+        your debtors book and your stock — biggest rand figure first.
       </p>
       ${items}
       <p style="margin: 24px 0 0;">
@@ -202,7 +267,7 @@ function renderDigest(orgName: string, findings: DigestFinding[]): string {
         </a>
       </p>
       <p style="margin: 24px 0 0; color: #6b7280; font-size: 13px;">
-        Price Watch observes and recommends — nothing has been actioned on your behalf.
+        Vyso's agents observe and recommend — nothing has been actioned on your behalf.
       </p>
     </div>`;
 }
