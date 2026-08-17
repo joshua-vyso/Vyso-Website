@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { AI_GRADIENT_CHROME } from '@/components/platform/brief/brief-display';
+import { RailChats, type RailChat } from './RailChats';
 
 /**
  * The Brief's two primary nav rows — Today's brief / History. Byte-identical
@@ -26,7 +27,19 @@ const ITEM_ACTIVE =
   'border border-[var(--pf-border)] bg-white font-semibold text-[var(--pf-text)] shadow-[0_1px_2px_rgba(20,24,20,0.04)]';
 const ITEM_IDLE = 'text-[var(--pf-text-secondary)] hover:bg-[#F5F3EF] hover:text-[var(--pf-text)]';
 
-export function RailNav({ openCount, historyCount }: { openCount: number; historyCount: number }) {
+export function RailNav({
+  openCount,
+  historyCount,
+  chats,
+}: {
+  openCount: number;
+  historyCount: number;
+  /** This user's recent conversations, newest first, with their "when" already
+   *  rendered server-side (see RailChats). Empty before the finch-chats
+   *  migration is applied — the block then shows only "New chat", which still
+   *  works: the row is a link to a screen, not to a database. */
+  chats: RailChat[];
+}) {
   const pathname = usePathname() ?? '';
   const searchParams = useSearchParams();
   const isHistory = pathname === '/app' && searchParams.get('view') === 'history';
@@ -45,6 +58,11 @@ export function RailNav({ openCount, historyCount }: { openCount: number; histor
           <span className="of-num ml-auto text-[11px] font-semibold text-[#BE5D23]">{openCount}</span>
         ) : null}
       </Link>
+
+      {/* Directly under Today's brief, per plan §1.2 — the conversations are
+          the second thing this rail is for, and History (below) is the tail of
+          the brief rather than a peer of it. */}
+      <RailChats chats={chats} />
 
       <Link href="/app?view=history" className={`${ITEM} ${isHistory ? ITEM_ACTIVE : ITEM_IDLE}`}>
         <svg

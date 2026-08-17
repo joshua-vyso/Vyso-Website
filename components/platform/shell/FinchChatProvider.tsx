@@ -11,7 +11,9 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { onBriefAsk } from '@/components/platform/brief/brief-chat';
+import type { Suggestion } from '@/lib/platform/finch-suggestions';
 
 /**
  * The conversation, lifted out of the pill (.ai/plan_chat_first_shell.md §4.3,
@@ -69,10 +71,27 @@ import { onBriefAsk } from '@/components/platform/brief/brief-chat';
  * wave (plan §5, first bullet). Persistence is an improvement to the chat, not
  * a precondition for it.
  *
- * WHAT THIS WAVE DELIBERATELY DOES NOT DO. No navigation, no rail, no visual
- * change to GlobalChatDock — those are W2. `module` is still the hardcoded
- * 'brief' the dock has always sent. The only user-visible difference is that
- * the conversation now survives, and `{tool}` events are kept.
+ * ── NAVIGATION + SUGGESTIONS (W2) ───────────────────────────────────────────
+ * A conversation started from the Brief now MOVES to its own screen. The
+ * moment `send()` has an id, it pushes `/app/chat/<id>` — mid-stream, on
+ * purpose: the turns live here, not on the page, so the answer keeps arriving
+ * into the same array and the chat page simply renders it. The push happens
+ * only from `/app` and `/app/chat/new`; from a module screen the dock keeps
+ * the conversation where the owner is working (W4's bubble makes that a
+ * deliberate surface rather than an accident).
+ *
+ * `router.refresh()` fires once per chat, after its FIRST complete exchange —
+ * that is when the rail gains a row and the agent route's `after()` has had
+ * something to title. Refreshing on every turn would re-run the whole platform
+ * layout's server reads for a list that has not changed.
+ *
+ * `findingId` is remembered, not acted on: tapping a card fills the composer
+ * (see brief-chat.ts) and the id rides in a ref until the owner actually
+ * sends, so reading a finding and changing your mind does not leave an empty
+ * chat in the rail.
+ *
+ * `module` is still the hardcoded 'brief' the dock has always sent — module
+ * awareness is W4.
  */
 
 export interface ChatTurn {
@@ -126,10 +145,17 @@ interface FinchChatValue {
   /** The row this conversation is being written to, or null when it has none
    *  yet (nothing sent) or could not be created (schema not applied). */
   activeChatId: string | null;
-  /** Sends whatever is in `input`. No-op while streaming or when empty. */
-  send: () => void;
+  /** Up to four openers for this business, computed server-side per render. */
+  suggestions: Suggestion[];
+  /** Sends `text`, or whatever is in `input` when it is omitted. No-op while
+   *  streaming or when there is nothing to send. */
+  send: (text?: string) => void;
   /** Replace the transcript with a stored chat. No-op if it can't be read. */
   openChat: (id: string) => void;
+  /** Continue a chat the SERVER already read — `/app/chat/[id]` hands over the
+   *  rows it rendered rather than making this fetch them again. No-op while an
+   *  answer is in flight, so a navigation cannot strand a running turn. */
+  adoptChat: (id: string, turns: ChatTurn[]) => void;
   /** Start a fresh conversation. Keeps the in-flight answer alive on purpose —
    *  only `reset()` (sign-out) aborts. */
   newChat: () => void;
@@ -152,6 +178,7 @@ export function useFinchChat(): FinchChatValue {
 export function FinchChatProvider({
   context,
   orgName,
+  suggestions,
   children,
 }: {
   /** The open findings, serialised by the LAYOUT from the findings read it
@@ -159,6 +186,11 @@ export function FinchChatProvider({
    *  Prefixed to the first user turn only; see brief-chat.ts. */
   context: string;
   orgName: string | null;
+  /** Chips for an empty conversation, built by the layout from this org's real
+   *  findings/debtors/uploads (lib/platform/finch-suggestions*.ts). Carried
+   *  here because both surfaces that draw them — the dock and
+   *  `/app/chat/new` — are too far from the layout to be given props. */
+  suggestions: Suggestion[];
   children: ReactNode;
 }) {
   const [turns, setTurns] = useState<ChatTurn[]>([]);
@@ -171,13 +203,21 @@ export function FinchChatProvider({
 
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  /** The finding a tapped card is about, held until the owner sends. Cleared
+   *  the moment it is spent (or the conversation is emptied) so the NEXT
+   *  question doesn't get filed against a finding it has nothing to do with. */
+  const pendingFindingRef = useRef<string | null>(null);
+
+  const router = useRouter();
+  const pathname = usePathname() ?? '';
 
   // A finding card was tapped: name it in the composer and hand over the caret,
   // so the owner writes the actual question. (Verbatim from BriefChatPill; the
   // subscription is per-provider now, and there is one provider.)
   useEffect(
     () =>
-      onBriefAsk((prompt) => {
+      onBriefAsk((prompt, findingId) => {
+        pendingFindingRef.current = findingId;
         setInput((prev) => (prev.trim() ? `${prev.trim()} ${prompt}` : prompt));
         inputRef.current?.focus();
       }),
@@ -197,6 +237,7 @@ export function FinchChatProvider({
     setStreamTools([]);
     setError(null);
     setActiveChatId(null);
+    pendingFindingRef.current = null;
     // The reader's `finally` skips this when the signal is aborted, so the
     // reset has to lower the flag itself or the composer stays disabled.
     setStreaming(false);
@@ -210,7 +251,34 @@ export function FinchChatProvider({
     setInput('');
     setError(null);
     setActiveChatId(null);
+    pendingFindingRef.current = null;
   }, []);
+
+  /**
+   * Take over a conversation the server has already read.
+   *
+   * `/app/chat/[id]` renders its rows server-side; without this the provider
+   * would have to fetch the same transcript again over `openChat` just to be
+   * able to continue it. Instead the page hands them across on mount and this
+   * becomes the active chat, so the next message appends rather than starting
+   * a second conversation about the same thing.
+   *
+   * Refuses while streaming. Opening chat B in another tab-worth of the same
+   * app while A's answer is still arriving would otherwise splice A's reply
+   * onto B's transcript — the turn in flight resolves into whatever `turns` is
+   * by then. Waiting is the correct behaviour; the page re-runs this once the
+   * stream ends.
+   */
+  const adoptChat = useCallback(
+    (id: string, loaded: ChatTurn[]) => {
+      if (streaming || activeChatId === id) return;
+      setTurns(loaded);
+      setError(null);
+      setActiveChatId(id);
+      pendingFindingRef.current = null;
+    },
+    [streaming, activeChatId],
+  );
 
   /**
    * Load a stored conversation into the transcript.
@@ -243,13 +311,16 @@ export function FinchChatProvider({
     }
   }, []);
 
-  const send = useCallback(async () => {
-    const text = input.trim();
+  const send = useCallback(async (explicit?: string) => {
+    // A suggestion chip sends its own prompt; everything else sends the
+    // composer. `explicit` never touches `input`, so a chip clicked while the
+    // owner has half a question typed doesn't eat what they wrote.
+    const text = (explicit ?? input).trim();
     if (!text || streaming) return;
 
     const nextTurns: ChatTurn[] = [...turns, { role: 'user', content: text }];
     setTurns(nextTurns);
-    setInput('');
+    if (explicit === undefined) setInput('');
     setError(null);
     setStreaming(true);
     setStreamText('');
@@ -270,24 +341,40 @@ export function FinchChatProvider({
     // not an error the owner needs to see: `chatId` stays null, the turn goes
     // up unpersisted, and they get their answer.
     let chatId = activeChatId;
+    // True only when THIS send created the row — what decides whether the rail
+    // needs refreshing afterwards, and whether we move to the chat's screen.
+    let createdNow = false;
     if (!chatId) {
       try {
         const res = await fetch('/api/finch/chats', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ module: 'brief' }),
+          body: JSON.stringify({ module: 'brief', findingId: pendingFindingRef.current }),
           signal: ctrl.signal,
         });
         if (res.ok) {
           const created = (await res.json()) as { id?: unknown };
           if (typeof created.id === 'string') {
             chatId = created.id;
+            createdNow = true;
             setActiveChatId(created.id);
           }
         }
       } catch {
         /* unpersisted turn — the answer still matters more than the record */
       }
+    }
+    // Spent (or unusable): the next question is its own.
+    pendingFindingRef.current = null;
+
+    // Move to the conversation's own screen while the answer is still
+    // arriving. The turns live HERE, so the page picks up the same stream
+    // mid-flight rather than restarting or waiting for it. Only from the two
+    // routes where a chat has nowhere of its own to be: on a module screen the
+    // dock keeps the answer beside the work (plan §2.5; W4 makes that a
+    // designed surface).
+    if (createdNow && chatId && (pathname === '/app' || pathname === '/app/chat/new')) {
+      router.push(`/app/chat/${chatId}`);
     }
 
     try {
@@ -342,6 +429,12 @@ export function FinchChatProvider({
         ...prev,
         { role: 'assistant', content: acc || '…', ...(usedTools.length ? { tools: usedTools } : {}) },
       ]);
+
+      // The rail has a new row to draw, and the agent route's `after()` has by
+      // now named it. ONCE per chat — every later turn changes only
+      // `updated_at`, and re-running the whole platform layout's server reads
+      // for that would be an expensive way to reorder a list of one.
+      if (createdNow) router.refresh();
     } catch (err) {
       if (!ctrl.signal.aborted) {
         setError(err instanceof Error ? err.message : 'Something went wrong.');
@@ -359,7 +452,7 @@ export function FinchChatProvider({
         setStreamTools([]);
       }
     }
-  }, [input, streaming, turns, context, orgName, activeChatId]);
+  }, [input, streaming, turns, context, orgName, activeChatId, pathname, router]);
 
   const value = useMemo<FinchChatValue>(
     () => ({
@@ -371,13 +464,29 @@ export function FinchChatProvider({
       streamTools,
       error,
       activeChatId,
-      send: () => void send(),
+      suggestions,
+      send: (text?: string) => void send(text),
       openChat: (id: string) => void openChat(id),
+      adoptChat,
       newChat,
       reset,
       inputRef,
     }),
-    [turns, input, streaming, streamText, streamTools, error, activeChatId, send, openChat, newChat, reset],
+    [
+      turns,
+      input,
+      streaming,
+      streamText,
+      streamTools,
+      error,
+      activeChatId,
+      suggestions,
+      send,
+      openChat,
+      adoptChat,
+      newChat,
+      reset,
+    ],
   );
 
   return <FinchChatContext.Provider value={value}>{children}</FinchChatContext.Provider>;

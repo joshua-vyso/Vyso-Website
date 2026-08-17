@@ -12,6 +12,7 @@ import { ModuleLockNotice } from '@/components/platform/ModuleLockNotice';
 import { VysoMark } from '@/components/platform/VysoMark';
 import { useFinchChat } from './FinchChatProvider';
 import { RailNav } from './RailNav';
+import type { RailChat } from './RailChats';
 import { trialPillLabel, type RailModule } from './shell-data';
 
 const ROW = 'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors';
@@ -56,12 +57,16 @@ export function MobileDrawer({
   onClose,
   openCount,
   historyCount,
+  chats,
   modules,
 }: {
   open: boolean;
   onClose: () => void;
   openCount: number;
   historyCount: number;
+  /** Same list, same component as the desktop rail — RailNav carries the
+   *  "New chat" row and this user's conversations for both (W2). */
+  chats: RailChat[];
   modules: RailModule[];
 }) {
   const { org, email, profile, trial, lockedModules } = usePlatform();
@@ -140,7 +145,7 @@ export function MobileDrawer({
           </button>
         </div>
 
-        <RailNav openCount={openCount} historyCount={historyCount} />
+        <RailNav openCount={openCount} historyCount={historyCount} chats={chats} />
 
         <div className="mt-4 flex flex-col gap-0.5">
           <div className="px-2.5 pb-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[var(--pf-text-faint)]">

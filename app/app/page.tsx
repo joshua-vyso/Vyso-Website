@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation';
 import { getPlatformSession } from '@/lib/platform/supabase-server';
 import { fetchFindings } from '@/lib/platform/agent-findings';
+import { listChats } from '@/lib/platform/finch-chats'; // W2 · "Older chats"
 import { rand } from '@/lib/platform/procurepulse';
+import { OlderChats } from '@/components/platform/chat/OlderChats'; // W2 · "Older chats"
 import { BriefEmpty } from '@/components/platform/brief/BriefEmpty';
 import { FindingCard, ResolvedFindingCard } from '@/components/platform/brief/FindingCard';
 import {
@@ -69,6 +71,14 @@ export default async function AppIndex({
 
   const [{ view }, feed] = await Promise.all([searchParams, fetchFindings(session.org.id)]);
   const isHistory = view === 'history';
+
+  /* ── W2 · "Older chats" (plan_brief_chat_v2 §1.2) ─────────────────────────
+   * Only on the History view: the archived half of `listChats` is the 14-day
+   * tail of the rail's list, and reading it on the open brief would cost every
+   * /app load a query nothing renders. Empty (and silent) before the
+   * finch-chats migration is applied. */
+  const olderChats = isHistory ? (await listChats(session.org.id, session.userId)).archived : [];
+  /* ── end W2 ─────────────────────────────────────────────────────────────── */
 
   // One clock for the whole render: the greeting, the date line and every
   // card's "found" label must agree, even across a midnight boundary.
@@ -150,6 +160,10 @@ export default async function AppIndex({
             <BriefEmpty {...EMPTY_BRIEF} />
           )}
         </div>
+
+        {/* ── W2 · "Older chats" ───────────────────────────────────────────── */}
+        {isHistory && olderChats.length > 0 ? <OlderChats chats={olderChats} /> : null}
+        {/* ── end W2 ───────────────────────────────────────────────────────── */}
 
       </div>
     </div>

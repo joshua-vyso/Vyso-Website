@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   CHAT_TITLE_FALLBACK,
   RECENT_WINDOW_DAYS,
+  chatTimeLabel,
   chatTitle,
   splitChats,
   stripBriefPrelude,
@@ -198,4 +199,30 @@ test('stripBriefPrelude: the owner quoting the marker back does not lose their q
   // Documented consequence: a question that quotes the marker loses its front
   // half. Storing a slightly clipped question beats storing 5 kB of findings
   // as the owner's words on every first turn.
+});
+
+// ---------------------------------------------------------------------------
+// chatTimeLabel — the rail's "when", short enough for a 216px column
+// ---------------------------------------------------------------------------
+
+test('chatTimeLabel: minutes, hours and days, then a date', () => {
+  assert.equal(chatTimeLabel(at(30 * 1000), NOW), 'now');
+  assert.equal(chatTimeLabel(at(4 * 60 * 1000), NOW), '4m');
+  assert.equal(chatTimeLabel(at(59 * 60 * 1000), NOW), '59m');
+  assert.equal(chatTimeLabel(at(3 * 60 * 60 * 1000), NOW), '3h');
+  assert.equal(chatTimeLabel(at(2 * DAY), NOW), '2d');
+  assert.equal(chatTimeLabel(at(6 * DAY), NOW), '6d');
+});
+
+test('chatTimeLabel: past a week a duration stops meaning anything', () => {
+  // NOW is 2026-08-17T12:00Z; eight days back is 9 August, quoted in SAST.
+  assert.equal(chatTimeLabel(at(8 * DAY), NOW), '09 Aug');
+});
+
+test('chatTimeLabel: a clock skew into the future reads as now, not as negative', () => {
+  assert.equal(chatTimeLabel(at(-90 * 1000), NOW), 'now');
+});
+
+test('chatTimeLabel: an unparseable timestamp says nothing rather than NaN', () => {
+  assert.equal(chatTimeLabel('not a date', NOW), '');
 });

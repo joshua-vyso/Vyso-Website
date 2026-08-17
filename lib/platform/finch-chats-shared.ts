@@ -101,6 +101,51 @@ export function splitChats(
 }
 
 /**
+ * How long ago a chat was last spoken to, for the rail — "4m", "3h", "2d",
+ * then a plain date.
+ *
+ * SHORT ON PURPOSE. The rail is 216px wide and the title has to fit beside
+ * this; "Found this morning" (the Brief's voice, `brief-display.ts`) would eat
+ * the row. Different surface, different length — the same instant, said
+ * briefly.
+ *
+ * COMPUTED ON THE SERVER, PASSED DOWN AS A STRING. `now` is a parameter for
+ * the same reason `splitChats` takes one: a client component recomputing "4m"
+ * at hydration time can disagree with the HTML it is hydrating, and a rail row
+ * that flickers reads as a bug. The layout resolves these once per render and
+ * hands `RailChats` finished text.
+ *
+ * An unparseable timestamp yields '' — the row then shows its title and no
+ * time, which is better than "NaNm" or a made-up date.
+ */
+export function chatTimeLabel(updatedAt: string, now: Date | number = Date.now()): string {
+  const then = Date.parse(updatedAt);
+  if (!Number.isFinite(then)) return '';
+
+  const nowMs = now instanceof Date ? now.getTime() : now;
+  // A clock skew that puts the row slightly in the future is "now", not "-1m".
+  const elapsed = Math.max(0, nowMs - then);
+
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return `${minutes}m`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d`;
+
+  // Past a week, a duration stops meaning anything — give the date. SAST,
+  // because every figure in this platform is quoted in the owner's clock.
+  return new Intl.DateTimeFormat('en-ZA', {
+    timeZone: 'Africa/Johannesburg',
+    day: 'numeric',
+    month: 'short',
+  }).format(new Date(then));
+}
+
+/**
  * The Brief's findings prelude, removed from a message before it is stored.
  *
  * `components/platform/brief/brief-chat.ts` prefixes the open findings to the

@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation';
 import { getPlatformSession } from '@/lib/platform/supabase-server';
 import { PlatformProvider } from '@/lib/platform/session';
 import { fetchFindings } from '@/lib/platform/agent-findings';
+import { chatTimeLabel, listChats } from '@/lib/platform/finch-chats';
+import { suggestionsForOrg } from '@/lib/platform/finch-suggestions-data';
 import { ModuleLockGuard } from '@/components/platform/ModuleLockGuard';
 import { TrialGate } from '@/components/platform/TrialGate';
 import { AppRail } from '@/components/platform/shell/AppRail';
@@ -45,18 +47,51 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // the same tolerance for a table that doesn't exist yet: `fetchFindings`
   // turns a missing-relation error into an empty feed (`tableMissing`), so a
   // pre-migration org gets a rail with no badges rather than a 500 on every
-  // /app/* route. Nothing else is parallelisable here: the read needs
-  // `session.org.id`, which only exists once `getPlatformSession()` has
-  // resolved, so there is no second promise to `Promise.all` it with. The
-  // Brief page repeats the read for its feed; the layout's copy is the counts
-  // only, and both are cheap (a few dozen rows, one round-trip).
+  // /app/* route. Both reads need `session.org.id`, which only exists once
+  // `getPlatformSession()` has resolved — hence the await above them and the
+  // Promise.all below. The Brief page repeats the findings read for its feed;
+  // the layout's copy is the counts only, and both are cheap (a few dozen
+  // rows, one round-trip).
   //
   // Staleness: layouts do not re-render on client-side navigation (Next 16 —
   // node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/layout.md),
   // so these numbers refresh on a hard load and on `router.refresh()` — which
   // is exactly what FindingCard already calls after a dismiss. Accepted by the
   // plan (§4.1, §12 D4).
-  const feed = await fetchFindings(session.org.id);
+  //
+  // W2 adds the second read: this user's own conversations for the rail.
+  // `listChats` is RLS-scoped AND
+  // filtered on org + user — chats are private to their author, unlike
+  // findings, which the whole org shares — and it degrades to an empty flagged
+  // list before the finch-chats migration is applied, exactly as
+  // `fetchFindings` does for `agent_findings`.
+  const [feed, chatList] = await Promise.all([
+    fetchFindings(session.org.id),
+    listChats(session.org.id, session.userId),
+  ]);
+
+  // ONE clock for the rail, resolved on the server. See RailChats: a client
+  // component recomputing "4m" during hydration can disagree with the HTML it
+  // is hydrating, so the label crosses the boundary as finished text.
+  const railNow = new Date();
+  const railChats = chatList.recent.map((c) => ({
+    id: c.id,
+    title: c.title,
+    module: c.module,
+    when: chatTimeLabel(c.updated_at, railNow),
+  }));
+
+  // The chips an empty conversation offers (plan §1.4). Built from the feed we
+  // already have plus two small reads, behind the same owner/admin money gate
+  // `/api/ai/agent` enforces — a member must not be offered a chip that can
+  // only ever come back "restricted". Never throws: see
+  // finch-suggestions-data.ts, rule 1.
+  const canSeeMoney = session.profile?.role === 'owner' || session.profile?.role === 'admin';
+  const suggestions = await suggestionsForOrg({
+    orgId: session.org.id,
+    findings: feed.open,
+    canSeeMoney,
+  });
 
   // The prelude the chat sends to Finch on its first turn (plan §4.1: "do not
   // duplicate the findings read — one fetch feeds badges AND prelude"). It is
@@ -74,7 +109,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           on one), and both sign-out call sites — UserChipMenu in the rail and
           MobileDrawer under the mobile header — must be able to reach its
           reset() (plan §8 E7). Wrapping here is what puts them inside it. */}
-      <FinchChatProvider context={chatContext} orgName={session.org.name}>
+      <FinchChatProvider context={chatContext} orgName={session.org.name} suggestions={suggestions}>
         <div
           // Globals set --radius: 0 (sharp shadcn default), which zeroes the
           // rounded-sm/md/lg/xl scale and leaves buttons/inputs square. Give the
@@ -99,6 +134,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <AppRail
             openCount={feed.summary.openCount}
             historyCount={feed.history.length}
+            chats={railChats}
             modules={railModules(session.features)}
           />
 
@@ -119,6 +155,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <MobileTopBar
               openCount={feed.summary.openCount}
               historyCount={feed.history.length}
+              chats={railChats}
               modules={railModules(session.features)}
             />
 

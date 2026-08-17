@@ -19,6 +19,7 @@
 
 import type { AgentFinding, EvidenceSummary } from '@/lib/platform/agent-findings';
 import { rand } from '@/lib/platform/procurepulse';
+import { findingRef } from '@/lib/platform/finch-suggestions';
 import { agentChip } from './brief-display';
 
 /** Findings serialised per request. A brief, not an archive. */
@@ -40,9 +41,16 @@ function clamp(text: string, max: number): string {
 /** One finding as a line Finch can read: who found it, what it says, what it
  *  costs, what it was read from. Fields that are null are simply absent —
  *  the same rule the cards follow, so the agent can't quote a figure that
- *  isn't there. */
+ *  isn't there.
+ *
+ *  The `finding <ref>` stamp (W2) is how something OUTSIDE this list points at
+ *  a row in it: a suggestion chip's prompt says "finding 8c3f21a4" and the
+ *  model matches it here. Both sides derive the ref from `findingRef`, one
+ *  function, so they cannot drift into naming the same finding differently. */
 function findingLine(f: AgentFinding, index: number, evidence?: EvidenceSummary): string {
-  const bits = [`${index + 1}. [${agentChip(f.agent).label} · ${f.status}] ${clamp(f.observation, MAX_OBSERVATION_CHARS)}`];
+  const bits = [
+    `${index + 1}. [${agentChip(f.agent).label} · ${f.status} · finding ${findingRef(f.id)}] ${clamp(f.observation, MAX_OBSERVATION_CHARS)}`,
+  ];
   if (f.rand_impact != null) bits.push(`Estimated impact: about ${rand(f.rand_impact)} a year.`);
   if (evidence) bits.push(`Evidence: ${evidence.label}.`);
   if (f.recommended_action) bits.push(`Suggested next step: ${clamp(f.recommended_action, MAX_ACTION_CHARS)}`);
@@ -122,7 +130,7 @@ export function findingPrompt(f: AgentFinding): string {
  * than the last-mount-wins behaviour below.
  */
 
-type AskListener = (prompt: string) => void;
+type AskListener = (prompt: string, findingId: string | null) => void;
 
 let askListener: AskListener | null = null;
 
@@ -134,9 +142,19 @@ export function onBriefAsk(fn: AskListener): () => void {
   };
 }
 
-/** Called by a finding card. A no-op if no pill is listening — the cards gate
- *  on the same `finchEnabled` session flag the pill does (see FinchLauncher),
- *  so they only offer the tap when there is somewhere for it to land. */
-export function askBrief(prompt: string): void {
-  askListener?.(prompt);
+/**
+ * Called by a finding card. A no-op if no pill is listening — the cards gate
+ * on the same `finchEnabled` session flag the pill does (see FinchLauncher),
+ * so they only offer the tap when there is somewhere for it to land.
+ *
+ * `findingId` rides along from W2 (plan §2.5): the chat this becomes is filed
+ * against that finding (`finch_chats.finding_id`), so a conversation that
+ * started from a card can be traced back to it. It is REMEMBERED, not acted on
+ * — the chat row is created when the owner actually sends, not when they tap.
+ * Tapping a card fills the composer with a half-sentence they are meant to
+ * finish; creating a row at that moment would litter the rail with empty "New
+ * chat" entries every time someone read a finding and thought better of it.
+ */
+export function askBrief(prompt: string, findingId?: string | null): void {
+  askListener?.(prompt, findingId ?? null);
 }

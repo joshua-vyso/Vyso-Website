@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 import { VysoMark } from '@/components/platform/VysoMark';
 import { RailNav } from './RailNav';
+import type { RailChat } from './RailChats';
 import { UnderTheHood } from './UnderTheHood';
 import { UserChipMenu } from './UserChipMenu';
 import type { RailModule } from './shell-data';
@@ -27,10 +28,13 @@ import type { RailModule } from './shell-data';
 export function AppRail({
   openCount,
   historyCount,
+  chats,
   modules,
 }: {
   openCount: number;
   historyCount: number;
+  /** This user's recent chats, resolved by the layout (W2). */
+  chats: RailChat[];
   modules: RailModule[];
 }) {
   return (
@@ -69,7 +73,7 @@ export function AppRail({
           route below it ever turns static. The fallback reserves the two rows'
           height so nothing would jump if it ever did. */}
         <Suspense fallback={<div className="h-[82px]" aria-hidden />}>
-          <RailNav openCount={openCount} historyCount={historyCount} />
+          <RailNav openCount={openCount} historyCount={historyCount} chats={chats} />
         </Suspense>
       </div>
 

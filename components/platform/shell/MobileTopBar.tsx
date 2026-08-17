@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePlatform } from '@/lib/platform/session';
 import { VysoMark } from '@/components/platform/VysoMark';
 import { MobileDrawer } from './MobileDrawer';
+import type { RailChat } from './RailChats';
 import { trialPillLabel, type RailModule } from './shell-data';
 
 /**
@@ -24,10 +25,14 @@ import { trialPillLabel, type RailModule } from './shell-data';
 export function MobileTopBar({
   openCount,
   historyCount,
+  chats,
   modules,
 }: {
   openCount: number;
   historyCount: number;
+  /** Passed straight through to the drawer, which draws the same chat block
+   *  the desktop rail does (W2). */
+  chats: RailChat[];
   modules: RailModule[];
 }) {
   const { trial } = usePlatform();
@@ -73,6 +78,7 @@ export function MobileTopBar({
         onClose={() => setDrawerOpen(false)}
         openCount={openCount}
         historyCount={historyCount}
+        chats={chats}
         modules={modules}
       />
     </>

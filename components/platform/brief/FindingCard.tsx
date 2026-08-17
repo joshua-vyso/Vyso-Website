@@ -124,7 +124,10 @@ export function FindingCard({
   const isNew = finding.status === 'new';
   const canDiscuss = finchEnabled && !!email;
 
-  const discuss = () => askBrief(findingPrompt(finding));
+  // The id rides along so the chat this becomes is filed against this finding
+  // (`finch_chats.finding_id`) — see askBrief: it is remembered until the owner
+  // sends, never acted on at tap time.
+  const discuss = () => askBrief(findingPrompt(finding), finding.id);
 
   return (
     <article

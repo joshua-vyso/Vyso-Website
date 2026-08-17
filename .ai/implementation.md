@@ -950,3 +950,139 @@ wave).
 
 Runtime verification against a live session is W6's job; W1 was verified by the
 gates only. Not pushed — local commit only.
+
+## Brief chat v2 — W2 (rail + chat pages + suggestions)
+
+Implements `.ai/plan_brief_chat_v2.md` §4 W2: the rail's chat list, the two
+chat routes, the suggestion chips, and the navigation that ties the Brief's
+dock to them. W1's persistence becomes visible for the first time. W3–W6
+untouched; nothing in `components/finch/*`, `app/layout.tsx`, `app/globals.css`
+(no new tokens were needed), `lib/platform/price-watch/*` or `app/api/agents/*`
+was edited.
+
+### Files
+
+**Created**
+
+- `lib/platform/finch-suggestions.ts` — pure. `suggestionsFor(...)`,
+  `findingTopic`, `findingRef`, `MAX_SUGGESTIONS`. No `@/…` and no framework
+  import, so `node --test` can load it directly.
+- `lib/platform/finch-suggestions-data.ts` — the reads (`server-only`):
+  debtors via `outstandingByCustomer`, a `head:true` count of the last 7 days'
+  `documents`, both wrapped so a failure degrades to "nothing to suggest".
+- `components/platform/chat/` — `ChatTranscript`, `ChatComposer` (extracted
+  from the dock), `MessageBubble` (`UserBubble` + `AssistantMessage`),
+  `ToolStatusLine`(`s`), `SuggestionChips`, `ChatView`, `NewChatView`,
+  `OlderChats`, `chat-display.ts` (tool phrasing + source links).
+- `components/platform/shell/RailChats.tsx` — "New chat" + this user's recent
+  conversations.
+- `app/app/chat/new/page.tsx`, `app/app/chat/[id]/page.tsx`.
+- `tests/finch-suggestions.test.ts` (17).
+
+**Modified**
+
+- `app/app/layout.tsx` — `listChats` alongside `fetchFindings` in one
+  `Promise.all`; server-computed `when` labels; `suggestionsForOrg`; both
+  passed down (rail + drawer + provider).
+- `components/platform/shell/FinchChatProvider.tsx` — `suggestions`,
+  `send(text?)`, `adoptChat`, the pending finding id, `router.push` to a new
+  chat's screen and one `router.refresh()` per chat.
+- `components/platform/shell/GlobalChatDock.tsx` — composer extracted;
+  composer-only on `/app/chat/*`; chips above the pill on an empty Brief.
+- `components/platform/shell/{RailNav,AppRail,MobileTopBar,MobileDrawer}.tsx`
+  — `chats` threaded through; `RailNav` renders `RailChats` under "Today's
+  brief" on both surfaces.
+- `lib/platform/finch-chats-shared.ts` — `chatTimeLabel` (+ 4 tests in
+  `tests/finch-chats-archive.test.ts`).
+- `components/platform/brief/brief-chat.ts` — `askBrief(prompt, findingId?)`;
+  the prelude now stamps `finding <ref>` on each line.
+- `components/platform/brief/FindingCard.tsx` — passes `finding.id`.
+- `app/app/page.tsx` — one delimited `W2 · "Older chats"` block (import,
+  conditional read, one JSX line).
+- `lib/ai/finch/knowledge.ts` — BRIEF gains "Drafting — you write, the owner
+  sends" and "Chats, suggestions and attachments". Haiku tier unchanged.
+
+### Decisions
+
+1. **Tapping a finding does NOT create a chat.** The plan reads "tap a card →
+   chat created with `finding_id`"; taken literally that means a row per
+   curious click, and the rail fills with empty "New chat" entries every time
+   someone reads a finding and thinks better of it. Instead the id is held in
+   a ref (`pendingFindingRef`) and spent when the owner actually sends — which
+   is what plan §2.5 describes anyway ("POST /api/finch/chats first (module +
+   findingId **from context**)"). The composer still receives the half-sentence
+   so the question stays the owner's.
+2. **The chat page prefers provider state, and adopts rather than fetches.**
+   `ChatView`'s rule is `activeChatId === chatId → provider turns win`. That is
+   what makes "send from the Brief" survive the `router.push` that happens
+   mid-stream: the server read legitimately returns an empty transcript at that
+   moment (the agent route's `after()` hasn't run), and preferring it would
+   blank the answer being watched. On a hard load the provider is empty, so the
+   first paint is the server's rows and hydration matches. `adoptChat` hands
+   the already-read rows over instead of re-requesting them, and refuses while
+   a turn is in flight so navigating between chats can't splice one answer onto
+   another's transcript.
+3. **Navigation only from `/app` and `/app/chat/new`.** Sending from a module
+   screen keeps the conversation in the dock beside the work. W4's bubble makes
+   that a designed surface; yanking someone out of OrderFlow mid-task would not
+   be.
+4. **`router.refresh()` once per chat, not once per turn.** It fires only when
+   THIS send created the row. Every later turn moves `updated_at` and nothing
+   else, and a refresh re-runs the whole platform layout's server reads. Known
+   race, accepted: the refresh can beat `after()`'s title generation, so a
+   brand-new row can read "New chat" in the rail until the next load. The row
+   appearing is the part that matters.
+5. **Evidence pills point at screens, not documents.** Design 1b shows
+   per-item pills ("Butternut price history ↗"); no tool emits structured
+   references yet (plan §1 non-goals — that is P1.2). `sourceLinksFor` maps the
+   tools a turn actually ran onto the modules holding that data, which is a
+   smaller promise and a true one. Pills into a LOCKED module are dropped
+   rather than drawn — Finch's tools ignore the module gate, so offering a link
+   that lands on an upsell screen would be a small betrayal.
+6. **Suggestion prompts name a finding by a short ref**, and the prelude was
+   changed to stamp the same ref on every line it sends. `findingRef` is one
+   function with two callers so the two formats cannot drift; a chip that named
+   a finding the model couldn't identify would produce a confident answer about
+   the wrong one. Eight hex characters, because the prompt is user-visible —
+   it becomes the message bubble they read back.
+7. **A fourth input, `canSeeMoney`.** The plan's signature is
+   `{findings, overdue, recentDocCount}`; an empty `overdue` is ambiguous
+   between "nobody is late" and "you weren't allowed to look", and the
+   difference decides whether "Who owes me money?" belongs in the row. Optional,
+   defaulting true, so the plan's three-field call still type-checks.
+8. **Relative times are computed on the server.** `chatTimeLabel(iso, now)`
+   takes its clock as a parameter and the layout resolves it once; `RailChats`
+   receives finished strings. A client recomputing "4m" at hydration can
+   disagree with the HTML it is hydrating.
+9. **Suggestions are split across two modules** for the reason W1 split
+   `finch-chats`: `node --test` cannot load anything reaching `next/headers`,
+   and the ordering rules are exactly what rots untested.
+
+### Known cost, flagged rather than fixed
+
+`suggestionsForOrg` reaches `outstandingByCustomer`, which loads the org's
+invoices, items, payments and credit notes to derive balances the OrderFlow way.
+It runs once per SERVER render of the platform layout (hard load or
+`router.refresh()`), never on a client navigation, and only for owner/admin.
+The plan's instruction was to reuse the existing debtors fn, so it does — but a
+dedicated `of_invoices`-only overdue query is the right shape here and should
+land before anything else starts asking for these inputs.
+
+### Deferred to later waves (deliberately not built)
+
+Drag-and-drop (W5) — `/app/chat/new` says so in words rather than drawing a
+target that would ignore a dropped file. Per-document evidence links and
+model-generated follow-up chips (P1.2 tools). Module-aware chats (W4): the
+provider still sends `module: 'brief'` everywhere, so every chat created this
+wave carries the brief dot in the rail.
+
+### Gates
+
+`npx tsc --noEmit` clean · `npm test` **177/177** (156 baseline + 17
+suggestions + 4 `chatTimeLabel`) · `npm run build` passes with `/app/chat/new`
+and `/app/chat/[id]` both registered dynamic (ƒ) · `npx eslint` **53 errors /
+38 warnings — identical to the pre-wave baseline**.
+
+Runtime verification needs a signed-in session and is W6's job: nothing in this
+wave was exercised against a live database. The clicks W6 must make are listed
+in the wave report.
