@@ -34,6 +34,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
 import { runPriceWatch, type PriceWatchSummary } from '../lib/platform/price-watch/run.ts';
+import { priceWatchMatchCall, priceWatchObservationCall } from '../lib/ai/price-watch-model.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ENV_PATH = resolve(HERE, '..', '.env.local');
@@ -299,9 +300,18 @@ async function main(): Promise<void> {
     console.log('!'.repeat(72));
   }
 
+  // matchCall/observeCall wire the real Anthropic transport in — without them
+  // match.ts/observe.ts fall back to their `missingModelCall` default, which
+  // throws for every model-eligible line and turns the backfill into nothing
+  // but `model_error` review rows. That's exactly what the 2026-08-14
+  // remediation (lib/ai/price-watch-model.ts) was supposed to fix everywhere,
+  // but this script was never updated to inject it. Tests inject their own
+  // fakes, so this wiring is only load-bearing here and in the cron route.
   const summary = await runPriceWatch(supabase, args.orgId, {
     dryRun: args.dryRun,
     log: args.quiet ? undefined : (m) => console.log(`  ${m}`),
+    matchCall: priceWatchMatchCall,
+    observeCall: priceWatchObservationCall,
   });
 
   printSummary(summary);

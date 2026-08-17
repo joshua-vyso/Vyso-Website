@@ -445,12 +445,12 @@ export async function generateObservation(
       raw = await call(buildObservePrompt(facts, attempt === 1 ? [] : lastViolations), attempt);
     } catch (error) {
       // A transport failure is not a fidelity violation — don't feed it back to
-      // the model as if it had written something wrong.
-      lastViolations = [
-        `the writing model could not be reached (${
-          error instanceof Error ? error.message : 'unknown error'
-        })`,
-      ];
+      // the model as if it had written something wrong. `violations` here never
+      // gets logged by any caller, so without this the failure is invisible in
+      // Vercel Logs — log it now so the next outage says WHY.
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[price-watch] observe model call failed', { itemName: facts.itemName, message });
+      lastViolations = [`the writing model could not be reached (${message})`];
       break;
     }
 

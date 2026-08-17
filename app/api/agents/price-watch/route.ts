@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceSupabase } from '@/lib/platform/supabase-service';
 import { parseEnvList, runPriceWatch, type PriceWatchSummary } from '@/lib/platform/price-watch/run';
+import { priceWatchMatchCall, priceWatchObservationCall } from '@/lib/ai/price-watch-model';
 
 export const maxDuration = 300;
 
@@ -57,7 +58,20 @@ export async function GET(req: Request) {
   const summaries: RunResult[] = [];
   for (const orgId of orgIds) {
     try {
-      summaries.push(await runPriceWatch(supabase, orgId, { log: (m) => console.log(m) }));
+      // matchCall/observeCall wire the real Anthropic transport in — without them
+      // match.ts/observe.ts fall back to their `missingModelCall` default, which
+      // throws for every model-eligible line and turns the whole run into
+      // `model_error` review rows. That's exactly what the 2026-08-14 remediation
+      // (lib/ai/price-watch-model.ts) was supposed to fix everywhere, but this
+      // route was never updated to inject it. Tests inject their own fakes, so
+      // this wiring is only load-bearing here and in the backfill CLI.
+      summaries.push(
+        await runPriceWatch(supabase, orgId, {
+          log: (m) => console.log(m),
+          matchCall: priceWatchMatchCall,
+          observeCall: priceWatchObservationCall,
+        }),
+      );
     } catch (error) {
       // runPriceWatch turns ordinary data problems into warnings rather than
       // throwing, so reaching here means something genuinely unexpected broke.

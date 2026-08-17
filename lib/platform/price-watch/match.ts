@@ -387,9 +387,14 @@ export async function matchLineItem(
   let raw: string;
   try {
     raw = await call(buildMatchPrompt(input, shortlist));
-  } catch {
+  } catch (err) {
     // Rate limit, timeout, missing key. We know nothing about this line, so no
-    // link and no proposal — just a row a human (or a re-run) picks up.
+    // link and no proposal — just a row a human (or a re-run) picks up. Log it
+    // so Vercel Logs show WHY, rather than a bare pile of model_error rows.
+    console.error('[price-watch] match model call failed', {
+      rawDescription: input.rawDescription,
+      message: err instanceof Error ? err.message : String(err),
+    });
     return review('model_error', shortlist);
   }
 

@@ -636,6 +636,32 @@ test('runPriceWatch: a total match-model outage is loudly warned about, even on 
   );
 });
 
+test('runPriceWatch: with no matchCall/observeCall injected at all, the built-in missingModelCall default reproduces the same loud outage', async () => {
+  // This IS the 2026-08-14 regression shape: a caller (the cron route, the
+  // backfill CLI) that forgets to pass matchCall/observeCall must fail exactly
+  // like a real transport outage — loud and counted — not throw uncaught or,
+  // worse, look like a quiet zero-findings run.
+  const { client, writeAttempts } = throwingStub({
+    pw_items: [{ id: 'item-tom', name: 'Tomatoes Saladette', base_unit: 'kg' }],
+    suppliers: [{ id: 'sup-1', name: 'JHB Fresh Produce Market' }],
+    pw_item_matches: [],
+    pw_price_points: [],
+    agent_findings: [],
+    documents: [statementDoc('doc-1', 'sup-1', '2026-06-01', 'TOMATOES SALADETTE', 20)],
+  });
+
+  const summary = await runPriceWatch(client as never, 'org-1', { dryRun: true });
+
+  assert.deepEqual(writeAttempts, []);
+  assert.equal(summary.matchModelCalls, 1);
+  assert.equal(summary.matchModelFailures, 1);
+  assert.equal(summary.modelOutage, true);
+  assert.ok(
+    summary.warnings.some((w) => w.includes('model outage')),
+    'omitting the injection must be exactly as loud as a real transport outage',
+  );
+});
+
 test('readOnlyClient: every write method throws, reads pass through', async () => {
   const { client } = throwingStub({ pw_items: [{ id: 'x' }] });
   const guarded = readOnlyClient(client as never);
