@@ -23,7 +23,7 @@ type Draft = {
 const BLANK: Draft = {
   pageId: '',
   name: '',
-  campaign: 'Legacy',
+  campaign: 'Pricing Refined',
   templateKey: 'initial',
   subject: '',
   body: '',
@@ -36,6 +36,7 @@ const BLANK: Draft = {
  * server-side; everything else is free text.
  */
 const CAMPAIGN_COLOUR: Record<string, { bg: string; fg: string }> = {
+  'Pricing Refined': { bg: '#EAF7EF', fg: '#2F7D5B' },
   'Legacy': { bg: '#EAF2FC', fg: '#1F5FA8' },
   'Discovery First': { bg: '#F3EDFB', fg: '#6B3FA0' },
 };
@@ -237,11 +238,14 @@ export function TemplatesPanel({ initial }: { initial: EmailTemplate[] }) {
             </div>
 
             <p className="text-[12px] leading-relaxed text-[#A0A49C]">
-              Placeholders like <code className="rounded bg-[#F4F6FA] px-1">{'{{company_name}}'}</code>,{' '}
-              <code className="rounded bg-[#F4F6FA] px-1">{'{{first_name}}'}</code> and{' '}
-              <code className="rounded bg-[#F4F6FA] px-1">{'{{specific_observation_from_website}}'}</code> are filled per lead
-              at send time. Deactivating a template halts the run at that stage rather than sending a blank email, so leave
-              a replacement active if you deactivate one.
+              Start every body with <code className="rounded bg-[#F4F6FA] px-1">{'{{greeting}}'}</code> — it becomes
+              &ldquo;Hi Name and the Company team&rdquo; or &ldquo;Hi Company team&rdquo;, never &ldquo;Hi there&rdquo;.
+              Also filled per lead: <code className="rounded bg-[#F4F6FA] px-1">{'{{company_name}}'}</code>,{' '}
+              <code className="rounded bg-[#F4F6FA] px-1">{'{{specific_detail}}'}</code> (a concrete observation from their
+              site). Verified-only tokens such as <code className="rounded bg-[#F4F6FA] px-1">{'{{audit_price}}'}</code>{' '}
+              and <code className="rounded bg-[#F4F6FA] px-1">{'{{verified_saving}}'}</code> are never invented — an email
+              needing one is skipped until the figure is supplied. Deactivating a template halts the run at that stage,
+              so leave a replacement active if you deactivate one.
             </p>
           </div>
         </SectionCard>
