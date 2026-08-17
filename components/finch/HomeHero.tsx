@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 import { CyclingFinding } from "./CyclingFinding";
 import { Glow } from "./ground/Glow";
 import { SeamHairline } from "./ground/SeamHairline";
@@ -80,9 +82,29 @@ export function HomeHero() {
       </div>
 
       <div className="hidden lg:block">
-        <CursorDrift>
-          <CyclingFinding ids={HOME_HERO_CYCLE} />
-        </CursorDrift>
+        {/* `w-fit`: shrinks the group to the card's own rendered width (it caps
+            at `max-w-[460px]`, narrower than the column), so the bird centres
+            over the card itself rather than the wider column. The grid's own
+            `items-center` still centres this whole group — bird, gap and card
+            together — against the left copy, exactly as it centred the card
+            alone before; nothing else here changes that.
+
+            Gradient colours, as the file ships them — not `FinchBirdMark`'s
+            flat mask, which exists for the ink band's contrast problem and
+            doesn't apply on this paper ground. */}
+        <div className="flex w-fit flex-col items-center">
+          <Image
+            src="/finch/finch-bird.svg"
+            alt=""
+            aria-hidden="true"
+            width={44}
+            height={44}
+            className="finch-hero-bird-reveal mb-[20px] h-[32px] w-[32px] lg:h-[44px] lg:w-[44px]"
+          />
+          <CursorDrift>
+            <CyclingFinding ids={HOME_HERO_CYCLE} />
+          </CursorDrift>
+        </div>
         <div className="mt-[12px] text-right font-fn-mono text-[10px] tracking-[0.1em] text-fn-faint">
           ILLUSTRATIVE EXAMPLE
         </div>
