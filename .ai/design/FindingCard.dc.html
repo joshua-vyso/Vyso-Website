@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+body { margin: 0; background: #FAF9F6; font-family: 'Instrument Sans', sans-serif; }
+a { color: #14120E; } a:hover { color: #C94F0E; }
+@keyframes fPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,119,39,0.5); } 50% { box-shadow: 0 0 0 5px rgba(255,119,39,0); } }
+</style>
+</helmet>
+<div ref="{{ cardRef }}" onMouseMove="{{ onMove }}" onMouseLeave="{{ onLeave }}" style="position: relative; background: #FFFFFF; border: 1px solid #E7E3DA; border-radius: 10px; padding: 22px 24px 18px 27px; max-width: 460px; box-shadow: 0 1px 2px rgba(20,18,14,0.05), 0 8px 24px rgba(20,18,14,0.06); transition: box-shadow 200ms ease-out; will-change: transform; cursor: default;" style-hover="box-shadow: 0 2px 4px rgba(20,18,14,0.07), 0 18px 40px rgba(20,18,14,0.12);">
+  <div style="position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; border-radius: 2px; background: {{ barColor }};"></div>
+  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+    <span style="width: 7px; height: 7px; border-radius: 50%; background: {{ dotColor }}; animation: {{ dotAnim }};"></span>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.12em; color: #6B6659;">{{ agent }}</span>
+    <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: {{ stateColor }}; border: 1px solid {{ stateBorder }}; border-radius: 99px; padding: 3px 9px;">{{ stateLabel }}</span>
+  </div>
+  <div style="font-size: 17px; line-height: 1.45; color: #14120E; margin-bottom: 10px;">{{ observation }}</div>
+  <div style="font-size: 21px; font-weight: 600; letter-spacing: -0.01em; color: #C94F0E; margin-bottom: 12px;">{{ impact }}</div>
+  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: #2F6FAE; background: #EDF4FB; border-radius: 6px; padding: 4px 10px;">{{ evidence }} ↗</span>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.08em; color: #A39D8E;">{{ meta }}</span>
+  </div>
+  <div style="display: flex; align-items: center; gap: 6px; border-top: 1px solid #F0EDE5; padding-top: 13px;">
+    <sc-for list="{{ actionList }}" as="act" hint-placeholder-count="3">
+      <span style="display: flex; align-items: center; gap: 6px;">
+        <sc-if value="{{ act.notFirst }}" hint-placeholder-val="{{ false }}"><span style="color: #D8D3C6; font-size: 12px;">·</span></sc-if>
+        <span style="font-size: 13px; font-weight: 500; color: #4A463C; cursor: pointer; padding: 3px 6px; border-radius: 5px; transition: all 120ms;" style-hover="color: #14120E; background: #F5F2EA;">{{ act.label }}</span>
+      </span>
+    </sc-for>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 520, &quot;height&quot;: 260}, &quot;agent&quot;: {&quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;PRICE WATCH&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;observation&quot;: {&quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;Butternut up 12% at FreshCo since June.&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;impact&quot;: {&quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;≈ R4,200/yr at current volumes&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;evidence&quot;: {&quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;3 invoices&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;meta&quot;: {&quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;FRESHCO · +12% · JUN–AUG&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;state&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;new&quot;, &quot;options&quot;: [&quot;new&quot;, &quot;in-progress&quot;, &quot;resolved&quot;], &quot;tsType&quot;: &quot;'new'|'in-progress'|'resolved'&quot;}, &quot;tilt&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;}, &quot;actions&quot;: {&quot;editor&quot;: null, &quot;default&quot;: [&quot;Draft supplier email&quot;, &quot;Show 6-month trend&quot;, &quot;Dismiss&quot;], &quot;tsType&quot;: &quot;string[]&quot;}}">
+class Component extends DCLogic {
+  cardRef = React.createRef();
+  onMove = (e) => {
+    if (this.props.tilt === false) return;
+    const el = this.cardRef.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
+    el.style.transform = `perspective(900px) rotateY(${x * 4}deg) rotateX(${-y * 4}deg) translateY(-2px)`;
+    el.style.transition = 'box-shadow 200ms ease-out';
+  };
+  onLeave = () => {
+    const el = this.cardRef.current; if (!el) return;
+    el.style.transform = 'perspective(900px) rotateY(0deg) rotateX(0deg)';
+    el.style.transition = 'transform 250ms ease-out, box-shadow 200ms ease-out';
+  };
+  renderVals() {
+    const p = this.props;
+    const state = p.state ?? 'new';
+    const stateMap = {
+      'new': { label: 'NEW', color: '#C94F0E', border: '#F3D9C6', dot: '#FF7727', anim: 'fPulse 2s ease-out infinite' },
+      'in-progress': { label: 'IN PROGRESS', color: '#6B6659', border: '#E7E3DA', dot: '#FF7727', anim: 'none' },
+      'resolved': { label: 'RESOLVED', color: '#8A8474', border: '#E7E3DA', dot: '#B9B3A3', anim: 'none' }
+    };
+    const s = stateMap[state] || stateMap['new'];
+    const actions = p.actions ?? ['Draft supplier email', 'Show 6-month trend', 'Dismiss'];
+    return {
+      cardRef: this.cardRef, onMove: this.onMove, onLeave: this.onLeave,
+      agent: p.agent ?? 'PRICE WATCH',
+      observation: p.observation ?? 'Butternut up 12% at FreshCo since June.',
+      impact: p.impact ?? '≈ R4,200/yr at current volumes',
+      evidence: p.evidence ?? '3 invoices',
+      meta: p.meta ?? 'FRESHCO · +12% · JUN–AUG',
+      stateLabel: s.label, stateColor: s.color, stateBorder: s.border,
+      dotColor: s.dot, dotAnim: s.anim,
+      barColor: state === 'resolved' ? '#D8D3C6' : '#FF7727',
+      actionList: actions.map((label, i) => ({ label, notFirst: i > 0 }))
+    };
+  }
+}
+</script>
+</body>
+</html>

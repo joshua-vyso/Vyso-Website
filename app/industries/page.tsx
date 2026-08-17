@@ -1,193 +1,118 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import {
-  Building2,
-  CalendarClock,
-  Sprout,
-  Truck,
-  UtensilsCrossed,
-  Warehouse,
-  type LucideIcon,
-} from "lucide-react";
 
+import { AuditBand } from "@/components/finch/AuditBand";
+import { FinchFooter } from "@/components/finch/FinchFooter";
+import { FinchNav } from "@/components/finch/FinchNav";
+import { Breadcrumb, Eyebrow } from "@/components/finch/industries/IndustryBits";
+import { ExperimentalCards, IndustryCards } from "@/components/finch/industries/IndustryCards";
+import { buildIndustriesHubSchema } from "@/components/finch/industries/industries-jsonld";
 import {
-  AbstractFlowBackdrop,
-  Breadcrumbs,
-  JsonLd,
-  MarketingCta,
-  PublicPageShell,
-  marketingStyles as styles,
-} from "@/components/marketing/PublicMarketing";
+  EXPERIMENTAL_INDUSTRY_ORDER,
+  HUB,
+  PRIMARY_INDUSTRY_ORDER,
+} from "@/lib/marketing/industries";
+import { SITE } from "@/lib/marketing/site";
 
-const title = "Industries | Vyso Operations Software";
-const description =
-  "Vyso configures the same connected operations platform around how restaurants, food suppliers, farms, caterers, wholesalers and hospitality operators actually work.";
+/* `/industries` — the vertical hub. Six primary operations, then a quiet "Also
+   watching" row for the two experimental verticals, which are linked from here
+   and the sitemap and nowhere else (`.ai/vyso_v2.md` §2.2).
+
+   Root layout supplies the `%s | Vyso` suffix, so the title here is the page
+   half only. `.finch-site` scopes the `--fn-*` tokens and opts the route out of
+   the site-wide blend surface, exactly as `/` and `/pricing` do. */
 
 export const metadata: Metadata = {
-  title,
-  description,
-  alternates: { canonical: "/industries" },
+  title: HUB.title,
+  description: HUB.description,
+  alternates: { canonical: `${SITE.url}/industries` },
+  robots: { index: true, follow: true },
   openGraph: {
-    title,
-    description,
-    url: "/industries",
-    siteName: "Vyso",
+    title: HUB.title,
+    description: HUB.description,
+    url: `${SITE.url}/industries`,
+    siteName: SITE.name,
     locale: "en_ZA",
     type: "website",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "Vyso — Operations, connected." }],
   },
-  twitter: { card: "summary_large_image", title, description, images: ["/og.png"] },
+  twitter: {
+    card: "summary_large_image",
+    title: HUB.title,
+    description: HUB.description,
+  },
 };
 
-type IndustrySummary = {
-  slug: string;
-  name: string;
-  description: string;
-  icon: LucideIcon;
-};
-
-const INDUSTRY_SUMMARIES: readonly IndustrySummary[] = [
-  {
-    slug: "restaurants",
-    name: "Restaurants",
-    description: "Procurement, waste, staffing, pricing and daily operational reporting behind every service.",
-    icon: UtensilsCrossed,
-  },
-  {
-    slug: "food-suppliers",
-    name: "Food suppliers",
-    description: "Customer orders, pricing, invoicing, delivery documents and payments in one connected flow.",
-    icon: Truck,
-  },
-  {
-    slug: "farms",
-    name: "Farms & producers",
-    description: "Repeat buyer orders, availability, pricing, delivery documents and payments in one workflow.",
-    icon: Sprout,
-  },
-  {
-    slug: "catering-companies",
-    name: "Catering companies",
-    description: "Event costing, procurement, production planning, invoicing and wastage under weekly control.",
-    icon: CalendarClock,
-  },
-  {
-    slug: "wholesale",
-    name: "Wholesale",
-    description: "Purchasing, inventory movement, order processing, supplier management and margin control.",
-    icon: Warehouse,
-  },
-  {
-    slug: "hospitality",
-    name: "Hospitality",
-    description: "Multi-department visibility, supplier control, procurement approvals and executive dashboards.",
-    icon: Building2,
-  },
-] as const;
-
-const url = "https://vyso.co.za/industries";
-
-const structuredData = {
-  "@context": "https://schema.org",
-  "@graph": [
-    {
-      "@type": "WebPage",
-      "@id": `${url}#webpage`,
-      url,
-      name: title,
-      description,
-      isPartOf: { "@id": "https://vyso.co.za/#website" },
-      breadcrumb: { "@id": `${url}#breadcrumb` },
-      mainEntity: { "@id": `${url}#list` },
-      inLanguage: "en-ZA",
-    },
-    {
-      "@type": "BreadcrumbList",
-      "@id": `${url}#breadcrumb`,
-      itemListElement: [
-        { "@type": "ListItem", position: 1, name: "Home", item: "https://vyso.co.za/" },
-        { "@type": "ListItem", position: 2, name: "Industries", item: url },
-      ],
-    },
-    {
-      "@type": "ItemList",
-      "@id": `${url}#list`,
-      itemListElement: INDUSTRY_SUMMARIES.map((industry, index) => ({
-        "@type": "ListItem",
-        position: index + 1,
-        name: industry.name,
-        url: `https://vyso.co.za/industries/${industry.slug}`,
-      })),
-    },
-  ],
-};
-
-export default function IndustriesLandingPage() {
+export default function IndustriesPage() {
   return (
-    <PublicPageShell>
-      <JsonLd data={structuredData} />
-
-      <section className={styles.compactHero} aria-labelledby="industries-heading">
-        <AbstractFlowBackdrop />
-        <div className={styles.shell}>
-          <Breadcrumbs items={[{ label: "Home", href: "/" }, { label: "Industries" }]} />
-          <p className={styles.eyebrow}>Vyso by industry</p>
-          <h1 id="industries-heading" className={styles.compactTitle}>
-            <span className={styles.blendPlain}>The same platform.</span>{" "}
-            <span className={styles.blendAccent}>Configured around your operation.</span>
-          </h1>
-          <p className={styles.compactLead}>
-            Vyso does not change the product for each industry—it changes which
-            modules matter first and how they are configured. These are the
-            operations we already understand deeply.
-          </p>
-          <div className={styles.actions}>
-            <Link className={styles.primaryButton} href="/contact">
-              Join Waitlist <span aria-hidden="true">→</span>
-            </Link>
-            <Link className={styles.glassButton} href="/platform">
-              Explore the platform
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      <section className={styles.section} aria-labelledby="industries-list-heading">
-        <div className={styles.shell}>
-          <div className={styles.sectionIntro}>
-            <div>
-              <p className={styles.sectionKicker}>Where Vyso starts</p>
-              <h2 id="industries-list-heading" className={`${styles.sectionTitle} ${styles.blendPlain}`}>
-                Find the operation that looks like yours.
-              </h2>
-            </div>
-            <p className={styles.sectionCopy}>
-              Each page covers the specific gaps, module shape, outcomes and
-              questions relevant to that industry—not a relabelled version of
-              the same page.
-            </p>
-          </div>
-
-          <div className={styles.moduleGrid}>
-            {INDUSTRY_SUMMARIES.map(({ slug, name, description: industryDescription, icon: Icon }) => (
-              <Link key={slug} href={`/industries/${slug}`} className={styles.moduleCard}>
-                <span className={styles.cardIcon}><Icon aria-hidden="true" size={19} /></span>
-                <h3 className={styles.cardTitle}>{name}</h3>
-                <p className={styles.cardCopy}>{industryDescription}</p>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <MarketingCta
-        eyebrow="Not sure where you fit"
-        title="Tell us how your business actually operates."
-        copy="If your operation does not fit neatly into one of these industries, the audit still applies. We will map the real workflow and tell you honestly whether Vyso is the right system."
-        primaryLabel="Join Waitlist"
-        secondaryLabel="View the platform"
-        secondaryHref="/platform"
+    <div className="finch-site min-h-screen bg-fn-bg font-fn-sans text-fn-ink antialiased">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(buildIndustriesHubSchema()).replace(/</g, "\\u003c"),
+        }}
       />
-    </PublicPageShell>
+      <FinchNav active="industries" />
+
+      <main id="main">
+        <section className="mx-auto max-w-[1160px] px-[20px] pt-[36px] lg:px-[40px] lg:pt-[56px]">
+          <Breadcrumb
+            trail={[
+              { label: "Home", href: "/" },
+              { label: "Industries", href: "/industries" },
+            ]}
+          />
+          <Eyebrow>{HUB.eyebrow}</Eyebrow>
+          <h1 className="m-0 mb-[18px] max-w-[820px] font-fn-serif text-[36px] font-medium leading-[1.1] tracking-[-0.02em] text-pretty lg:mb-[22px] lg:text-[54px] lg:leading-[1.06] lg:tracking-[-0.025em]">
+            {HUB.h1Plain} <span className="text-fn-ink-3">{HUB.h1Accent}</span>
+          </h1>
+          <p className="m-0 max-w-[620px] text-[15px] leading-[1.65] text-fn-ink-2 text-pretty lg:text-[17px]">
+            {HUB.lead}
+          </p>
+        </section>
+
+        <section
+          className="mx-auto max-w-[1160px] px-[20px] pt-[56px] lg:px-[40px] lg:pt-[84px]"
+          aria-labelledby="primary-heading"
+        >
+          <Eyebrow>{HUB.primaryEyebrow}</Eyebrow>
+          <h2
+            id="primary-heading"
+            className="m-0 mb-[16px] font-fn-serif text-[28px] font-medium leading-[1.15] tracking-[-0.02em] lg:text-[38px]"
+          >
+            {HUB.primaryHeading}
+          </h2>
+          <p className="m-0 mb-[32px] max-w-[620px] text-[15px] leading-[1.65] text-fn-ink-3 text-pretty lg:mb-[44px] lg:text-[15.5px]">
+            {HUB.primaryLead}
+          </p>
+          <IndustryCards slugs={PRIMARY_INDUSTRY_ORDER} />
+        </section>
+
+        {/* "Also watching" — quieter by design: these two are experimental, and
+            the row's weight should say so before the chip does. */}
+        <section
+          className="mx-auto max-w-[1160px] px-[20px] pt-[72px] lg:px-[40px] lg:pt-[110px]"
+          aria-labelledby="also-heading"
+        >
+          <div className="border-t border-fn-line pt-[36px]">
+            <Eyebrow>{HUB.alsoEyebrow}</Eyebrow>
+            <h2
+              id="also-heading"
+              className="m-0 mb-[12px] font-fn-serif text-[22px] font-medium leading-[1.2] tracking-[-0.015em] lg:text-[26px]"
+            >
+              {HUB.alsoHeading}
+            </h2>
+            <p className="m-0 mb-[28px] max-w-[560px] text-[14.5px] leading-[1.6] text-fn-ink-3 text-pretty">
+              {HUB.alsoLead}
+            </p>
+            <ExperimentalCards slugs={EXPERIMENTAL_INDUSTRY_ORDER} />
+          </div>
+        </section>
+
+        <AuditBand />
+      </main>
+
+      <div className="pt-[40px] lg:pt-[68px]">
+        <FinchFooter />
+      </div>
+    </div>
   );
 }

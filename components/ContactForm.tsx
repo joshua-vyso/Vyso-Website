@@ -1,57 +1,122 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, CheckCircle2, Loader2 } from "lucide-react";
+
+import {
+  FindingCardFrame,
+  FindingHeader,
+  FindingImpact,
+  FindingObservation,
+} from "@/components/finch/FindingCard";
+import { MagneticButton } from "@/components/finch/text/MagneticButton";
+import { track } from "@/lib/analytics";
+
+/* ── The form ────────────────────────────────────────────────────────────────
+   Three variants over one POST to /api/contact:
+
+   - `audit`   the booking form on /operations-audit#book — adds an optional
+               WhatsApp number and a locations count, and asks where the owner
+               thinks it leaks. Success renders a finding card, so the first
+               thing a new client sees from Finch is the shape of what they
+               will get every week.
+   - `general` /contact and the older marketing surfaces. The four fields the
+               API has always required, nothing else.
+   - `academy` the interest form on /academy — Vyso Academy is COMING SOON, so
+               this only captures who to write to when the first cohort opens.
+               No business name, no challenge — just who, where to reach them,
+               and roughly what kind of business. Success renders the same
+               finding-card language as `audit`, honest about the fact that
+               nothing has been booked yet.
+
+   The extra audit/academy fields are optional on the server, so this component
+   can add them without the general variant (or the pages that still render it)
+   having to change. Styling is the Finch language throughout — the `--fn-*`
+   tokens are declared on `:root`, so they resolve on the old-design pages too. */
 
 type Status = "idle" | "loading" | "success" | "error";
 
-const INITIAL_STATE = { name: "", business: "", email: "", challenge: "", tier: "" };
+export type ContactFormVariant = "audit" | "general" | "academy";
 
-const BODY: React.CSSProperties = { fontFamily: "var(--font-body, var(--font-sans))" };
-
-const INPUT: React.CSSProperties = {
-  ...BODY,
-  width:           "100%",
-  padding:         "0.65rem 1rem",
-  fontSize:        "0.9rem",
-  color:           "#0d0d0d",
-  background:      "rgba(255,255,255,0.7)",
-  border:          "1px solid #e0ddd9",
-  borderRadius:    12,
-  outline:         "none",
-  boxSizing:       "border-box" as const,
-  transition:      "border-color 0.2s, box-shadow 0.2s",
+const INITIAL_STATE = {
+  name: "",
+  business: "",
+  email: "",
+  challenge: "",
+  whatsapp: "",
+  locations: "1",
+  businessType: "",
 };
 
-const LABEL: React.CSSProperties = {
-  ...BODY,
-  fontSize:     "0.8rem",
-  fontWeight:   600,
-  color:        "#444",
-  marginBottom: "0.4rem",
-  display:      "block",
-};
+const LOCATION_OPTIONS = ["1", "2–3", "4+"] as const;
 
-export default function ContactForm() {
-  const [status, setStatus]   = useState<Status>("idle");
-  const [errorMsg, setError]  = useState("");
-  const [fields, setFields]   = useState(INITIAL_STATE);
+/* The vocabulary already used by the site's verticals (`.ai/vyso_v2.md` §2.2) —
+   nothing invented here, just the same six primary verticals plus "Other" so
+   the field never blocks a real signup. */
+const BUSINESS_TYPE_OPTIONS = [
+  "Food supplier",
+  "Farm",
+  "Restaurant",
+  "Catering company",
+  "Wholesale",
+  "Hospitality",
+  "Other",
+] as const;
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
-    setFields(f => ({ ...f, [e.target.name]: e.target.value }));
+const FIELD =
+  "w-full rounded-[8px] border border-fn-line bg-fn-surface px-[14px] py-[11px] text-[14.5px] text-fn-ink " +
+  "placeholder:text-fn-faint outline-none transition-[border-color,box-shadow] duration-200 " +
+  "focus:border-fn-line-hover focus:shadow-[0_0_0_3px_#C9DEF7]";
+
+const LABEL = "mb-[6px] block text-[12.5px] font-medium text-fn-ink-2";
+
+const HINT = "mt-[6px] text-[12px] text-fn-muted";
+
+export default function ContactForm({
+  variant = "general",
+  onSuccess,
+}: {
+  variant?: ContactFormVariant;
+  /** Fires once, after a successful submit. Optional — only `/academy` uses
+      it today, to fill a seat in `SeatGrid` when interest is registered. */
+  onSuccess?: () => void;
+}) {
+  const [status, setStatus] = useState<Status>("idle");
+  const [errorMsg, setError] = useState("");
+  const [fields, setFields] = useState(INITIAL_STATE);
+
+  const isAudit = variant === "audit";
+  const isAcademy = variant === "academy";
+
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
+  ) => setFields((f) => ({ ...f, [e.target.name]: e.target.value }));
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setStatus("loading");
     setError("");
 
-    const data = fields;
+    // Only the audit variant sends every field; academy sends its own small
+    // set (no business name, no challenge — nothing to book yet); the route
+    // treats all of it as optional beyond name/email, so the general payload
+    // is byte-for-byte what it always was.
+    const data = isAudit
+      ? { ...fields, variant }
+      : isAcademy
+        ? { name: fields.name, email: fields.email, businessType: fields.businessType, variant }
+        : {
+            name: fields.name,
+            business: fields.business,
+            email: fields.email,
+            challenge: fields.challenge,
+            variant,
+          };
 
     try {
       const res = await fetch("/api/contact", {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify(data),
+        body: JSON.stringify(data),
       });
 
       if (!res.ok) {
@@ -60,6 +125,8 @@ export default function ContactForm() {
       }
 
       setStatus("success");
+      track("audit_form_submit", { variant });
+      onSuccess?.();
     } catch (err) {
       setStatus("error");
       setError(err instanceof Error ? err.message : "Something went wrong.");
@@ -67,199 +134,239 @@ export default function ContactForm() {
   }
 
   if (status === "success") {
+    if (isAudit) {
+      return (
+        <FindingCardFrame state="new" className="max-w-none">
+          <FindingHeader agent="AUDIT" state="new" />
+          <FindingObservation>
+            Your audit request landed. We&rsquo;ll reply within one business day to confirm the week.
+          </FindingObservation>
+          <FindingImpact>A week from now you&rsquo;ll know where the money goes.</FindingImpact>
+        </FindingCardFrame>
+      );
+    }
+
+    if (isAcademy) {
+      return (
+        <FindingCardFrame state="new" className="max-w-none">
+          <FindingHeader agent="ACADEMY" state="new" />
+          <FindingObservation>Interest noted.</FindingObservation>
+          <FindingImpact>We&rsquo;ll write when the first cohort opens.</FindingImpact>
+        </FindingCardFrame>
+      );
+    }
+
     return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center",
-        justifyContent: "center", padding: "4rem 1rem", textAlign: "center" }}>
-        <div style={{
-          width: 56, height: 56, borderRadius: "50%",
-          background: "hsl(22 69% 44% / 0.1)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          marginBottom: "1.2rem",
-        }}>
-          <CheckCircle2 size={28} color="hsl(22,69%,44%)" />
+      <div className="py-[24px]">
+        <div className="mb-[10px] font-fn-mono text-[10.5px] tracking-[0.14em] text-fn-muted">
+          MESSAGE RECEIVED
         </div>
-        <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "1.6rem", fontWeight: 700,
-          color: "#0d0d0d", margin: "0 0 0.75rem" }}>Message received</h2>
-        <p style={{ ...BODY, fontSize: "0.95rem", color: "#666", lineHeight: 1.65,
-          maxWidth: 340, margin: "0 0 1.5rem" }}>
-          We&apos;ve sent a confirmation to your email with a link to book a 15-minute
-          call at a time that suits you.
+        <h3 className="m-0 mb-[10px] font-fn-serif text-[24px] font-medium tracking-[-0.02em]">
+          Thanks — that came through.
+        </h3>
+        <p className="m-0 mb-[20px] max-w-[420px] text-[15px] leading-[1.6] text-fn-ink-3 text-pretty">
+          We&rsquo;ll reply within one business day. There&rsquo;s a confirmation in your inbox with a
+          link to book a 15-minute call if you would rather talk sooner.
         </p>
         <button
-          onClick={() => { setStatus("idle"); setFields(INITIAL_STATE); setError(""); }}
-          style={{
-            ...BODY,
-            display: "inline-flex", alignItems: "center", gap: "0.4rem",
-            padding: "0.75rem 1.8rem", borderRadius: 50,
-            background: "hsl(22,69%,44%)", color: "#fff",
-            fontSize: "0.9rem", fontWeight: 600, border: "none", cursor: "pointer",
+          type="button"
+          onClick={() => {
+            setStatus("idle");
+            setFields(INITIAL_STATE);
+            setError("");
           }}
+          className="cursor-pointer text-[13.5px] font-medium text-fn-ink-2 transition-colors duration-150 hover:text-fn-orange-deep"
         >
-          Send another enquiry <ArrowRight size={16} />
+          Send another message <span aria-hidden="true">→</span>
         </button>
       </div>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
-      {/* Name + Business */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}
-        className="form-name-row">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-[16px]">
+      <div className="grid grid-cols-1 gap-[16px] sm:grid-cols-2">
         <div>
-          <label htmlFor="name" style={LABEL}>Your name</label>
+          <label htmlFor="name" className={LABEL}>
+            Your name
+          </label>
           <input
-            id="name" name="name" type="text"
-            placeholder="John Smith"
+            id="name"
+            name="name"
+            type="text"
+            autoComplete="name"
+            placeholder="Thandi Nkosi"
             value={fields.name}
             onChange={handleChange}
             required
-            style={INPUT}
-            onFocus={e => {
-              e.currentTarget.style.borderColor = "hsl(22,69%,44%)";
-              e.currentTarget.style.boxShadow   = "0 0 0 3px hsl(22 69% 44% / 0.12)";
-            }}
-            onBlur={e => {
-              e.currentTarget.style.borderColor = "#e0ddd9";
-              e.currentTarget.style.boxShadow   = "none";
-            }}
+            className={FIELD}
           />
         </div>
-        <div>
-          <label htmlFor="business" style={LABEL}>Business name</label>
-          <input
-            id="business" name="business" type="text"
-            placeholder="My Business"
-            value={fields.business}
-            onChange={handleChange}
-            required
-            style={INPUT}
-            onFocus={e => {
-              e.currentTarget.style.borderColor = "hsl(22,69%,44%)";
-              e.currentTarget.style.boxShadow   = "0 0 0 3px hsl(22 69% 44% / 0.12)";
-            }}
-            onBlur={e => {
-              e.currentTarget.style.borderColor = "#e0ddd9";
-              e.currentTarget.style.boxShadow   = "none";
-            }}
-          />
-        </div>
+        {isAcademy ? (
+          <div>
+            <label htmlFor="businessType" className={LABEL}>
+              Business type
+            </label>
+            <select
+              id="businessType"
+              name="businessType"
+              value={fields.businessType}
+              onChange={handleChange}
+              required
+              className={FIELD + " cursor-pointer appearance-none"}
+            >
+              <option value="" disabled>
+                Select one
+              </option>
+              {BUSINESS_TYPE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div>
+            <label htmlFor="business" className={LABEL}>
+              Business name
+            </label>
+            <input
+              id="business"
+              name="business"
+              type="text"
+              autoComplete="organization"
+              placeholder="Fresh Produce Co"
+              value={fields.business}
+              onChange={handleChange}
+              required
+              className={FIELD}
+            />
+          </div>
+        )}
       </div>
 
-      {/* Email */}
       <div>
-        <label htmlFor="email" style={LABEL}>Email address</label>
+        <label htmlFor="email" className={LABEL}>
+          Email address
+        </label>
         <input
-          id="email" name="email" type="email"
+          id="email"
+          name="email"
+          type="email"
+          autoComplete="email"
           placeholder="you@yourbusiness.co.za"
           value={fields.email}
           onChange={handleChange}
           required
-          style={INPUT}
-          onFocus={e => {
-            e.currentTarget.style.borderColor = "hsl(22,69%,44%)";
-            e.currentTarget.style.boxShadow   = "0 0 0 3px hsl(22 69% 44% / 0.12)";
-          }}
-          onBlur={e => {
-            e.currentTarget.style.borderColor = "#e0ddd9";
-            e.currentTarget.style.boxShadow   = "none";
-          }}
+          className={FIELD}
         />
       </div>
 
-      {/* Tier */}
-      <div>
-        <label htmlFor="tier" style={LABEL}>What are you interested in?</label>
-        <select
-          id="tier" name="tier"
-          value={fields.tier}
-          onChange={handleChange}
-          style={{ ...INPUT, cursor: "pointer", appearance: "none" as const,
-            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-            backgroundRepeat: "no-repeat",
-            backgroundPosition: "right 1rem center",
-            paddingRight: "2.5rem",
-          }}
-        >
-          <option value="" disabled>Select a tier (optional)</option>
-          <option value="Audit">One-week audit — R2,000 once-off</option>
-          <option value="Start">Start — R10,000 setup + R8,000/month</option>
-          <option value="Create">Create — R30,000 setup + R10,000/month</option>
-          <option value="Scale">Scale — R50,000 setup + R15,000/month</option>
-          <option value="Not sure">Not sure yet</option>
-        </select>
-      </div>
+      {isAudit ? (
+        <div className="grid grid-cols-1 gap-[16px] sm:grid-cols-2">
+          <div>
+            <label htmlFor="whatsapp" className={LABEL}>
+              WhatsApp number <span className="font-normal text-fn-muted">(optional)</span>
+            </label>
+            <input
+              id="whatsapp"
+              name="whatsapp"
+              type="tel"
+              autoComplete="tel"
+              inputMode="tel"
+              placeholder="082 000 0000"
+              value={fields.whatsapp}
+              onChange={handleChange}
+              className={FIELD}
+            />
+          </div>
+          <div>
+            <label htmlFor="locations" className={LABEL}>
+              Number of locations
+            </label>
+            <select
+              id="locations"
+              name="locations"
+              value={fields.locations}
+              onChange={handleChange}
+              className={FIELD + " cursor-pointer appearance-none"}
+            >
+              {LOCATION_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      ) : null}
 
-      {/* Challenge */}
-      <div>
-        <label htmlFor="challenge" style={LABEL}>What&apos;s your biggest operational challenge?</label>
-        <textarea
-          id="challenge" name="challenge"
-          placeholder="Describe what's breaking down in your ops — stock management, wastage, supplier chaos, no visibility into margins..."
-          value={fields.challenge}
-          onChange={handleChange}
-          rows={5}
-          required
-          style={{ ...INPUT, resize: "none" as const, lineHeight: 1.6 }}
-          onFocus={e => {
-            e.currentTarget.style.borderColor = "hsl(22,69%,44%)";
-            e.currentTarget.style.boxShadow   = "0 0 0 3px hsl(22 69% 44% / 0.12)";
-          }}
-          onBlur={e => {
-            e.currentTarget.style.borderColor = "#e0ddd9";
-            e.currentTarget.style.boxShadow   = "none";
-          }}
-        />
-      </div>
-
-      {status === "error" && (
-        <p style={{ ...BODY, fontSize: "0.85rem", color: "#c0392b" }}>{errorMsg}</p>
+      {isAcademy ? null : (
+        <div>
+          <label htmlFor="challenge" className={LABEL}>
+            {isAudit
+              ? "Where do you think it leaks?"
+              : "What is your biggest operational challenge?"}
+          </label>
+          <textarea
+            id="challenge"
+            name="challenge"
+            placeholder={
+              isAudit
+                ? "Supplier prices creeping, stock going missing, debtors running late — a sentence is enough."
+                : "Tell us what is breaking down — stock, wastage, suppliers, or no view of your margins."
+            }
+            value={fields.challenge}
+            onChange={handleChange}
+            rows={isAudit ? 4 : 5}
+            required
+            className={FIELD + " resize-none leading-[1.6]"}
+          />
+          {isAudit ? (
+            <p className={HINT}>A guess is fine. The audit is what turns it into a number.</p>
+          ) : null}
+        </div>
       )}
 
-      {/* Submit — pill shape */}
-      <button
+      {status === "error" ? (
+        <p className="m-0 text-[13px] text-fn-orange-deep" role="alert">
+          {errorMsg}
+        </p>
+      ) : null}
+
+      {/* §4.5's magnetic CTA. The submit is the one button on `/operations-
+          audit` that ends the page's argument, so it gets the pull — at 6px
+          rather than 10, because this button is full-width and flush with the
+          card's padding, where the full 10 reads as a misaligned edge instead
+          of as magnetism. Off on touch, under reduced motion, and while the
+          POST is in flight (`MagneticButton` gates all three). */}
+      <MagneticButton
         type="submit"
         disabled={status === "loading"}
-        style={{
-          ...BODY,
-          width:           "100%",
-          padding:         "0.9rem 1.5rem",
-          borderRadius:    50,
-          border:          "none",
-          background:      "hsl(22,69%,44%)",
-          color:           "#fff",
-          fontSize:        "0.95rem",
-          fontWeight:      600,
-          cursor:          status === "loading" ? "not-allowed" : "pointer",
-          opacity:         status === "loading" ? 0.7 : 1,
-          display:         "flex",
-          alignItems:      "center",
-          justifyContent:  "center",
-          gap:             "0.4rem",
-          transition:      "background 0.2s, opacity 0.2s",
-        }}
-        onMouseEnter={e => {
-          if (status !== "loading") (e.currentTarget as HTMLButtonElement).style.background = "hsl(22,72%,38%)";
-        }}
-        onMouseLeave={e => {
-          (e.currentTarget as HTMLButtonElement).style.background = "hsl(22,69%,44%)";
-        }}
+        pull={6}
+        /* No `min-h-*` here: `MagneticButton`'s own base sets one, and two
+           arbitrary Tailwind values for the same property resolve by stylesheet
+           order rather than by the order they are written. */
+        className={
+          "w-full " +
+          (status === "loading" ? "cursor-not-allowed opacity-70" : "cursor-pointer")
+        }
       >
-        {status === "loading" ? (
-          <>
-            <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />
-            Joining...
-          </>
-        ) : (
-          <>
-            Join Waitlist <ArrowRight size={16} />
-          </>
-        )}
-      </button>
+        {status === "loading"
+          ? "Sending…"
+          : isAudit
+            ? "Book your audit"
+            : isAcademy
+              ? "Register interest"
+              : "Send"}
+      </MagneticButton>
 
-      <p style={{ ...BODY, fontSize: "0.75rem", color: "#999", textAlign: "center", margin: 0 }}>
-        We&apos;ll respond within 24 hours. You&apos;ll also receive a link to book a free
-        15-minute call straight away.
+      <p className="m-0 text-center text-[12px] text-fn-muted">
+        {isAudit
+          ? "R2,000, credited to your first month. We confirm the start date when you book."
+          : isAcademy
+            ? "No payment now — just interest. We'll write when the first cohort opens."
+            : "We reply within one business day."}
       </p>
     </form>
   );

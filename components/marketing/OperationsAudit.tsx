@@ -1,10 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, CheckCircle2, RotateCcw } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
 
-import { marketingStyles as styles } from "@/components/marketing/PublicMarketing";
+import {
+  FindingCardFrame,
+  FindingEvidence,
+  FindingHeader,
+  FindingImpact,
+  FindingObservation,
+} from "@/components/finch/FindingCard";
+import { ScoreGauge } from "@/components/finch/audit/ScoreGauge";
+import { BOOK_HREF } from "@/components/finch/audit/audit-content";
 
 // ── Question bank ────────────────────────────────────────────────────────
 // Each question maps to one operational category and one suggested Vyso
@@ -187,26 +195,65 @@ function computeAudit(
   };
 }
 
-const RISK_BADGE_COLOR: Record<RiskLevel, string> = {
-  Low: "hsl(142 60% 32%)",
-  Medium: "hsl(32 85% 42%)",
-  High: "hsl(4 72% 45%)",
+/* ── The generated finding ───────────────────────────────────────────────────
+   The top-risk question said back in plain words, so the card reads like a
+   finding rather than like a quiz result. Keyed off the question id and kept
+   OUT of the QUESTIONS array on purpose — that array is the grounded scoring
+   input and stays byte-for-byte as it was.
+
+   There is deliberately no rand figure here. The whole promise of the audit is
+   that the number comes with its evidence; inventing one from ten yes/no
+   answers would be exactly the thing this page says nobody should do.        */
+const TOP_RISK_OBSERVATION: Record<string, string> = {
+  "spreadsheets":
+    "Daily operations are tracked in spreadsheets — the real record lives in one person's file.",
+  "weekly-reports":
+    "Managers are still assembling the weekly report by hand, every week.",
+  "stock-visibility":
+    "Stock, purchases and wastage are not visible in one place.",
+  "supplier-issues":
+    "Late deliveries, price errors and quality problems are not tracked consistently.",
+  "whatsapp-approvals":
+    "Approvals happen on WhatsApp, so there is no record of who agreed to what.",
+  "leadership-visibility":
+    "Leadership has to ask staff for an update to see how the operation is running.",
+  "inventory-counts":
+    "Stock counts are not reconciled against the records often enough to catch a gap.",
+  "finance-visibility":
+    "Finance cannot see operational costs and margins while they can still be changed.",
+  "wastage-tracking":
+    "Wastage is not recorded with its reasons, so nobody can see the pattern.",
+  "approvals-process":
+    "There is no consistent process for approving purchases and expenses.",
 };
 
-const BODY_FONT: React.CSSProperties = { fontFamily: "var(--font-body, var(--font-sans))" };
+/* ── Shared Finch surfaces ───────────────────────────────────────────────── */
 
-const PROGRESS_TRACK: React.CSSProperties = {
-  height: 8,
-  borderRadius: 999,
-  background: "rgb(13 13 13 / 8%)",
-  overflow: "hidden",
-};
+const CARD =
+  "rounded-[12px] border border-fn-line bg-fn-surface p-[20px] shadow-[var(--fn-shadow-card)] lg:p-[28px]";
 
+const MONO = "font-fn-mono tracking-[0.12em] text-fn-muted";
+
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/* ── The assessment ──────────────────────────────────────────────────────────
+   Same ten questions, same scoring, Finch presentation: white cards, hairlines,
+   mono counters, an SVG gauge that draws to the score and a generated finding
+   card underneath it. The old glass card / lucide / pill-button styling is
+   gone; nothing above this line changed.                                     */
 export default function OperationsAudit() {
   const [answers, setAnswers] = useState<Record<string, AnswerValue | null>>(() =>
     Object.fromEntries(QUESTIONS.map((question) => [question.id, null])),
   );
   const [submitted, setSubmitted] = useState(false);
+  const reduceMotion = useReducedMotion();
+
+  /* Always in the DOM, results or not: scrolling to an anchor that exists is
+     reliable, scrolling to one that React has not committed yet is not. */
+  const resultAnchor = useRef<HTMLDivElement | null>(null);
+  const formTop = useRef<HTMLDivElement | null>(null);
 
   const answeredCount = Object.values(answers).filter((value) => value !== null).length;
   const allAnswered = answeredCount === QUESTIONS.length;
@@ -221,67 +268,63 @@ export default function OperationsAudit() {
   const handleReset = () => {
     setAnswers(Object.fromEntries(QUESTIONS.map((question) => [question.id, null])));
     setSubmitted(false);
+    formTop.current?.scrollIntoView({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: "start",
+    });
   };
 
+  const handleSubmit = () => {
+    setSubmitted(true);
+    resultAnchor.current?.scrollIntoView({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: "start",
+    });
+  };
+
+  const topRisk = result?.topRisks[0];
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-      {/* Progress + questions */}
-      <div className={styles.glassCard} style={{ minHeight: 0 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "0.6rem",
-            gap: "1rem",
-          }}
-        >
-          <p className={styles.cardKicker} style={{ margin: 0 }}>
-            Self-assessment · {QUESTIONS.length} questions
-          </p>
-          <p style={{ ...BODY_FONT, fontSize: "0.78rem", fontWeight: 700, color: "#666" }}>
-            {answeredCount} of {QUESTIONS.length} answered
-          </p>
+    <div className="flex flex-col gap-[24px] lg:gap-[32px]">
+      {/* ── Questions ─────────────────────────────────────────────────────── */}
+      <div ref={formTop} className={CARD + " scroll-mt-[24px]"}>
+        <div className="mb-[10px] flex flex-wrap items-baseline justify-between gap-[10px]">
+          <span className={MONO + " text-[10px] lg:text-[10.5px]"}>
+            SELF-ASSESSMENT · {QUESTIONS.length} QUESTIONS · NOTHING IS SENT ANYWHERE
+          </span>
+          <span className="font-fn-mono text-[10.5px] tracking-[0.1em] text-fn-ink-2">
+            {pad(answeredCount)} / {pad(QUESTIONS.length)} ANSWERED
+          </span>
         </div>
-        <div style={PROGRESS_TRACK} role="progressbar" aria-valuenow={answeredCount} aria-valuemin={0} aria-valuemax={QUESTIONS.length}>
+
+        <div
+          className="h-[2px] w-full overflow-hidden rounded-[2px] bg-fn-line-2"
+          role="progressbar"
+          aria-valuenow={answeredCount}
+          aria-valuemin={0}
+          aria-valuemax={QUESTIONS.length}
+          aria-label="Questions answered"
+        >
           <div
-            style={{
-              height: "100%",
-              width: `${(answeredCount / QUESTIONS.length) * 100}%`,
-              background: "hsl(22,69%,44%)",
-              transition: "width 0.25s ease",
-            }}
+            className="h-full bg-fn-ink transition-[width] duration-[250ms] ease-out"
+            style={{ width: `${(answeredCount / QUESTIONS.length) * 100}%` }}
           />
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "1.4rem", marginTop: "1.8rem" }}>
+        <div className="mt-[8px]">
           {QUESTIONS.map((question, index) => (
             <fieldset
               key={question.id}
-              style={{
-                border: "1px solid rgb(13 13 13 / 8%)",
-                borderRadius: 16,
-                padding: "1.1rem 1.2rem",
-                background: "rgb(255 255 255 / 45%)",
-              }}
+              className="m-0 border-0 border-t border-fn-line-2 p-0 pt-[22px] pb-[22px] last:pb-0"
             >
-              <legend
-                style={{
-                  ...BODY_FONT,
-                  fontSize: "0.68rem",
-                  fontWeight: 700,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: "hsl(22,69%,44%)",
-                  padding: "0 0.3rem",
-                }}
-              >
-                {String(index + 1).padStart(2, "0")} · {question.category}
+              <legend className={MONO + " text-[10px] lg:text-[10.5px]"}>
+                QUESTION {pad(index + 1)} / {pad(QUESTIONS.length)} ·{" "}
+                {question.category.toUpperCase()}
               </legend>
-              <p style={{ ...BODY_FONT, fontSize: "0.95rem", fontWeight: 600, color: "#0d0d0d", margin: "0.3rem 0 0.9rem" }}>
+              <p className="m-0 mb-[14px] mt-[10px] max-w-[620px] text-[15px] leading-[1.55] text-fn-ink text-pretty lg:text-[15.5px]">
                 {question.prompt}
               </p>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.55rem" }}>
+              <div className="flex flex-wrap gap-[8px]">
                 {ANSWER_OPTIONS.map((option) => {
                   const selected = answers[question.id] === option.value;
                   return (
@@ -290,18 +333,12 @@ export default function OperationsAudit() {
                       type="button"
                       aria-pressed={selected}
                       onClick={() => handleAnswer(question.id, option.value)}
-                      style={{
-                        ...BODY_FONT,
-                        padding: "0.5rem 1.1rem",
-                        borderRadius: 999,
-                        border: selected ? "1px solid hsl(22,69%,44%)" : "1px solid #e0ddd9",
-                        background: selected ? "hsl(22,69%,44%)" : "rgba(255,255,255,0.7)",
-                        color: selected ? "#fff" : "#444",
-                        fontSize: "0.82rem",
-                        fontWeight: 700,
-                        cursor: "pointer",
-                        transition: "background 0.15s ease, color 0.15s ease, border-color 0.15s ease",
-                      }}
+                      className={
+                        "min-h-[38px] cursor-pointer rounded-[8px] border px-[16px] py-[8px] text-[13.5px] font-medium transition-colors duration-150 " +
+                        (selected
+                          ? "border-fn-ink bg-fn-ink text-fn-bg"
+                          : "border-fn-line bg-fn-surface text-fn-ink-2 hover:border-fn-line-hover hover:text-fn-ink")
+                      }
                     >
                       {option.label}
                     </button>
@@ -312,115 +349,121 @@ export default function OperationsAudit() {
           ))}
         </div>
 
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "1rem", marginTop: "1.8rem" }}>
+        <div className="mt-[24px] flex flex-wrap items-center gap-[16px] border-t border-fn-line pt-[24px]">
           <button
             type="button"
             disabled={!allAnswered}
-            onClick={() => setSubmitted(true)}
-            className={styles.primaryButton}
-            style={{
-              border: "none",
-              cursor: allAnswered ? "pointer" : "not-allowed",
-              opacity: allAnswered ? 1 : 0.5,
-            }}
+            onClick={handleSubmit}
+            className={
+              "min-h-[44px] rounded-[9px] px-[24px] py-[13px] text-[15px] font-semibold transition-colors duration-150 " +
+              (allAnswered
+                ? "cursor-pointer bg-fn-ink text-fn-bg hover:bg-[#2A261E]"
+                : "cursor-not-allowed border border-fn-line bg-fn-surface text-fn-faint")
+            }
           >
-            See my operations score <ArrowRight aria-hidden="true" size={16} />
+            See my score <span aria-hidden="true">→</span>
           </button>
-          {!allAnswered ? (
-            <p style={{ ...BODY_FONT, fontSize: "0.78rem", color: "#8a8a8a", margin: 0 }}>
-              Answer every question to see your score.
-            </p>
-          ) : (
+          {allAnswered ? (
             <button
               type="button"
               onClick={handleReset}
-              style={{
-                ...BODY_FONT,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.4rem",
-                padding: "0.55rem 1rem",
-                border: "1px solid #e0ddd9",
-                borderRadius: 999,
-                background: "rgba(255,255,255,0.6)",
-                color: "#666",
-                fontSize: "0.78rem",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
+              className="cursor-pointer text-[13.5px] font-medium text-fn-ink-3 transition-colors duration-150 hover:text-fn-orange-deep"
             >
-              <RotateCcw size={14} aria-hidden="true" />
-              Retake assessment
+              Start over
             </button>
+          ) : (
+            <span className="text-[13.5px] text-fn-muted">
+              Answer every question to see your score.
+            </span>
           )}
         </div>
       </div>
 
-      {/* Results */}
+      <div ref={resultAnchor} className="scroll-mt-[24px]" />
+
+      {/* ── Results ───────────────────────────────────────────────────────── */}
       {showResult && result ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-          <div className={styles.glassCard} style={{ minHeight: 0 }}>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "1.6rem", alignItems: "center" }}>
-              <div>
-                <p className={styles.cardKicker}>Your operations score</p>
-                <p className={styles.statValue} style={{ fontSize: "clamp(2.4rem, 6vw, 3.6rem)" }}>
-                  {result.score}
-                  <span style={{ fontSize: "1.2rem", color: "#999", fontWeight: 700 }}>/100</span>
-                </p>
-              </div>
-              <span
-                style={{
-                  ...BODY_FONT,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "0.4rem",
-                  padding: "0.5rem 1rem",
-                  borderRadius: 999,
-                  background: `${RISK_BADGE_COLOR[result.riskLevel]}1a`,
-                  color: RISK_BADGE_COLOR[result.riskLevel],
-                  fontSize: "0.78rem",
-                  fontWeight: 800,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                }}
-              >
-                {result.riskLevel === "High" ? <AlertTriangle size={14} aria-hidden="true" /> : <CheckCircle2 size={14} aria-hidden="true" />}
-                {result.riskLevel} risk
-              </span>
-            </div>
-            <p className={styles.cardCopy} style={{ marginTop: "1.1rem", maxWidth: 620 }}>
+        <motion.div
+          className="flex flex-col gap-[24px]"
+          initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: reduceMotion ? 0 : 0.38, ease: "easeOut" }}
+          aria-live="polite"
+        >
+          <div className={CARD}>
+            <ScoreGauge
+              score={result.score}
+              riskLabel={result.riskLevel}
+              riskTone={result.riskLevel === "High" ? "alert" : "quiet"}
+            />
+            <p className="m-0 mt-[20px] max-w-[620px] text-[15px] leading-[1.6] text-fn-ink-3 text-pretty">
               {RISK_COPY[result.riskLevel]}
             </p>
           </div>
 
-          <div className={styles.glassCard} style={{ minHeight: 0 }}>
-            <p className={styles.cardKicker}>Top 3 operational risks</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: "1.1rem", marginTop: "0.9rem" }}>
-              {result.topRisks.map(({ question, score }, index) => (
+          {/* The page's finding card, generated from the lowest-scoring answer.
+              Composed from the pieces rather than <FindingCard> because its two
+              actions are a real anchor and a real button. */}
+          {topRisk ? (
+            <FindingCardFrame state="new" className="max-w-none">
+              <FindingHeader agent="AUDIT" state="new" />
+              <FindingObservation>
+                {TOP_RISK_OBSERVATION[topRisk.question.id] ?? topRisk.question.category}
+              </FindingObservation>
+              <FindingImpact>Quantified in your audit</FindingImpact>
+              <FindingEvidence
+                evidence={`your ${QUESTIONS.length} answers`}
+                meta={`SELF-ASSESSMENT · ${result.riskLevel.toUpperCase()} RISK · ${result.score}/100`}
+              />
+              <div className="flex flex-wrap items-center gap-x-[6px] gap-y-[4px] border-t border-fn-line-2 pt-[13px]">
+                {/* A path, not a bare `#book`: this assessment is its own page
+                    now (`/operations-audit/score`) and the booking form is on
+                    the parent, so the in-page hash it used to carry would be a
+                    dead link. "Start over" beside it stays a button, because
+                    starting over is state, not navigation. */}
+                <a
+                  href={BOOK_HREF}
+                  className="rounded-[5px] px-[6px] py-[3px] text-[13px] font-medium text-fn-ink-2 transition-all duration-[120ms] hover:bg-[#F5F2EA] hover:text-fn-ink"
+                >
+                  Book the audit
+                </a>
+                <span aria-hidden="true" className="text-[12px] text-fn-line-3">
+                  ·
+                </span>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="cursor-pointer rounded-[5px] px-[6px] py-[3px] text-[13px] font-medium text-fn-ink-2 transition-all duration-[120ms] hover:bg-[#F5F2EA] hover:text-fn-ink"
+                >
+                  Start over
+                </button>
+              </div>
+            </FindingCardFrame>
+          ) : null}
+
+          <div className={CARD}>
+            <div className={MONO + " mb-[18px] text-[10.5px]"}>TOP THREE OPERATIONAL RISKS</div>
+            <div className="flex flex-col">
+              {result.topRisks.map(({ question, score }) => (
                 <div
                   key={question.id}
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    gap: "0.75rem",
-                    paddingBottom: index === result.topRisks.length - 1 ? 0 : "1.1rem",
-                    borderBottom: index === result.topRisks.length - 1 ? "none" : "1px solid rgb(13 13 13 / 7%)",
-                  }}
+                  className="flex flex-wrap items-start justify-between gap-[12px] border-b border-fn-line-2 py-[14px] first:pt-0 last:border-b-0 last:pb-0"
                 >
-                  <div style={{ minWidth: 0 }}>
-                    <p style={{ ...BODY_FONT, fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "hsl(22,69%,44%)", margin: "0 0 0.3rem" }}>
-                      {question.category}
-                    </p>
-                    <p style={{ ...BODY_FONT, fontSize: "0.9rem", color: "#333", margin: 0, lineHeight: 1.5 }}>
+                  <div className="min-w-0 max-w-[540px]">
+                    <div className="mb-[6px] font-fn-mono text-[10px] tracking-[0.12em] text-fn-ink-2">
+                      {question.category.toUpperCase()}
+                    </div>
+                    <p className="m-0 text-[14.5px] leading-[1.55] text-fn-ink-3 text-pretty">
                       {question.prompt}
                     </p>
-                    <Link href={question.solutionHref} className={styles.textLink} style={{ marginTop: "0.5rem", fontSize: "0.78rem" }}>
+                    <Link
+                      href={question.solutionHref}
+                      className="mt-[8px] inline-block text-[13px] font-medium text-fn-ink-2 transition-colors duration-150 hover:text-fn-orange-deep"
+                    >
                       See {question.solutionLabel} <span aria-hidden="true">→</span>
                     </Link>
                   </div>
-                  <span style={{ ...BODY_FONT, fontSize: "0.78rem", fontWeight: 800, color: "#999", whiteSpace: "nowrap" }}>
+                  <span className="shrink-0 whitespace-nowrap font-fn-mono text-[11.5px] text-fn-blue-deep">
                     {Math.round(score)}/100
                   </span>
                 </div>
@@ -428,43 +471,23 @@ export default function OperationsAudit() {
             </div>
           </div>
 
-          <div className={styles.glassCard} style={{ minHeight: 0 }}>
-            <p className={styles.cardKicker}>Recommended next steps</p>
-            <ul className={styles.list} style={{ marginTop: "0.6rem" }}>
+          <div className={CARD}>
+            <div className={MONO + " mb-[16px] text-[10.5px]"}>WHAT TO DO NEXT</div>
+            <ul className="m-0 flex list-none flex-col gap-[12px] p-0">
               {RECOMMENDED_STEPS[result.riskLevel].map((step) => (
-                <li key={step}>{step}</li>
+                <li
+                  key={step}
+                  className="flex gap-[10px] text-[14.5px] leading-[1.6] text-fn-ink-3 text-pretty"
+                >
+                  <span aria-hidden="true" className="shrink-0 text-fn-line-3">
+                    —
+                  </span>
+                  <span>{step}</span>
+                </li>
               ))}
             </ul>
           </div>
-
-          <div
-            className={styles.ctaCard}
-            style={{
-              textAlign: "left",
-              padding: "clamp(1.5rem, 3vw, 2.2rem)",
-              border: result.riskLevel === "High" ? "1px solid hsl(4 72% 45% / 35%)" : undefined,
-            }}
-          >
-            <p className={styles.eyebrow}>
-              {result.riskLevel === "High" ? "This is worth acting on" : "Want a second opinion?"}
-            </p>
-            <h3 className={styles.cardTitle} style={{ fontSize: "1.25rem" }}>
-              {result.riskLevel === "High"
-                ? "Book a working session before the next busy period."
-                : "Talk through the results with us."}
-            </h3>
-            <p className={styles.cardCopy} style={{ marginBottom: "1.3rem" }}>
-              A one-week audit turns this self-assessment into a concrete plan —
-              mapping the real workflow and recommending the single highest-value
-              starting point.
-            </p>
-            <div className={styles.actions} style={{ marginTop: 0 }}>
-              <Link className={styles.primaryButton} href="/contact">
-                Join Waitlist <ArrowRight aria-hidden="true" size={16} />
-              </Link>
-            </div>
-          </div>
-        </div>
+        </motion.div>
       ) : null}
     </div>
   );

@@ -1,25 +1,20 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { LayoutGrid } from "lucide-react";
 
-import {
-  AbstractFlowBackdrop,
-  Breadcrumbs,
-  JsonLd,
-  MarketingCta,
-  PublicPageShell,
-  marketingStyles as styles,
-} from "@/components/marketing/PublicMarketing";
-import { ScreenshotFrame } from "@/components/marketing/ScreenshotFrame";
+import { AuditBand } from "@/components/finch/AuditBand";
+import { FinchFooter } from "@/components/finch/FinchFooter";
+import { FinchNav } from "@/components/finch/FinchNav";
+import { AgentChips } from "@/components/finch/modules/AgentChips";
+import { ModuleFeatureSection } from "@/components/finch/modules/ModuleFeatureSection";
+import { ModuleScreenshotFrame } from "@/components/finch/modules/ModuleScreenshotFrame";
+import { StatusChip } from "@/components/finch/modules/StatusChip";
 import {
   MARKETING_MODULE_BY_SLUG,
   MARKETING_MODULE_SLUGS,
   getAdjacentModules,
 } from "@/lib/marketing/modules";
-import type { ModuleFeatureSection } from "@/lib/marketing/modules";
-
-import moduleStyles from "../modules.module.css";
+import { SITE } from "@/lib/marketing/site";
 
 const SOLUTION_LABELS: Record<string, string> = {
   "/solutions/reduce-money-leakage": "Reduce money leakage",
@@ -28,10 +23,48 @@ const SOLUTION_LABELS: Record<string, string> = {
   "/solutions/operations-dashboard": "Operations dashboard",
 };
 
-/** Sizes hint for the one large above-the-fold frame. */
-const HERO_SIZES = "(max-width: 760px) 92vw, (max-width: 1100px) 88vw, 880px";
-/** Sizes hint for the half-width frames inside the alternating feature rows. */
-const FEATURE_SIZES = "(max-width: 760px) 92vw, (max-width: 1020px) 88vw, 560px";
+/* Short, SEO-budget titles (≤60 chars, leading with the module name — the
+   query a reader searches). `${name} — ${role}` alone runs past 60 for the
+   longer roles (ServiceDen's is 65+ chars), so these are hand-trimmed rather
+   than derived, same reasoning as the descriptions below. */
+const META_TITLES: Record<string, string> = {
+  "doc-u": "Doc-U — document intake & extraction",
+  orderflow: "OrderFlow — orders, invoicing & customer ops",
+  pricepilot: "PricePilot — pricing & margin recommendations",
+  procurepulse: "ProcurePulse — procurement & stock intelligence",
+  planwise: "PlanWise — budgeting & forecasting",
+  wastewatch: "WasteWatch — wastage & shrinkage",
+  shiftboard: "ShiftBoard — labour & scheduling",
+  supplysync: "SupplySync — supplier relationships",
+  insightgen: "InsightGen — reporting & operational insight",
+  serviceden: "ServiceDen — leads, services & invoicing",
+};
+
+/* Short, SEO-budget meta descriptions (≤155 chars, numbers + "South Africa"
+   where it fits) — kept separate from `module_.description`, which is the
+   longer on-page hero paragraph and regularly runs well past that budget. */
+const META_DESCRIPTIONS: Record<string, string> = {
+  "doc-u":
+    "Doc-U turns supplier invoices, statements and delivery notes into structured data every other module reads — built for South Africa.",
+  orderflow:
+    "OrderFlow runs orders, invoicing and customer accounts in one flow — real screens from Finch, built for South African food and wholesale.",
+  pricepilot:
+    "PricePilot builds sell prices from live cost and measures realised margin per sale — Finch's pricing module for South African operators.",
+  procurepulse:
+    "ProcurePulse builds live stock from scanned documents and compares supplier prices per product — Finch's procurement module for South Africa.",
+  planwise:
+    "PlanWise tracks budget pace and forecast against your goals, measured daily, not at month-end — Finch's planning module for South African operators.",
+  wastewatch:
+    "WasteWatch logs and costs preventable waste by reason, recipe and shift — Finch's waste-tracking module for South African restaurants and caterers.",
+  shiftboard:
+    "ShiftBoard rosters shifts with labour cost showing as you build it, and tracks it against sales — Finch's scheduling module for South Africa.",
+  supplysync:
+    "SupplySync scores supplier reliability, tracks credits owed and flags price moves with their rand impact — Finch's supplier module for South Africa.",
+  insightgen:
+    "InsightGen turns five modules' own data into a daily brief, rule-based alerts and CSV exports — Finch's reporting module for South African operators.",
+  serviceden:
+    "ServiceDen runs a Gmail-linked lead pipeline and branded invoicing for service businesses — a limited rollout at Vyso in South Africa today.",
+};
 
 export function generateStaticParams() {
   return MARKETING_MODULE_SLUGS.map((slug) => ({ slug }));
@@ -46,8 +79,9 @@ export async function generateMetadata({
   const module_ = MARKETING_MODULE_BY_SLUG[slug];
   if (!module_) return {};
 
-  const title = `${module_.name} | ${module_.role} | Vyso`;
-  const description = module_.description;
+  const title = META_TITLES[slug] ?? `${module_.name} — ${module_.role}`;
+  const description = META_DESCRIPTIONS[slug] ?? module_.description.slice(0, 155);
+  const url = `${SITE.url}/platform/modules/${slug}`;
 
   return {
     title,
@@ -56,51 +90,13 @@ export async function generateMetadata({
     openGraph: {
       title,
       description,
-      url: `/platform/modules/${slug}`,
-      siteName: "Vyso",
+      url,
+      siteName: SITE.name,
       locale: "en_ZA",
       type: "website",
-      images: [{ url: "/og.png", width: 1200, height: 630, alt: "Vyso — Operations, connected." }],
     },
-    twitter: { card: "summary_large_image", title, description, images: ["/og.png"] },
+    twitter: { card: "summary_large_image", title, description },
   };
-}
-
-/** The media column of a feature row: a real screenshot, or a gradient surface panel. */
-function FeatureMedia({ section }: { section: ModuleFeatureSection }) {
-  if (section.screenshot) {
-    return (
-      <div className={moduleStyles.featureMedia}>
-        <ScreenshotFrame
-          src={section.screenshot.src}
-          alt={section.screenshot.alt}
-          label={section.screenshot.label}
-          cropTop={section.screenshot.cropTop}
-          sizes={FEATURE_SIZES}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className={moduleStyles.featureMedia}>
-      <div className={moduleStyles.surfacePanel}>
-        <div className={moduleStyles.placeholderInner}>
-          <span className={moduleStyles.placeholderIcon}>
-            <LayoutGrid aria-hidden="true" size={20} />
-          </span>
-          <p className={moduleStyles.placeholderLabel}>{section.title}</p>
-          <div className={moduleStyles.placeholderTags}>
-            {(section.placeholderTags ?? []).map((tag) => (
-              <span key={tag} className={moduleStyles.placeholderTag}>
-                {tag}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 export default async function ModuleDetailPage({
@@ -113,8 +109,7 @@ export default async function ModuleDetailPage({
   if (!module_) notFound();
 
   const { previous, next } = getAdjacentModules(slug);
-  const url = `https://vyso.co.za/platform/modules/${slug}`;
-  const title = `${module_.name} | ${module_.role} | Vyso`;
+  const url = `${SITE.url}/platform/modules/${slug}`;
   const heroShot = module_.screenshots[0];
 
   const worksWith = module_.worksWith
@@ -125,24 +120,12 @@ export default async function ModuleDetailPage({
     "@context": "https://schema.org",
     "@graph": [
       {
-        "@type": "WebPage",
-        "@id": `${url}#webpage`,
-        url,
-        name: title,
-        description: module_.description,
-        isPartOf: { "@id": "https://vyso.co.za/#website" },
-        about: { "@id": `${url}#software` },
-        breadcrumb: { "@id": `${url}#breadcrumb` },
-        inLanguage: "en-ZA",
-      },
-      {
         "@type": "BreadcrumbList",
-        "@id": `${url}#breadcrumb`,
+        "@id": `${url}#breadcrumbs`,
         itemListElement: [
-          { "@type": "ListItem", position: 1, name: "Home", item: "https://vyso.co.za/" },
-          { "@type": "ListItem", position: 2, name: "Platform", item: "https://vyso.co.za/platform" },
-          { "@type": "ListItem", position: 3, name: "All Modules", item: "https://vyso.co.za/platform/modules" },
-          { "@type": "ListItem", position: 4, name: module_.name, item: url },
+          { "@type": "ListItem", position: 1, name: "Home", item: SITE.url },
+          { "@type": "ListItem", position: 2, name: "Under the hood", item: `${SITE.url}/platform/modules` },
+          { "@type": "ListItem", position: 3, name: module_.name, item: url },
         ],
       },
       {
@@ -150,17 +133,15 @@ export default async function ModuleDetailPage({
         "@id": `${url}#software`,
         name: module_.name,
         applicationCategory: "BusinessApplication",
-        applicationSuite: "Vyso",
+        applicationSuite: "Finch",
         operatingSystem: "Web browser",
         description: module_.description,
-        publisher: { "@id": "https://vyso.co.za/#organization" },
+        publisher: { "@id": `${SITE.url}/#organization` },
         featureList: module_.capabilities,
       },
       {
         "@type": "FAQPage",
         "@id": `${url}#faq`,
-        isPartOf: { "@id": `${url}#webpage` },
-        inLanguage: "en-ZA",
         mainEntity: module_.faqs.map((faq) => ({
           "@type": "Question",
           name: faq.question,
@@ -171,318 +152,271 @@ export default async function ModuleDetailPage({
   };
 
   return (
-    <PublicPageShell>
-      <JsonLd data={structuredData} />
+    <div className="finch-site min-h-screen bg-fn-bg font-fn-sans text-fn-ink antialiased">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
+        }}
+      />
 
-      <section className={styles.compactHero} aria-labelledby="module-heading">
-        <AbstractFlowBackdrop />
-        <div className={styles.shell}>
-          <Breadcrumbs
-            items={[
-              { label: "Home", href: "/" },
-              { label: "Platform", href: "/platform" },
-              { label: "All Modules", href: "/platform/modules" },
-              { label: module_.name },
-            ]}
-          />
-          <p className={styles.eyebrow}>{module_.role}</p>
-          <h1 id="module-heading" className={styles.compactTitle}>
-            <span className={styles.blendPlain}>{module_.name}.</span>{" "}
-            <span className={styles.blendAccent}>{module_.tagline}</span>
-          </h1>
-          <p className={styles.compactLead}>{module_.description}</p>
-          <div className={styles.actions}>
-            <Link className={styles.primaryButton} href="/contact">
-              Join Waitlist <span aria-hidden="true">→</span>
-            </Link>
-            <Link className={styles.glassButton} href="/platform/modules">
-              All modules
-            </Link>
+      <FinchNav />
+
+      <main id="main">
+        {/* ── Hero ─────────────────────────────────────────────────────────── */}
+        <section className="mx-auto max-w-[1160px] px-[20px] pt-[56px] lg:px-[40px] lg:pt-[88px]">
+          <nav aria-label="Breadcrumb" className="mb-[20px] font-fn-mono text-[10.5px] tracking-[0.08em] text-fn-muted">
+            <Link href="/platform/modules" className="transition-colors duration-150 hover:text-fn-orange-deep">
+              UNDER THE HOOD
+            </Link>{" "}
+            / {module_.name.toUpperCase()}
+          </nav>
+
+          <p className="mb-[14px] font-fn-mono text-[11px] tracking-[0.14em] text-fn-muted">
+            {module_.role.toUpperCase()}
+          </p>
+          <div className="mb-[16px] flex flex-wrap items-center gap-[14px]">
+            <h1 className="m-0 font-fn-serif text-[36px] font-medium tracking-[-0.02em] lg:text-[44px]">
+              {module_.name}
+            </h1>
+            <StatusChip status={module_.status} />
           </div>
+          <p className="m-0 mb-[20px] max-w-[620px] text-[15.5px] leading-[1.6] text-fn-ink-3 lg:text-[16px]">
+            {module_.description}
+          </p>
 
-          <div style={{ maxWidth: heroShot ? 880 : 640, margin: "3.2rem auto 0" }}>
-            {heroShot ? (
-              <ScreenshotFrame
-                src={heroShot.src}
-                alt={heroShot.alt}
-                label={heroShot.label}
-                cropTop={heroShot.cropTop}
-                sizes={HERO_SIZES}
-                priority
-              />
-            ) : (
-              <div className={moduleStyles.placeholder}>
-                <div className={moduleStyles.placeholderInner}>
-                  <span className={moduleStyles.placeholderIcon}>
-                    <LayoutGrid aria-hidden="true" size={22} />
-                  </span>
-                  <p className={moduleStyles.placeholderLabel}>Internal preview</p>
-                  <p className={moduleStyles.placeholderNote}>
-                    {module_.name} runs internally at Vyso and with selected
-                    service businesses, so there are no public screenshots yet.
-                    Here is what it currently covers:
-                  </p>
-                  <div className={moduleStyles.placeholderTags}>
-                    <span className={moduleStyles.placeholderTag}>Leads</span>
-                    <span className={moduleStyles.placeholderTag}>Research</span>
-                    <span className={moduleStyles.placeholderTag}>Templates</span>
-                    <span className={moduleStyles.placeholderTag}>Invoices</span>
-                    <span className={moduleStyles.placeholderTag}>Gmail-linked drafts</span>
-                  </div>
-                </div>
-              </div>
-            )}
+          <AgentChips agents={module_.agents} className="mb-[40px] lg:mb-[56px]" />
+
+          {heroShot ? (
+            <ModuleScreenshotFrame
+              src={heroShot.src}
+              alt={heroShot.alt}
+              label={heroShot.label}
+              cropTop={heroShot.cropTop}
+              priority
+              className="max-w-full"
+              sizes="(max-width: 1023px) 92vw, 880px"
+            />
+          ) : null}
+        </section>
+
+        {/* ── Feature sections ────────────────────────────────────────────── */}
+        <section
+          className="mx-auto max-w-[1160px] px-[20px] pt-[72px] lg:px-[40px] lg:pt-[110px]"
+          aria-labelledby="module-inside-heading"
+        >
+          <h2 id="module-inside-heading" className="sr-only">
+            Inside {module_.name}
+          </h2>
+          <div className="flex flex-col gap-[56px] lg:gap-[80px]">
+            {module_.featureSections.map((section, index) => (
+              <ModuleFeatureSection key={section.id} section={section} index={index} />
+            ))}
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className={styles.section} aria-labelledby="module-inside-heading">
-        <div className={styles.shell}>
-          <div className={styles.sectionIntro}>
-            <div>
-              <p className={styles.sectionKicker}>Inside {module_.name}</p>
-              <h2 id="module-inside-heading" className={`${styles.sectionTitle} ${styles.blendPlain}`}>
-                Feature by feature, on the real screens.
-              </h2>
-            </div>
-            <p className={styles.sectionCopy}>
-              {heroShot
-                ? "Every screen below was captured from the running platform with a demo organisation — not drawn as a mockup. The labels, columns and tiles are the ones your team would work in."
-                : `${module_.name} is not publicly available yet, so the panels below stand in for the screens. Everything described is built and working — it is access that is limited, not the functionality.`}
+        {/* ── How Finch uses it ───────────────────────────────────────────── */}
+        <section className="mx-auto max-w-[1160px] px-[20px] pt-[72px] lg:px-[40px] lg:pt-[110px]">
+          <div className="border-t border-fn-line pt-[40px] lg:pt-[48px]">
+            <p className="mb-[16px] font-fn-mono text-[10px] tracking-[0.14em] text-fn-muted lg:text-[11px]">
+              HOW FINCH USES IT
+            </p>
+            <p className="m-0 max-w-[720px] text-[16px] leading-[1.65] text-fn-ink-2 lg:text-[17px]">
+              {module_.howFinchUsesIt}
             </p>
           </div>
+        </section>
 
-          <div className={moduleStyles.featureList}>
-            {module_.featureSections.map((section, index) => {
-              const ordinal = String(index + 1).padStart(2, "0");
-
-              // Sections with no screen to show become one wide glass card, so
-              // the alternating rhythm of the screenshot rows is not broken by
-              // a lopsided empty column.
-              if (!section.screenshot && !section.placeholderTags) {
-                return (
-                  <article key={section.id} id={section.id} className={moduleStyles.featureSolo}>
-                    <div className={moduleStyles.featureCopy}>
-                      <p className={moduleStyles.featureIndex}>{ordinal}</p>
-                      <h3 className={moduleStyles.featureTitle}>{section.title}</h3>
-                      <p className={moduleStyles.featureCopyText}>{section.copy}</p>
-                    </div>
-                    <ul className={moduleStyles.featureBullets}>
-                      {section.bullets.map((bullet) => (
-                        <li key={bullet}>
-                          <span>{bullet}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </article>
-                );
-              }
-
-              return (
-                <article
-                  key={section.id}
-                  id={section.id}
-                  className={
-                    index % 2 === 1
-                      ? `${moduleStyles.featureRow} ${moduleStyles.featureRowFlipped}`
-                      : moduleStyles.featureRow
-                  }
-                >
-                  <div className={moduleStyles.featureCopy}>
-                    <p className={moduleStyles.featureIndex}>{ordinal}</p>
-                    <h3 className={moduleStyles.featureTitle}>{section.title}</h3>
-                    <p className={moduleStyles.featureCopyText}>{section.copy}</p>
-                    <ul className={moduleStyles.featureBullets}>
-                      {section.bullets.map((bullet) => (
-                        <li key={bullet}>
-                          <span>{bullet}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <FeatureMedia section={section} />
-                </article>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      <section className={styles.section} aria-labelledby="module-workflow-heading">
-        <div className={styles.shell}>
-          <div className={styles.sectionIntro}>
-            <div>
-              <p className={styles.sectionKicker}>How it fits your week</p>
-              <h2 id="module-workflow-heading" className={`${styles.sectionTitle} ${styles.blendPlain}`}>
-                The routine, not the feature list.
-              </h2>
-            </div>
-            <p className={styles.sectionCopy}>
-              Software only helps if it changes what someone actually does on a
-              Tuesday. This is the working rhythm {module_.name} is built around.
-            </p>
-          </div>
-
-          <ol className={moduleStyles.workflowList}>
+        {/* ── Workflow ─────────────────────────────────────────────────────── */}
+        <section
+          className="mx-auto max-w-[1160px] px-[20px] pt-[72px] lg:px-[40px] lg:pt-[110px]"
+          aria-labelledby="module-workflow-heading"
+        >
+          <p className="mb-[14px] font-fn-mono text-[10px] tracking-[0.14em] text-fn-muted lg:text-[11px]">
+            HOW IT FITS YOUR WEEK
+          </p>
+          <h2
+            id="module-workflow-heading"
+            className="m-0 mb-[32px] font-fn-serif text-[28px] font-medium leading-[1.15] tracking-[-0.02em] lg:mb-[44px] lg:text-[36px]"
+          >
+            The routine, not the feature list.
+          </h2>
+          <ol className="m-0 grid list-none grid-cols-1 gap-[20px] p-0 sm:grid-cols-2 lg:grid-cols-5 lg:gap-[16px]">
             {module_.workflow.map((step, index) => (
-              <li key={step.title} className={moduleStyles.workflowStep}>
-                <span className={moduleStyles.workflowNumber} aria-hidden="true">
-                  {index + 1}
+              <li key={step.title} className="rounded-[10px] border border-fn-line bg-fn-surface px-[18px] py-[20px]">
+                <span className="mb-[10px] block font-fn-mono text-[11px] text-fn-muted">
+                  {String(index + 1).padStart(2, "0")}
                 </span>
-                <h3 className={moduleStyles.workflowTitle}>{step.title}</h3>
-                <p className={moduleStyles.workflowCopy}>{step.copy}</p>
+                <h3 className="m-0 mb-[8px] text-[14.5px] font-semibold leading-[1.3] text-fn-ink">
+                  {step.title}
+                </h3>
+                <p className="m-0 text-[13px] leading-[1.5] text-fn-ink-3">{step.copy}</p>
               </li>
             ))}
           </ol>
-        </div>
-      </section>
+        </section>
 
-      {worksWith.length > 0 ? (
-        <section className={styles.section} aria-labelledby="module-works-with-heading">
-          <div className={styles.shell}>
-            <div className={styles.sectionIntro}>
-              <div>
-                <p className={styles.sectionKicker}>Works with the rest of Vyso</p>
-                <h2
-                  id="module-works-with-heading"
-                  className={`${styles.sectionTitle} ${styles.blendPlain}`}
-                >
-                  Connected where the workflow needs it.
-                </h2>
-              </div>
-              <p className={styles.sectionCopy}>
-                These are real data relationships, not a logo wall. Each one
-                describes what actually moves between {module_.name} and the
-                module beside it.
-              </p>
-            </div>
-
-            <div className={moduleStyles.linkCardGrid}>
+        {/* ── Works with ───────────────────────────────────────────────────── */}
+        {worksWith.length > 0 ? (
+          <section
+            className="mx-auto max-w-[1160px] px-[20px] pt-[72px] lg:px-[40px] lg:pt-[110px]"
+            aria-labelledby="module-works-with-heading"
+          >
+            <p className="mb-[14px] font-fn-mono text-[10px] tracking-[0.14em] text-fn-muted lg:text-[11px]">
+              WORKS WITH
+            </p>
+            <h2
+              id="module-works-with-heading"
+              className="m-0 mb-[32px] font-fn-serif text-[28px] font-medium leading-[1.15] tracking-[-0.02em] lg:mb-[44px] lg:text-[36px]"
+            >
+              Connected where the workflow needs it.
+            </h2>
+            <div className="grid grid-cols-1 gap-[16px] sm:grid-cols-2 lg:grid-cols-4">
               {worksWith.map((entry) => (
                 <Link
                   key={entry.slug}
                   href={`/platform/modules/${entry.slug}`}
-                  className={moduleStyles.linkCard}
+                  className="group flex flex-col rounded-[10px] border border-fn-line bg-fn-surface px-[18px] py-[20px] transition-colors duration-150 hover:border-fn-line-hover"
                 >
-                  <p className={styles.cardKicker}>{entry.module.role}</p>
-                  <h3 className={moduleStyles.linkCardName}>{entry.module.name}</h3>
-                  <p className={moduleStyles.linkCardReason}>{entry.reason}</p>
-                  <span className={moduleStyles.linkCardFoot}>
+                  <p className="m-0 mb-[6px] font-fn-mono text-[10px] tracking-[0.1em] text-fn-muted">
+                    {entry.module.role.toUpperCase()}
+                  </p>
+                  <h3 className="m-0 mb-[8px] font-fn-serif text-[18px] font-medium text-fn-ink">
+                    {entry.module.name}
+                  </h3>
+                  <p className="m-0 mb-[14px] text-[13px] leading-[1.5] text-fn-ink-3">{entry.reason}</p>
+                  <span className="mt-auto flex items-center gap-[6px] text-[12.5px] font-medium text-fn-ink-2 transition-colors duration-150 group-hover:text-fn-orange-deep">
                     Explore {entry.module.name} <span aria-hidden="true">→</span>
                   </span>
                 </Link>
               ))}
             </div>
-          </div>
-        </section>
-      ) : null}
+          </section>
+        ) : null}
 
-      {module_.industryFit.length > 0 ? (
-        <section className={styles.section} aria-labelledby="module-industry-heading">
-          <div className={styles.shell}>
-            <div className={styles.sectionIntro}>
-              <div>
-                <p className={styles.sectionKicker}>Who it&apos;s for</p>
-                <h2
-                  id="module-industry-heading"
-                  className={`${styles.sectionTitle} ${styles.blendPlain}`}
-                >
-                  Where {module_.name} earns its place.
-                </h2>
-              </div>
-            </div>
-
-            <div className={moduleStyles.linkCardGrid}>
+        {/* ── Industry fit ─────────────────────────────────────────────────── */}
+        {module_.industryFit.length > 0 ? (
+          <section
+            className="mx-auto max-w-[1160px] px-[20px] pt-[72px] lg:px-[40px] lg:pt-[110px]"
+            aria-labelledby="module-industry-heading"
+          >
+            <p className="mb-[14px] font-fn-mono text-[10px] tracking-[0.14em] text-fn-muted lg:text-[11px]">
+              WHO IT&rsquo;S FOR
+            </p>
+            <h2
+              id="module-industry-heading"
+              className="m-0 mb-[32px] font-fn-serif text-[28px] font-medium leading-[1.15] tracking-[-0.02em] lg:mb-[44px] lg:text-[36px]"
+            >
+              Where {module_.name} earns its place.
+            </h2>
+            <div className="flex flex-wrap gap-[10px]">
               {module_.industryFit.map((industry) => (
-                <Link key={industry.href} href={industry.href} className={moduleStyles.linkCard}>
-                  <h3 className={moduleStyles.linkCardName}>{industry.name}</h3>
-                  <p className={moduleStyles.linkCardReason}>{industry.reason}</p>
-                  <span className={moduleStyles.linkCardFoot}>
-                    Vyso for {industry.name.toLowerCase()} <span aria-hidden="true">→</span>
-                  </span>
+                <Link
+                  key={industry.href}
+                  href={industry.href}
+                  title={industry.reason}
+                  className="rounded-[99px] border border-fn-line bg-fn-surface px-[14px] py-[8px] text-[13px] font-medium text-fn-ink-2 transition-colors duration-150 hover:border-fn-line-hover hover:text-fn-orange-deep"
+                >
+                  {industry.name}
                 </Link>
               ))}
             </div>
+          </section>
+        ) : null}
+
+        {/* ── FAQs ─────────────────────────────────────────────────────────── */}
+        <section
+          className="mx-auto max-w-[1160px] px-[20px] pt-[72px] lg:px-[40px] lg:pt-[110px]"
+          aria-labelledby="module-faq-heading"
+        >
+          <p className="mb-[14px] font-fn-mono text-[10px] tracking-[0.14em] text-fn-muted lg:text-[11px]">
+            STRAIGHT ANSWERS
+          </p>
+          <h2
+            id="module-faq-heading"
+            className="m-0 mb-[32px] font-fn-serif text-[28px] font-medium leading-[1.15] tracking-[-0.02em] lg:mb-[44px] lg:text-[36px]"
+          >
+            {module_.name} questions, answered honestly.
+          </h2>
+
+          <div className="border-t border-fn-line">
+            {module_.faqs.map((faq) => (
+              <details key={faq.question} className="group border-b border-fn-line py-[4px]">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-[16px] py-[14px] text-[15px] font-medium text-fn-ink transition-colors duration-150 hover:text-fn-orange-deep [&::-webkit-details-marker]:hidden">
+                  {faq.question}
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 12 12"
+                    className="h-[11px] w-[11px] shrink-0 text-fn-muted transition-transform duration-150 ease-out group-open:rotate-90"
+                  >
+                    <path
+                      d="M4 2.5 L8 6 L4 9.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </summary>
+                <p className="m-0 max-w-[720px] pb-[18px] text-[14px] leading-[1.6] text-fn-ink-3">
+                  {faq.answer}
+                </p>
+              </details>
+            ))}
           </div>
         </section>
-      ) : null}
 
-      <section className={styles.section} aria-labelledby="module-faq-heading">
-        <div className={styles.shell}>
-          <div className={styles.sectionIntro}>
-            <div>
-              <p className={styles.sectionKicker}>Straight answers</p>
-              <h2 id="module-faq-heading" className={`${styles.sectionTitle} ${styles.blendPlain}`}>
-                {module_.name} questions, answered honestly.
-              </h2>
-            </div>
-            <p className={styles.sectionCopy}>
-              Including the parts that are still on the roadmap. You should be
-              able to plan around what exists today, not around a promise.
+        {/* ── Related solutions ────────────────────────────────────────────── */}
+        {module_.relatedSolutionHrefs.length > 0 ? (
+          <section className="mx-auto max-w-[1160px] px-[20px] pt-[56px] lg:px-[40px] lg:pt-[72px]">
+            <p className="mb-[12px] font-fn-mono text-[10px] tracking-[0.14em] text-fn-muted lg:text-[11px]">
+              WHERE THIS FITS
             </p>
-          </div>
+            <div className="flex flex-wrap gap-x-[24px] gap-y-[8px]">
+              {module_.relatedSolutionHrefs.map((href) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className="text-[14px] font-medium text-fn-ink underline decoration-fn-line-3 underline-offset-2 transition-colors duration-150 hover:text-fn-orange-deep hover:decoration-fn-orange-deep"
+                >
+                  {SOLUTION_LABELS[href] ?? href} <span aria-hidden="true">→</span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
-          <div className={styles.answerGrid}>
-            {module_.faqs.map((faq) => (
-              <article key={faq.question} className={styles.answerCard}>
-                <h3>{faq.question}</h3>
-                <p>{faq.answer}</p>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className={styles.section} aria-labelledby="module-related-heading">
-        <div className={styles.shell}>
-          <p className={styles.sectionKicker} id="module-related-heading">
-            Where this fits
-          </p>
-          <h2 className={`${styles.sectionTitle} ${styles.blendPlain}`}>Related solutions.</h2>
-          <div className={styles.actions}>
-            {module_.relatedSolutionHrefs.map((href) => (
-              <Link key={href} className={styles.textLink} href={href}>
-                {SOLUTION_LABELS[href] ?? href} <span aria-hidden="true">→</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Wayfinding, not content — deliberately a single low row rather than a
-          full marketing section. See `.navSection` in modules.module.css. */}
-      <section className={moduleStyles.navSection} aria-labelledby="module-nav-heading">
-        <div className={styles.shell}>
-          <p
-            className={`${styles.sectionKicker} ${moduleStyles.navKicker}`}
-            id="module-nav-heading"
-          >
-            More modules
-          </p>
-          <div className={moduleStyles.navRow}>
-            <Link className={moduleStyles.navLink} href={`/platform/modules/${previous.slug}`}>
-              <span className={moduleStyles.navLabel}>← Prev</span>
-              <span className={moduleStyles.navName}>{previous.name}</span>
+        {/* ── Prev/next ────────────────────────────────────────────────────── */}
+        <section className="mx-auto max-w-[1160px] px-[20px] pt-[56px] lg:px-[40px] lg:pt-[72px]">
+          <div className="flex items-center justify-between gap-[16px] border-t border-fn-line pt-[24px]">
+            <Link
+              href={`/platform/modules/${previous.slug}`}
+              className="group flex flex-col items-start gap-[4px]"
+            >
+              <span className="font-fn-mono text-[10px] tracking-[0.1em] text-fn-muted">← PREV</span>
+              <span className="text-[14.5px] font-medium text-fn-ink-2 transition-colors duration-150 group-hover:text-fn-orange-deep">
+                {previous.name}
+              </span>
             </Link>
             <Link
-              className={`${moduleStyles.navLink} ${moduleStyles.navLinkNext}`}
               href={`/platform/modules/${next.slug}`}
+              className="group flex flex-col items-end gap-[4px] text-right"
             >
-              <span className={moduleStyles.navName}>{next.name}</span>
-              <span className={moduleStyles.navLabel}>Next →</span>
+              <span className="font-fn-mono text-[10px] tracking-[0.1em] text-fn-muted">NEXT →</span>
+              <span className="text-[14.5px] font-medium text-fn-ink-2 transition-colors duration-150 group-hover:text-fn-orange-deep">
+                {next.name}
+              </span>
             </Link>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <MarketingCta
-        eyebrow="See it on your own operation"
-        title={`Show us where ${module_.name.toLowerCase()} would fit in your workflow.`}
-        copy="We will map the actual workflow, identify the highest-value gap and tell you honestly whether Vyso is the right system to address it."
-        primaryLabel="Join Waitlist"
-        secondaryLabel="All modules"
-        secondaryHref="/platform/modules"
-      />
-    </PublicPageShell>
+        <AuditBand />
+      </main>
+
+      <div className="pt-[40px] lg:pt-[68px]">
+        <FinchFooter />
+      </div>
+    </div>
   );
 }

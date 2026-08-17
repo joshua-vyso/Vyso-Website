@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,500;1,400&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+body { margin: 0; background: #FAF9F6; color: #14120E; font-family: 'Instrument Sans', sans-serif; -webkit-font-smoothing: antialiased; }
+a { color: #14120E; text-decoration: none; } a:hover { color: #C94F0E; }
+@keyframes fPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,119,39,0.5); } 50% { box-shadow: 0 0 0 6px rgba(255,119,39,0); } }
+::selection { background: #F3D9C6; }
+</style>
+</helmet>
+
+<nav style="display: flex; align-items: center; gap: 36px; max-width: 1160px; margin: 0 auto; padding: 26px 40px;">
+  <a href="Homepage.dc.html" style="display: flex; align-items: center; gap: 12px;">
+    <img src="assets/vyso-wordmark.svg" alt="Vyso" style="height: 15px; display: block;">
+    <span style="width: 1px; height: 16px; background: #D8D3C6;"></span>
+    <span style="font-family: 'STIX Two Text', serif; font-size: 18px; letter-spacing: -0.01em;">Finch</span>
+  </a>
+  <div style="display: flex; gap: 26px; margin-left: auto; align-items: center; font-size: 14px; font-weight: 500;">
+    <a href="Food Suppliers.dc.html" style="color: #4A463C;">Industries</a>
+    <a href="Pricing.dc.html" style="color: #4A463C;">Pricing</a>
+    <a href="Mobile.dc.html" style="color: #4A463C;">Mobile</a>
+    <a href="Pricing.dc.html" style="background: #E05A12; color: #FFF7F0; padding: 9px 18px; border-radius: 8px; font-weight: 600; transition: background 150ms;" style-hover="background: #C94F0E; color: #FFFFFF;">Book your audit</a>
+  </div>
+</nav>
+
+<header style="display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 64px; align-items: center; max-width: 1160px; margin: 0 auto; padding: 72px 40px 110px;">
+  <div>
+    <div style="width: 52px; height: 3px; border-radius: 2px; background: linear-gradient(90deg, #FF7727, #4B96DD); margin-bottom: 28px;"></div>
+    <h1 style="font-family: 'STIX Two Text', serif; font-weight: 500; font-size: 62px; line-height: 1.06; letter-spacing: -0.025em; margin: 0 0 24px; text-wrap: pretty;">Meet Finch. Your company's own COO — at a tenth of the cost.</h1>
+    <p style="font-size: 17px; line-height: 1.65; color: #4A463C; max-width: 520px; margin: 0 0 32px; text-wrap: pretty;">Your business runs on WhatsApp, spreadsheets and gut feel. Finch's AI agents watch your invoices, stock, suppliers and margins — catch money leaking, and tell you what to do about it. Built by Vyso for South African food businesses. R6,000 per location, everything included.</p>
+    <div style="display: flex; align-items: center; gap: 18px;">
+      <a href="Pricing.dc.html" style="background: #E05A12; color: #FFF7F0; padding: 14px 26px; border-radius: 9px; font-size: 15.5px; font-weight: 600; transition: background 150ms;" style-hover="background: #C94F0E; color: #FFFFFF;">Book your audit</a>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; letter-spacing: 0.06em; color: #8A8474;">ONE-WEEK OPERATIONS AUDIT · R2,000</span>
+    </div>
+  </div>
+  <div>
+    <dc-import name="FindingCard" hint-size="460px,250px"></dc-import>
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #B9B3A3; margin-top: 12px; text-align: right;">ILLUSTRATIVE EXAMPLE</div>
+  </div>
+</header>
+
+<div style="max-width: 1160px; margin: 0 auto; padding: 0 40px 8px;">
+  <div style="border-top: 1px solid #E7E3DA; padding-top: 64px;">
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: #8A8474; margin-bottom: 14px;">WHAT HAPPENS TO AN INVOICE INSIDE FINCH</div>
+    <h2 style="font-family: 'STIX Two Text', serif; font-weight: 500; font-size: 38px; letter-spacing: -0.02em; margin: 0; max-width: 620px; line-height: 1.15;">From paper to a decision, while you serve customers.</h2>
+  </div>
+</div>
+
+<div id="sqwrap" style="height: 480vh; position: relative;">
+  <div style="position: sticky; top: 0; height: 100vh; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+    <div id="sqStage" style="position: relative; width: 1160px; height: 660px; flex-shrink: 0; transform-origin: center;">
+
+      <div id="sqInvoice" style="position: absolute; left: 10px; top: 40px; width: 400px; background: #FFFFFF; border: 1px solid #E7E3DA; border-radius: 6px; padding: 26px 28px; box-shadow: 0 12px 36px rgba(20,18,14,0.08); opacity: 0;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; letter-spacing: 0.06em;">FRESHCO PRODUCE MARKET (PTY) LTD</div>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #8A8474; margin-top: 4px;">CITY DEEP FRESH PRODUCE MARKET · JOHANNESBURG</div>
+        <div style="display: flex; gap: 8px; margin: 10px 0 16px;">
+          <span style="width: 90px; height: 9px; background: #E7E3DA; border-radius: 2px;"></span>
+          <span style="width: 60px; height: 9px; background: #E7E3DA; border-radius: 2px;"></span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #6B6659; border-top: 1px solid #F0EDE5; border-bottom: 1px solid #F0EDE5; padding: 8px 0; margin-bottom: 4px;">
+          <span>TAX INVOICE · INV-38412</span><span>14 JUN 2026</span>
+        </div>
+        <div style="display: flex; flex-direction: column;">
+          <div style="position: relative; display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; padding: 9px 6px;">
+            <span id="sqHl0" style="position: absolute; inset: 2px 0; background: #D9E9F8; border-radius: 3px; transform: scaleX(0); transform-origin: left;"></span>
+            <span style="position: relative;">Butternut 10kg bag × 24</span><span style="position: relative;">R 1,488.00</span>
+          </div>
+          <div style="position: relative; display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; padding: 9px 6px;">
+            <span id="sqHl1" style="position: absolute; inset: 2px 0; background: #D9E9F8; border-radius: 3px; transform: scaleX(0); transform-origin: left;"></span>
+            <span style="position: relative;">Tomatoes Gr.1 6kg × 18</span><span style="position: relative;">R 1,611.00</span>
+          </div>
+          <div style="position: relative; display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; padding: 9px 6px;">
+            <span id="sqHl2" style="position: absolute; inset: 2px 0; background: #D9E9F8; border-radius: 3px; transform: scaleX(0); transform-origin: left;"></span>
+            <span style="position: relative;">Cooking oil 20L × 6</span><span style="position: relative;">R 4,488.00</span>
+          </div>
+          <div style="position: relative; display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; padding: 9px 6px;">
+            <span id="sqHl3" style="position: absolute; inset: 2px 0; background: #D9E9F8; border-radius: 3px; transform: scaleX(0); transform-origin: left;"></span>
+            <span style="position: relative;">Onions 10kg × 12</span><span style="position: relative;">R 852.00</span>
+          </div>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; border-top: 1px solid #14120E; margin-top: 6px; padding: 10px 6px 0;">
+          <span>TOTAL INCL VAT</span><span>R 8,439.00</span>
+        </div>
+      </div>
+
+      <div id="sqRows" style="position: absolute; left: 480px; top: 110px; width: 430px; background: #FFFFFF; border: 1px solid #E7E3DA; border-radius: 8px; padding: 20px 22px; opacity: 0;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: #8A8474; margin-bottom: 14px;">EXTRACTED · 4 LINE ITEMS · 99.2% CONF</div>
+        <div style="display: flex; flex-direction: column; gap: 10px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #2F6FAE;">
+          <div style="display: flex; justify-content: space-between;"><span>butternut_10kg · 24 @ R62.00</span><span style="color: #C94F0E;">+12% vs Jan</span></div>
+          <div style="display: flex; justify-content: space-between;"><span>tomato_gr1_6kg · 18 @ R89.50</span><span style="color: #8A8474;">steady</span></div>
+          <div style="display: flex; justify-content: space-between;"><span>cooking_oil_20l · 6 @ R748.00</span><span style="color: #8A8474;">−2% vs Jan</span></div>
+          <div style="display: flex; justify-content: space-between;"><span>onion_10kg · 12 @ R71.00</span><span style="color: #8A8474;">steady</span></div>
+        </div>
+      </div>
+
+      <div id="sqChart" style="position: absolute; left: 470px; top: 70px; width: 580px; opacity: 0;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.12em; color: #8A8474; margin-bottom: 16px;">BUTTERNUT · R PER 10KG BAG · JAN–JUN 2026</div>
+        <svg width="560" height="300" viewBox="0 0 560 300" style="overflow: visible;">
+          <line x1="20" y1="270" x2="540" y2="270" stroke="#E7E3DA" stroke-width="1"></line>
+          <line x1="20" y1="170" x2="540" y2="170" stroke="#F0EDE5" stroke-width="1"></line>
+          <line x1="20" y1="70" x2="540" y2="70" stroke="#F0EDE5" stroke-width="1"></line>
+          <path id="sqChartPath" d="M 20 180 L 120 196 L 220 164 L 320 148 L 420 108 L 520 52" fill="none" stroke="#4B96DD" stroke-width="2.5" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"></path>
+          <circle id="sqChartDot" cx="520" cy="52" r="4.5" fill="#FF7727" opacity="0"></circle>
+          <text id="sqChartLbl" x="520" y="32" text-anchor="middle" font-family="IBM Plex Mono" font-size="12" fill="#C94F0E" opacity="0">R62.00</text>
+          <text x="20" y="292" font-family="IBM Plex Mono" font-size="10" fill="#B9B3A3">JAN</text>
+          <text x="520" y="292" text-anchor="end" font-family="IBM Plex Mono" font-size="10" fill="#B9B3A3">JUN</text>
+        </svg>
+      </div>
+
+      <div id="sqCard" style="position: absolute; left: 480px; top: 100px; width: 440px; background: #FFFFFF; border: 1px solid #E7E3DA; border-radius: 10px; padding: 22px 24px 18px 27px; box-shadow: 0 14px 44px rgba(20,18,14,0.10); opacity: 0; transform-origin: top left;">
+        <div style="position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; border-radius: 2px; background: #FF7727;"></div>
+        <div id="sqCp0" style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; opacity: 0;">
+          <span style="width: 7px; height: 7px; border-radius: 50%; background: #FF7727; animation: fPulse 2s ease-out infinite;"></span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.12em; color: #6B6659;">PRICE WATCH</span>
+          <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #C94F0E; border: 1px solid #F3D9C6; border-radius: 99px; padding: 3px 9px;">NEW</span>
+        </div>
+        <div id="sqCp1" style="font-size: 16.5px; line-height: 1.45; margin-bottom: 10px; opacity: 0;">Butternut up 12% at FreshCo since June.</div>
+        <div id="sqCp2" style="font-size: 21px; font-weight: 600; color: #C94F0E; margin-bottom: 12px; opacity: 0;">≈ R4,200/yr at current volumes</div>
+        <div id="sqCp3" style="display: flex; align-items: center; gap: 8px; margin-bottom: 14px; opacity: 0;">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: #2F6FAE; background: #EDF4FB; border-radius: 6px; padding: 4px 10px;">3 invoices ↗</span>
+        </div>
+        <div id="sqCp4" style="display: flex; gap: 14px; border-top: 1px solid #F0EDE5; padding-top: 13px; font-size: 13px; font-weight: 500; color: #4A463C; opacity: 0;">
+          <span>Draft supplier email</span><span style="color: #D8D3C6;">·</span><span>Show 6-month trend</span><span style="color: #D8D3C6;">·</span><span>Dismiss</span>
+        </div>
+      </div>
+
+      <div id="sqPhone" style="position: absolute; left: 790px; top: 10px; width: 300px; height: 630px; background: #FFFFFF; border: 1px solid #D8D3C6; border-radius: 42px; padding: 12px; box-shadow: 0 24px 60px rgba(20,18,14,0.12); opacity: 0;">
+        <div style="height: 100%; border-radius: 32px; background: #F2EEE6; overflow: hidden; display: flex; flex-direction: column;">
+          <div style="background: #FFFFFF; border-bottom: 1px solid #E7E3DA; padding: 16px 16px 12px; display: flex; align-items: center; gap: 10px;">
+            <img src="assets/finch-bird.svg" alt="" style="width: 30px; height: 30px; background: #FAF9F6; border: 1px solid #E7E3DA; border-radius: 50%; padding: 2px;">
+            <div>
+              <div style="font-size: 13.5px; font-weight: 600;">Finch</div>
+              <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: #4B96DD;">● ONLINE · 06:45</div>
+            </div>
+          </div>
+          <div id="sqBrief" style="margin: 14px 12px 0; background: #FFFFFF; border-radius: 10px 10px 10px 3px; padding: 12px 14px; font-size: 13px; line-height: 1.5; box-shadow: 0 1px 2px rgba(20,18,14,0.06); opacity: 0;">Morning. 3 things need your attention — one's worth <strong style="color: #C94F0E;">R4,200</strong>.</div>
+        </div>
+      </div>
+
+      <div style="position: absolute; left: 0; right: 0; bottom: -6px; display: flex; justify-content: center; gap: 26px; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.1em;">
+        <span id="sqCap0" style="color: #B9B3A3; transition: color 200ms;">01 INVOICE IN</span>
+        <span id="sqCap1" style="color: #B9B3A3; transition: color 200ms;">02 EXTRACTION</span>
+        <span id="sqCap2" style="color: #B9B3A3; transition: color 200ms;">03 PRICE MEMORY</span>
+        <span id="sqCap3" style="color: #B9B3A3; transition: color 200ms;">04 THE FINDING</span>
+        <span id="sqCap4" style="color: #B9B3A3; transition: color 200ms;">05 YOUR BRIEF</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<section style="max-width: 1160px; margin: 0 auto; padding: 110px 40px 0;">
+  <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: #8A8474; margin-bottom: 14px;">WHAT FINCH WATCHES</div>
+  <h2 style="font-family: 'STIX Two Text', serif; font-weight: 500; font-size: 38px; letter-spacing: -0.02em; margin: 0 0 44px; line-height: 1.15;">Five agents on shift, all day, every day.</h2>
+  <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px;">
+    <div style="background: #FFFFFF; border: 1px solid #E7E3DA; border-radius: 10px; padding: 22px 20px; transition: border-color 150ms;" style-hover="border-color: #C9C3B4;">
+      <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 12px;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #FF7727;"></span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.12em; color: #4A463C;">PRICE WATCH</span></div>
+      <div style="font-size: 14px; line-height: 1.5; color: #6B6659;">Supplier prices, line by line, against six months of memory.</div>
+    </div>
+    <div style="background: #FFFFFF; border: 1px solid #E7E3DA; border-radius: 10px; padding: 22px 20px; transition: border-color 150ms;" style-hover="border-color: #C9C3B4;">
+      <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 12px;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #FF7727;"></span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.12em; color: #4A463C;">RECON</span></div>
+      <div style="font-size: 14px; line-height: 1.5; color: #6B6659;">What was invoiced against what actually arrived at the back door.</div>
+    </div>
+    <div style="background: #FFFFFF; border: 1px solid #E7E3DA; border-radius: 10px; padding: 22px 20px; transition: border-color 150ms;" style-hover="border-color: #C9C3B4;">
+      <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 12px;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #FF7727;"></span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.12em; color: #4A463C;">DEBTORS</span></div>
+      <div style="font-size: 14px; line-height: 1.5; color: #6B6659;">Accounts quietly thinning before they become bad debt.</div>
+    </div>
+    <div style="background: #FFFFFF; border: 1px solid #E7E3DA; border-radius: 10px; padding: 22px 20px; transition: border-color 150ms;" style-hover="border-color: #C9C3B4;">
+      <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 12px;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #FF7727;"></span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.12em; color: #4A463C;">STOCK SENSE</span></div>
+      <div style="font-size: 14px; line-height: 1.5; color: #6B6659;">Stock on hand against the orders already on their way.</div>
+    </div>
+    <div style="background: #FFFFFF; border: 1px solid #E7E3DA; border-radius: 10px; padding: 22px 20px; transition: border-color 150ms;" style-hover="border-color: #C9C3B4;">
+      <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 12px;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #FF7727;"></span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.12em; color: #4A463C;">THE BRIEF</span></div>
+      <div style="font-size: 14px; line-height: 1.5; color: #6B6659;">Monday morning on WhatsApp: the three things that matter.</div>
+    </div>
+  </div>
+</section>
+
+<section style="max-width: 1160px; margin: 0 auto; padding: 110px 40px 0;">
+  <div style="border-top: 1px solid #E7E3DA; padding-top: 64px; display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 64px; align-items: start;">
+    <div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: #8A8474; margin-bottom: 14px;">SENSES, NOT INTEGRATIONS</div>
+      <h2 style="font-family: 'STIX Two Text', serif; font-weight: 500; font-size: 34px; letter-spacing: -0.02em; margin: 0 0 16px; line-height: 1.18;">We put your current tools into Finch.</h2>
+      <p style="font-size: 15.5px; line-height: 1.65; color: #6B6659; margin: 0; max-width: 400px;">Nothing to migrate, nothing to retrain on. Finch plugs into what you already run and starts watching.</p>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 0;">
+      <div style="display: flex; align-items: baseline; gap: 18px; padding: 15px 4px; border-bottom: 1px solid #F0EDE5;"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; font-weight: 500; width: 170px;">XERO</span><span style="font-size: 14.5px; color: #6B6659;">reads your books</span></div>
+      <div style="display: flex; align-items: baseline; gap: 18px; padding: 15px 4px; border-bottom: 1px solid #F0EDE5;"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; font-weight: 500; width: 170px;">WHATSAPP BUSINESS</span><span style="font-size: 14.5px; color: #6B6659;">where Finch talks to you</span></div>
+      <div style="display: flex; align-items: baseline; gap: 18px; padding: 15px 4px; border-bottom: 1px solid #F0EDE5;"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; font-weight: 500; width: 170px;">YOCO</span><span style="font-size: 14.5px; color: #6B6659;">watches the takings</span></div>
+      <div style="display: flex; align-items: baseline; gap: 18px; padding: 15px 4px; border-bottom: 1px solid #F0EDE5;"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; font-weight: 500; width: 170px;">SAGE</span><span style="font-size: 14.5px; color: #6B6659;">reads the ledger</span></div>
+      <div style="display: flex; align-items: baseline; gap: 18px; padding: 15px 4px;"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; font-weight: 500; width: 170px;">LOYVERSE</span><span style="font-size: 14.5px; color: #6B6659;">sees what leaves the shelf</span></div>
+    </div>
+  </div>
+</section>
+
+<section style="max-width: 860px; margin: 0 auto; padding: 130px 40px 0; text-align: center;">
+  <img src="assets/finch-bird.svg" alt="" style="width: 44px; height: 44px; margin-bottom: 28px;">
+  <blockquote style="font-family: 'STIX Two Text', serif; font-weight: 400; font-size: 32px; line-height: 1.35; letter-spacing: -0.015em; margin: 0 0 24px; text-wrap: pretty;">“Finch automates our invoicing, ordering, and insight into how our company is actually running.”</blockquote>
+  <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; letter-spacing: 0.1em; color: #8A8474;">ROBERTO · TURN 'N SLICE · JOHANNESBURG · FOUNDING CLIENT</div>
+</section>
+
+<section style="max-width: 1160px; margin: 0 auto; padding: 130px 40px 0;">
+  <div style="border-top: 1px solid #E7E3DA; padding-top: 48px;">
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: #8A8474; margin-bottom: 32px;">UNDER THE HOOD</div>
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 40px;">
+      <div><div style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; letter-spacing: 0.1em; margin-bottom: 8px; color: #4A463C;">EXTRACTION</div><div style="font-size: 13.5px; line-height: 1.55; color: #8A8474;">Every invoice, delivery note and statement read into structured line items.</div></div>
+      <div><div style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; letter-spacing: 0.1em; margin-bottom: 8px; color: #4A463C;">PRICE MEMORY</div><div style="font-size: 13.5px; line-height: 1.55; color: #8A8474;">Six months of what everything cost, per supplier, per unit.</div></div>
+      <div><div style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; letter-spacing: 0.1em; margin-bottom: 8px; color: #4A463C;">RECONCILIATION</div><div style="font-size: 13.5px; line-height: 1.55; color: #8A8474;">Invoiced vs delivered vs paid, matched line by line.</div></div>
+      <div><div style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; letter-spacing: 0.1em; margin-bottom: 8px; color: #4A463C;">BRIEF COMPOSER</div><div style="font-size: 13.5px; line-height: 1.55; color: #8A8474;">Findings ranked by rand impact, written in plain language.</div></div>
+    </div>
+  </div>
+</section>
+
+<section style="max-width: 1160px; margin: 0 auto; padding: 120px 40px 0;">
+  <div style="background: #14120E; border-radius: 16px; padding: 72px 64px; display: flex; align-items: center; justify-content: space-between; gap: 40px;">
+    <div>
+      <h2 style="font-family: 'STIX Two Text', serif; font-weight: 400; font-size: 36px; letter-spacing: -0.02em; color: #FAF9F6; margin: 0 0 12px;">Start with a one-week Operations Audit.</h2>
+      <p style="font-size: 15.5px; color: #B9B3A3; margin: 0;">R2,000, credited to your first month. We tell you where the money is leaking — whether you sign or not.</p>
+    </div>
+    <a href="Pricing.dc.html" style="background: #E05A12; color: #FFF7F0; padding: 16px 30px; border-radius: 10px; font-size: 16px; font-weight: 600; white-space: nowrap; transition: background 150ms;" style-hover="background: #FF7727; color: #FFFFFF;">Book your audit</a>
+  </div>
+</section>
+
+<footer style="max-width: 1160px; margin: 0 auto; padding: 72px 40px 48px; display: flex; align-items: center; gap: 24px;">
+  <img src="assets/vyso-wordmark.svg" alt="Vyso" style="height: 13px; opacity: 0.7;">
+  <span style="font-size: 13px; color: #8A8474;">Built by Vyso in Johannesburg.</span>
+  <div style="margin-left: auto; display: flex; gap: 22px; font-size: 13px;">
+    <a href="Pricing.dc.html" style="color: #6B6659;">Pricing</a>
+    <a href="Food Suppliers.dc.html" style="color: #6B6659;">Food suppliers</a>
+    <a href="Mobile.dc.html" style="color: #6B6659;">Mobile</a>
+  </div>
+</footer>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;scrollLength&quot;: {&quot;editor&quot;: &quot;range&quot;, &quot;default&quot;: 480, &quot;min&quot;: 300, &quot;max&quot;: 700, &quot;step&quot;: 20, &quot;unit&quot;: &quot;vh&quot;, &quot;section&quot;: &quot;Scroll sequence&quot;}}">
+class Component extends DCLogic {
+  componentDidMount() {
+    this.els = {};
+    ['sqwrap','sqInvoice','sqRows','sqChart','sqChartPath','sqChartDot','sqChartLbl','sqCard','sqPhone','sqBrief','sqHl0','sqHl1','sqHl2','sqHl3','sqCp0','sqCp1','sqCp2','sqCp3','sqCp4','sqCap0','sqCap1','sqCap2','sqCap3','sqCap4','sqStage'].forEach(id => this.els[id] = document.getElementById(id));
+    this.onScroll = () => { if (!this.raf) this.raf = requestAnimationFrame(() => { this.raf = null; this.tick(); }); };
+    window.addEventListener('scroll', this.onScroll, { passive: true });
+    window.addEventListener('resize', this.onScroll);
+    this.tick();
+  }
+  componentWillUnmount() {
+    window.removeEventListener('scroll', this.onScroll);
+    window.removeEventListener('resize', this.onScroll);
+  }
+  tick() {
+    const E = this.els; if (!E || !E.sqwrap) return;
+    E.sqStage.style.transform = `scale(${Math.min(1, (window.innerWidth - 40) / 1160, (window.innerHeight - 60) / 660)})`;
+    const vh = (this.props.scrollLength ?? 480);
+    E.sqwrap.style.height = vh + 'vh';
+    const r = E.sqwrap.getBoundingClientRect();
+    const total = r.height - window.innerHeight;
+    const t = Math.max(0, Math.min(1, -r.top / total));
+    const seg = (a, b) => Math.max(0, Math.min(1, (t - a) / (b - a)));
+    const eo = p => 1 - Math.pow(1 - p, 3); // ease-out cubic
+    // beat 1: invoice drifts in; fades left during beat 3
+    const b1 = eo(seg(0.00, 0.14)), inv3 = eo(seg(0.40, 0.52));
+    E.sqInvoice.style.opacity = Math.min(b1, 1 - inv3 * 0.9);
+    E.sqInvoice.style.transform = `translateY(${(1 - b1) * 70}px) translateX(${-inv3 * 80}px) rotate(${-3 + b1 * 3}deg) scale(${1 - inv3 * 0.06})`;
+    // beat 2: highlights sweep + extracted rows
+    [E.sqHl0, E.sqHl1, E.sqHl2, E.sqHl3].forEach((el, i) => {
+      el.style.transform = `scaleX(${eo(seg(0.15 + i * 0.03, 0.23 + i * 0.03))})`;
+    });
+    const rIn = eo(seg(0.20, 0.30)), rOut = eo(seg(0.38, 0.46));
+    E.sqRows.style.opacity = Math.min(rIn, 1 - rOut);
+    E.sqRows.style.transform = `translateX(${(1 - rIn) * 50 - rOut * 40}px)`;
+    // beat 3: chart draws
+    const cIn = eo(seg(0.40, 0.48)), cOut = eo(seg(0.58, 0.66));
+    E.sqChart.style.opacity = Math.min(cIn, 1 - cOut);
+    E.sqChart.style.transform = `translateX(${(1 - cIn) * 50 - cOut * 70}px)`;
+    const draw = eo(seg(0.42, 0.56));
+    E.sqChartPath.style.strokeDashoffset = 1 - draw;
+    E.sqChartDot.style.opacity = draw > 0.97 ? 1 : 0;
+    E.sqChartLbl.style.opacity = draw > 0.97 ? 1 : 0;
+    // beat 4: card assembles
+    const k = eo(seg(0.60, 0.66));
+    [E.sqCp0, E.sqCp1, E.sqCp2, E.sqCp3, E.sqCp4].forEach((el, i) => {
+      const p = eo(seg(0.60 + i * 0.035, 0.67 + i * 0.035));
+      el.style.opacity = p;
+      el.style.transform = i === 2 ? `scale(${1.3 - p * 0.3})` : `translateY(${(1 - p) * 20}px)`;
+      if (i === 2) el.style.transformOrigin = 'left center';
+    });
+    // beat 5: phone in, card slides into it
+    const ph = eo(seg(0.78, 0.86)), into = eo(seg(0.80, 0.92));
+    E.sqCard.style.opacity = k;
+    E.sqCard.style.transform = `translate(${into * 336}px, ${into * 118}px) scale(${1 - into * 0.44})`;
+    E.sqCard.style.zIndex = 2;
+    E.sqPhone.style.opacity = ph;
+    E.sqPhone.style.transform = `translateY(${(1 - ph) * 60}px)`;
+    const br = eo(seg(0.90, 0.97));
+    E.sqBrief.style.opacity = br;
+    E.sqBrief.style.transform = `translateY(${(1 - br) * 14}px)`;
+    // captions
+    const idx = t < 0.15 ? 0 : t < 0.38 ? 1 : t < 0.58 ? 2 : t < 0.78 ? 3 : 4;
+    [E.sqCap0, E.sqCap1, E.sqCap2, E.sqCap3, E.sqCap4].forEach((el, i) => {
+      el.style.color = i === idx ? '#14120E' : '#B9B3A3';
+    });
+  }
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
-import { Barlow_Condensed, DM_Sans, Inter, Instrument_Sans, Space_Grotesk } from "next/font/google";
-import { LiquidGlassFilter }  from "@/components/ui/liquid-button";
-import { GlobalPixelTrail }   from "@/components/GlobalPixelTrail";
+import { Barlow_Condensed, DM_Sans, IBM_Plex_Mono, Inter, Instrument_Sans, Space_Grotesk, STIX_Two_Text } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
+import { NavGround } from "@/components/finch/NavGround";
+import { PRICE } from "@/components/finch/pricing/pricing-data";
+import { RouteFade } from "@/components/finch/RouteFade";
+import { SkipLink } from "@/components/finch/SkipLink";
+import { SmoothScroll } from "@/components/finch/SmoothScroll";
+import { SITE } from "@/lib/marketing/site";
 import "./globals.css";
 
 /* ── Heading font: Barlow Condensed ──────────────────────────────────────── */
@@ -46,73 +52,175 @@ const spaceGrotesk = Space_Grotesk({
   display:  "swap",
 });
 
+/* ── Finch marketing pair: STIX Two Text (editorial headings) + IBM Plex Mono ──
+   (data/metadata labels). Loaded here rather than in the page so the variables
+   sit on <html> alongside the others; only the `.finch-site` subtree reads them. */
+const stixTwoText = STIX_Two_Text({
+  variable: "--font-stix",
+  subsets:  ["latin"],
+  weight:   ["400", "500"],
+  style:    ["normal", "italic"],
+  display:  "swap",
+});
+
+const ibmPlexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
+  subsets:  ["latin"],
+  weight:   ["400", "500"],
+  display:  "swap",
+});
+
+/* Root metadata for the whole site. `title.template` means every page's own
+   `title: "…"` string gets ` | Vyso` appended automatically — a page that
+   wants a different final title (or already spells out "| Vyso" itself) must
+   set `title: { absolute: "…" }` instead. `/pricing` was the one page already
+   shipping a self-contained "…| Vyso" title; it is trimmed to a plain string
+   here so the template doesn't double the suffix (see that file's comment). */
 export const metadata: Metadata = {
-  title: "Vyso | Operations Software & Automation for SMEs",
-  description:
-    "Replace WhatsApp threads and spreadsheets with a configurable operations platform. Vyso audits, automates and implements practical systems for growing SMEs.",
-  metadataBase: new URL("https://vyso.co.za"),
+  title: {
+    default: "Vyso — Finch, your company's own COO at a tenth of the cost",
+    template: "%s | Vyso",
+  },
+  description: SITE.description,
+  metadataBase: new URL(SITE.url),
   alternates: {
     canonical: "/",
+    languages: {
+      "en-ZA": "/",
+      "x-default": "/",
+    },
   },
   openGraph: {
-    title: "Vyso | Operations Software & Automation for SMEs",
-    description:
-      "Replace WhatsApp threads and spreadsheets with a configurable operations platform. Vyso audits, automates and implements practical systems for growing SMEs.",
-    url:      "https://vyso.co.za",
-    siteName: "Vyso",
+    title: "Vyso — Finch, your company's own COO at a tenth of the cost",
+    description: SITE.description,
+    url:      SITE.url,
+    siteName: SITE.name,
     locale:   "en_ZA",
     type:     "website",
-    images: [
-      {
-        url: "/og.png",
-        width: 1200,
-        height: 630,
-        alt: "Vyso — Operations, connected.",
-      },
-    ],
+    /* No `images` here, and none in any page's metadata either. `app/
+       opengraph-image.tsx` and the per-segment generators under it produce the
+       og:image tags through Next's file convention, which resolves the nearest
+       image to the route being rendered — a hard-coded `images` array would
+       override all of them with the one stale "Operations, connected." PNG.
+       See `lib/og/render.tsx`. */
   },
   twitter: {
     card: "summary_large_image",
-    title: "Vyso | Operations Software & Automation for SMEs",
-    description:
-      "Replace WhatsApp threads and spreadsheets with a configurable operations platform. Vyso audits, automates and implements practical systems for growing SMEs.",
-    images: ["/og.png"],
+    title: "Vyso — Finch, your company's own COO at a tenth of the cost",
+    description: SITE.description,
+    /* Same reason: the file convention emits `twitter:image` too. */
+  },
+  /* Search Console / Bing Webmaster ownership tokens, read from env
+     (`.ai/vyso_v2.md` §7.7 — "verified via metadata.verification").
+     `.env.example` documents both. Omitted entirely (not emitted as an empty
+     `content=""` meta tag) whichever one isn't set yet, rather than publish a
+     verification tag with nothing to verify. */
+  verification: {
+    ...(process.env.NEXT_PUBLIC_GSC_VERIFICATION
+      ? { google: process.env.NEXT_PUBLIC_GSC_VERIFICATION }
+      : {}),
+    ...(process.env.NEXT_PUBLIC_BING_VERIFICATION
+      ? { other: { "msvalidate.01": process.env.NEXT_PUBLIC_BING_VERIFICATION } }
+      : {}),
   },
 };
 
+/* ── Structured data graph ────────────────────────────────────────────────
+   Replaces the old two-node (Organization + WebSite) graph with the full
+   phase-1 set from `.ai/vyso_v2.md` §7.3: Organization (with its founder as
+   a Person), WebSite, the Finch SoftwareApplication and the Operations Audit
+   Service. Price figures come from `PRICE` in `components/finch/pricing/
+   pricing-data.ts` — the same constants `/pricing`'s own JSON-LD reads — so
+   this graph can never quote a number the pricing page doesn't. Pages that
+   emit their own graph (`/pricing`, `/operations-audit`) reference
+   `#organization` rather than redeclaring it; no `@id` collides with this
+   one. No address beyond Johannesburg/ZA (no street exists to publish) and
+   no ratings, per the phase-1 decision. `sameAs` is included only once
+   `SITE.sameAs` actually has entries — an empty array would misrepresent an
+   absence of public profiles as a checked-and-empty list. */
 const siteSchema = {
   "@context": "https://schema.org",
   "@graph": [
     {
       "@type": "Organization",
-      "@id": "https://vyso.co.za/#organization",
-      name: "Vyso",
-      url: "https://vyso.co.za",
-      logo: "https://vyso.co.za/icon.svg",
-      email: "joshua@vyso.co.za",
-      contactPoint: {
-        "@type": "ContactPoint",
-        contactType: "sales",
-        email: "joshua@vyso.co.za",
-        url: "https://vyso.co.za/contact",
-        areaServed: "ZA",
-        availableLanguage: "en-ZA",
+      "@id": `${SITE.url}/#organization`,
+      name: SITE.name,
+      url: SITE.url,
+      logo: `${SITE.url}/icon.svg`,
+      email: SITE.email,
+      founder: {
+        "@type": "Person",
+        "@id": `${SITE.url}/#josh`,
+        name: SITE.founder.name,
+        jobTitle: SITE.founder.jobTitle,
+      },
+      ...(SITE.sameAs.length > 0 ? { sameAs: SITE.sameAs } : {}),
+      address: {
+        "@type": "PostalAddress",
+        addressLocality: SITE.address.addressLocality,
+        addressCountry: SITE.address.addressCountry,
       },
       areaServed: {
         "@type": "Country",
         name: "South Africa",
       },
-      description:
-        "A configurable operations platform for SMEs, implemented with hands-on support.",
+      contactPoint: {
+        "@type": "ContactPoint",
+        contactType: "sales",
+        email: SITE.email,
+        url: `${SITE.url}/contact`,
+        areaServed: "ZA",
+        availableLanguage: "en-ZA",
+      },
     },
     {
       "@type": "WebSite",
-      "@id": "https://vyso.co.za/#website",
-      url: "https://vyso.co.za",
-      name: "Vyso",
+      "@id": `${SITE.url}/#website`,
+      url: SITE.url,
+      name: SITE.name,
       inLanguage: "en-ZA",
       publisher: {
-        "@id": "https://vyso.co.za/#organization",
+        "@id": `${SITE.url}/#organization`,
+      },
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": `${SITE.url}/#finch`,
+      name: "Finch",
+      applicationCategory: "BusinessApplication",
+      operatingSystem: "Web",
+      // The homepage is the product page; there is no separate `/finch`.
+      url: `${SITE.url}/`,
+      provider: { "@id": `${SITE.url}/#organization` },
+      offers: {
+        "@type": "Offer",
+        price: String(PRICE.finch),
+        priceCurrency: PRICE.currency,
+        availability: "https://schema.org/InStock",
+        priceSpecification: {
+          "@type": "UnitPriceSpecification",
+          price: PRICE.finch,
+          priceCurrency: PRICE.currency,
+          unitCode: "MON",
+          referenceQuantity: {
+            "@type": "QuantitativeValue",
+            value: 1,
+            unitText: "location",
+          },
+        },
+      },
+    },
+    {
+      "@type": "Service",
+      "@id": `${SITE.url}/#audit`,
+      name: "Operations Audit",
+      provider: { "@id": `${SITE.url}/#organization` },
+      areaServed: "ZA",
+      offers: {
+        "@type": "Offer",
+        price: String(PRICE.audit),
+        priceCurrency: PRICE.currency,
+        availability: "https://schema.org/InStock",
       },
     },
   ],
@@ -125,20 +233,35 @@ export default function RootLayout({
     <html
       lang="en-ZA"
       data-scroll-behavior="smooth"
-      className={`${barlowCondensed.variable} ${dmSans.variable} ${inter.variable} ${instrumentSans.variable} ${spaceGrotesk.variable} h-full antialiased`}
+      className={`${barlowCondensed.variable} ${dmSans.variable} ${inter.variable} ${instrumentSans.variable} ${spaceGrotesk.variable} ${stixTwoText.variable} ${ibmPlexMono.variable} h-full antialiased`}
     >
       <body className="min-h-full">
+        {/* First tab stop on every page: jumps keyboard/screen-reader users
+            past the nav to `#main` (each page's <main>). */}
+        <SkipLink />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
             __html: JSON.stringify(siteSchema).replace(/</g, "\\u003c"),
           }}
         />
-        {/* Global SVG filter for LiquidButton glass effect */}
-        <LiquidGlassFilter />
-        {/* Orange pixel trail — follows the cursor across every page */}
-        <GlobalPixelTrail />
-        {children}
+        {/* Phase 6a, `.ai/vyso_v3_design.md` §6/§8/§11 — three global mounts,
+            all of them no-ops until something opts in:
+            - `NavGround` watches for `data-ground` bands under the nav and
+              inverts it. No page has a band yet (6b composes them), so it
+              writes `paper` and nothing changes.
+            - `RouteFade` fades the page in on navigation, first paint
+              untouched.
+            - `SmoothScroll` mounts Lenis only if `localStorage["fn:lenis"]`
+              is "1" — off by default, toggled on `/design` for review. */}
+        <NavGround />
+        <SmoothScroll />
+        <RouteFade>{children}</RouteFade>
+        {/* Phase 4, §7.7: Vercel Analytics + Speed Insights, site-wide. Both
+            components are client-side and no-cookie-banner; `lib/analytics.ts`
+            is the typed `track()` wrapper every custom event goes through. */}
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );

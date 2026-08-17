@@ -166,4 +166,9 @@ export const serviceden: MarketingModule = {
   relatedSolutionHrefs: ["/solutions/reduce-money-leakage"],
   relatedIndustryHrefs: ["/industries/hospitality"],
   appUrlLabel: "app.vyso.co.za/serviceden",
+  group: "people",
+  status: "LIMITED ROLLOUT",
+  agents: [],
+  howFinchUsesIt:
+    "ServiceDen doesn't feed Finch's agents yet. It runs as its own front office — internally at Vyso and with a handful of service businesses — and, being a standalone lead-and-invoicing flow rather than a data feed into the rest of the platform, isn't part of the audit-roadmap agent set described elsewhere on this site.",
 };

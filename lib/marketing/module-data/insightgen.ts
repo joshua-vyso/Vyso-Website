@@ -192,4 +192,9 @@ export const insightgen: MarketingModule = {
   relatedSolutionHrefs: ["/solutions/reporting-automation", "/solutions/operations-dashboard"],
   relatedIndustryHrefs: ["/industries/hospitality", "/industries/wholesale"],
   appUrlLabel: "app.vyso.co.za/insightgen",
+  group: "insight",
+  status: "LIVE",
+  agents: ["THE BRIEF"],
+  howFinchUsesIt:
+    "The Brief is, in effect, InsightGen's own daily output reformatted for WhatsApp: it reads the same rule-based anomaly feed InsightGen assembles from five modules and ranks the findings by rand impact. Nothing here is generated separately — the brief and InsightGen's own anomaly feed read the same rows.",
 };

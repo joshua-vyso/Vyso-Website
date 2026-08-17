@@ -209,4 +209,9 @@ export const planwise: MarketingModule = {
   relatedSolutionHrefs: ["/solutions/operations-dashboard", "/solutions/reporting-automation"],
   relatedIndustryHrefs: ["/industries/catering-companies", "/industries/hospitality"],
   appUrlLabel: "app.vyso.co.za/planwise",
+  group: "suppliers-stock",
+  status: "LIVE",
+  agents: ["THE BRIEF", "DEBTORS"],
+  howFinchUsesIt:
+    "The Brief reads PlanWise's pace and forecast data to say whether the month is on track. Debtors reads the outstanding-invoice target PlanWise tracks as one of its strategic goals — the same figure, not a second one kept separately.",
 };

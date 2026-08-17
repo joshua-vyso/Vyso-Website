@@ -226,4 +226,9 @@ export const shiftboard: MarketingModule = {
   relatedSolutionHrefs: ["/solutions/operations-dashboard"],
   relatedIndustryHrefs: ["/industries/restaurants", "/industries/hospitality"],
   appUrlLabel: "app.vyso.co.za/shiftboard",
+  group: "people",
+  status: "LIVE",
+  agents: ["THE BRIEF"],
+  howFinchUsesIt:
+    "The Brief reads ShiftBoard's labour cost and labour-percentage-of-sales figures when they're worth flagging in your weekly summary. A dedicated labour agent isn't live yet — it would be one of the agents activated from your audit roadmap once ShiftBoard is part of your setup.",
 };

@@ -224,4 +224,9 @@ export const docU: MarketingModule = {
   relatedSolutionHrefs: ["/solutions/procurement-automation", "/solutions/reporting-automation"],
   relatedIndustryHrefs: ["/industries/food-suppliers", "/industries/wholesale"],
   appUrlLabel: "app.vyso.co.za/docu",
+  group: "documents",
+  status: "LIVE",
+  agents: ["DOC-U", "PRICE WATCH", "RECON"],
+  howFinchUsesIt:
+    "Doc-U is Finch's one agent that is already live: it reads every invoice, statement and delivery note the moment they're saved, and every other agent's evidence traces back to a document read here. Price Watch pulls its price history straight from Doc-U's extracted line items; Recon compares what Doc-U read off an invoice against what OrderFlow shows as delivered.",
 };

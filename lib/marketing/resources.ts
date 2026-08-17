@@ -1,5 +1,22 @@
-// Typed content for the /resources landing page and /resources/[slug] detail pages.
-// Strictly additive data file — see .ai/plan_website_expansion.md workstream D.
+/* ── Resources ───────────────────────────────────────────────────────────────
+   Content for `/resources` and `/resources/[slug]`.
+
+   Phase 3 (workstream D) touched three things and nothing else — the preview
+   sections, the "what it helps" bullets and the "who it's for" copy are all
+   exactly what they were, because they describe real documents:
+
+   1. **Titles lost their "| Free Resource | Vyso" suffix.** The root layout
+      now appends " | Vyso" via `title.template`, so a self-contained title
+      renders as "… | Vyso | Vyso" (see the comment on `app/layout.tsx`'s
+      metadata). Each title is rewritten to lead with the query instead.
+   2. **A dead Learn link is fixed.** `weekly-operations-report-template`
+      pointed at `/learn/12-operational-kpis-every-ceo-should-track`, which has
+      never existed in `lib/marketing/learn-articles.ts` — the same class of bug
+      Phase 2 found nine times in the solutions data. Every `href` in this file
+      is now a route that resolves.
+   3. **Vyso → Finch** where a sentence describes the product rather than the
+      company. Only `weekly-operations-report-template`'s description carried
+      one.                                                                     */
 
 export type ResourcePreviewSection = {
   readonly heading: string;
@@ -35,9 +52,9 @@ export const RESOURCES: readonly Resource[] = [
   {
     slug: "operations-audit-checklist",
     shortName: "Operations Audit Checklist",
-    title: "Operations Audit Checklist | Free Resource | Vyso",
+    title: "Operations audit checklist for South African SMEs",
     description:
-      "A practical checklist for reviewing procurement, inventory, reporting and staff workflows before they turn into money leakage. Request the free Vyso operations audit checklist.",
+      "A free checklist for reviewing procurement, inventory, reporting and staff workflows before they leak money. Built for South African operators.",
     eyebrow: "Free resource",
     heroPlain: "Find the leaks before",
     heroAccent: "they cost you a season.",
@@ -114,9 +131,9 @@ export const RESOURCES: readonly Resource[] = [
   {
     slug: "weekly-operations-report-template",
     shortName: "Weekly Operations Report Template",
-    title: "Weekly Operations Report Template | Free Resource | Vyso",
+    title: "Weekly operations report template for SME owners",
     description:
-      "A ready-to-use weekly operations report structure covering sales, stock, procurement, staffing and risks — built for SME owners tired of chasing numbers every Friday.",
+      "A free weekly operations report structure — sales, stock, procurement, staffing, risks — for South African owners tired of chasing numbers.",
     eyebrow: "Free resource",
     heroPlain: "One report.",
     heroAccent: "Every Monday, without the chase.",
@@ -180,18 +197,21 @@ export const RESOURCES: readonly Resource[] = [
         href: "/learn/why-weekly-reports-are-usually-too-late",
         title: "Why Weekly Reports Are Usually Too Late",
       },
+      /* Was `/learn/12-operational-kpis-every-ceo-should-track` — a slug that
+         has never existed. Replaced with a real article on the same problem
+         (the hours the weekly report costs to build). */
       {
-        href: "/learn/12-operational-kpis-every-ceo-should-track",
-        title: "12 Operational KPIs Every CEO Should Track",
+        href: "/learn/how-much-time-can-workflow-automation-save",
+        title: "How Much Time Can Workflow Automation Save?",
       },
     ],
   },
   {
     slug: "supplier-scorecard",
     shortName: "Supplier Scorecard",
-    title: "Supplier Scorecard Template | Free Resource | Vyso",
+    title: "Supplier scorecard template for South African buyers",
     description:
-      "A practical supplier scorecard for tracking delivery, quality, price and communication — so supplier decisions are based on a record, not a feeling.",
+      "A free supplier scorecard for tracking delivery, quality, price and communication, so supplier decisions rest on a record. Built for SA buyers.",
     eyebrow: "Free resource",
     heroPlain: "Score suppliers on",
     heroAccent: "evidence, not memory.",
