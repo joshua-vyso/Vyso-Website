@@ -33,7 +33,9 @@ export type OutreachStage =
   | 'Breakup'
   | 'Meeting Booked';
 
-export type CampaignName = 'Legacy' | 'Discovery First' | 'Original' | 'Unassigned';
+/** Campaign names are data (rows in Template List), so this is an open string.
+ *  'Unassigned' is the one synthetic value, for leads with no Campaign select. */
+export type CampaignName = string;
 
 export type OutreachLead = {
   id: string;
@@ -199,8 +201,6 @@ function readDate(p: Props, key: string): string | null {
   return typeof start === 'string' && start ? start.slice(0, 10) : null;
 }
 
-const CAMPAIGNS: CampaignName[] = ['Legacy', 'Discovery First', 'Original'];
-
 function toLead(row: Record<string, unknown>): OutreachLead {
   const p = props(row);
   const campaign = readSelect(p, 'Campaign');
@@ -214,7 +214,7 @@ function toLead(row: Record<string, unknown>): OutreachLead {
     website: readUrl(p, 'Website'),
     industry: readSelect(p, 'Industry'),
     icpScore: readNumber(p, 'ICP Score'),
-    campaign: (CAMPAIGNS as string[]).includes(campaign ?? '') ? (campaign as CampaignName) : 'Unassigned',
+    campaign: campaign ?? 'Unassigned',
     cohortId: (() => {
       const rel = p['Campaign Record']?.relation;
       const first = Array.isArray(rel) && rel.length ? (rel[0] as Record<string, unknown>) : null;
@@ -370,7 +370,10 @@ export const OUTREACH_STAGES: OutreachStage[] = [
   'Meeting Booked',
 ];
 
-export const CAMPAIGN_OPTIONS = ['Legacy', 'Discovery First'] as const;
+/** Campaigns that may still be assigned to leads by hand. Legacy and Discovery
+ *  First stay here so an existing lead can be corrected; new leads only ever get
+ *  a campaign ticked "Active for New Leads", which the automation decides. */
+export const CAMPAIGN_OPTIONS = ['Pricing Refined', 'Legacy', 'Discovery First'] as const;
 
 export const EMAIL_STATUS_OPTIONS = ['Valid', 'Bounced', 'Catch-All', 'Do Not Contact'] as const;
 

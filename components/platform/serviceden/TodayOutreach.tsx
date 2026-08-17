@@ -9,6 +9,7 @@ import type { DraftInbox, SendOutcome } from '@/lib/platform/outreach-drafts';
 type SendResult = { sent: number; failed: SendOutcome[]; dropped: number; account: string };
 
 const CAMPAIGN_COLOUR: Record<string, { bg: string; fg: string }> = {
+  'Pricing Refined': { bg: '#EAF7EF', fg: '#2F7D5B' },
   Legacy: { bg: '#EAF2FC', fg: '#1F5FA8' },
   'Discovery First': { bg: '#F3EDFB', fg: '#6B3FA0' },
   Original: { bg: '#F1F2F4', fg: '#6B7280' },
