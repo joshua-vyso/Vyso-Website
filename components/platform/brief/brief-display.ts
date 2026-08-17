@@ -10,7 +10,11 @@
  * chat pill's border and the ✦ marks; and, since the chat became persistent
  * chrome, that same pill border and ✦ on every other /app/* route, where the
  * dock renders its compact variant (GlobalChatDock — the fifth placement,
- * sanctioned by .ai/plan_chat_first_shell.md §4.3). Note what that does NOT
+ * sanctioned by .ai/plan_chat_first_shell.md §4.3). A SIXTH joined them with
+ * the finding detail page (design 1c): the same rand figure in its header, and
+ * the hairline across the top of its "Recommended" block — that block IS Vyso
+ * making a recommendation, which is exactly what the gradient means, and the
+ * design draws it there. Note what that does NOT
  * license: the gradient left the Brief attached to the chat, and only to the
  * chat. On a module screen the ONLY thing wearing it is the dock. Anywhere
  * else it is still a bug.
@@ -22,6 +26,8 @@ export const AI_GRADIENT_TEXT = 'linear-gradient(100deg,#BE5D23,#3E8FE0)';
 export const AI_GRADIENT_BAR = 'linear-gradient(180deg,#BE5D23,#3E8FE0)';
 /** The chat pill's border and the rail's live dot. */
 export const AI_GRADIENT_CHROME = 'linear-gradient(115deg,#BE5D23,#D9730D 35%,#3E8FE0)';
+/** Horizontal, for the hairline over the finding detail's "Recommended" block. */
+export const AI_GRADIENT_RULE = 'linear-gradient(90deg,#BE5D23,#3E8FE0)';
 
 /** Every platform figure is quoted in SAST — Vyso's customers are all en-ZA. */
 export const SAST = 'Africa/Johannesburg';
@@ -118,6 +124,73 @@ export function foundLabel(createdAt: string, now: Date): string {
   if (days === 1) return 'Yesterday';
   if (days > 1 && days < 7) return `${days} days ago`;
   return new Intl.DateTimeFormat('en-ZA', { timeZone: SAST, day: 'numeric', month: 'short' }).format(created);
+}
+
+/**
+ * The exact moment a finding was written: "Found 06:14, Wed 13 Aug" (design
+ * 1c).
+ *
+ * The card says "Found this morning" because a feed is read at a glance; the
+ * DETAIL page says the clock time, because that page is where an owner works
+ * out whether a finding predates the invoice they are holding. Both are SAST
+ * and both are computed on the server for the reason `foundLabel` explains — a
+ * client recomputing a time at hydration can disagree with the HTML it is
+ * hydrating.
+ *
+ * Returns '' on an unparseable timestamp, so the header simply omits the line.
+ */
+export function foundAtLabel(createdAt: string): string {
+  const created = new Date(createdAt);
+  if (Number.isNaN(created.getTime())) return '';
+
+  const time = new Intl.DateTimeFormat('en-GB', {
+    timeZone: SAST,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(created);
+  // en-ZA renders this as "Thu, 13 Aug"; the comma comes out because the line
+  // already has one after the clock time and "06:14, Thu, 13 Aug" reads as a
+  // list rather than a moment.
+  const day = new Intl.DateTimeFormat('en-ZA', {
+    timeZone: SAST,
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  })
+    .format(created)
+    .replace(/,/g, '');
+
+  return `Found ${time}, ${day}`;
+}
+
+/** "13 Aug 2026" — a date the owner can match against a piece of paper. Takes
+ *  an ISO date ('YYYY-MM-DD', an invoice date) or a full timestamp (a document's
+ *  `created_at`); both are read in SAST. '' when it can't be parsed. */
+export function shortDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('en-ZA', {
+    timeZone: SAST,
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(d);
+}
+
+/**
+ * "R9.42/kg" — a UNIT price, always to two decimals.
+ *
+ * Deliberately not `rand()`, which rounds to whole rands because it formats
+ * annual impact figures. Rounding R9.42 to R9 would erase most of the move this
+ * page exists to show.
+ */
+export function unitPrice(value: number, baseUnit: string | null): string {
+  const amount = value.toLocaleString('en-ZA', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return baseUnit ? `R${amount}/${baseUnit}` : `R${amount}`;
 }
 
 /** First name for the greeting; falls back to nothing rather than "there". */

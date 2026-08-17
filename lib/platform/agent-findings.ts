@@ -198,6 +198,102 @@ async function resolveEvidence(
 }
 
 /**
+ * ONE finding, by id — the detail route's read (`/app/finding/[id]`,
+ * .ai/plan_brief_chat_v2.md §4 W3).
+ *
+ * `org_id` is pinned alongside the id, exactly as rule 1 above demands. RLS
+ * already scopes the caller, so this is the second lock: a finding belonging to
+ * another org must be indistinguishable from one that does not exist, and the
+ * page turns both into `notFound()`. Returning the row and letting the page
+ * compare orgs would be a slower version of the same check with a window in
+ * which it could be forgotten.
+ *
+ * Null, never a throw, for "no such finding" and for "the migration hasn't been
+ * applied" alike (rule 2) — a link to a finding that has since been deleted is
+ * a 404, not a 500. Every other error still throws.
+ */
+export async function getFinding(orgId: string, id: string): Promise<AgentFinding | null> {
+  const supabase = await createServerSupabase();
+
+  const { data, error } = await supabase
+    .from('agent_findings')
+    .select(FINDING_COLS)
+    .eq('org_id', orgId)
+    .eq('id', id)
+    .maybeSingle<FindingRow>();
+
+  if (error) {
+    if (isMissingRelation(error)) return null;
+    throw error;
+  }
+  return data ? normalise(data) : null;
+}
+
+/** One cited document, as the detail page's evidence list draws it. The card
+ *  shows a filename and a date; the price beside it comes from the price series
+ *  (see lib/platform/price-watch/series.ts), which is the only place a line
+ *  price exists. */
+export interface EvidenceDocument {
+  id: string;
+  filename: string;
+  document_type: string | null;
+  created_at: string;
+}
+
+/** The evidence behind ONE finding, resolved document by document. */
+export interface FindingEvidence {
+  documents: EvidenceDocument[];
+  /** "3 invoices" — the same truthful noun the cards use. */
+  label: string;
+  /** The finding cites documents, but none of them can be read any more (they
+   *  were deleted, or this user cannot see them). The page says so in words
+   *  rather than showing an empty section (plan §5). */
+  missing: boolean;
+}
+
+/**
+ * Resolve one finding's `evidence_refs` against `documents`, in citation order.
+ *
+ * Separate from `resolveEvidence` above rather than a variant of it: that one
+ * summarises a whole feed into a count and a link for every card in one query,
+ * this one needs the rows themselves for a single finding. Sharing a function
+ * between "one line per card" and "a card per document" would mean the feed
+ * paying for columns it never draws.
+ *
+ * Soft on failure for the same reason the feed's resolver is: this decorates a
+ * page that already has an observation, a figure and a recommendation on it.
+ */
+export async function listFindingEvidence(
+  orgId: string,
+  finding: Pick<AgentFinding, 'evidence_refs'>,
+): Promise<FindingEvidence> {
+  const refs = finding.evidence_refs ?? [];
+  if (refs.length === 0) return { documents: [], label: '', missing: false };
+
+  const supabase = await createServerSupabase();
+  const { data, error } = await supabase
+    .from('documents')
+    .select('id, filename, document_type, created_at')
+    .eq('org_id', orgId)
+    .in('id', refs.slice(0, EVIDENCE_PROBE_LIMIT))
+    .returns<EvidenceDocument[]>();
+
+  if (error || !data) return { documents: [], label: '', missing: true };
+
+  // Citation order, not database order: `evidence_refs` is the order the agent
+  // read them in, and the chart beside this list runs left to right in the same
+  // direction.
+  const byId = new Map(data.map((d) => [d.id, d]));
+  const documents = refs.map((id) => byId.get(id)).filter((d): d is EvidenceDocument => d != null);
+
+  return {
+    documents,
+    label: evidenceLabel(documents.length, documents.map((d) => d.document_type)),
+    missing: documents.length === 0,
+  };
+}
+
+/**
  * The whole feed in one round-trip: open findings for the brief, resolved and
  * dismissed ones for History.
  *

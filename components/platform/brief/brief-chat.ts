@@ -121,6 +121,37 @@ export function findingPrompt(f: AgentFinding): string {
   return `About this finding — "${findingHeadline(f.observation)}" `;
 }
 
+/**
+ * The one prompt the detail page SENDS rather than offers (design 1c, "Draft
+ * email to FreshCo").
+ *
+ * "— I'll send it myself" is not politeness. Finch cannot send email and must
+ * never imply it can; the knowledge doc says so on the server side (W2, BRIEF §
+ * "Drafting — you write, the owner sends"), and this says the same thing in the
+ * user's own words, in the message they can see. Two statements of one rule,
+ * because the one on screen is the one the owner will believe.
+ *
+ * The supplier and the item come from the price series, which resolves them
+ * from real rows (`suppliers.name`, `pw_items.name`) — so when either is
+ * missing the sentence names the finding by its headline instead of inventing a
+ * supplier. A draft addressed to "your supplier" is awkward; a draft addressed
+ * to the wrong supplier is worse.
+ */
+export function draftEmailPrompt(
+  f: AgentFinding,
+  about: { supplier?: string | null; item?: string | null },
+): string {
+  const supplier = (about.supplier ?? '').trim();
+  const item = (about.item ?? '').trim();
+  const tail = "— I'll send it myself.";
+
+  if (supplier && item) return `Draft an email to ${supplier} about the ${item} increase ${tail}`;
+  if (supplier) {
+    return `Draft an email to ${supplier} about this finding — "${findingHeadline(f.observation)}" ${tail}`;
+  }
+  return `Draft an email to the supplier about this finding — "${findingHeadline(f.observation)}" ${tail}`;
+}
+
 /* ── Tap a finding → the composer ────────────────────────────────────────────
  * A finding card and the chat pill are siblings under a SERVER page, so no
  * props and no context can pass between them. This is the smallest thing that

@@ -15,25 +15,36 @@ import { askBrief, findingPrompt } from './brief-chat';
 
 /**
  * One finding, as the owner reads it: who found it, what it says, what it costs
- * a year, what it was read from — Dismiss, and a tap to talk about it.
+ * a year, what it was read from — Dismiss, a way in to the evidence, and a tap
+ * to talk about it.
  *
- * TAP TO DISCUSS. Tapping the card's body names the finding in the chat
- * composer below (the mock's "Tap any finding to bring it into the
- * conversation"). Clicks that land on the evidence link or a button are left
- * alone — those already mean something. The observation itself is the
- * keyboard-reachable version of the same gesture, so the affordance isn't
- * mouse-only. It is offered only when the chat can actually receive it: the
- * same `finchEnabled` session flag the pill gates on.
+ * TAP TO OPEN, ✦ TO DISCUSS (changed in W3, .ai/plan_brief_chat_v2.md §4).
+ * Tapping the card's body now OPENS the finding — `/app/finding/[id]`, the full
+ * evidence view with its price history and its cited invoices. Up to this wave
+ * a tap named the finding in the composer instead; that gesture is still here,
+ * demoted to an explicit "✦ Discuss" button. The swap is deliberate: a card is
+ * a headline and the obvious meaning of clicking a headline is "show me the
+ * rest", whereas "put this into a chat" is a specific intent that deserves to
+ * be asked for by name. Both affordances still gate on the same `finchEnabled`
+ * flag where they need the chat; the detail route does not, so the body link is
+ * always live.
  *
- * The mock's other per-finding buttons ("Draft supplier email", "Show 6-month
- * trend") are features, not styling, and are deliberately not here yet
- * (.ai/plan_brief_home.md § Out of scope). Dismiss is the one real action, so it
- * is the one that ships.
+ * The observation is a real `<Link>`, not a click handler on a div — so it is
+ * keyboard-reachable, middle-clickable and openable in a new tab, and the
+ * card-level handler exists only to widen the target to the whitespace around
+ * it. Clicks that land on a link or a button are left alone; those already mean
+ * something.
+ *
+ * The mock's "Show 6-month trend" is not a button here because it is the detail
+ * page now — the chart lives where the evidence is.
  *
  * The write follows the house mutation shape exactly — this repo has no server
  * actions and no `revalidatePath`; a row mutation is an org-scoped browser
  * write followed by `router.refresh()` to reconcile with server truth (see
- * components/platform/supplysync/Risk.tsx → `updateRiskStatus`).
+ * components/platform/supplysync/Risk.tsx → `updateRiskStatus`). W3's detail
+ * page shares that write by importing `useStatusWrite` from here rather than
+ * copying it: two places that can dismiss a finding must not be able to drift
+ * into dismissing it differently.
  */
 
 const CARD =
@@ -67,8 +78,13 @@ function AiMark({ className = '' }: { className?: string }) {
  * portalled from a card that is about to unmount would flash and vanish. The
  * finding leaving the brief is the confirmation. Failures still toast, because
  * nothing else would tell the owner the finding is still open.
+ *
+ * Exported for W3's detail page, which uses `write`, `busy` and the toast but
+ * NOT `done`: dismissing from there removes nothing from the screen — the
+ * status pill changes after `router.refresh()` and the owner stays put — so
+ * fading the page out would misdescribe what just happened.
  */
-function useStatusWrite(finding: AgentFinding) {
+export function useStatusWrite(finding: AgentFinding) {
   const { org } = usePlatform();
   const router = useRouter();
   const { node: toastNode, show } = useToast();
@@ -120,9 +136,11 @@ export function FindingCard({
 }) {
   const { write, done, busy, toastNode } = useStatusWrite(finding);
   const { email, finchEnabled } = usePlatform();
+  const router = useRouter();
   const chip = agentChip(finding.agent);
   const isNew = finding.status === 'new';
   const canDiscuss = finchEnabled && !!email;
+  const href = `/app/finding/${finding.id}`;
 
   // The id rides along so the chat this becomes is filed against this finding
   // (`finch_chats.finding_id`) — see askBrief: it is remembered until the owner
@@ -131,17 +149,14 @@ export function FindingCard({
 
   return (
     <article
-      className={`${CARD} px-[22px] py-5 ${done ? 'pointer-events-none opacity-40' : ''} ${canDiscuss ? 'cursor-pointer' : ''}`}
+      className={`${CARD} cursor-pointer px-[22px] py-5 ${done ? 'pointer-events-none opacity-40' : ''}`}
       aria-busy={busy || done}
-      onClick={
-        canDiscuss
-          ? (e) => {
-              // The link and the buttons already say what a click on them means.
-              if ((e.target as HTMLElement).closest('a,button')) return;
-              discuss();
-            }
-          : undefined
-      }
+      onClick={(e) => {
+        // The links and the buttons already say what a click on them means —
+        // including the observation, which is the real <Link> this widens.
+        if ((e.target as HTMLElement).closest('a,button')) return;
+        router.push(href);
+      }}
     >
       {toastNode}
       {/* Gradient accent bar — only on findings the owner has not seen yet. */}
@@ -176,20 +191,14 @@ export function FindingCard({
         </span>
       </div>
 
-      {canDiscuss ? (
-        // The keyboard route to the same tap. A plain-text button: it reads as
-        // the observation, because that is what it is.
-        <button
-          type="button"
-          onClick={discuss}
-          aria-label={`Ask Vyso about this finding: ${finding.observation}`}
-          className="mb-1 mt-3 block w-full rounded-[6px] text-left text-[16px] leading-[1.5] text-[var(--pf-text-body)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--pf-accent-ring)]"
-        >
-          {finding.observation}
-        </button>
-      ) : (
-        <p className="mb-1 mt-3 text-[16px] leading-[1.5] text-[var(--pf-text-body)]">{finding.observation}</p>
-      )}
+      {/* The observation IS the link to the evidence — a real anchor, so it is
+          keyboard-reachable and opens in a new tab like any other link. */}
+      <Link
+        href={href}
+        className="mb-1 mt-3 block rounded-[6px] text-[16px] leading-[1.5] text-[var(--pf-text-body)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--pf-accent-ring)]"
+      >
+        {finding.observation}
+      </Link>
 
       {finding.rand_impact != null ? (
         <div className="of-num mb-0.5 mt-1.5 text-[22px] font-semibold text-[var(--pf-text)]">
@@ -216,7 +225,20 @@ export function FindingCard({
         </div>
       ) : null}
 
-      <div className="mt-4 flex">
+      <div className="mt-4 flex items-center gap-1">
+        {/* Demoted from "the whole card" to a named button (W3). Still the same
+            one-line channel into the composer — see brief-chat.ts. */}
+        {canDiscuss ? (
+          <button
+            type="button"
+            onClick={discuss}
+            aria-label={`Ask Vyso about this finding: ${finding.observation}`}
+            className="inline-flex items-center gap-1.5 rounded-[9px] px-2.5 py-2 text-[12.5px] font-semibold text-[var(--pf-text-control)] transition-colors hover:text-[var(--pf-accent-deep)]"
+          >
+            <AiMark />
+            Discuss
+          </button>
+        ) : null}
         <button
           type="button"
           disabled={busy}

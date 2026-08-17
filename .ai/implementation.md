@@ -1229,3 +1229,194 @@ dynamic (ƒ) · `npx eslint` **53 errors / 38 warnings — identical to baseline
 Nothing in this wave was exercised against a live database or a real file: the
 drop path needs a signed-in session, and that is W6's job. The clicks it must
 make are in the wave report.
+
+---
+
+## Brief chat v2 — W3 (finding detail)
+
+Implements `.ai/plan_brief_chat_v2.md` §1 item 1, §3, §4 W3 and §5: the
+`/app/finding/[id]` route, the real price history behind a Price Watch finding,
+and the two chat buttons that turn a finding into a conversation. Nothing in
+W5's files (`ChatDropZone`, `ChatComposer`, `UploadBubble`, `FinchChatProvider`,
+`app/api/ai/agent/route.ts`, `docu/upload/page.tsx`), `components/finch/*`,
+`app/layout.tsx`, `app/globals.css`, `lib/platform/price-watch/{normalize,match,
+detect,observe,run}.ts` or `app/api/agents/*` was edited.
+
+### Files
+
+**Created**
+
+- `lib/platform/price-watch/series.ts` — `seriesForFinding(db, orgId, finding,
+  now?)` plus the pure `shapeSeries(rows, now)`. Relative `.ts` imports and a
+  TYPE-only `SupabaseClient`, so `node --test` loads it directly.
+- `app/app/finding/[id]/page.tsx` — the server route.
+- `components/platform/brief/FindingDetail.tsx` — the page body (client: it
+  writes rows and drives the chat).
+- `components/platform/brief/PriceHistoryChart.tsx` — inline SVG, no chart
+  dependency.
+- `components/platform/brief/EvidenceList.tsx` — the cited documents.
+- `tests/price-watch-series.test.ts` (16).
+
+**Modified**
+
+- `lib/platform/agent-findings.ts` — `getFinding(orgId, id)` (org pinned on top
+  of RLS; missing relation → null) and `listFindingEvidence(orgId, finding)` →
+  `{documents, label, missing}` in citation order.
+- `components/platform/brief/FindingCard.tsx` — the observation is now a `Link`
+  to `/app/finding/[id]` and the card-level click pushes the same href; the
+  tap-to-discuss gesture is a named "✦ Discuss" button; `useStatusWrite` is
+  exported so the detail page shares one dismiss path.
+- `components/platform/brief/brief-chat.ts` — `draftEmailPrompt(finding,
+  {supplier, item})`.
+- `components/platform/brief/brief-display.ts` — `foundAtLabel` ("Found 06:14,
+  Thu 13 Aug", SAST), `shortDate`, `unitPrice`, `AI_GRADIENT_RULE`; the gradient
+  rule's docblock now names the detail page as the sixth sanctioned placement.
+
+### Decisions
+
+1. **The series is resolved from the DEDUPE KEY first, evidence documents
+   second.** `agent_findings` stores no supplier and no item, so a finding has
+   to be turned back into a series identity. `run.ts:473` builds the key as
+   `price_watch:<supplier_id>:<pw_item_id>:<iso-week>[:<market agent>]` and
+   documents the inverse (`parseDedupeKey`, `:489`) as load-bearing — the
+   nightly run parses it back itself to suppress re-fires. So the fast path is
+   zero queries, and `parseDedupeKey` is IMPORTED rather than re-implemented:
+   two parsers for one format is how the Brief and the cron end up disagreeing
+   about which series a finding belongs to. Only when the key will not parse
+   does it fall back to `pw_price_points where document_id = any(evidence_refs)`,
+   taking the (supplier, market agent, item) triple those documents have the
+   most lines for.
+2. **The series key is three columns, not two.** `(supplier_id, line_supplier,
+   pw_item_id)` — the DDL comment above `pw_price_points` says so, because
+   market agents on one statement charge different prices for the same produce.
+   `line_supplier` is filtered in memory rather than in the WHERE clause: it is
+   nullable and `null` vs `''` is not worth a second query shape, and the query
+   is already narrowed by `(org_id, supplier_id, pw_item_id)`.
+3. **The chart's x axis is TIME, not point index.** Even spacing — what an
+   index-based x gives, and what most quick implementations do — flattens a
+   sudden jump into a slope and turns a quiet quarter into a cliff, on a chart
+   whose only job is to show whether a price moved and when. The month labels
+   are positioned by the same scale, which is why they are absolutely-placed
+   spans rather than the mock's evenly spaced flex row.
+4. **Non-Price-Watch findings get no series at all**, by an explicit agent check
+   rather than by returning empty. Another agent's evidence documents are still
+   invoices and would still produce points — charting them would attach a
+   butternut trend to a finding about overdue debtors.
+5. **Nothing in the series module throws.** A missing relation, a permissions
+   surprise, an unparseable key: all `null`, and the page renders without the
+   chart. It decorates a page that already has an observation, a figure and a
+   recommendation on it — the same softness `resolveEvidence` has had since the
+   Brief shipped. Only `getFinding` can 404 the page.
+6. **`deltaPct` and `monthlyVolume` are null, never 0.** "at your current ~0
+   kg/month" is a claim about the business and a false one. The volume window is
+   90 days over three rather than 30 over one, because produce buying is lumpy
+   and one skipped week halves a 30-day figure.
+7. **Both chat buttons pre-create the chat, and the DRAFT one waits a render
+   before sending.** `send()` closes over the provider's `activeChatId`, so
+   sending in the same tick as `adoptChat(id, [])` would still see `null` and
+   create a SECOND chat — leaving an empty row in the rail with the finding
+   attached to the wrong conversation. So the draft path hands the chat over,
+   waits for `activeChatId` to become that id, then sends and navigates. The
+   stream lives in the provider, so this component unmounting on the push cannot
+   interrupt it, and `ChatView` already prefers live turns over the
+   (legitimately empty) server read it lands on. `FinchChatProvider` was NOT
+   edited — W5 owns it this wave — which is exactly why the sequencing had to be
+   solved from the outside.
+8. **Two degradations on those buttons.** No chat row (503 — the finch-chats
+   migration isn't applied, plan §5) → W2's path: `askBrief` fills the composer,
+   the finding id rides in the provider's ref, and the row is created when the
+   owner sends. An answer already streaming → `adoptChat` correctly refuses to
+   steal the transcript, so the draft button stops pre-sending and behaves like
+   "Send to chat" rather than hanging on a promise that never resolves.
+9. **A tap on a card now OPENS the finding; discussing it is a named button.**
+   The obvious meaning of clicking a headline is "show me the rest"; "put this
+   into a chat" is a specific intent that deserves to be asked for. The
+   observation is a real `<Link>` (keyboard-reachable, middle-clickable,
+   new-tab-able) and the card-level handler only widens the target to the
+   whitespace — it no longer gates on `finchEnabled`, because the detail route
+   does not need the chat.
+10. **Dismiss/Mark resolved reuse `useStatusWrite` by import, not by copy** —
+    two places that can dismiss a finding must not drift into dismissing it
+    differently. The detail page takes `write`/`busy`/the toast but not `done`:
+    nothing leaves the screen here, the status pill just changes after
+    `router.refresh()`, so fading the page out would misdescribe what happened.
+    A closed finding's page offers "Restore to the brief" instead.
+11. **Every string is formatted on the server** (`foundAt`, evidence dates and
+    prices) and handed to the client component finished — the rule `foundLabel`
+    established: a client formatting a date at hydration can disagree with the
+    HTML it is hydrating, and a flicker on the date of a money finding reads as
+    a bug.
+12. **The evidence card's date prefers the INVOICE date** from the price point
+    over the document's `created_at` — a backfilled invoice is dated when it was
+    issued, not when it was uploaded. A document with no point in this series
+    shows no price rather than a guess.
+
+### Known tension, flagged rather than fixed
+
+"Send to chat" creates a `finch_chats` row before a word is typed, per plan §4
+W3 ("both → create chat with `finding_id` … then navigate"). That is a
+deliberate click, unlike W2's tap-a-card case (decision 1 there), so the row is
+earned — but a chat abandoned at that point sits in the rail as "New chat"
+forever, since titles are generated from the first assistant reply. If that
+proves noisy, the fix is a rail filter for message-less chats, not a change
+here.
+
+The page opens three RLS clients per render (`getFinding`,
+`listFindingEvidence`, and one it passes to `seriesForFinding`).
+`createServerSupabase()` only reads the cookie store, so this is object churn
+rather than round-trips, and it keeps `agent-findings.ts`'s "every function owns
+its client" discipline intact.
+
+### Edge cases covered (plan §5)
+
+- Unknown id, another org's finding, `agent_findings` not migrated → `notFound()`.
+- Evidence refs that resolve to zero documents → "The documents behind this
+  finding are no longer available."; the chart is independent and still draws.
+- Dismissed while the page is open → the browser write + `router.refresh()`
+  re-renders the server page, so the status pill flips in place and the actions
+  row switches to "Restore to the brief".
+- Non-price agents → no chart, no volume sub-line, everything else renders.
+- Fewer than two price points → the whole panel is omitted (one price is not a
+  history).
+- No `rand_impact` → the figure and its sub-line both disappear.
+- No `recommended_action` → the block is omitted and the chart takes the full
+  width.
+- Finch off platform-wide, or no email on the session → the three chat buttons
+  are not rendered; the page is still fully readable.
+
+### Gates
+
+`npx tsc --noEmit` clean · `npm test` **215/215** (199 pre-wave on this working
+tree + 16 new `shapeSeries` tests; note the W2 report's "177" predates test
+files added since) · `npm run build` passes and lists **`ƒ /app/finding/[id]`** ·
+`npx eslint` **53 errors / 38 warnings — identical to the pre-wave baseline**.
+
+Runtime verification needs a signed-in session and is W6's job: nothing in this
+wave ran against a live database.
+
+### W6 click list
+
+1. `/app` → a finding card's body (and its observation text, and ⌘-click it) →
+   lands on `/app/finding/<id>`; the ✦ Discuss button still fills the dock
+   composer without navigating.
+2. On the detail page: agent chip, status pill, "Found HH:MM, Day D Mon" and the
+   headline all match the card.
+3. A **Price Watch** finding shows the chart: line rises/falls the way the
+   invoices do, month labels sit under the right part of the line, "{supplier}
+   today" matches the newest invoice, "Change" matches the observation's %.
+4. The volume sub-line ("at your current ~N {unit}/month") appears only where
+   there is buying in the last 90 days, and the unit matches `pw_items.base_unit`.
+5. Evidence strip: count matches the card's "3 invoices ↗", each card's filename
+   and date are real, each price matches that invoice's line, each card opens
+   `/app/docu/<id>`, and "Open in Doc-U ↗" opens the first.
+6. "Send to chat" → new chat page, composer pre-filled with the half-sentence,
+   rail gains the row; send → answer streams and persists.
+7. "Draft email to {supplier}" → new chat page, the prompt is already sent, and
+   the reply is a DRAFT with Finch saying the owner sends it (never "I've sent
+   it").
+8. "Mark resolved" then reload → pill reads Resolved, actions row offers
+   "Restore to the brief"; "Dismiss" behaves the same and the finding leaves the
+   open brief.
+9. A finding whose evidence documents were deleted → "no longer available",
+   page still renders.
+10. `/app/finding/<a random uuid>` → 404, not a 500.
