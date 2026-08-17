@@ -34,6 +34,15 @@
 
 import { createServerSupabase } from './supabase-server';
 import { isMissingRelation } from './db-errors';
+// The dedupe-key module is a dependency-free leaf on purpose: this file is on
+// /app's render path, and a Stock Cover card's only record of WHICH stock line
+// it is about is its key, so the resolver has to read one without dragging an
+// agent's detector (and its transitive weight) into the page bundle.
+import {
+  DEBTORS_WATCH_AGENT,
+  STOCK_COVER_AGENT,
+  parseStockCoverDedupeKey,
+} from './agents/dedupe-keys';
 
 export type FindingStatus = 'new' | 'in_progress' | 'resolved' | 'dismissed';
 export type FindingVerdict = 'real' | 'known' | 'wrong' | 'trivial';
@@ -181,13 +190,6 @@ function evidenceKindOf(agent: string): EvidenceKind {
   return 'documents';
 }
 
-/** Agent slugs whose evidence is not `documents`. Kept as plain strings rather
- *  than imported from each agent's module: this file is on the render path of
- *  /app, and pulling three agents' detect modules into it to read one constant
- *  each would drag their dependencies along for nothing. */
-const DEBTORS_WATCH_AGENT = 'debtors_watch';
-const STOCK_COVER_AGENT = 'stock_cover';
-
 /**
  * Resolve the open findings' evidence ids against the rows they actually point
  * at — one read per KIND for the whole feed, not one per card.
@@ -223,6 +225,7 @@ async function resolveEvidence(
     evidence,
   );
   await resolveInvoiceEvidence(supabase, orgId, byKind.get('invoices') ?? [], evidence);
+  await resolveStockEvidence(supabase, orgId, byKind.get('stock') ?? [], evidence);
 
   return { evidence, supplierCount };
 }
@@ -302,6 +305,51 @@ async function resolveInvoiceEvidence(
       count: ids.length,
       label: `${ids.length} ${ids.length === 1 ? 'invoice' : 'invoices'}`,
       href: `/app/orderflow/invoices/${ids[0]}`,
+    };
+  }
+}
+
+/**
+ * Stock Cover — `evidence_refs` is EMPTY. A stock finding cites no documents and
+ * no invoices; the thing it is about is one `pp_stock_items` row, and the only
+ * record of which one is the dedupe key
+ * (`stock_cover:<rule>:<stock_item_id>:<iso-week>`).
+ *
+ * The line is still verified against the catalogue before the card offers a
+ * link: a key naming a stock item this org can no longer read gets no evidence
+ * at all, rather than a link into a 404. Same rule as everywhere else on this
+ * page — only say what you can prove.
+ */
+async function resolveStockEvidence(
+  supabase: ServerSupabase,
+  orgId: string,
+  findings: AgentFinding[],
+  into: Record<string, EvidenceSummary>,
+): Promise<void> {
+  const wanted = new Map<string, string>(); // finding id → stock item id
+  for (const f of findings) {
+    const parsed = parseStockCoverDedupeKey(f.dedupe_key ?? '');
+    if (parsed) wanted.set(f.id, parsed.stockItemId);
+  }
+  if (wanted.size === 0) return;
+
+  const itemIds = [...new Set(wanted.values())].slice(0, EVIDENCE_PROBE_LIMIT);
+  const { data, error } = await supabase
+    .from('pp_stock_items')
+    .select('id')
+    .eq('org_id', orgId)
+    .in('id', itemIds)
+    .returns<{ id: string }[]>();
+
+  if (error || !data) return;
+
+  const known = new Set(data.map((r) => r.id));
+  for (const [findingId, stockItemId] of wanted) {
+    if (!known.has(stockItemId)) continue;
+    into[findingId] = {
+      count: 1,
+      label: '1 stock line',
+      href: `/app/procurepulse/stock/${stockItemId}`,
     };
   }
 }

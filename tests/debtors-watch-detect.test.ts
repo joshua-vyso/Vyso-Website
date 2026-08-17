@@ -24,7 +24,7 @@ const TODAY = '2026-08-17';
  * It is spelled out here so these expectations are readable instead of hiding an
  * invisible codepoint inside a string literal.
  */
-const NB = ' ';
+const NB = '\u00A0';
 /** "R 190 900", exactly as `rand()` renders it. */
 function zar(whole: number): string {
   // Grouped by hand from the digits, so the expectation does not simply re-run

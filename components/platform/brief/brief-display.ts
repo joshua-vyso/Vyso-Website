@@ -40,6 +40,7 @@ export const SAST = 'Africa/Johannesburg';
 const AGENT_CHIPS: Record<string, { label: string; bg: string; fg: string; dot: string }> = {
   price_watch: { label: 'Price Watch', bg: 'var(--tone-warning-bg)', fg: 'var(--tone-warning-fg)', dot: '#BE5D23' },
   debtors_watch: { label: 'Debtors', bg: 'var(--tone-warning-bg)', fg: 'var(--tone-warning-fg)', dot: '#BE5D23' },
+  stock_cover: { label: 'Stock', bg: 'var(--tone-neutral-bg)', fg: 'var(--tone-neutral-fg)', dot: '#8A8E86' },
 };
 
 export interface AgentChip {

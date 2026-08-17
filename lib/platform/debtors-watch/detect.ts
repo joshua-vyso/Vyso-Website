@@ -35,9 +35,20 @@
 
 import { rand } from '../procurepulse.ts';
 import { daysSince } from '../orderflow-debtors.ts';
+import {
+  DEBTORS_WATCH_AGENT,
+  buildDebtorsDedupeKey,
+  parseDebtorsDedupeKey,
+} from '../agents/dedupe-keys.ts';
 
 /** The agent slug written to `agent_findings.agent`. */
-export const AGENT_NAME = 'debtors_watch';
+export const AGENT_NAME = DEBTORS_WATCH_AGENT;
+
+/** Re-exported so callers working on this agent import its key helpers from it,
+ *  even though the format itself is defined once in agents/dedupe-keys.ts (the
+ *  Brief's evidence resolver reads keys from there too, and must not have to
+ *  pull a detector onto the render path to do it). */
+export { buildDebtorsDedupeKey, parseDebtorsDedupeKey };
 
 /** Rule (a): a full extra cycle past terms. */
 export const DAYS_OVERDUE_FLOOR = 30;
@@ -91,38 +102,6 @@ export interface DebtorFinding {
    *  Price Watch's, which is why the card can state it flatly. */
   randImpact: number;
   dedupeKey: string;
-}
-
-/**
- * The idempotency key behind unique(org_id, dedupe_key).
- *
- * `debtors_watch:<customer_id>:<oldest_overdue_invoice_id>` — plain text and
- * debuggable, like Price Watch's. The oldest invoice, not the week, is what
- * makes it stable: while the same invoice is the customer's oldest unpaid one,
- * every nightly run writes the same key and the Brief keeps ONE card for that
- * customer rather than growing a new one each night. When that invoice is
- * finally paid, the next oldest takes over, the key changes, and a genuinely new
- * situation gets a genuinely new card.
- *
- * It is also the only place the customer id survives: `agent_findings` has no
- * customer column, so the Brief's evidence resolver parses it back out of here
- * to link the card at that customer's invoices.
- */
-export function buildDebtorsDedupeKey(customerId: string, oldestInvoiceId: string): string {
-  return `${AGENT_NAME}:${customerId}:${oldestInvoiceId}`;
-}
-
-/** Inverse of buildDebtorsDedupeKey. Returns null for anything it cannot read in
- *  full — a half-parsed key would link a card at the wrong customer, which is
- *  worse than a card with no link. */
-export function parseDebtorsDedupeKey(
-  key: string,
-): { customerId: string; oldestInvoiceId: string } | null {
-  const parts = key.split(':');
-  if (parts.length !== 3 || parts[0] !== AGENT_NAME) return null;
-  const [, customerId, oldestInvoiceId] = parts;
-  if (!customerId || !oldestInvoiceId) return null;
-  return { customerId, oldestInvoiceId };
 }
 
 /** "2 invoices" / "1 invoice". */
