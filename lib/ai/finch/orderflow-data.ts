@@ -4,133 +4,35 @@
  * caller's own org), and the money maths mirrors the OrderFlow Dashboard exactly
  * (docTotals / paymentsTotal / balanceDue / effectiveInvoiceStatus) so the
  * agent's numbers match what the user sees on screen.
+ *
+ * The invoice-loading and debtor derivations that used to be private to this
+ * file now live in lib/platform/orderflow-debtors.ts and are imported below.
+ * Phase C's Debtors Watch agent raises findings off the SAME definitions, and
+ * the Brief and the chat contradicting each other about who is late — because
+ * one of them kept its own copy — is the exact failure that move prevents.
  */
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { matchByName } from './name-match';
 import {
   docTotals,
-  paymentsTotal,
-  balanceDue,
-  effectiveInvoiceStatus,
   zar,
   zar2,
+  type OfCustomer,
   type OfInvoice,
   type OfInvoiceItem,
-  type OfPayment,
-  type OfCreditNote,
-  type OfCreditNoteItem,
-  type OfCustomer,
   type OfOrder,
   type OfOrderItem,
-  type InvoiceStatus,
 } from '@/lib/platform/orderflow';
-
-interface InvoiceRow {
-  inv: OfInvoice;
-  total: number;
-  paid: number;
-  status: InvoiceStatus;
-  balance: number;
-}
-
-/**
- * Unwrap a Supabase result, throwing (with the table label) on a query error so
- * the tool surfaces WHY it failed instead of silently returning an empty list.
- */
-function must<T>(res: { data: T | null; error: { message: string } | null }, label: string): T {
-  if (res.error) throw new Error(`Could not read ${label}: ${res.error.message}`);
-  return (res.data ?? ([] as unknown as T)) as T;
-}
-
-function byId<T extends { id: string }>(rows: T[]): Map<string, T> {
-  return new Map(rows.map((r) => [r.id, r]));
-}
-
-function group<T, K>(rows: T[], key: (r: T) => K): Map<K, T[]> {
-  const m = new Map<K, T[]>();
-  for (const r of rows) {
-    const k = key(r);
-    const arr = m.get(k) ?? [];
-    arr.push(r);
-    m.set(k, arr);
-  }
-  return m;
-}
-
-/**
- * Load every invoice for the org (optionally only for certain customers) with
- * its derived total / paid / effective status / balance — the same figures the
- * Dashboard computes.
- */
-async function loadInvoiceRows(
-  supabase: SupabaseClient,
-  orgId: string,
-  opts: { customerIds?: string[] } = {},
-): Promise<InvoiceRow[]> {
-  let invQuery = supabase.from('of_invoices').select('*').eq('org_id', orgId);
-  if (opts.customerIds) {
-    if (opts.customerIds.length === 0) return [];
-    invQuery = invQuery.in('customer_id', opts.customerIds);
-  }
-  const invoices = must<OfInvoice[]>(await invQuery, 'invoices');
-  if (invoices.length === 0) return [];
-  const invIds = invoices.map((i) => i.id);
-
-  const [itemsRes, paysRes, cnRes, settingsRes] = await Promise.all([
-    supabase.from('of_invoice_items').select('*').in('invoice_id', invIds),
-    supabase.from('of_payments').select('*').in('invoice_id', invIds),
-    supabase.from('of_credit_notes').select('*').eq('org_id', orgId),
-    // Settings is optional — a missing/duplicate row falls back to 15% VAT.
-    supabase.from('of_settings').select('default_vat_rate').eq('org_id', orgId).maybeSingle(),
-  ]);
-  const items = must<OfInvoiceItem[]>(itemsRes, 'invoice items');
-  const payments = must<OfPayment[]>(paysRes, 'payments');
-  const creditNotes = must<OfCreditNote[]>(cnRes, 'credit notes').filter(
-    (c) => c.invoice_id && invIds.includes(c.invoice_id),
-  );
-  const vatRate = Number((settingsRes.data as { default_vat_rate?: number } | null)?.default_vat_rate ?? 15);
-
-  // Credit-note totals per invoice.
-  const creditedByInvoice = new Map<string, number>();
-  if (creditNotes.length) {
-    const cnIds = creditNotes.map((c) => c.id);
-    const cnItemsByNote = group(
-      must<OfCreditNoteItem[]>(
-        await supabase.from('of_credit_note_items').select('*').in('credit_note_id', cnIds),
-        'credit note items',
-      ),
-      (ci) => ci.credit_note_id,
-    );
-    for (const cn of creditNotes) {
-      const cnTotal = docTotals(cnItemsByNote.get(cn.id) ?? [], cn.vat_rate).total;
-      creditedByInvoice.set(cn.invoice_id!, (creditedByInvoice.get(cn.invoice_id!) ?? 0) + cnTotal);
-    }
-  }
-
-  const itemsByInvoice = group(items, (it) => it.invoice_id);
-  const paymentsByInvoice = group(payments, (p) => p.invoice_id);
-
-  return invoices.map((inv) => {
-    const total = docTotals(
-      itemsByInvoice.get(inv.id) ?? [],
-      Number(inv.vat_rate ?? vatRate),
-      Number(inv.discount ?? 0),
-      Number(inv.rebate_pct ?? 0),
-    ).total;
-    const paid = paymentsTotal(paymentsByInvoice.get(inv.id) ?? []);
-    const credited = creditedByInvoice.get(inv.id) ?? 0;
-    const status = effectiveInvoiceStatus(inv, paid, total);
-    const balance = status === 'cancelled' || status === 'credited' ? 0 : balanceDue(total, paid, credited);
-    return { inv, total, paid, status, balance };
-  });
-}
-
-function todayIso(): string {
-  // Match the Dashboard exactly (it uses the UTC day boundary) so "today" and the
-  // month prefix line up regardless of the server's timezone.
-  return new Date().toISOString().slice(0, 10); // yyyy-mm-dd (UTC)
-}
+import {
+  byId,
+  daysSince,
+  group,
+  isOpenInvoice,
+  loadInvoiceRows,
+  must,
+  todayIso,
+} from '@/lib/platform/orderflow-debtors';
 
 // ---------------------------------------------------------------------------
 // Public read helpers (one per tool)
@@ -511,10 +413,12 @@ export async function prepareOrderDraft(
 }
 
 // ---------------------------------------------------------------------------
-// Debtors — who owes money and for how long. Reuses loadInvoiceRows, so the
+// Debtors — who owes money and for how long. `loadInvoiceRows`, `isOpenInvoice`
+// and `daysSince` come from lib/platform/orderflow-debtors.ts, so the
 // "open"/overdue definitions and the balance maths are exactly the ones the
-// Dashboard already computes (effectiveInvoiceStatus / balanceDue) — nothing
-// here re-derives payment semantics.
+// Dashboard already computes (effectiveInvoiceStatus / balanceDue) AND exactly
+// the ones the Debtors Watch agent raises findings from — nothing here
+// re-derives payment semantics.
 // ---------------------------------------------------------------------------
 
 /** A whole-tool restriction note — these two tools ARE money figures, so a
@@ -522,17 +426,6 @@ export async function prepareOrderDraft(
  *  no non-money version of "who owes what"). */
 export interface MoneyRestricted {
   restricted: string;
-}
-
-/** Same "open" (unpaid, not draft/cancelled/credited) definition businessSnapshot
- *  uses to accumulate `outstanding`. */
-function isOpenInvoice(status: InvoiceStatus): boolean {
-  return status !== 'draft' && status !== 'paid' && status !== 'cancelled' && status !== 'credited';
-}
-
-/** Days between an ISO date (yyyy-mm-dd) and today (UTC), floored at 0. */
-function daysSince(isoDate: string, todayMs: number): number {
-  return Math.max(0, Math.floor((todayMs - new Date(`${isoDate}T00:00:00Z`).getTime()) / 86_400_000));
 }
 
 /**

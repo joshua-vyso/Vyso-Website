@@ -60,15 +60,27 @@ export const OPEN_STATUSES: readonly FindingStatus[] = ['new', 'in_progress'];
 /** Statuses that are done with — collapsed under History. */
 export const HISTORY_STATUSES: readonly FindingStatus[] = ['resolved', 'dismissed'];
 
-/** What a finding's evidence actually is, resolved against `documents`. */
+/**
+ * What a finding's evidence actually is, once resolved against the rows it
+ * points at.
+ *
+ * `evidence_refs` is a bare `uuid[]` with no type column, and as of Phase C the
+ * ids in it are no longer all `documents.id`: Debtors Watch cites `of_invoices`
+ * rows and Stock Cover cites a `pp_stock_items` line. Adding an
+ * `evidence_kind` column was considered and rejected (plan
+ * `.ai/plan_agents_phase_c.md`, "Shared changes") — the agent slug already says
+ * what kind of thing an agent cites, so `resolveEvidence` branches on
+ * `finding.agent` instead and no migration is needed.
+ */
 export interface EvidenceSummary {
   count: number;
-  /** Truthful noun for the cited documents: "3 invoices", "2 statements",
-   *  "4 documents" when they are mixed or their type is unknown. */
+  /** Truthful noun for what was cited: "3 invoices", "2 statements",
+   *  "4 documents" when they are mixed or their type is unknown, "1 stock line". */
   label: string;
-  /** Doc-U has no id-set list route (only `/app/docu/<id>`), so the card links
-   *  the first cited document. Null when the ids resolve to nothing readable. */
-  firstDocId: string | null;
+  /** Where the label links — the first cited row's own page. Null when the ids
+   *  resolve to nothing this org can read, in which case the card shows no
+   *  evidence link at all rather than a dead one. */
+  href: string | null;
 }
 
 export interface FindingsSummary {
@@ -155,20 +167,76 @@ function evidenceLabel(count: number, types: (string | null)[]): string {
 }
 
 /**
- * Resolve the open findings' evidence ids against `documents` — one read for
- * the whole feed, not one per card.
+ * Which table an agent's `evidence_refs` point at. The default — and the only
+ * case before Phase C — is `documents`; the exceptions are listed by slug so an
+ * agent nobody has taught this function about degrades to the document
+ * behaviour it inherited rather than to nothing.
+ */
+type EvidenceKind = 'documents' | 'invoices' | 'stock';
+
+function evidenceKindOf(agent: string): EvidenceKind {
+  if (agent === DEBTORS_WATCH_AGENT) return 'invoices';
+  if (agent === STOCK_COVER_AGENT) return 'stock';
+  // price_watch and doc_watch both cite Doc-U documents.
+  return 'documents';
+}
+
+/** Agent slugs whose evidence is not `documents`. Kept as plain strings rather
+ *  than imported from each agent's module: this file is on the render path of
+ *  /app, and pulling three agents' detect modules into it to read one constant
+ *  each would drag their dependencies along for nothing. */
+const DEBTORS_WATCH_AGENT = 'debtors_watch';
+const STOCK_COVER_AGENT = 'stock_cover';
+
+/**
+ * Resolve the open findings' evidence ids against the rows they actually point
+ * at — one read per KIND for the whole feed, not one per card.
  *
- * Deliberately soft: `documents` always exists, but this only decorates the
- * cards and the greeting line. If the read fails the Brief drops the evidence
- * links and the supplier clause rather than failing to render.
+ * Deliberately soft throughout: this only decorates the cards and the greeting
+ * line. Any read that fails simply drops that kind's evidence links (and, for
+ * documents, the supplier clause) rather than failing the page to which the
+ * Brief is the landing route.
+ *
+ * `supplierCount` is still derived from DOCUMENTS only. An invoice you issued
+ * and a stock line you hold have no supplier to count, and quietly folding them
+ * into "across N suppliers" would make the greeting say something untrue.
  */
 async function resolveEvidence(
   supabase: ServerSupabase,
   orgId: string,
   open: AgentFinding[],
 ): Promise<{ evidence: Record<string, EvidenceSummary>; supplierCount: number | null }> {
-  const docIds = [...new Set(open.flatMap((f) => f.evidence_refs))].slice(0, EVIDENCE_PROBE_LIMIT);
-  if (docIds.length === 0) return { evidence: {}, supplierCount: null };
+  const evidence: Record<string, EvidenceSummary> = {};
+
+  const byKind = new Map<EvidenceKind, AgentFinding[]>();
+  for (const f of open) {
+    const kind = evidenceKindOf(f.agent);
+    const arr = byKind.get(kind) ?? [];
+    arr.push(f);
+    byKind.set(kind, arr);
+  }
+
+  const supplierCount = await resolveDocumentEvidence(
+    supabase,
+    orgId,
+    byKind.get('documents') ?? [],
+    evidence,
+  );
+  await resolveInvoiceEvidence(supabase, orgId, byKind.get('invoices') ?? [], evidence);
+
+  return { evidence, supplierCount };
+}
+
+/** Price Watch / Doc Watch — ids are `documents.id`. Returns the distinct
+ *  supplier count behind them, or null when it cannot be established. */
+async function resolveDocumentEvidence(
+  supabase: ServerSupabase,
+  orgId: string,
+  findings: AgentFinding[],
+  into: Record<string, EvidenceSummary>,
+): Promise<number | null> {
+  const docIds = [...new Set(findings.flatMap((f) => f.evidence_refs))].slice(0, EVIDENCE_PROBE_LIMIT);
+  if (docIds.length === 0) return null;
 
   const { data, error } = await supabase
     .from('documents')
@@ -177,24 +245,65 @@ async function resolveEvidence(
     .in('id', docIds)
     .returns<{ id: string; supplier_id: string | null; document_type: string | null }[]>();
 
-  if (error || !data) return { evidence: {}, supplierCount: null };
+  if (error || !data) return null;
 
   const byId = new Map(data.map((d) => [d.id, d]));
-  const evidence: Record<string, EvidenceSummary> = {};
-  for (const f of open) {
+  for (const f of findings) {
     // Only documents that actually came back — an id the user can't read (or
     // that has since been deleted) must not be counted or linked.
     const docs = f.evidence_refs.map((id) => byId.get(id)).filter((d) => d != null);
     if (docs.length === 0) continue;
-    evidence[f.id] = {
+    into[f.id] = {
       count: docs.length,
       label: evidenceLabel(docs.length, docs.map((d) => d.document_type)),
-      firstDocId: docs[0].id,
+      // Doc-U has no id-set list route (only `/app/docu/<id>`), so the card
+      // links the first cited document; the count still tells the truth about
+      // how many there are.
+      href: `/app/docu/${docs[0].id}`,
     };
   }
+  return null;
+}
 
-  const suppliers = new Set(data.map((d) => d.supplier_id).filter((id): id is string => !!id));
-  return { evidence, supplierCount: suppliers.size > 0 ? suppliers.size : null };
+/**
+ * Debtors Watch — ids are `of_invoices.id`, in the detector's own worst-first
+ * order, so the first one that resolves is the oldest overdue invoice and the
+ * right thing to open.
+ *
+ * The plan's link was the invoices LIST filtered by customer
+ * (`/app/orderflow/invoices?customer=…`), but that page reads no search params
+ * (app/app/orderflow/invoices/page.tsx), so the filter would silently do
+ * nothing. The single-invoice route exists and is exact, so the card links that
+ * instead — the same shape the document branch above already uses.
+ */
+async function resolveInvoiceEvidence(
+  supabase: ServerSupabase,
+  orgId: string,
+  findings: AgentFinding[],
+  into: Record<string, EvidenceSummary>,
+): Promise<void> {
+  const invoiceIds = [...new Set(findings.flatMap((f) => f.evidence_refs))].slice(0, EVIDENCE_PROBE_LIMIT);
+  if (invoiceIds.length === 0) return;
+
+  const { data, error } = await supabase
+    .from('of_invoices')
+    .select('id')
+    .eq('org_id', orgId)
+    .in('id', invoiceIds)
+    .returns<{ id: string }[]>();
+
+  if (error || !data) return;
+
+  const known = new Set(data.map((r) => r.id));
+  for (const f of findings) {
+    const ids = f.evidence_refs.filter((id) => known.has(id));
+    if (ids.length === 0) continue;
+    into[f.id] = {
+      count: ids.length,
+      label: `${ids.length} ${ids.length === 1 ? 'invoice' : 'invoices'}`,
+      href: `/app/orderflow/invoices/${ids[0]}`,
+    };
+  }
 }
 
 /**

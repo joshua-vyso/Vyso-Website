@@ -195,11 +195,13 @@ export function FindingCard({
         </div>
       ) : null}
 
-      {evidence?.firstDocId ? (
-        // Doc-U has no "these ids" list route, so the link opens the first cited
-        // document; the count still tells the truth about how many there are.
+      {evidence?.href ? (
+        // Where the evidence link goes is the RESOLVER's decision, not this
+        // card's: an agent's ids can be Doc-U documents, OrderFlow invoices or a
+        // ProcurePulse stock line, and lib/platform/agent-findings.ts is the one
+        // place that knows which. The card just renders what it was handed.
         <Link
-          href={`/app/docu/${evidence.firstDocId}`}
+          href={evidence.href}
           className="text-[12.5px] text-[var(--pf-accent-strong)] hover:underline"
         >
           {evidence.label} ↗

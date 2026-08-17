@@ -31,9 +31,15 @@ export const SAST = 'Africa/Johannesburg';
  * free text (every future agent shares the table), so an unknown slug degrades
  * to a title-cased label on the neutral tone pair rather than rendering blank.
  * Price Watch takes the warning pair — it reports money leaking, not an error.
+ *
+ * The tones say how hard a card pushes, and they are not interchangeable:
+ * Price Watch and Debtors Watch both report money going the wrong way (warning);
+ * Stock Cover reports a level, which is information the owner acts on at their
+ * own pace (neutral).
  */
 const AGENT_CHIPS: Record<string, { label: string; bg: string; fg: string; dot: string }> = {
   price_watch: { label: 'Price Watch', bg: 'var(--tone-warning-bg)', fg: 'var(--tone-warning-fg)', dot: '#BE5D23' },
+  debtors_watch: { label: 'Debtors', bg: 'var(--tone-warning-bg)', fg: 'var(--tone-warning-fg)', dot: '#BE5D23' },
 };
 
 export interface AgentChip {
