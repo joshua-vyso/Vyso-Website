@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { resolveUser, AI_CORS_HEADERS } from '@/lib/ai/auth';
+import { docWatchForDocument } from '@/lib/platform/doc-watch/run';
 import { extractDocument, extractOrderDocument, aiConfigured } from '@/lib/ai/anthropic';
 import { feedDocumentToProcurePulse, orgHasProcurePulse } from '@/lib/platform/procurepulse-feed';
 import { feedDocumentToSupplySync, orgHasSupplySync } from '@/lib/platform/supplysync-feed';
@@ -212,6 +213,38 @@ export async function POST(req: Request) {
   } catch {
     /* swallow — extraction already succeeded */
   }
+
+  // Doc Watch's IMMEDIATE trigger (.ai/plan_agents_phase_c.md, C3): the moment
+  // a document is read, a small informational card goes onto the Brief saying
+  // what was in it — "Invoice INV-9268 from Winelands Protein Co. read this
+  // morning — R 447 856. Biggest lines: …".
+  //
+  // Inside Next's `after()` (node_modules/next/dist/docs/01-app/03-api-reference/
+  // 04-functions/after.md) rather than awaited inline, for two reasons. First,
+  // extraction has ALREADY succeeded by this point: the document row is updated
+  // and the response below is the user's answer, so nothing about writing a
+  // receipt card should be allowed to delay it — and on Vercel the callback runs
+  // under `waitUntil`, which keeps the invocation alive until it settles rather
+  // than killing it mid-write. Second, `after` runs even when the response did
+  // not complete successfully, which is exactly the tolerance a best-effort
+  // side-effect wants.
+  //
+  // The write goes through the CALLER'S RLS-scoped client, not the service role:
+  // this is a signed-in request with a session to scope, so it has no excuse to
+  // reach for the cron's key. `docWatchForDocument` still filters org_id itself.
+  //
+  // Failure is logged and nothing else. It is idempotent on
+  // `doc_watch:<document_id>`, and the nightly sweep (/api/agents/doc-watch)
+  // picks up anything this misses — including the case where a cold instance is
+  // reclaimed before the callback finishes. A user who scanned an invoice must
+  // never see an error because a card did not get written.
+  after(async () => {
+    try {
+      await docWatchForDocument(supabase, doc.org_id, doc.id);
+    } catch (err) {
+      console.error('doc-watch: immediate card failed', doc.id, err);
+    }
+  });
 
   return NextResponse.json({ ok: true, result, feed }, { headers: AI_CORS_HEADERS });
 }

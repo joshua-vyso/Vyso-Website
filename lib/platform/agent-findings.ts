@@ -38,11 +38,26 @@ import { isMissingRelation } from './db-errors';
 // /app's render path, and a Stock Cover card's only record of WHICH stock line
 // it is about is its key, so the resolver has to read one without dragging an
 // agent's detector (and its transitive weight) into the page bundle.
+import { parseStockCoverDedupeKey } from './agents/dedupe-keys';
+// The decisions this file makes about WHAT a finding is — receipt or problem,
+// documents or invoices or a stock line — are pure, and they are the ones that
+// go wrong quietly. They live in a testable module beside the keys; only the I/O
+// is left here. Re-exported below, because callers know them by this module.
 import {
-  DEBTORS_WATCH_AGENT,
-  STOCK_COVER_AGENT,
-  parseStockCoverDedupeKey,
-} from './agents/dedupe-keys';
+  documentEvidenceLabel,
+  evidenceKindOf,
+  invoiceEvidenceLabel,
+  isInformationalExpired,
+  isInformationalFinding,
+  STOCK_EVIDENCE_LABEL,
+  type EvidenceKind,
+} from './agents/finding-kinds';
+
+export {
+  INFORMATIONAL_AGENTS,
+  INFORMATIONAL_TTL_HOURS,
+  isInformationalFinding,
+} from './agents/finding-kinds';
 
 export type FindingStatus = 'new' | 'in_progress' | 'resolved' | 'dismissed';
 export type FindingVerdict = 'real' | 'known' | 'wrong' | 'trivial';
@@ -69,6 +84,7 @@ export const OPEN_STATUSES: readonly FindingStatus[] = ['new', 'in_progress'];
 /** Statuses that are done with — collapsed under History. */
 export const HISTORY_STATUSES: readonly FindingStatus[] = ['resolved', 'dismissed'];
 
+
 /**
  * What a finding's evidence actually is, once resolved against the rows it
  * points at.
@@ -93,6 +109,8 @@ export interface EvidenceSummary {
 }
 
 export interface FindingsSummary {
+  /** Findings that need the owner. Receipts (see `INFORMATIONAL_AGENTS`) are
+   *  NOT counted here — this is the number in the greeting and the rail badge. */
   openCount: number;
   /** Largest `rand_impact` across OPEN findings; null when none carries a figure. */
   maxRandImpact: number | null;
@@ -104,13 +122,18 @@ export interface FindingsSummary {
 
 export interface FindingsFeed {
   open: AgentFinding[];
+  /** Receipts — Doc Watch's "read this morning" cards, still inside their
+   *  48-hour window. Rendered in their own band below the findings, counted
+   *  nowhere. Newest first. */
+  informational: AgentFinding[];
   history: AgentFinding[];
   /** True when `agent_findings` isn't in this database yet — the Brief renders
    *  its "Price Watch hasn't run yet" state, not an error. */
   tableMissing: boolean;
   summary: FindingsSummary;
-  /** Evidence per OPEN finding id. Absent for a finding whose refs resolve to
-   *  no readable document — the card then shows no evidence link at all. */
+  /** Evidence per open OR informational finding id. Absent for a finding whose
+   *  refs resolve to nothing readable — the card then shows no evidence link at
+   *  all. */
   evidence: Record<string, EvidenceSummary>;
 }
 
@@ -125,16 +148,6 @@ const FEED_LIMIT = 120;
 /** Cap on the evidence documents resolved per render — evidence is one line of
  *  context per card, not a report, and does not need every row. */
 const EVIDENCE_PROBE_LIMIT = 200;
-
-/** Plural nouns for the document types Price Watch cites. Anything outside this
- *  map (or a mixed set) degrades to the honest catch-all, "documents". */
-const EVIDENCE_NOUNS: Record<string, [singular: string, plural: string]> = {
-  invoice: ['invoice', 'invoices'],
-  statement: ['statement', 'statements'],
-  delivery_note: ['delivery note', 'delivery notes'],
-  price_list: ['price list', 'price lists'],
-  order: ['order', 'orders'],
-};
 
 /** Row shape as PostgREST returns it: numerics arrive as number|string
  *  depending on driver/precision, and `status`/`verdict` are unconstrained text
@@ -166,30 +179,6 @@ function normalise(row: FindingRow): AgentFinding {
   };
 }
 
-/** "3 invoices" / "1 statement" / "4 documents" for a set of document types. */
-function evidenceLabel(count: number, types: (string | null)[]): string {
-  const distinct = new Set(types.filter((t): t is string => !!t));
-  const noun =
-    distinct.size === 1 ? EVIDENCE_NOUNS[[...distinct][0]] : undefined;
-  const [singular, plural] = noun ?? ['document', 'documents'];
-  return `${count} ${count === 1 ? singular : plural}`;
-}
-
-/**
- * Which table an agent's `evidence_refs` point at. The default — and the only
- * case before Phase C — is `documents`; the exceptions are listed by slug so an
- * agent nobody has taught this function about degrades to the document
- * behaviour it inherited rather than to nothing.
- */
-type EvidenceKind = 'documents' | 'invoices' | 'stock';
-
-function evidenceKindOf(agent: string): EvidenceKind {
-  if (agent === DEBTORS_WATCH_AGENT) return 'invoices';
-  if (agent === STOCK_COVER_AGENT) return 'stock';
-  // price_watch and doc_watch both cite Doc-U documents.
-  return 'documents';
-}
-
 /**
  * Resolve the open findings' evidence ids against the rows they actually point
  * at — one read per KIND for the whole feed, not one per card.
@@ -199,19 +188,22 @@ function evidenceKindOf(agent: string): EvidenceKind {
  * documents, the supplier clause) rather than failing the page to which the
  * Brief is the landing route.
  *
- * `supplierCount` is still derived from DOCUMENTS only. An invoice you issued
- * and a stock line you hold have no supplier to count, and quietly folding them
- * into "across N suppliers" would make the greeting say something untrue.
+ * `supplierCount` is still derived from DOCUMENTS only, and only from the
+ * findings in `countSupplierIdsFor`. An invoice you issued and a stock line you
+ * hold have no supplier to count, and a Doc Watch receipt is not a finding at
+ * all — folding either into "across N suppliers" would make the greeting say
+ * something untrue about how many suppliers need attention.
  */
 async function resolveEvidence(
   supabase: ServerSupabase,
   orgId: string,
-  open: AgentFinding[],
+  findings: AgentFinding[],
+  countSupplierIdsFor: ReadonlySet<string>,
 ): Promise<{ evidence: Record<string, EvidenceSummary>; supplierCount: number | null }> {
   const evidence: Record<string, EvidenceSummary> = {};
 
   const byKind = new Map<EvidenceKind, AgentFinding[]>();
-  for (const f of open) {
+  for (const f of findings) {
     const kind = evidenceKindOf(f.agent);
     const arr = byKind.get(kind) ?? [];
     arr.push(f);
@@ -223,6 +215,7 @@ async function resolveEvidence(
     orgId,
     byKind.get('documents') ?? [],
     evidence,
+    countSupplierIdsFor,
   );
   await resolveInvoiceEvidence(supabase, orgId, byKind.get('invoices') ?? [], evidence);
   await resolveStockEvidence(supabase, orgId, byKind.get('stock') ?? [], evidence);
@@ -231,12 +224,14 @@ async function resolveEvidence(
 }
 
 /** Price Watch / Doc Watch — ids are `documents.id`. Returns the distinct
- *  supplier count behind them, or null when it cannot be established. */
+ *  supplier count behind the findings named in `countSupplierIdsFor`, or null
+ *  when it cannot be established. */
 async function resolveDocumentEvidence(
   supabase: ServerSupabase,
   orgId: string,
   findings: AgentFinding[],
   into: Record<string, EvidenceSummary>,
+  countSupplierIdsFor: ReadonlySet<string>,
 ): Promise<number | null> {
   const docIds = [...new Set(findings.flatMap((f) => f.evidence_refs))].slice(0, EVIDENCE_PROBE_LIMIT);
   if (docIds.length === 0) return null;
@@ -251,6 +246,7 @@ async function resolveDocumentEvidence(
   if (error || !data) return null;
 
   const byId = new Map(data.map((d) => [d.id, d]));
+  const suppliers = new Set<string>();
   for (const f of findings) {
     // Only documents that actually came back — an id the user can't read (or
     // that has since been deleted) must not be counted or linked.
@@ -258,14 +254,17 @@ async function resolveDocumentEvidence(
     if (docs.length === 0) continue;
     into[f.id] = {
       count: docs.length,
-      label: evidenceLabel(docs.length, docs.map((d) => d.document_type)),
+      label: documentEvidenceLabel(docs.length, docs.map((d) => d.document_type)),
       // Doc-U has no id-set list route (only `/app/docu/<id>`), so the card
       // links the first cited document; the count still tells the truth about
       // how many there are.
       href: `/app/docu/${docs[0].id}`,
     };
+    if (countSupplierIdsFor.has(f.id)) {
+      for (const d of docs) if (d.supplier_id) suppliers.add(d.supplier_id);
+    }
   }
-  return null;
+  return suppliers.size > 0 ? suppliers.size : null;
 }
 
 /**
@@ -303,7 +302,7 @@ async function resolveInvoiceEvidence(
     if (ids.length === 0) continue;
     into[f.id] = {
       count: ids.length,
-      label: `${ids.length} ${ids.length === 1 ? 'invoice' : 'invoices'}`,
+      label: invoiceEvidenceLabel(ids.length),
       href: `/app/orderflow/invoices/${ids[0]}`,
     };
   }
@@ -348,7 +347,7 @@ async function resolveStockEvidence(
     if (!known.has(stockItemId)) continue;
     into[findingId] = {
       count: 1,
-      label: '1 stock line',
+      label: STOCK_EVIDENCE_LABEL,
       href: `/app/procurepulse/stock/${stockItemId}`,
     };
   }
@@ -382,23 +381,71 @@ export async function fetchFindings(orgId: string): Promise<FindingsFeed> {
   if (error) {
     // Rule 2 — the landing page renders even when the migration hasn't been run.
     if (isMissingRelation(error)) {
-      return { open: [], history: [], tableMissing: true, summary: EMPTY_SUMMARY, evidence: {} };
+      return {
+        open: [],
+        informational: [],
+        history: [],
+        tableMissing: true,
+        summary: EMPTY_SUMMARY,
+        evidence: {},
+      };
     }
     throw error;
   }
 
   const rows = (data ?? []).map(normalise);
-  const open = rows.filter((f) => (OPEN_STATUSES as readonly string[]).includes(f.status));
-  const history = rows
-    .filter((f) => (HISTORY_STATUSES as readonly string[]).includes(f.status))
-    // ISO-8601 from timestamptz sorts lexically, so no Date objects needed.
-    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  // One clock for the whole partition, so a feed read across a second boundary
+  // cannot put two receipts written together on opposite sides of the window.
+  const now = new Date();
+
+  const open: AgentFinding[] = [];
+  const informational: AgentFinding[] = [];
+  const history: AgentFinding[] = [];
+
+  for (const f of rows) {
+    if ((HISTORY_STATUSES as readonly string[]).includes(f.status)) {
+      history.push(f);
+      continue;
+    }
+    if (!(OPEN_STATUSES as readonly string[]).includes(f.status)) continue;
+
+    if (!isInformationalFinding(f)) {
+      open.push(f);
+      continue;
+    }
+
+    // A receipt older than its window moves to History — computed here, with no
+    // cron and no write. Its stored status is still 'new'; it is presented as
+    // 'resolved' because that is what has actually happened to it (it did its
+    // job and aged out), and because History's card would otherwise label a row
+    // nobody dismissed as "Dismissed". Restore puts it back as 'new' and it
+    // ages out again on the next render — harmless, and the honest consequence
+    // of a rule with no state behind it.
+    if (isInformationalExpired(f.created_at, now)) {
+      history.push({ ...f, status: 'resolved' });
+    } else {
+      informational.push(f);
+    }
+  }
+
+  // ISO-8601 from timestamptz sorts lexically, so no Date objects needed.
+  history.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  informational.sort((a, b) => b.created_at.localeCompare(a.created_at));
 
   const impacts = open.map((f) => f.rand_impact).filter((n): n is number => n != null);
-  const { evidence, supplierCount } = await resolveEvidence(supabase, orgId, open);
+  // Evidence is resolved for the receipts too — their band links each card at
+  // the document it is about — but only the real findings feed the greeting's
+  // supplier count.
+  const { evidence, supplierCount } = await resolveEvidence(
+    supabase,
+    orgId,
+    [...open, ...informational],
+    new Set(open.map((f) => f.id)),
+  );
 
   return {
     open,
+    informational,
     history,
     tableMissing: false,
     evidence,
