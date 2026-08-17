@@ -3,7 +3,9 @@
 import { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { usePlatform } from '@/lib/platform/session';
+import { AttachError } from '@/components/platform/chat/AttachmentCard';
 import { ChatComposer } from '@/components/platform/chat/ChatComposer';
+import { ChatDropZone } from '@/components/platform/chat/ChatDropZone';
 import { ChatTranscript } from '@/components/platform/chat/ChatTranscript';
 import { SuggestionChips } from '@/components/platform/chat/SuggestionChips';
 import { useFinchChat } from './FinchChatProvider';
@@ -62,12 +64,15 @@ const SCRIM = 'w-full bg-[linear-gradient(180deg,rgba(255,255,255,0)_0%,#FFFFFF_
 
 export function GlobalChatDock() {
   const { email, finchEnabled, trial } = usePlatform();
-  const { turns, streaming, streamText, streamTools, error } = useFinchChat();
+  const { turns, streaming, streamText, streamTools, error, attaching, attachError } = useFinchChat();
   const pathname = usePathname() ?? '';
 
   const [transcriptHidden, setTranscriptHidden] = useState(false);
 
-  const hasConversation = turns.length > 0 || streaming || !!error;
+  // An upload in flight counts as a conversation (W5): the panel is the only
+  // place "Reading invoice.pdf…" can appear, and a file picked from the
+  // paperclip on a screen with nothing said yet must not read as a no-op.
+  const hasConversation = turns.length > 0 || streaming || !!error || attaching.length > 0;
 
   if (!finchEnabled || !email || trial?.expired) return null;
 
@@ -83,7 +88,13 @@ export function GlobalChatDock() {
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center">
       {showPanel ? (
-        <div className="pointer-events-auto mx-4 flex max-h-[46vh] w-[calc(100%-2rem)] max-w-[680px] flex-col overflow-y-auto rounded-2xl border border-[var(--pf-border-strong)] bg-white px-5 pb-4 pt-3 shadow-[var(--pf-shadow-menu)]">
+        // The expanded panel is a drop target (plan §1.3): with the transcript
+        // open on a module screen, the conversation the owner is looking at is
+        // in here, and that is what they will drag an invoice onto.
+        <ChatDropZone
+          className="pointer-events-auto mx-4 flex max-h-[46vh] w-[calc(100%-2rem)] max-w-[680px] flex-col overflow-y-auto rounded-2xl border border-[var(--pf-border-strong)] bg-white px-5 pb-4 pt-3 shadow-[var(--pf-shadow-menu)]"
+          label="Drop it here — I’ll read it"
+        >
           <div className="sticky top-0 -mx-5 -mt-3 mb-3 flex items-center justify-between border-b border-[var(--pf-border-soft)] bg-white px-5 pb-2 pt-3">
             <span className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[var(--pf-text-faint)]">
               Asking Vyso
@@ -104,11 +115,22 @@ export function GlobalChatDock() {
             streamText={streamText}
             streamTools={streamTools}
             error={error}
+            attaching={attaching}
           />
-        </div>
+        </ChatDropZone>
       ) : null}
 
       <div className={SCRIM}>
+        {/* A rejection with no panel to land in — a file picked from the
+            paperclip on a screen where nothing has been said yet. Not on the
+            chat routes: their own ChatDropZone is already showing it, and two
+            copies of the same red line is worse than none. */}
+        {attachError && !showPanel && !isChatPage ? (
+          <div className="pointer-events-auto mb-3">
+            <AttachError message={attachError} />
+          </div>
+        ) : null}
+
         {showChips ? (
           <SuggestionChips className="pointer-events-auto mx-auto mb-3 max-w-[680px] justify-center" />
         ) : null}

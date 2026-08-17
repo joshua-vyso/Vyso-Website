@@ -2,7 +2,8 @@
 
 import { useEffect, useRef } from 'react';
 import { BouncingDots } from '@/components/platform/finch/BouncingDots';
-import type { ChatTurn } from '@/components/platform/shell/FinchChatProvider';
+import type { AttachmentProgress, ChatTurn } from '@/components/platform/shell/FinchChatProvider';
+import { AttachmentCards, AttachmentProgressLines } from './AttachmentCard';
 import { AssistantMessage, UserBubble } from './MessageBubble';
 import { ToolStatusLines } from './ToolStatusLine';
 
@@ -33,6 +34,9 @@ export function ChatTranscript({
   streamText = '',
   streamTools = [],
   error = null,
+  /** Files being uploaded/read right now (W5). Drawn after the last turn,
+   *  because that is where the message they become will appear. */
+  attaching = [],
   /** What the dots say before the first token. The Brief reads its findings;
    *  a module chat is doing something else, so the caller names it. */
   waitingLabel = 'Reading your brief…',
@@ -43,6 +47,7 @@ export function ChatTranscript({
   streamText?: string;
   streamTools?: readonly string[];
   error?: string | null;
+  attaching?: readonly AttachmentProgress[];
   waitingLabel?: string;
   className?: string;
 }) {
@@ -50,13 +55,22 @@ export function ChatTranscript({
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [turns, streamText, streamTools, streaming]);
+  }, [turns, streamText, streamTools, streaming, attaching]);
 
   return (
     <div className={`flex flex-col gap-[22px] ${className}`}>
       {turns.map((t, i) =>
         t.role === 'user' ? (
-          <UserBubble key={i} text={t.content} />
+          // Cards ABOVE the words: the owner dropped the file and then the
+          // message was written for them, so that is the order it happened in.
+          t.attachments?.length ? (
+            <div key={i} className="flex flex-col gap-2">
+              <AttachmentCards attachments={t.attachments} />
+              <UserBubble text={t.content} />
+            </div>
+          ) : (
+            <UserBubble key={i} text={t.content} />
+          )
         ) : (
           <div key={i} className="flex flex-col gap-[14px]">
             <ToolStatusLines tools={t.tools} />
@@ -64,6 +78,8 @@ export function ChatTranscript({
           </div>
         ),
       )}
+
+      <AttachmentProgressLines items={attaching} />
 
       {streaming ? (
         <div className="flex flex-col gap-[14px]">

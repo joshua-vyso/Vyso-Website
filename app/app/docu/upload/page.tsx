@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/platform/supabase-browser';
 import { usePlatform } from '@/lib/platform/session';
+import { startExtraction, uploadDocument, UPLOAD_ACCEPT } from '@/lib/platform/docu/upload-client';
 
 export default function UploadPage() {
   const router = useRouter();
@@ -28,34 +29,13 @@ export default function UploadPage() {
     setBusy(true);
     setError(null);
     try {
-      const path = `${org.id}/${Date.now()}_${file.name}`;
-      const { error: uploadErr } = await supabase.storage
-        .from('documents')
-        .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
-      if (uploadErr) throw uploadErr;
-
-      const { data: inserted, error: insertErr } = await supabase
-        .from('documents')
-        .insert({
-          org_id: org.id,
-          filename: file.name,
-          status: 'pending',
-          storage_path: path,
-          uploaded_by: userId,
-        })
-        .select('id')
-        .single();
-      if (insertErr) throw insertErr;
-
-      // Kick off AI extraction. `keepalive` lets the request outlive this
-      // page's navigation — without it the router.push below cancels the
-      // in-flight fetch and the document is stranded on "pending".
-      void fetch('/api/ai/extract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentId: inserted.id }),
-        keepalive: true,
-      });
+      // Storage object → `pending` row → extraction, shared with the inbox's
+      // upload bubble and the chat's drop zone (lib/platform/docu/upload-client).
+      // `keepalive` inside startExtraction is what lets the request outlive the
+      // router.push below — without it the navigation cancels the in-flight
+      // fetch and the document is stranded on "pending".
+      const { documentId } = await uploadDocument(file, { orgId: org.id, userId, supabase });
+      startExtraction(documentId);
 
       router.push('/app/docu');
       router.refresh();
@@ -83,7 +63,7 @@ export default function UploadPage() {
         <span className="mt-1 text-[13px] text-[#A0A49C]">PDF, JPG or PNG · up to 20MB</span>
         <input
           type="file"
-          accept="application/pdf,image/*"
+          accept={UPLOAD_ACCEPT}
           className="hidden"
           disabled={busy}
           onChange={handleFile}

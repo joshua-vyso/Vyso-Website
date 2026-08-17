@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/platform/supabase-browser';
 import { usePlatform } from '@/lib/platform/session';
+import { startExtraction, uploadDocument, UPLOAD_ACCEPT } from '@/lib/platform/docu/upload-client';
 
-const ACCEPT = 'application/pdf,image/*';
+const ACCEPT = UPLOAD_ACCEPT;
 const MAX_MB = 20;
 
 /**
@@ -32,34 +33,17 @@ export function UploadBubble({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [busy, onClose]);
 
+  // Storage object → `pending` documents row → extraction, all of it now in
+  // lib/platform/docu/upload-client.ts so the chat's drop zone (W5) lands a
+  // dropped invoice in exactly the same place as this bubble does. The body
+  // below is what used to be inline here, line for line.
   async function uploadOne(file: File): Promise<void> {
-    const supabase = createClient();
-    if (!supabase) throw new Error('Supabase is not configured.');
-    if (!org?.id) throw new Error('No organisation on your profile.');
-
-    // Random prefix avoids same-name/same-ms collisions across a batch.
-    const path = `${org.id}/${crypto.randomUUID()}_${file.name}`;
-    const { error: uploadErr } = await supabase.storage
-      .from('documents')
-      .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
-    if (uploadErr) throw uploadErr;
-
-    const { data: inserted, error: insertErr } = await supabase
-      .from('documents')
-      .insert({ org_id: org.id, filename: file.name, status: 'pending', storage_path: path, uploaded_by: userId })
-      .select('id')
-      .single();
-    if (insertErr) throw insertErr;
-
-    // Kick off extraction. keepalive lets it outlive this component unmounting;
-    // a network-level failure is non-fatal — the row stays 'pending' and the
-    // extract route self-marks 'error' on its own failures.
-    void fetch('/api/ai/extract', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ documentId: inserted.id }),
-      keepalive: true,
-    }).catch(() => {});
+    const { documentId } = await uploadDocument(file, {
+      orgId: org?.id,
+      userId,
+      supabase: createClient(),
+    });
+    startExtraction(documentId);
   }
 
   async function handleFiles(files: FileList | File[]) {

@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getPlatformSession } from '@/lib/platform/supabase-server';
 import { firstName, timeOfDayGreeting } from '@/components/platform/brief/brief-display';
+import { ChatDropZone } from '@/components/platform/chat/ChatDropZone';
 import { NewChatView } from '@/components/platform/chat/NewChatView';
 
 /**
@@ -33,7 +34,11 @@ export default async function NewChatPage() {
 
   return (
     <div className="flex min-h-full">
-      <NewChatView greeting={greeting} />
+      {/* The blank screen is a drop target: a conversation that starts with a
+          document is the shortest path this feature has (plan §1.3). */}
+      <ChatDropZone className="flex flex-1 flex-col">
+        <NewChatView greeting={greeting} />
+      </ChatDropZone>
     </div>
   );
 }

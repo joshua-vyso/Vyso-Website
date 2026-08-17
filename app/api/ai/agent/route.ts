@@ -5,6 +5,7 @@ import { agentClient, agentConfigured, sanitizeMessages } from '@/lib/ai/finch/r
 import { AGENT_MODEL, WORKFLOW_MODEL, AGENT_MAX_TOKENS, isAgentModule, isFinchAllowed } from '@/lib/ai/finch/config';
 import { buildSystemPrompt } from '@/lib/ai/finch/knowledge';
 import { buildTitlePrompt, normaliseChatTitle } from '@/lib/ai/finch/chat-title';
+import { attachmentContextLine } from '@/lib/ai/finch/attachments';
 import { toolDefsFor, runTool, type ToolContext } from '@/lib/ai/finch/tools';
 import { rateLimitAllowed } from '@/lib/platform/rate-limit';
 import {
@@ -141,6 +142,11 @@ export async function OPTIONS() {
  * before generation starts and the finished exchange is written to
  * finch_messages in `after()` — off the user's critical path, and never able to
  * affect what the stream said.
+ *
+ * `attachments` does double duty from W5: the ids are prepended to the turn the
+ * documents were dropped into so the model can call docu_get_document_summary
+ * on them, AND stored on the user message so the transcript redraws the
+ * document cards on reload.
  */
 export async function POST(req: Request) {
   if (!agentConfigured) {
@@ -183,7 +189,10 @@ export async function POST(req: Request) {
   // Escalate to the Sonnet workflow tier when the user is building an order —
   // either flagged explicitly by the client (the "/" customer picker) or detected
   // from the message. Only OrderFlow has a workflow tool today.
-  const lastUserText = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+  // The turn being answered. Its INDEX matters as well as its text: an attached
+  // document's ids are prepended to this message and nothing else (W5).
+  const lastUserIndex = messages.map((m) => m.role).lastIndexOf('user');
+  const lastUserText = lastUserIndex >= 0 ? messages[lastUserIndex].content : '';
   const wantsWorkflow = module === 'orderflow' && (body.workflow === true || CREATE_ORDER_RE.test(lastUserText));
   const system = buildSystemPrompt({ module, orgName, workflow: wantsWorkflow });
 
@@ -215,6 +224,12 @@ export async function POST(req: Request) {
    */
   const chatId = typeof body.chatId === 'string' && body.chatId ? body.chatId : null;
   const attachments = parseAttachments(body.attachments);
+  /* Documents dropped into this turn (W5). The ids go to the MODEL here and to
+   * the TRANSCRIPT via `content.attachments` below — two different jobs from
+   * one array. Note this is independent of `chatId`: a chat that cannot be
+   * persisted (migration not applied) must still be able to answer about a file
+   * the owner just dropped into it. */
+  const attachmentLine = attachmentContextLine(attachments);
   let chat: ChatRecord | null = null;
   if (chatId && orgId) {
     const owned = await getChatForOwner(orgId, auth.userId, chatId, auth.supabase);
@@ -262,7 +277,14 @@ export async function POST(req: Request) {
         }
       };
 
-      const convo: Anthropic.MessageParam[] = messages.map((m) => ({ role: m.role, content: m.content }));
+      // The attachment prelude rides on the turn the documents were dropped
+      // into, and only that one — the model must be able to tell which question
+      // was about which file, and the STORED message keeps the owner's own
+      // words (the persistence tail below reads `lastUserText`, untouched).
+      const convo: Anthropic.MessageParam[] = messages.map((m, i) => ({
+        role: m.role,
+        content: i === lastUserIndex && attachmentLine ? `${attachmentLine}\n\n${m.content}` : m.content,
+      }));
       // The answer as the user sees it: every text delta across every turn of
       // the loop, in order — the same string the client accumulates.
       let answer = '';

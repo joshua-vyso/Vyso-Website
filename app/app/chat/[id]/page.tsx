@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { getPlatformSession } from '@/lib/platform/supabase-server';
 import { getChat } from '@/lib/platform/finch-chats';
 import type { ChatTurn } from '@/components/platform/shell/FinchChatProvider';
+import { ChatDropZone } from '@/components/platform/chat/ChatDropZone';
 import { ChatView } from '@/components/platform/chat/ChatView';
 
 /**
@@ -37,13 +38,16 @@ export default async function ChatPage({ params }: { params: Promise<{ id: strin
   const found = await getChat(session.org.id, session.userId, id);
   if (!found) notFound();
 
-  // The stored shape carries more than a transcript needs (ids, timestamps,
-  // attachments W5 will draw); flatten it to the turns the client renders, so
-  // only what is on screen crosses the RSC boundary.
+  // The stored shape carries more than a transcript needs (row ids,
+  // timestamps); flatten it to the turns the client renders, so only what is on
+  // screen crosses the RSC boundary. `attachments` DOES cross from W5 — the
+  // cards are how a reopened chat still shows which documents a question was
+  // about, and they are the row's own record, not client state.
   const initial: ChatTurn[] = found.messages.map((m) => ({
     role: m.role,
     content: m.content.text,
     ...(m.content.tools?.length ? { tools: m.content.tools } : {}),
+    ...(m.content.attachments?.length ? { attachments: m.content.attachments } : {}),
   }));
 
   return (
@@ -64,7 +68,12 @@ export default async function ChatPage({ params }: { params: Promise<{ id: strin
           ) : null}
         </div>
 
-        <ChatView chatId={id} initial={initial} />
+        {/* The whole conversation is the drop target (plan §1.3) — an owner
+            dragging an invoice out of their email aims at the chat, not at a
+            small rectangle inside it. */}
+        <ChatDropZone className="flex flex-1 flex-col">
+          <ChatView chatId={id} initial={initial} />
+        </ChatDropZone>
       </div>
     </div>
   );

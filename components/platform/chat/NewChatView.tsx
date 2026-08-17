@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { AI_GRADIENT_TEXT } from '@/components/platform/brief/brief-display';
 import { useFinchChat } from '@/components/platform/shell/FinchChatProvider';
+import { AttachmentProgressLines } from './AttachmentCard';
 import { SuggestionChips } from './SuggestionChips';
 
 /**
@@ -16,14 +17,16 @@ import { SuggestionChips } from './SuggestionChips';
  * "Morning, Josh" depends on the owner's clock in SAST, and a client
  * recomputing it at hydration can disagree with the HTML it is hydrating.
  *
- * THE DROP HINT IS TEXT, NOT A DROP ZONE. Dragging a PDF onto this screen does
- * nothing yet — the upload path is W5. The line is here because the plan's
- * empty state calls for it and because it is true of where this is going, but
- * it deliberately does not draw a dashed target the owner could aim at and be
- * ignored by. When W5 lands, the target replaces this line.
+ * THE DROP HINT IS NOW TRUE (W5). The page is wrapped in a `ChatDropZone` by
+ * its route, so the line below describes something that works; the dashed
+ * target appears only while a file is actually over the screen. The progress
+ * lines are here rather than in a transcript because this screen has no
+ * transcript to put them in — the conversation does not exist until the upload
+ * finishes and sends its message, and until then this is the only surface that
+ * can say "Reading invoice.pdf…".
  */
 export function NewChatView({ greeting }: { greeting: string }) {
-  const { newChat, streaming, inputRef } = useFinchChat();
+  const { newChat, streaming, inputRef, attaching, canAttach } = useFinchChat();
 
   useEffect(() => {
     // A blank screen should be blank. Not while an answer is arriving, though:
@@ -54,10 +57,14 @@ export function NewChatView({ greeting }: { greeting: string }) {
 
       <SuggestionChips className="mt-7" />
 
-      <p className="mt-8 flex items-center gap-2 text-[12.5px] text-[var(--pf-text-faint)]">
-        <PaperclipIcon />
-        Drop a PDF or a photo of an invoice into this chat and I&apos;ll read it — coming shortly.
-      </p>
+      <AttachmentProgressLines items={attaching} className="mt-7 self-start" />
+
+      {canAttach ? (
+        <p className="mt-8 flex items-center gap-2 text-[12.5px] text-[var(--pf-text-faint)]">
+          <PaperclipIcon />
+          Drop a PDF or a photo of an invoice anywhere on this screen and I&apos;ll read it.
+        </p>
+      ) : null}
     </div>
   );
 }

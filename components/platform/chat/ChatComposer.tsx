@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { AI_GRADIENT_CHROME, AI_GRADIENT_TEXT } from '@/components/platform/brief/brief-display';
 import { useFinchChat } from '@/components/platform/shell/FinchChatProvider';
+import { UPLOAD_ACCEPT } from '@/lib/platform/docu/upload-client';
 
 /**
  * The gradient pill you type into — lifted out of `GlobalChatDock` unchanged
@@ -26,6 +27,13 @@ import { useFinchChat } from '@/components/platform/shell/FinchChatProvider';
  * a tapped finding hands over the caret through it, and `/app/chat/new` focuses
  * it on mount. There is exactly one composer mounted at a time, so one ref is
  * the right number.
+ *
+ * THE PAPERCLIP (W5) is the click fallback for drag-and-drop, and it is not
+ * optional politeness: a phone has no drag, a trackpad drag from a Mail
+ * attachment is fiddly, and some owners will simply never think to try it. It
+ * calls the same `attach()` the drop zone does — the file picker and the drop
+ * are two doorways onto one flow, which is why neither this component nor
+ * `ChatDropZone` contains any upload code.
  */
 export function ChatComposer({
   placeholder,
@@ -41,8 +49,11 @@ export function ChatComposer({
   onSend?: () => void;
   className?: string;
 }) {
-  const { input, setInput, streaming, turns, error, send, inputRef } = useFinchChat();
+  const { input, setInput, streaming, turns, error, send, inputRef, attach, attaching, canAttach } =
+    useFinchChat();
   const [focused, setFocused] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const uploading = attaching.length > 0;
 
   const expanded = alwaysExpanded || focused || turns.length > 0 || streaming || !!error;
 
@@ -85,6 +96,34 @@ export function ChatComposer({
           aria-label="Ask Vyso about your operation"
           className="min-w-0 flex-1 bg-transparent text-[14.5px] text-[var(--pf-text)] outline-none placeholder:text-[var(--pf-text-muted)] disabled:cursor-not-allowed"
         />
+        {canAttach ? (
+          <>
+            <input
+              ref={fileRef}
+              type="file"
+              accept={UPLOAD_ACCEPT}
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                attach(e.target.files);
+                // Reset so picking the SAME file twice fires change twice.
+                e.target.value = '';
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              aria-label="Attach a document"
+              title="Attach a PDF or photo"
+              className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full text-[var(--pf-text-muted)] transition-colors hover:bg-[#F5F3EF] hover:text-[var(--pf-text-control)] disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+              style={{ transitionDuration: 'var(--dur-hover)' }}
+            >
+              <PaperclipIcon />
+            </button>
+          </>
+        ) : null}
+
         <button
           type="submit"
           disabled={streaming || !input.trim()}
@@ -107,5 +146,23 @@ export function ChatComposer({
         </button>
       </form>
     </div>
+  );
+}
+
+function PaperclipIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M21.4 11.05 12.3 20.2a5.5 5.5 0 0 1-7.8-7.8l9.2-9.2a3.7 3.7 0 0 1 5.2 5.2l-9.1 9.2a1.8 1.8 0 0 1-2.6-2.6l8.5-8.5" />
+    </svg>
   );
 }
