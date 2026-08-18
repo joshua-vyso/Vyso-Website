@@ -7,7 +7,6 @@ import { AttachError } from '@/components/platform/chat/AttachmentCard';
 import { ChatComposer } from '@/components/platform/chat/ChatComposer';
 import { ChatDropZone } from '@/components/platform/chat/ChatDropZone';
 import { ChatTranscript } from '@/components/platform/chat/ChatTranscript';
-import { SuggestionChips } from '@/components/platform/chat/SuggestionChips';
 import { isBubbleRoute } from '@/lib/ai/finch/module-route';
 import { FinchBubble } from './FinchBubble';
 import { useFinchChat } from './FinchChatProvider';
@@ -38,9 +37,19 @@ import { useFinchChat } from './FinchChatProvider';
  * table underneath it — only the pill and the transcript panel take pointer
  * events.
  *
+ * NO CHIPS HERE ANY MORE (v2b). Until this wave the dock drew the suggestion
+ * row above its pill on an empty `/app`. The owner's ruling: "suggestions should
+ * only show up in a new chat above the text bar, not in the brief with the cards
+ * already there" — and he is right about why. The Brief is already a list of
+ * things Vyso thinks are worth your attention; a second, differently-shaped list
+ * of things worth asking, six inches below it, competes with the first for the
+ * same decision. On `/app/chat/new` there is nothing else on the screen, which
+ * is exactly where an opener belongs. `SuggestionChips` therefore has ONE mount
+ * site now (NewChatView), and it still reads the provider rather than props
+ * because that is how it reaches the layout's server-built row.
+ *
  * THREE VARIANTS, ONE COMPOSER (§12 D1; W2 adds the third, W4 replaces it).
- *   - `/app` — full 680px pill, the caption, the floating transcript panel,
- *     and (while nothing has been said) the suggestion chips above the pill.
+ *   - `/app` — full 680px pill, the caption, and the floating transcript panel.
  *   - `/app/chat/*` — COMPOSER ONLY. The transcript is the page; a floating
  *     copy of it hovering over itself would be two scroll boxes showing the
  *     same words. The pill stays wide because a reply box that shrinks on a
@@ -89,13 +98,9 @@ export function GlobalChatDock() {
   if (isBubbleRoute(pathname)) return <FinchBubble />;
 
   const isBrief = pathname === '/app';
-  const isNewChat = pathname === '/app/chat/new';
   const isChatPage = pathname.startsWith('/app/chat');
   // The page owns the transcript on a chat route; the dock is the reply box.
   const showPanel = hasConversation && !transcriptHidden && !isChatPage;
-  // An opener is only an opener. Once there is a conversation the chips would
-  // read as Vyso not having listened.
-  const showChips = isBrief && !hasConversation;
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center">
@@ -109,7 +114,7 @@ export function GlobalChatDock() {
         >
           <div className="sticky top-0 -mx-5 -mt-3 mb-3 flex items-center justify-between border-b border-[var(--pf-border-soft)] bg-white px-5 pb-2 pt-3">
             <span className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[var(--pf-text-faint)]">
-              Asking Vyso
+              Asking Finch
             </span>
             <button
               type="button"
@@ -143,21 +148,11 @@ export function GlobalChatDock() {
           </div>
         ) : null}
 
-        {showChips ? (
-          <SuggestionChips className="pointer-events-auto mx-auto mb-3 max-w-[680px] justify-center" />
-        ) : null}
-
+        {/* No `placeholder` prop any more (v2b §1, design 1a): the composer owns
+            the one sentence it says on every surface. This dock used to pick
+            between three of them, all naming Vyso rather than Finch. */}
         <ChatComposer
           alwaysExpanded={isBrief || isChatPage}
-          placeholder={
-            // "Reply" only where there is something to reply TO — a blank
-            // /app/chat/new asks the same opening question the Brief does.
-            isChatPage && !isNewChat
-              ? 'Reply to Vyso…'
-              : isBrief || isNewChat
-                ? 'Ask Vyso anything about your operation…'
-                : 'Ask Vyso…'
-          }
           onSend={() => {
             // Asking again always re-opens a transcript the owner collapsed —
             // done here rather than in an effect on `streaming`, which would

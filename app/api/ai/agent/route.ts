@@ -8,6 +8,7 @@ import { buildTitlePrompt, normaliseChatTitle } from '@/lib/ai/finch/chat-title'
 import { attachmentContextLine } from '@/lib/ai/finch/attachments';
 import { CREATE_ORDER_RE } from '@/lib/ai/finch/order-intent';
 import { toolDefsFor, runTool, type ToolContext } from '@/lib/ai/finch/tools';
+import { canSeeMoney as roleSeesMoney } from '@/lib/platform/access';
 import { rateLimitAllowed } from '@/lib/platform/rate-limit';
 import {
   appendMessages,
@@ -205,7 +206,11 @@ export async function POST(req: Request) {
   const orgId = profile?.org_id ?? null;
   // Allow-list, mirroring RoleGate.useIsAdmin: only owner/admin see money. Any
   // unset/unknown role is treated as non-admin so finance data is never leaked.
-  const canSeeMoney = profile?.role === 'owner' || profile?.role === 'admin';
+  // Imported rather than inlined since v2b — the same predicate now gates The
+  // Brief (lib/platform/access.ts), and two copies of "who is an admin" is how
+  // a route and a rail end up disagreeing. Aliased on import because the local
+  // name is the value, not the function.
+  const canSeeMoney = roleSeesMoney(profile?.role);
 
   /* ── Persistence (plan_brief_chat_v2 §2.3, W1) ────────────────────────────
    * `chatId` is optional and everything below is additive: without it this

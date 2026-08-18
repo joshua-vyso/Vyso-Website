@@ -234,7 +234,7 @@ export function FindingCard({
           <button
             type="button"
             onClick={discuss}
-            aria-label={`Ask Vyso about this finding: ${finding.observation}`}
+            aria-label={`Ask Finch about this finding: ${finding.observation}`}
             className="inline-flex items-center gap-1.5 rounded-[9px] px-2.5 py-2 text-[12.5px] font-semibold text-[var(--pf-text-control)] transition-colors hover:text-[var(--pf-accent-deep)]"
           >
             <AiMark />

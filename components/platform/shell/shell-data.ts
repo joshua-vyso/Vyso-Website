@@ -39,6 +39,36 @@ export function railModules(features: Record<FeatureKey, boolean>): RailModule[]
 }
 
 /**
+ * Where to send someone who may not open the screen they asked for.
+ *
+ * Used by the Brief's two routes (app/app/page.tsx, app/app/finding/[id]/page.tsx)
+ * when `canSeeBrief` is false: a member gets bounced to work they can actually
+ * do rather than a 403 (v2b — lib/platform/access.ts explains why a redirect and
+ * not a refusal).
+ *
+ * THE `lockedModules` FILTER IS THE WHOLE POINT of this function existing rather
+ * than the call sites writing `railModules(features)[0].href`. `railModules`
+ * deliberately KEEPS locked modules — the rail draws them as a row that opens
+ * ModuleLockNotice — so its first entry can perfectly well be a module this org
+ * has not bought. Redirecting someone we have just turned away from the Brief
+ * onto a screen that says "this module is locked, email Joshua" would be two
+ * refusals in a row, which is worse than the 403 we were avoiding. Hence "their
+ * first UNLOCKED module", per plan §1.3.
+ *
+ * `/app/settings` is the floor: an org with every module off still has a
+ * settings page, and it is the one route in the platform that is never gated by
+ * features, locks or roles. It cannot bounce back here, so the redirect cannot
+ * loop — nor can any module page, since ModuleLockGuard RENDERS a locked screen
+ * rather than redirecting.
+ */
+export function firstOpenableModuleHref(
+  modules: readonly RailModule[],
+  lockedModules: readonly FeatureKey[],
+): string {
+  return modules.find((m) => !lockedModules.includes(m.key))?.href ?? '/app/settings';
+}
+
+/**
  * The MODULES entry that owns `pathname`, by longest-matching `screens.desktop`
  * prefix — the same resolution ModuleLockGuard.tsx uses to decide what's
  * locked, and the shell's active-row / active-lock logic reuses it rather than

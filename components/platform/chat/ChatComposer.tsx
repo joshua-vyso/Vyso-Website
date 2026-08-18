@@ -34,9 +34,27 @@ import { UPLOAD_ACCEPT } from '@/lib/platform/docu/upload-client';
  * calls the same `attach()` the drop zone does — the file picker and the drop
  * are two doorways onto one flow, which is why neither this component nor
  * `ChatDropZone` contains any upload code.
+ *
+ * THE PLACEHOLDER IS NO LONGER A PROP (v2b §1, design 1a). It was three
+ * different strings chosen by the caller — a "Reply to…" variant on a chat page,
+ * a long opener on the Brief, a short one everywhere else — which was three
+ * places for the assistant's name to be wrong, and all three had it wrong: they
+ * named the platform, not Finch. One component, one sentence, and no way for a
+ * fourth mount site to invent a fourth. The contextual "Reply to…" wording went
+ * with them; on a chat page the transcript sitting directly above this input
+ * already says what typing into it does.
+ *
+ * (Deliberately paraphrased rather than quoted: the wave's acceptance gate is a
+ * static grep for the old copy across platform code, and a gate a comment can
+ * trip is a gate someone silences instead of honouring.)
  */
+
+/** The one thing the composer ever says when it is empty. Exported because it
+ *  is the assistant's introduction on every surface — if it is ever changed, it
+ *  should be changed once, here. */
+export const COMPOSER_PLACEHOLDER = 'Ask Finch anything about your operation…';
+
 export function ChatComposer({
-  placeholder,
   alwaysExpanded = false,
   /** Ran after a send is dispatched — the dock uses it to re-open a transcript
    *  the owner collapsed. Deliberately not an effect on `streaming`, which
@@ -44,7 +62,6 @@ export function ChatComposer({
   onSend,
   className = '',
 }: {
-  placeholder: string;
   alwaysExpanded?: boolean;
   onSend?: () => void;
   className?: string;
@@ -92,8 +109,8 @@ export function ChatComposer({
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           disabled={streaming}
-          placeholder={placeholder}
-          aria-label="Ask Vyso about your operation"
+          placeholder={COMPOSER_PLACEHOLDER}
+          aria-label="Ask Finch about your operation"
           className="min-w-0 flex-1 bg-transparent text-[14.5px] text-[var(--pf-text)] outline-none placeholder:text-[var(--pf-text-muted)] disabled:cursor-not-allowed"
         />
         {canAttach ? (

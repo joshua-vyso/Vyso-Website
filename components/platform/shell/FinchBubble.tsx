@@ -180,7 +180,10 @@ export function FinchBubble() {
         </ChatDropZone>
 
         <div className="shrink-0 border-t border-[var(--pf-border-soft)] px-3 py-3">
-          <ChatComposer alwaysExpanded placeholder="Ask Finch…" />
+          {/* v2b: the composer owns its placeholder now — one sentence on all
+              three surfaces, so the panel cannot introduce Finch differently
+              from the way the Brief does. */}
+          <ChatComposer alwaysExpanded />
         </div>
       </div>
     </div>

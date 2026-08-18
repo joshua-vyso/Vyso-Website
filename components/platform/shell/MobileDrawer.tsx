@@ -58,6 +58,7 @@ export function MobileDrawer({
   openCount,
   historyCount,
   chats,
+  canSeeBrief,
   modules,
 }: {
   open: boolean;
@@ -67,6 +68,10 @@ export function MobileDrawer({
   /** Same list, same component as the desktop rail — RailNav carries the
    *  "New chat" row and this user's conversations for both (W2). */
   chats: RailChat[];
+  /** The drawer MIRRORS the rail (v2b): a member who cannot see "Today's brief"
+   *  on desktop must not find it here either. Same prop, same component, so the
+   *  two surfaces cannot drift. */
+  canSeeBrief: boolean;
   modules: RailModule[];
 }) {
   const { org, email, profile, trial, lockedModules } = usePlatform();
@@ -145,7 +150,12 @@ export function MobileDrawer({
           </button>
         </div>
 
-        <RailNav openCount={openCount} historyCount={historyCount} chats={chats} />
+        <RailNav
+          openCount={openCount}
+          historyCount={historyCount}
+          chats={chats}
+          canSeeBrief={canSeeBrief}
+        />
 
         <div className="mt-4 flex flex-col gap-0.5">
           <div className="px-2.5 pb-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[var(--pf-text-faint)]">

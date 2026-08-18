@@ -1875,3 +1875,264 @@ Meridian" and "wrote into every customer's Brief", so its truth table is pinned.
 
 Every agent route is idempotent, so the ordering is a courtesy to the reader of
 the Brief, not a correctness requirement.
+
+---
+
+# Brief v2b — chips only in new chat, 4+1 card cap, admin-only Brief
+
+Implements `.ai/plan_brief_v2b_focus_and_access.md` in full: the three asks Josh
+made verbatim on 2026-08-18 — suggestions only in a new chat, five cards maximum
+with a way through to everything, and a Brief only the people who run the
+business can open.
+
+Nothing in `lib/platform/*watch*/`, `lib/platform/stock-cover/*`,
+`lib/platform/doc-watch/*`, `app/api/agents/*`, `components/finch/*`,
+`app/globals.css` or any SQL/RLS was touched (plan §2).
+
+## Files
+
+**Created**
+
+- `lib/platform/access.ts` — `canSeeMoney` / `canSeeBrief`, one implementation,
+  two exported names. Framework-free, so the layout, the two Brief routes and
+  `/api/ai/agent` all import the same predicate.
+- `lib/platform/brief-feed.ts` — pure. `rankFindings`, `splitForToday(open,
+  cap=5, show=4)` → `{cards, overflowCount}`, `groupByAgent`,
+  `TODAY_CARD_CAP`/`TODAY_CARD_SHOW`, `FULL_BRIEFING_AGENT_ORDER`. Relative
+  `.ts` imports and a structural row type, so `node --test` loads it directly.
+- `components/platform/brief/OverflowCard.tsx` — the fifth card.
+- `components/platform/brief/FullBriefing.tsx` — `?view=all`.
+- `tests/brief-feed.test.ts` (21), `tests/access.test.ts` (4).
+
+**Modified**
+
+- `app/app/page.tsx` — the `canSeeBrief` redirect; a third view (`all`); the cap
+  and the overflow card; the receipts band is today's-brief-only now that the
+  full briefing draws its own.
+- `app/app/finding/[id]/page.tsx` — the same redirect, above the reads.
+- `app/app/layout.tsx` — `briefAccess` / `moneyAccess` from the shared
+  predicate; the findings prelude and the findings-derived chips are withheld
+  from anyone without brief access; `canSeeBrief` threaded to the rail and the
+  mobile top bar.
+- `components/platform/shell/{AppRail,MobileTopBar,MobileDrawer}.tsx` — one prop
+  passed through to `RailNav`.
+- `components/platform/shell/RailNav.tsx` — the two Brief rows are conditional;
+  `RailChats` is not.
+- `components/platform/shell/shell-data.ts` — `firstOpenableModuleHref`.
+- `components/platform/shell/GlobalChatDock.tsx` — chips removed; one
+  placeholder; "Asking Finch".
+- `components/platform/chat/ChatComposer.tsx` — `COMPOSER_PLACEHOLDER`; the
+  `placeholder` prop is gone.
+- `components/platform/shell/FinchBubble.tsx`,
+  `components/platform/chat/SuggestionChips.tsx`,
+  `components/platform/brief/FindingCard.tsx` — placeholder prop dropped,
+  docblock corrected, aria-label renamed.
+- `app/api/ai/agent/route.ts` — its inline role check replaced by the imported
+  `canSeeMoney`.
+
+## Decisions
+
+1. **The redirects live in the PAGES, never in the layout** — and this is the
+   one thing in the wave that would have been wrong the easy way. `app/app/
+   layout.tsx` is where the session, the role and the module list already are,
+   so an auth check there is the obvious move; it is also documented as
+   unreliable. Next 16 layouts do not re-render on a client-side navigation
+   (Partial Rendering), so a check placed in one is not re-run on a route change
+   — `node_modules/next/dist/docs/01-app/02-guides/authentication.md`, "Layouts
+   and auth checks", which says in as many words to do the check "close to your
+   data source or the component that'll be conditionally rendered". So the
+   layout computes the flag and hides chrome with it; `app/app/page.tsx` and
+   `app/app/finding/[id]/page.tsx` each carry three lines of their own that
+   `redirect()`. The plan reached the same conclusion and forbade a route group;
+   routes are unchanged and the build lists no new ones.
+2. **Two exported names over one shared body.** `canSeeMoney` and `canSeeBrief`
+   are the same predicate today, and collapsing them into one function was
+   tempting and would have been a mistake: they answer different questions ("may
+   this person read a figure?" / "may this person open the agents' feed?"), and
+   the day a viewer role sees the brief without the rands, that should be one
+   function body changed rather than an archaeology exercise across every call
+   site that happened to mean the other thing. Both fail closed on a null,
+   missing or unrecognised role — `profiles.role` is free text in Postgres, so
+   "unknown" really occurs, and `tests/access.test.ts` pins the whole truth
+   table including `'Owner'` and `' admin'`.
+3. **UI and route gating, on top of the existing money gate. RLS is untouched.**
+   `agent_findings` is still readable org-wide at the database level, exactly as
+   before this wave. What changed is that the product no longer RENDERS the feed
+   for a member and no longer puts it in Finch's prelude — the same layer
+   `canSeeMoney` has always worked at (the finance tools return a `restricted`
+   string; they do not fail the query). Said in `access.ts`'s docblock so the
+   next person does not mistake this for row security.
+4. **The prelude is emptied, not just the screen.** A member redirected off
+   `/app` who then asks Finch a question must not receive the Brief in prose —
+   supplier names, rand figures, who is late — glued to the front of their first
+   turn. `briefChatContext` is only built when `briefAccess`, and
+   `suggestionsForOrg` is handed `findings: []`, because a chip's LABEL is the
+   finding. The generic and document openers still appear, so
+   `/app/chat/new` is not a blank screen for them.
+5. **`firstOpenableModuleHref` exists because `railModules` keeps LOCKED
+   modules.** The plan says "redirect to their first unlocked module" and the
+   obvious reading — `railModules(features)[0].href` — is subtly wrong:
+   `railModules` deliberately includes modules the org has not bought, since the
+   rail draws them as a row that opens ModuleLockNotice. Bouncing someone off
+   the Brief onto "this module is locked, email Joshua" is two refusals in a
+   row, which is worse than the 403 the redirect was avoiding. The helper
+   filters `session.lockedModules` and falls back to `/app/settings`. It lives
+   in `shell-data.ts` (which already owns `railModules`) so the two routes
+   cannot drift. **No loop is possible**: `/app/settings` is gated by nothing but
+   sign-in, and `ModuleLockGuard` RENDERS a locked screen rather than
+   redirecting.
+6. **`splitForToday` ranks its own input.** The cut and the order are one
+   decision — a cap applied to an unranked list is a random four — so there is no
+   way to ask this module for the cards without also getting the ordering that
+   makes them the right ones. `rankFindings` returns a NEW array, because
+   `feed.open` is shared with the greeting's count and the rail's badge and a
+   sort in place is how the heading ends up describing a different list from the
+   one below it.
+7. **Money beats recency; nulls sort last, not as zero.** The agents all run
+   inside one 20-minute window overnight, so "newest first" is a near-random
+   tiebreak that would push a R48 000 supplier drift below a R900 one purely
+   because Stock Cover ran five minutes later. And a finding with no
+   `rand_impact` is one nobody could PRICE, not one worth nothing — sorting it as
+   0 would be a claim, sorting it after everything priced is an admission. Same
+   "say nothing rather than claim nothing" rule as the rest of the Brief.
+   `'new'` outranks `'in_progress'` because in-progress means somebody has
+   already looked.
+8. **Crossing from 5 to 6 open findings REMOVES a card from the screen.** At
+   exactly the cap all five show and no overflow card appears — spending the
+   fifth slot on "you have 0 other items" would be absurd. At six, the fifth slot
+   becomes the overflow card and four findings survive. It reads odd written
+   down and is right on screen; it is also where most of `tests/brief-feed.test.ts`
+   spends its time, including an invariant that `cards.length + overflowCount`
+   equals the input at every size.
+9. **The greeting keeps the TRUE total, which is precisely why the overflow card
+   is not optional.** "27 things need your attention" over four cards is data
+   going missing. The card is the honest half of the cap, and it is why
+   `feed.summary.openCount` was left alone.
+10. **The overflow card is not a finding and does not dress as one.** No agent
+    chip, no timestamp, no rand figure, no accent bar, no evidence link — and no
+    Dismiss, per the plan: it is a COUNT of other cards, and a dismissed count
+    would simply lie on the next render. Dashed border and a tinted ground so it
+    reads as chrome rather than as a fifth thing the agents found.
+11. **The full briefing GROUPS rather than listing.** The two views answer
+    different questions: today's brief is "what do I do first?", which is an
+    ordering; `?view=all` is "what has Vyso got on me?", which is about coverage
+    — and twenty-three cards in a flat column is exactly the wall the cap exists
+    to prevent. Headings come from `agentChip`, the same function the cards' own
+    chips use, so a group can never be titled something its cards disagree with;
+    an agent nobody has listed in `FULL_BRIEFING_AGENT_ORDER` is APPENDED rather
+    than dropped, because a new agent must never be the reason a finding vanishes
+    off the one screen that promises everything. `FindingCard` is reused verbatim
+    — the same finding must not offer different actions depending on which view
+    it was read in.
+12. **`?view=all` keeps the "Today's brief" rail highlight** (`isBrief` is
+    `pathname === '/app' && !isHistory`, so this needed no change): the reader
+    got there from the brief's own overflow card and is still inside the brief,
+    looking at more of it. The "← Back to today's brief" link is the way out.
+    An unknown `?view=` value falls through to today's brief.
+13. **The rail keeps chats for a member; it loses only the two Brief rows.** A
+    chat is that person's own, it is useful on the module screens they do have,
+    and every money tool Finch could reach from it is already behind the same
+    role gate. `RailChats` therefore becomes the first thing in their rail, which
+    is correct. `MobileDrawer` takes the same prop through the same `RailNav`, so
+    the two surfaces cannot drift.
+14. **One composer placeholder, and the `placeholder` prop is gone rather than
+    defaulted.** The plan's wording is "the composer placeholder everywhere
+    reads 'Ask Finch anything about your operation…'". A prop with a default is
+    still three mount sites' licence to disagree; removing it makes the rule
+    structural. The casualty is the contextual "Reply to…" variant on a chat
+    page, which is a real if small loss — flagged here rather than smuggled. The
+    transcript sitting directly above the input already says what typing into it
+    does.
+
+## Deviations from the plan, and why
+
+- **`FinchChatProvider` was NOT given a `canSeeBrief` prop** (plan §2 lists it
+  among the components to modify). There is nothing for it to do with one: the
+  two things the plan wanted withheld — the findings prelude and the
+  findings-derived chips — are withheld AT SOURCE in the layout, which is
+  strictly stronger than a flag the provider would have to remember to check,
+  and an unused prop on the shell's largest client component is dead weight that
+  rots. The file is untouched by this wave.
+- **`tests/access.test.ts` is a second test file** beyond the one the plan names.
+  The access rule is the only thing standing between "the owner's brief" and
+  "everyone's brief", and its failure mode (a default that flipped open) is
+  invisible on every screen an owner ever looks at. Same reasoning as Phase C's
+  fifth test file.
+- **`firstOpenableModuleHref` in `shell-data.ts`** — a file the plan's modify
+  list does not name. See decision 5: the plan asked for "first unlocked
+  module", and honouring that literally needs `lockedModules`, which
+  `railModules` deliberately does not filter.
+
+## Known, flagged rather than fixed
+
+- **The layout still runs `fetchFindings` for a member**, whose rail then draws
+  no badges with it. It is pre-existing cost, not a regression, and cutting it
+  would restructure the `Promise.all` the plan asked to be left alone. If the
+  member population ever grows, skip the read (and `resolveEvidence` with it)
+  when `!briefAccess`.
+- **`FinchChatProvider` still says "Vyso could not answer (…)"** on a failed
+  turn, and the attach fallback still names Vyso, while the dock header now
+  reads "Asking Finch". The plan's grep target was the `Ask Vyso` strings
+  specifically, and those are gone; the assistant-voice error copy is a wider
+  rename that deserves its own pass rather than being widened into this diff.
+- **`components/finch/showcase/data.ts` still carries the old placeholder** —
+  that is marketing, explicitly out of scope.
+
+## Gates
+
+`npx tsc --noEmit` clean · `npm test` **401/401** (376 baseline + 21 brief-feed
++ 4 access) · `npm run build` passes and lists **no new routes** — `view` is a
+search param, `ƒ /app` and `ƒ /app/finding/[id]` unchanged · `npx eslint .`
+**50 errors / 38 warnings — identical to the pre-wave baseline**, and every new
+or changed file lints clean on its own · static grep for `Ask Vyso` under
+`components/platform`, `app/app`, `lib/platform`, `lib/ai` returns **zero**.
+
+Runtime: `/app` and `/app?view=all` were exercised against a dev server
+unauthenticated — both 307 to `/login` with no server error, which proves the new
+server modules evaluate. Everything role-dependent needs a signed-in session and
+is W6's job; nothing here ran against a live database.
+
+## W6 click list
+
+**As an owner/admin (Josh's own login):**
+
+1. `/app` with **fewer than five** open findings → every card shows, no overflow
+   card. The greeting's count matches the number of cards.
+2. Seed or wait for **six or more** open findings → exactly **four** cards plus
+   a dashed card reading "You have {N−4} other items that need your attention."
+   The greeting still says the TRUE total, and greeting − 4 = the card's number.
+   Check the four are the four biggest `≈R/yr` figures with `New` before
+   `In progress`, not the four most recent.
+3. At **exactly five**, all five show and the overflow card is absent.
+4. "View the full briefing →" → `/app?view=all`: headings **Price Watch /
+   Debtors / Stock** in that order with per-group counts, every open finding
+   present, "Read this morning" last. The rail still highlights **Today's
+   brief**. "← Back to today's brief" returns to `/app`.
+5. Dismiss a card on `/app` → it goes and the **next-ranked** finding slides in
+   (the overflow count drops by one). Dismiss down past six and the layout
+   switches from 4+overflow to five plain cards.
+6. `/app?view=history` unchanged — closed findings, Older chats, no cap.
+   `/app?view=nonsense` → today's brief.
+7. `/app` shows **no suggestion chips** above the composer. `/app/chat/new`
+   **does**, above the pill. `/app/chat/<id>` does not.
+8. The composer reads **"Ask Finch anything about your operation…"** on `/app`,
+   on `/app/chat/new`, on `/app/chat/<id>` and inside the module bubble on
+   `/app/orderflow`. The dock's expanded panel header reads **"Asking Finch"**.
+9. `/app/finding/<id>` still opens and behaves as it did in W3/W3b.
+
+**As a member** (create one for Meridian with the `tns-users-roles.sql` pattern,
+`role = 'member'`):
+
+10. Sign in → landed on a MODULE (the first one enabled and not locked), not on
+    `/app`, and not on a "this module is locked" screen.
+11. The rail has **no "Today's brief" and no "History"** — "New chat", this
+    user's chats, "Under the hood" and the account cluster are all still there.
+    Open the mobile drawer at `<lg` and confirm the same.
+12. Type `/app` → bounces to the module. Same for `/app?view=all`,
+    `/app?view=history` and `/app/finding/<a real finding id>`. No 403 page, no
+    redirect loop.
+13. `/app/chat/new` → chips appear, and **none of them names a finding, a
+    customer or a rand figure** (generic + document openers only).
+14. Ask the bubble "who owes me money?" → the restricted answer, unchanged.
+15. Ask it "what did you find overnight?" → it does **not** recite the brief;
+    the prelude is empty for this user.

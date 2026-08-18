@@ -26,6 +26,7 @@ export function MobileTopBar({
   openCount,
   historyCount,
   chats,
+  canSeeBrief,
   modules,
 }: {
   openCount: number;
@@ -33,6 +34,9 @@ export function MobileTopBar({
   /** Passed straight through to the drawer, which draws the same chat block
    *  the desktop rail does (W2). */
   chats: RailChat[];
+  /** Also straight through: the drawer mirrors the desktop rail's Brief rows,
+   *  so it mirrors their gate too (v2b). */
+  canSeeBrief: boolean;
   modules: RailModule[];
 }) {
   const { trial } = usePlatform();
@@ -79,6 +83,7 @@ export function MobileTopBar({
         openCount={openCount}
         historyCount={historyCount}
         chats={chats}
+        canSeeBrief={canSeeBrief}
         modules={modules}
       />
     </>

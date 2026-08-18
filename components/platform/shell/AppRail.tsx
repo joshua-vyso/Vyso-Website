@@ -29,12 +29,17 @@ export function AppRail({
   openCount,
   historyCount,
   chats,
+  canSeeBrief,
   modules,
 }: {
   openCount: number;
   historyCount: number;
   /** This user's recent chats, resolved by the layout (W2). */
   chats: RailChat[];
+  /** Owner/admin (v2b — lib/platform/access.ts). False hides "Today's brief"
+   *  and "History" inside RailNav; everything else on this rail stays, because
+   *  chats are this person's own and every money tool below is already gated. */
+  canSeeBrief: boolean;
   modules: RailModule[];
 }) {
   return (
@@ -73,7 +78,12 @@ export function AppRail({
           route below it ever turns static. The fallback reserves the two rows'
           height so nothing would jump if it ever did. */}
         <Suspense fallback={<div className="h-[82px]" aria-hidden />}>
-          <RailNav openCount={openCount} historyCount={historyCount} chats={chats} />
+          <RailNav
+            openCount={openCount}
+            historyCount={historyCount}
+            chats={chats}
+            canSeeBrief={canSeeBrief}
+          />
         </Suspense>
       </div>
 

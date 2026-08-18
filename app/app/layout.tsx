@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { getPlatformSession } from '@/lib/platform/supabase-server';
 import { PlatformProvider } from '@/lib/platform/session';
+import { canSeeBrief, canSeeMoney } from '@/lib/platform/access';
 import { fetchFindings } from '@/lib/platform/agent-findings';
 import { chatTimeLabel, listChats } from '@/lib/platform/finch-chats';
 import { suggestionsForOrg } from '@/lib/platform/finch-suggestions-data';
@@ -81,16 +82,40 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     when: chatTimeLabel(c.updated_at, railNow),
   }));
 
+  /* ── Access (v2b) ──────────────────────────────────────────────────────────
+   * ONE predicate, two names, one implementation — lib/platform/access.ts says
+   * why they are kept apart. `canSeeMoney` was computed inline here before this
+   * wave and is now imported, so the rail's rule and `/api/ai/agent`'s rule
+   * cannot drift into disagreeing about who an admin is.
+   *
+   * WHAT THIS FLAG DOES AND DOES NOT DO HERE. It decides what the SHELL offers:
+   * the rail's two Brief rows, the findings prelude the chat sends, and whether
+   * the chip row may mention findings. It does NOT gate the routes — the
+   * redirects live in app/app/page.tsx and app/app/finding/[id]/page.tsx,
+   * because a Next 16 layout does not re-render on a client-side navigation
+   * (Partial Rendering), so an auth check placed in one is not re-run on a route
+   * change and is the wrong place to enforce anything
+   * (node_modules/next/dist/docs/01-app/02-guides/authentication.md, "Layouts
+   * and auth checks"). RLS is untouched by any of it: `agent_findings` remains
+   * readable org-wide at the database level exactly as before, and this is UI
+   * and route gating on top of the money gate that already existed. */
+  const briefAccess = canSeeBrief(session.profile?.role);
+  const moneyAccess = canSeeMoney(session.profile?.role);
+
   // The chips an empty conversation offers (plan §1.4). Built from the feed we
   // already have plus two small reads, behind the same owner/admin money gate
   // `/api/ai/agent` enforces — a member must not be offered a chip that can
   // only ever come back "restricted". Never throws: see
   // finch-suggestions-data.ts, rule 1.
-  const canSeeMoney = session.profile?.role === 'owner' || session.profile?.role === 'admin';
+  //
+  // v2b: a user without brief access is handed NO findings, so their chips are
+  // the generic openers and the debtor/document ones. Passing `feed.open` here
+  // would put a finding's own words into a chip on a screen we have just
+  // decided they may not read — the chip's label IS the finding.
   const suggestions = await suggestionsForOrg({
     orgId: session.org.id,
-    findings: feed.open,
-    canSeeMoney,
+    findings: briefAccess ? feed.open : [],
+    canSeeMoney: moneyAccess,
   });
 
   // The prelude the chat sends to Finch on its first turn (plan §4.1: "do not
@@ -100,7 +125,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // client — so the chat can never see a finding this org couldn't. Same
   // staleness contract as the badges: it refreshes on a hard load and on
   // router.refresh().
-  const chatContext = briefChatContext(feed.open, feed.evidence);
+  //
+  // v2b: empty for a user without brief access. The prelude is the Brief in
+  // words — supplier names, rand figures, who is late — so shipping it to
+  // someone the Brief is closed to would hand them through the chat exactly
+  // what the redirect just refused them at the door.
+  const chatContext = briefAccess ? briefChatContext(feed.open, feed.evidence) : '';
 
   return (
     <PlatformProvider value={session}>
@@ -135,6 +165,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             openCount={feed.summary.openCount}
             historyCount={feed.history.length}
             chats={railChats}
+            canSeeBrief={briefAccess}
             modules={railModules(session.features)}
           />
 
@@ -156,6 +187,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               openCount={feed.summary.openCount}
               historyCount={feed.history.length}
               chats={railChats}
+              canSeeBrief={briefAccess}
               modules={railModules(session.features)}
             />
 

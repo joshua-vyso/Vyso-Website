@@ -1,12 +1,17 @@
 import { redirect } from 'next/navigation';
 import { getPlatformSession } from '@/lib/platform/supabase-server';
+import { canSeeBrief } from '@/lib/platform/access';
 import { fetchFindings } from '@/lib/platform/agent-findings';
+import { splitForToday } from '@/lib/platform/brief-feed';
 import { listChats } from '@/lib/platform/finch-chats'; // W2 · "Older chats"
 import { rand } from '@/lib/platform/procurepulse';
 import { OlderChats } from '@/components/platform/chat/OlderChats'; // W2 · "Older chats"
 import { BriefEmpty } from '@/components/platform/brief/BriefEmpty';
 import { FindingCard, ResolvedFindingCard } from '@/components/platform/brief/FindingCard';
+import { FullBriefing } from '@/components/platform/brief/FullBriefing';
+import { OverflowCard } from '@/components/platform/brief/OverflowCard';
 import { ReadOvernightBand } from '@/components/platform/brief/ReadOvernightBand';
+import { firstOpenableModuleHref, railModules } from '@/components/platform/shell/shell-data';
 import {
   AI_GRADIENT_TEXT,
   briefDateLine,
@@ -49,6 +54,35 @@ import {
  * only locks paths owned by a MODULES entry and none of them is `/app`, and
  * the trial gate is a platform-wide expiry screen that /app should not be an
  * exception to.
+ *
+ * THREE VIEWS, ONE ROUTE (v2b). `?view=history` is the closed pile; `?view=all`
+ * is the FULL BRIEFING — every open finding, grouped by agent; anything else
+ * (including a typo, and no param at all) is today's brief. They share this
+ * page rather than getting routes of their own because they share the header:
+ * the date line, the greeting and the ✦ status line are the same three
+ * sentences on all three, derived from the same feed, and splitting them would
+ * be three copies of that or a layout nobody else needs.
+ *
+ * TODAY'S BRIEF IS CAPPED AT FIVE CARDS (v2b, `lib/platform/brief-feed.ts`).
+ * Above five, four findings show and the fifth slot becomes an OverflowCard
+ * naming how many are behind it. THE GREETING IS NOT CAPPED — it still counts
+ * `feed.summary.openCount`, the true total — which is precisely why the
+ * overflow card has to exist: a heading saying "27 things need your attention"
+ * over four cards is data going missing, and the card is what makes it a
+ * decision about screen space instead.
+ *
+ * OWNERS AND ADMINS ONLY (v2b). Every card here is a claim about money, so the
+ * Brief is gated on the same rule the finance tools are — `canSeeBrief`, one
+ * implementation shared with `canSeeMoney` (lib/platform/access.ts). A member
+ * is REDIRECTED to their first unlocked module rather than shown a 403: the
+ * rail never offered them this link, so the only ways to arrive are a stale
+ * bookmark or a typed URL, and both deserve to land somewhere they can work.
+ * The check lives here, in the page, and NOT in app/app/layout.tsx — Next 16
+ * layouts do not re-render on client-side navigation (Partial Rendering), so an
+ * auth check in one is not re-run on a route change and cannot be relied on
+ * (node_modules/next/dist/docs/01-app/02-guides/authentication.md, "Layouts and
+ * auth checks"). `/app/finding/[id]` carries the same three lines for the same
+ * reason.
  */
 
 /** Copy for the two flavours of "nothing here", kept together so they read as
@@ -77,9 +111,21 @@ export default async function AppIndex({
   // is ever rendered outside that layout).
   if (!session) redirect('/login');
   if (!session.org) redirect('/onboarding');
+  // The Brief is owners/admins only (v2b). Sent to the first module they can
+  // actually OPEN — enabled for the org and not locked; see
+  // `firstOpenableModuleHref`, which is why this is not an inline
+  // `railModules(...)[0]`. Neither that target nor its `/app/settings` fallback
+  // ever redirects back here, so the bounce cannot loop. Applies to `?view=all`
+  // and `?view=history` too: the check is above the param, not inside a branch.
+  if (!canSeeBrief(session.profile?.role)) {
+    redirect(firstOpenableModuleHref(railModules(session.features), session.lockedModules));
+  }
 
   const [{ view }, feed] = await Promise.all([searchParams, fetchFindings(session.org.id)]);
   const isHistory = view === 'history';
+  // Anything that is neither 'history' nor 'all' — including a typo and the
+  // usual no-param case — falls through to today's brief.
+  const isAll = view === 'all';
 
   /* ── W2 · "Older chats" (plan_brief_chat_v2 §1.2) ─────────────────────────
    * Only on the History view: the archived half of `listChats` is the 14-day
@@ -94,6 +140,12 @@ export default async function AppIndex({
   const now = new Date();
   const name = firstName(session.profile?.full_name);
   const { openCount, maxRandImpact, supplierCount } = feed.summary;
+
+  // The cut (v2b). `splitForToday` ranks and caps in one call — asking for the
+  // cards without the ranking that makes them the right four is not possible,
+  // which is the point. `openCount` above is untouched by it: the greeting
+  // keeps the true total and the overflow card accounts for the difference.
+  const { cards, overflowCount } = splitForToday(feed.open);
 
   return (
     // `pb-[168px]`: the chat dock is an overlay pinned to the bottom of <main>
@@ -149,26 +201,44 @@ export default async function AppIndex({
           />
         </p>
 
-        <div className="mt-9 flex flex-col gap-3.5">
-          {isHistory ? (
-            feed.history.length > 0 ? (
-              feed.history.map((f) => <ResolvedFindingCard key={f.id} finding={f} />)
+        {/* The full briefing owns its own column — headings, groups and the
+            receipts band — so it is rendered instead of the card list rather
+            than inside it. */}
+        {isAll ? (
+          <FullBriefing
+            open={feed.open}
+            informational={feed.informational}
+            evidence={feed.evidence}
+            now={now}
+          />
+        ) : (
+          <div className="mt-9 flex flex-col gap-3.5">
+            {isHistory ? (
+              feed.history.length > 0 ? (
+                feed.history.map((f) => <ResolvedFindingCard key={f.id} finding={f} />)
+              ) : (
+                <BriefEmpty {...EMPTY_HISTORY} />
+              )
+            ) : cards.length > 0 ? (
+              <>
+                {cards.map((f) => (
+                  <FindingCard
+                    key={f.id}
+                    finding={f}
+                    evidence={feed.evidence[f.id]}
+                    foundLabel={foundLabel(f.created_at, now)}
+                  />
+                ))}
+                {/* The fifth slot, when there is a fifth slot's worth of
+                    everything else. `> 0` and not `>= 0`: at exactly five open
+                    findings all five show and this never renders. */}
+                {overflowCount > 0 ? <OverflowCard count={overflowCount} /> : null}
+              </>
             ) : (
-              <BriefEmpty {...EMPTY_HISTORY} />
-            )
-          ) : feed.open.length > 0 ? (
-            feed.open.map((f) => (
-              <FindingCard
-                key={f.id}
-                finding={f}
-                evidence={feed.evidence[f.id]}
-                foundLabel={foundLabel(f.created_at, now)}
-              />
-            ))
-          ) : (
-            <BriefEmpty {...EMPTY_BRIEF} />
-          )}
-        </div>
+              <BriefEmpty {...EMPTY_BRIEF} />
+            )}
+          </div>
+        )}
 
         {/* ── W2 · "Older chats" ───────────────────────────────────────────── */}
         {isHistory && olderChats.length > 0 ? <OlderChats chats={olderChats} /> : null}
@@ -176,8 +246,10 @@ export default async function AppIndex({
 
         {/* Doc Watch's receipts — "Read this morning". Informational only, below
             the findings and counted in none of them; the band renders nothing
-            when there are none, and nothing at all under History. */}
-        {isHistory ? null : (
+            when there are none, and nothing at all under History. The full
+            briefing draws its own copy at the bottom of its groups, so this one
+            is today's-brief-only. */}
+        {isHistory || isAll ? null : (
           <ReadOvernightBand findings={feed.informational} evidence={feed.evidence} now={now} />
         )}
       </div>

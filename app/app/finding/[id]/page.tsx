@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 import { createServerSupabase, getPlatformSession } from '@/lib/platform/supabase-server';
+import { canSeeBrief } from '@/lib/platform/access';
 import { getFinding, listFindingEvidence, type FindingEvidence } from '@/lib/platform/agent-findings';
 import {
   daysPastTermsLabel,
@@ -11,6 +12,7 @@ import {
 } from '@/lib/platform/agents/finding-kinds';
 import { seriesForFinding, type FindingSeries } from '@/lib/platform/price-watch/series';
 import { rand } from '@/lib/platform/procurepulse';
+import { firstOpenableModuleHref, railModules } from '@/components/platform/shell/shell-data';
 import { FindingDetail } from '@/components/platform/brief/FindingDetail';
 import type { EvidenceItem, EvidencePanel } from '@/components/platform/brief/EvidenceList';
 import { foundAtLabel, shortDate, unitPrice } from '@/components/platform/brief/brief-display';
@@ -39,8 +41,17 @@ import { foundAtLabel, shortDate, unitPrice } from '@/components/platform/brief/
  * `org_id` on top of RLS and returns null for "no such finding", "another org's
  * finding" and "the migration hasn't been applied" alike; all three become
  * `notFound()`. A distinct 403 would confirm to anyone guessing ids that one of
- * them is real. (Findings ARE shared across an org — unlike chats — so any
- * signed-in colleague may open this one.)
+ * them is real. (Findings are shared across an org — unlike chats — so any
+ * signed-in colleague with brief access may open this one.)
+ *
+ * OWNERS AND ADMINS ONLY (v2b). This page is a finding in full, which makes it
+ * the same money claim the Brief's card is, so it carries the same
+ * `canSeeBrief` gate and the same redirect to the caller's first unlocked
+ * module. It lives HERE and not in app/app/layout.tsx because Next 16 layouts
+ * do not re-render on client-side navigation, so a check in one is not re-run
+ * per route (node_modules/next/dist/docs/01-app/02-guides/authentication.md,
+ * "Layouts and auth checks"). Note the ORDER below: the role check runs before
+ * `getFinding`, so a member never causes a read they are not entitled to make.
  *
  * THREE READS, ALL SOFT EXCEPT THE FIRST. Only the finding itself is allowed to
  * fail the page; the series and the evidence both degrade to nothing and the
@@ -61,6 +72,11 @@ export default async function FindingPage({ params }: { params: Promise<{ id: st
   // rendered outside that layout.
   if (!session) redirect('/login');
   if (!session.org) redirect('/onboarding');
+  // Same gate, same target, same reasoning as app/app/page.tsx — and above the
+  // reads, so a member's stale bookmark never costs a query.
+  if (!canSeeBrief(session.profile?.role)) {
+    redirect(firstOpenableModuleHref(railModules(session.features), session.lockedModules));
+  }
 
   const { id } = await params;
   const finding = await getFinding(session.org.id, id);
