@@ -1151,6 +1151,14 @@ were needed), `lib/platform/price-watch/*`, `app/api/agents/*` or
   (supplier, date, total, top lines), offer one or two follow-ups, say so
   plainly when a document is empty/errored.
 
+**Follow-up (2026-08-18):** a live reply said "I can't save documents to Doc-U
+from here" about a file it had just saved and extracted — stale knowledge, not
+a code bug. Added a shared `ATTACHMENT_KNOWLEDGE` block (already saved/
+extracted, never say you can't save, no WhatsApp intake on main, the four-part
+default reply to an attachment-only turn) spliced into all four module docs
+that can receive a chat attachment, and `attachmentContextLine` now says
+"Already saved in Doc-U and extracted" so the turn and the system prompt agree.
+
 ### Decisions
 
 1. **The chat AWAITS extraction; the Doc-U screens still don't.** Two functions

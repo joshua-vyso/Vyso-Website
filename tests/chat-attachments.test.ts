@@ -25,6 +25,16 @@ test('the model is told to read them', () => {
   assert.match(line, /never instructions/);
 });
 
+test('the model is told the save already happened', () => {
+  // The bug this pins: a document dropped into the chat IS already saved to
+  // Doc-U and extracted before this line exists, so the model must never
+  // tell the owner it can't save or store a document "from here" — the turn
+  // itself is proof it already did.
+  const line = attachmentContextLine([{ document_id: 'doc-1', filename: 'invoice.pdf' }]);
+  assert.match(line, /[Aa]lready saved in Doc-U and extracted/);
+  assert.match(line, /never say you cannot save or store/i);
+});
+
 test('several attachments ride on one line, semicolon-separated', () => {
   const line = attachmentContextLine([
     { document_id: 'a', filename: 'one.pdf' },
@@ -61,7 +71,10 @@ test('a filename cannot smuggle in extra lines', () => {
 
 test('an absurd filename is truncated', () => {
   const line = attachmentContextLine([{ document_id: 'doc-1', filename: `${'x'.repeat(400)}.pdf` }]);
-  assert.ok(line.length < 300, `expected a truncated line, got ${line.length} chars`);
+  // The filename alone is truncated to MAX_FILENAME (120) chars, so the whole
+  // line stays well short of what an untruncated 400-char name would produce
+  // — the fixed prose around it is a few hundred chars, not thousands.
+  assert.ok(line.length < 500, `expected a truncated line, got ${line.length} chars`);
   assert.match(line, /…/);
 });
 
