@@ -464,8 +464,9 @@ html, body {
   .finch-dot { animation: none; }
 }
 
-/* ── Finch mark: one-time gentle pop/fade on mount (the mark is a filled
-   contour, so it settles in rather than stroke-drawing) ────────────────────── */
+/* ── Finch mark: one-time gentle pop/fade on mount. The mark is the bird line
+   drawing painted through a CSS mask (components/platform/finch/FinchMark.tsx),
+   so there are no strokes to animate along — it settles in instead. ────────── */
 .finch-mark-pop {
   animation: finch-mark-pop 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
   transform-origin: center;

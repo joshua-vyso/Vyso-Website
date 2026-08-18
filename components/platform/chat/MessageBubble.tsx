@@ -3,14 +3,16 @@
 import Link from 'next/link';
 import { usePlatform } from '@/lib/platform/session';
 import { AI_GRADIENT_CHROME } from '@/components/platform/brief/brief-display';
+import { FinchMark } from '@/components/platform/finch/FinchMark';
 import { sourceLinksFor } from './chat-display';
 
 /**
  * The two shapes a message takes (design 1b).
  *
  * The owner's words sit right, in the warm grey bubble with the squared
- * bottom-right corner; Vyso's answer sits left, unboxed, behind the gradient ✦
- * disc. That asymmetry is the design's whole grammar for "who is speaking" —
+ * bottom-right corner; Vyso's answer sits left, unboxed, behind the gradient
+ * disc with the Finch bird on it. That asymmetry is the design's whole grammar
+ * for "who is speaking" —
  * a chat where both sides were bubbles would read as two people, and this is
  * one person and their software.
  *
@@ -58,12 +60,17 @@ export function AssistantMessage({
 
   return (
     <div className="flex gap-3.5">
+      {/* The speaker's mark, so it is the BIRD and not the ✦: a disc beside an
+          answer is an avatar, and an avatar is an identity. The ✦ still means
+          "Vyso is working / Vyso wrote this line" and keeps the inline status
+          lines (ToolStatusLine) and the recommendation blocks. 21px in a 30px
+          disc — the bird is line art and needs ~70% to hold its stroke. */}
       <span
-        className="grid h-[30px] w-[30px] flex-none place-items-center rounded-full text-[13px] text-white"
+        className="grid h-[30px] w-[30px] flex-none place-items-center rounded-full"
         style={{ background: AI_GRADIENT_CHROME }}
         aria-hidden
       >
-        ✦
+        <FinchMark size={21} title="" />
       </span>
       <div className="min-w-0 flex-1">
         <p className="whitespace-pre-wrap text-[15.5px] leading-[1.6] text-[var(--pf-text-body)]">{text}</p>

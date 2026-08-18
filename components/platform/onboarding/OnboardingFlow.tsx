@@ -79,7 +79,9 @@ function FinchPanel({ stage }: { stage: OnboardingStage }) {
         key={stage /* remount → replay the draw-in on each stage */}
         className="finch-gradient flex h-14 w-14 items-center justify-center rounded-2xl"
       >
-        <FinchMark size={30} title="" animate="draw" chip />
+        {/* The 56px rounded square around it is the gradient; the bird fills
+            ~70% of it and draws no disc of its own (see FinchMark's `chip`). */}
+        <FinchMark size={38} title="" animate="draw" />
       </span>
       <h2 className="of-display mt-4 text-[18px] font-semibold text-[#171A17]">{intro.title}</h2>
       <p className="mt-2 text-[13.5px] leading-relaxed text-[#6B6F68]">{intro.body}</p>

@@ -100,7 +100,10 @@ export function FinchBubble() {
           className="finch-gradient pointer-events-auto relative inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-semibold text-white shadow-[0_2px_10px_-2px_rgba(62,143,224,0.6)] transition-transform hover:scale-[1.03] active:scale-[0.98] motion-reduce:transition-none motion-reduce:hover:scale-100"
           style={{ transitionDuration: 'var(--dur-hover)', transitionTimingFunction: 'var(--ease-out-soft)' }}
         >
-          <FinchMark size={15} title="" />
+          {/* The pill IS the gradient, so the bird sits straight on it — no
+              disc of its own. 17px rather than 15: the mark is line art now and
+              a 15px bird is a half-pixel stroke. */}
+          <FinchMark size={17} title="" />
           Finch
           {bubbleUnread ? (
             // An answer arrived while this was shut. A dot rather than a count:
@@ -128,8 +131,11 @@ export function FinchBubble() {
         style={{ transformOrigin: 'bottom right' }}
       >
         <div className="flex shrink-0 items-center gap-2 border-b border-[var(--pf-border-soft)] px-4 py-3">
+          {/* This span is already the gradient disc; the mark must not draw a
+              second one inside it (see FinchMark's `chip`). 17px in a 24px disc
+              is the ~70% the bird's stroke weight needs to stay legible. */}
           <span className="finch-gradient flex h-6 w-6 shrink-0 items-center justify-center rounded-full">
-            <FinchMark size={13} title="" chip />
+            <FinchMark size={17} title="" />
           </span>
           <span className="of-display text-[14.5px] font-semibold text-[var(--pf-text)]">Finch</span>
           {moduleLabel ? (

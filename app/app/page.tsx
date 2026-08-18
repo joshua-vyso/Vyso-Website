@@ -56,12 +56,18 @@ import {
  * exception to.
  *
  * THREE VIEWS, ONE ROUTE (v2b). `?view=history` is the closed pile; `?view=all`
- * is the FULL BRIEFING — every open finding, grouped by agent; anything else
+ * is the FULL BRIEFING — every open finding, as a report; anything else
  * (including a typo, and no param at all) is today's brief. They share this
- * page rather than getting routes of their own because they share the header:
- * the date line, the greeting and the ✦ status line are the same three
- * sentences on all three, derived from the same feed, and splitting them would
- * be three copies of that or a layout nobody else needs.
+ * page rather than getting routes of their own because they share the FEED: one
+ * `fetchFindings`, one clock, one access check, and `view` is a search param
+ * rather than a route so none of that is duplicated three ways.
+ *
+ * THE MASTHEAD IS NOT SHARED WITH `?view=all`. The date line, the greeting and
+ * the ✦ status line are today's brief and History; the full briefing brings its
+ * own masthead (the org, "Full briefing", a generated-at line and a totals
+ * strip) because it is a REPORT rather than a longer brief, and stacking a
+ * report under a greeting that addresses the reader by name is two documents
+ * printed on one page. See FullBriefing.tsx.
  *
  * TODAY'S BRIEF IS CAPPED AT FIVE CARDS (v2b, `lib/platform/brief-feed.ts`).
  * Above five, four findings show and the fifth slot becomes an OverflowCard
@@ -155,60 +161,70 @@ export default async function AppIndex({
     // padding to the modules, which take the overlap and the scrim instead.
     <div className="flex min-h-full">
       <div className="mx-auto flex w-full max-w-[820px] flex-1 flex-col px-6 pb-[168px] pt-10 sm:px-10">
-        <div className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[var(--pf-text-muted)]">
-          {briefDateLine(now)} · {session.org.name}
-        </div>
+        {/* The brief's own masthead — greeting, count, ✦ line. The full briefing
+            is a REPORT and brings its own (org, "Full briefing", the generated-at
+            line, the totals strip), so this one is withheld there rather than
+            stacked above it: two mastheads, one of them addressing the reader by
+            name, is not a document. Today's brief and History still share it. */}
+        {isAll ? null : (
+          <>
+            <div className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[var(--pf-text-muted)]">
+              {briefDateLine(now)} · {session.org.name}
+            </div>
 
-        <h1 className="of-display mt-2.5 text-[clamp(24px,3.2vw,33px)] font-semibold leading-[1.25] tracking-[-0.01em] text-balance text-[var(--pf-text)]">
-          {timeOfDayGreeting(now)}
-          {name ? ` ${name}` : ''}.{' '}
-          {openCount > 0 ? (
-            <>
-              {openCount === 1 ? '1 thing needs' : `${openCount} things need`} your attention
-              {maxRandImpact != null ? (
+            <h1 className="of-display mt-2.5 text-[clamp(24px,3.2vw,33px)] font-semibold leading-[1.25] tracking-[-0.01em] text-balance text-[var(--pf-text)]">
+              {timeOfDayGreeting(now)}
+              {name ? ` ${name}` : ''}.{' '}
+              {openCount > 0 ? (
                 <>
-                  {' — '}
-                  {openCount === 1 ? 'it is' : 'one is'} worth{' '}
-                  {/* The one rand figure that carries the AI gradient. */}
-                  <span
-                    className="of-num whitespace-nowrap bg-clip-text text-transparent"
-                    style={{ backgroundImage: AI_GRADIENT_TEXT }}
-                  >
-                    {rand(maxRandImpact)} a year
-                  </span>
+                  {openCount === 1 ? '1 thing needs' : `${openCount} things need`} your attention
+                  {maxRandImpact != null ? (
+                    <>
+                      {' — '}
+                      {openCount === 1 ? 'it is' : 'one is'} worth{' '}
+                      {/* The one rand figure that carries the AI gradient. */}
+                      <span
+                        className="of-num whitespace-nowrap bg-clip-text text-transparent"
+                        style={{ backgroundImage: AI_GRADIENT_TEXT }}
+                      >
+                        {rand(maxRandImpact)} a year
+                      </span>
+                    </>
+                  ) : null}
+                  .
                 </>
-              ) : null}
-              .
-            </>
-          ) : (
-            'Nothing needs your attention.'
-          )}
-        </h1>
+              ) : (
+                'Nothing needs your attention.'
+              )}
+            </h1>
 
-        <p className="mt-3.5 flex items-center gap-2 text-[13.5px] text-[var(--pf-text-secondary)]">
-          <span
-            className="bg-clip-text text-transparent"
-            style={{ backgroundImage: AI_GRADIENT_TEXT }}
-            aria-hidden
-          >
-            ✦
-          </span>
-          <StatusLine
-            tableMissing={feed.tableMissing}
-            openCount={openCount}
-            supplierCount={supplierCount}
-            historyCount={feed.history.length}
-          />
-        </p>
+            <p className="mt-3.5 flex items-center gap-2 text-[13.5px] text-[var(--pf-text-secondary)]">
+              <span
+                className="bg-clip-text text-transparent"
+                style={{ backgroundImage: AI_GRADIENT_TEXT }}
+                aria-hidden
+              >
+                ✦
+              </span>
+              <StatusLine
+                tableMissing={feed.tableMissing}
+                openCount={openCount}
+                supplierCount={supplierCount}
+                historyCount={feed.history.length}
+              />
+            </p>
+          </>
+        )}
 
-        {/* The full briefing owns its own column — headings, groups and the
-            receipts band — so it is rendered instead of the card list rather
-            than inside it. */}
+        {/* The full briefing owns the whole column — masthead, totals, one table
+            per agent and the receipts band — so it is rendered instead of the
+            card list rather than inside it. */}
         {isAll ? (
           <FullBriefing
             open={feed.open}
             informational={feed.informational}
             evidence={feed.evidence}
+            orgName={session.org.name}
             now={now}
           />
         ) : (

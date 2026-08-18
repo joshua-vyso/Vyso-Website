@@ -2136,3 +2136,163 @@ is W6's job; nothing here ran against a live database.
 14. Ask the bubble "who owes me money?" → the restricted answer, unchanged.
 15. Ask it "what did you find overnight?" → it does **not** recite the brief;
     the prelude is empty for this user.
+
+# Brief polish — full briefing as a report; the mark is the Finch bird
+
+Two small asks from Josh on 2026-08-18, on `main` (from 89afc2a).
+
+> "it'd be cool if when user clicked 'view the full briefing', it opened into
+> like a dashboard / report style thing, so just a bit of a different styling to
+> the cards."
+
+> "the gradient ✦ mark should be the finch bird."
+
+## Files
+
+**Created**
+
+- `components/platform/brief/BriefingRow.tsx` — one finding as a ROW: status
+  dot, headline (→ `/app/finding/[id]`), ≈R/yr right-aligned, evidence noun,
+  found-time, Dismiss. Client, because Dismiss is a write. Exports
+  `BRIEFING_ROW_COLS`, the grid template, so the column header cannot drift from
+  the rows it heads.
+
+**Modified**
+
+- `components/platform/brief/FullBriefing.tsx` — rewritten as a report:
+  masthead (org, "Full briefing", generated-at in SAST, one-line totals strip),
+  then one table per agent with a section subtotal, then the receipts band.
+- `app/app/page.tsx` — the brief's masthead (eyebrow, greeting, ✦ line) is
+  withheld on `?view=all`; `orgName` threaded into `FullBriefing`; docblock
+  corrected on both counts.
+- `components/platform/finch/FinchMark.tsx` — the platform mark is now the
+  brand bird, painted through `components/finch/FinchBirdMark`'s mask.
+- `components/platform/chat/MessageBubble.tsx` — the assistant's 30px gradient
+  disc carries the bird instead of a ✦.
+- `components/platform/shell/FinchBubble.tsx`,
+  `app/onboarding/layout.tsx`,
+  `components/platform/onboarding/{StageData,OnboardingFlow}.tsx` — every mount
+  site stopped passing `chip` and grew its bird to ~70% of the disc it already
+  draws (see decision 6).
+- `app/globals.css` — one stale comment beside `.finch-mark-pop` ("the mark is a
+  filled contour"). No rule changed.
+
+Untouched: `lib/platform/brief-feed.ts` (the report uses `groupByAgent` exactly
+as the grouped card view did), `FindingCard`, `ReadOvernightBand`, every agent,
+every SQL file, and `components/finch/FinchBirdMark.tsx` — which is imported,
+not edited.
+
+## Decisions
+
+1. **`?view=all` is a REPORT, so it loses the greeting.** Up to this pass it was
+   the same five-card component under agent headings — a longer brief. The two
+   views answer different questions (today: "what do I do first?", an ordering;
+   all: "what has Vyso got on me?", coverage), and coverage is a document: a
+   masthead, totals, dense tables. That is also why `app/app/page.tsx` now
+   withholds its own eyebrow/greeting/✦ line on this view. A report stacked
+   under "Morning Josh. 27 things need your attention" is two documents printed
+   on one page, and the masthead the brief already carries duplicates the org
+   and the date the report has to state for itself. History and today's brief
+   still share the page header, unchanged.
+2. **The table idiom is the design's own back office** (`.ai/design/vyso-brief/
+   Vyso - The Brief.dc.html` §1d): white sheet, 12px radius, hairline row rules,
+   uppercase 10.5px column heads on a tinted strip, tabular figures
+   right-aligned, a hover tint. Nothing new was invented for it, which is the
+   point — the product already has a register for "raw data behind the brief".
+3. **Monochrome, with the agent chip colour as the only accent** (section dot +
+   status dot). Specifically NO gradient: `brief-display.ts` rations it to five
+   sanctioned placements and it means "Vyso said this". Thirty rows of it is
+   wallpaper, and the rand column here is a fact from an invoice, not a claim
+   Vyso is making about itself.
+4. **Status is a SHAPE, not a colour** — filled dot = `new`, hollow ring =
+   `in_progress`. A second colour would compete with the agent accent the dot is
+   already drawn in, and disc-vs-ring survives a monochrome print and a
+   colour-blind reader. The words are still there for a screen reader (`sr-only`
+   inside the dot's own cell, so it does not become a stray grid child).
+5. **Two lines for the observation, not one.** The first cut truncated at one
+   line, and every real finding read "FreshCo Produce raised tomatoes from
+   R8.41/kg to…" — the half that says nothing. `line-clamp-2` with the four
+   fixed columns trimmed to what their widest content needs (104/96/92/62px,
+   12px gaps) gives the sentence ~282px at the 820px column and shows nearly all
+   of them whole. Checked in a browser against nine realistic rows.
+6. **Every mount site draws its own disc, so `FinchMark` stops drawing one.**
+   The bubble header, both onboarding headers and the onboarding panel each wrap
+   the mark in a fixed-size `finch-gradient` circle AND passed `chip`, which
+   drew a second gradient disc a pixel inside the first — two independently
+   animating gradients stacked. All four now pass no `chip` and a bird sized to
+   ~70% of the disc (24→17, 28→20, 56→38; the collapsed pill 15→17). The prop is
+   kept, documented, for a caller with no disc of its own.
+7. **~70% is not taste, it is the stroke.** The artwork's stroke is ~3.8% of its
+   box, so a 13px bird is a half-pixel line. 15/17/19/21px birds were compared
+   in a 24px disc in the browser at DPR 2: 17 is the largest that keeps a margin
+   inside the disc and the smallest that holds its line. Below ~15px the mark
+   should be a ✦, not a bird.
+8. **The bird is IMPORTED, not re-traced.** `components/finch/FinchBirdMark.tsx`
+   already paints `public/finch/finch-bird.svg` as a CSS mask, and its docblock
+   says why (the logo's own orange→blue strokes drop to ~2:1 on a dark ground; a
+   second copy of the path data drifts out of sync with the real logo). The
+   platform wrapper adds white, the disc and the draw-in. The traced filled
+   contour that FinchMark carried since c3d6533 is gone — it was a second,
+   slightly different bird.
+9. **Which sites get the bird, and which keep the ✦** — the rule is *identity vs
+   voice*. A circular gradient disc that stands for the speaker is an AVATAR and
+   gets the bird: the collapsed bubble pill, the dock/panel header, both
+   onboarding headers, the onboarding panel, and the assistant's 30px disc in
+   every transcript (`MessageBubble`). A ✦ set in a run of text means "Vyso is
+   working / Vyso wrote this line" and keeps the glyph: `ToolStatusLine`, the
+   brief's ✦ status line, `FindingCard`'s recommendation mark and its "Discuss"
+   button, `FindingDetail`, `OverflowCard`, `ReadOvernightBand`, `BriefEmpty`,
+   `ChatComposer`, `ChatDropZone`. Two sites were checked and deliberately left
+   alone: `OrderCards`' 20px discs carry a sparkle and a tick that are STATE
+   ("order draft", "filed in Doc-U"), not the Finch identity — and at 20px a
+   bird would be a smudge; `RailNav`/`RailChats`' `AI_GRADIENT_CHROME` is an 8px
+   live dot and a pill border, not a mark.
+10. **The totals strip drops segments rather than printing zeros** — "0 debtors"
+    next to three price findings is noise, and the whole Brief follows "say
+    nothing rather than claim nothing". The rand total is a filtered SUM over
+    findings that carry a figure; an unpriced finding contributes nothing and is
+    not counted as R0 (the same reason `rankFindings` sorts nulls last rather
+    than as zero). "read overnight" reuses `countSinceSastMidnight`, the same
+    derivation the receipts band's own line quotes, so the two cannot disagree.
+11. **The column heads are `aria-hidden`.** This is a grid of divs, not a
+    `<table>` (the rows have to stack on a phone), so the heads cannot be
+    associated with cells anyway and would be read out as a stray line of nouns.
+    Each cell says what it is instead: the figure carries "≈…/yr", the evidence
+    cell a noun, the time cell an `sr-only` "Found", the dot an `sr-only`
+    status. The heads are also hidden below `sm`, where there are no columns.
+12. **Dismiss is `useStatusWrite`, imported from `FindingCard`** — not
+    reimplemented. Two places that can dismiss a finding must not be able to
+    drift into dismissing it differently; W3's detail page set that precedent.
+    "Discuss" is deliberately NOT on a row: a per-row chat button on
+    twenty-three rows is noise, and the row opens the finding, which has one.
+13. **Mobile stacks by wrapping, not by a second layout.** One markup: a
+    wrapping flex line below `sm` (the headline takes `basis:calc(100% - 1.25rem)`
+    beside the dot, so figure/evidence/time/Dismiss land on the line under it)
+    that becomes the grid at `sm` (`basis` is ignored on a grid item). Verified
+    at 375px.
+14. **Printable, cheaply**: rows are `break-inside-avoid`, and Dismiss and the
+    back link are `print:hidden` — a printed report should not offer buttons.
+
+## Gates
+
+`npx tsc --noEmit`, `npm test` **401/401**, `npm run build` (**no new routes** —
+`view` is still a search param), `npx eslint .` **50 errors / 38 warnings,
+identical to the pre-wave baseline**; every file touched here lints clean on its
+own.
+
+CAVEAT ON THE SHARED TREE: from ~09:56 a second session began editing
+`lib/ai/finch/{config,knowledge,tools}.ts` and `lib/platform/{price-watch,
+stock-cover}/detect.ts` in this same working copy (adding a `procurepulse`
+agent module), and its half-finished state fails `tsc` on `knowledge.ts`. Those
+files are NOT part of this commit and the failures are confined to them. The
+gate numbers above were therefore taken twice: once in this tree before that
+session started, and once after the commit in a clean `git worktree` at the
+committed SHA, where nothing of theirs is present.
+
+Runtime: `/app` and `/app?view=all` were exercised against a dev server
+unauthenticated — both 307 to `/login` with no server error, which proves the
+new server modules evaluate. The report's own layout was checked by rendering
+its exact markup and Tailwind classes in the browser at 1180px and at 375px
+(nine realistic rows across three agents); the bird was checked white-on-blue at
+15/17/19/21px in a 24px disc, and at the dock, avatar and panel sizes. Anything
+role- or data-dependent still needs a signed-in session.

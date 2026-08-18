@@ -1,64 +1,79 @@
 'use client';
 
-import { useId } from 'react';
+import { FinchBirdMark } from '@/components/finch/FinchBirdMark';
 
 /**
- * The Finch mark — the perched, right-facing bird from the brand icon, traced
- * from the source artwork as a single filled contour (body) plus the eye. The
- * fill is a white -> warm-orange gradient (top-left to bottom-right) so it reads
- * on the blue Finch pill; pass `chip` to sit it on a blue-gradient disc against
- * light backgrounds (onboarding, modal header).
+ * The Finch mark on the platform — the brand's bird, in white, sat on the blue
+ * gradient.
+ *
+ * ONE BIRD, ONE FILE. The artwork is `public/finch/finch-bird.svg`, the same
+ * file the marketing site draws, used the same way: as a MASK, so the strokes
+ * punch a shape out of a flat colour instead of carrying the logo's own
+ * orange→blue gradients (which fight the blue chip they would sit on, and drop
+ * to ~2:1 contrast against it). That technique — and the reasoning — lives in
+ * `components/finch/FinchBirdMark.tsx`, which is imported here rather than
+ * reimplemented: a second copy of the mark is how the product and the website
+ * end up wearing two different birds, and a second copy of the PATH DATA is how
+ * they drift out of sync with the real logo. This module is the platform's
+ * wrapper around it: the white colour, the gradient chip, the draw-in.
+ *
+ * WHITE, ALWAYS. Every place this renders, the ground underneath it is the blue
+ * gradient — the collapsed bubble pill, the dock and onboarding header discs,
+ * the assistant's avatar in a transcript. White is the only colour that holds on
+ * all of them, and holding one colour is what makes the mark recognisable at
+ * 20px.
+ *
+ * SIZE IS THE BIRD, NOT THE DISC. The stroke is ~3.8% of the artwork's box, so a
+ * 13px bird is a half-pixel line and reads as a smudge. Callers that already
+ * draw their own gradient circle (all of them, today) should therefore ask for a
+ * bird about 70% of that circle's diameter and NOT pass `chip` — a 24px disc
+ * wants `size={17}`. `chip` is kept for a caller that has no disc of its own; it
+ * draws one at the same 1.8× footprint the padded version always had.
  *
  * `animate="draw"` plays a one-time gentle pop/fade on mount (honours
- * prefers-reduced-motion via the .finch-mark-pop rule in globals.css). Default
+ * prefers-reduced-motion via the `.finch-mark-pop` rule in globals.css). Default
  * is static.
  */
-const FINCH_BODY_PATH =
-  'M3295 4690 c-85 -13 -200 -48 -289 -89 -289 -133 -485 -356 -624 -706 -105 -264 -191 -415 -456 -799 -239 -347 -860 -1249 -986 -1431 -585 -847 -600 -871 -600 -906 0 -21 10 -40 30 -61 27 -27 36 -30 73 -26 23 3 256 75 517 161 862 283 818 273 1155 270 l260 -2 49 -53 c27 -29 130 -143 227 -253 l178 -200 -333 -5 c-305 -5 -336 -7 -354 -23 -27 -25 -36 -64 -21 -99 25 -60 -8 -58 878 -58 l809 0 31 26 c41 34 44 92 6 129 l-24 25 -378 0 -378 0 -229 257 -228 257 119 22 c346 63 631 212 879 459 348 347 517 777 539 1375 13 358 31 484 83 586 43 85 62 98 255 179 100 42 204 86 230 97 74 32 96 99 50 150 -8 9 -114 56 -234 104 l-218 87 -36 61 c-121 207 -296 354 -508 427 -45 15 -111 33 -147 38 -73 12 -248 12 -325 1z m333 -186 c229 -47 408 -187 520 -405 l37 -73 138 -55 c75 -30 137 -57 137 -60 0 -3 -33 -19 -73 -35 -182 -74 -247 -127 -312 -256 -68 -136 -89 -248 -100 -555 -16 -443 -66 -678 -201 -950 -79 -159 -165 -282 -282 -400 -212 -215 -504 -363 -827 -420 -80 -14 -142 -17 -310 -14 -383 6 -485 3 -575 -15 -135 -28 -433 -117 -804 -239 l-342 -114 111 161 c61 89 128 186 149 217 l37 56 107 13 c506 58 959 182 1337 365 237 115 380 213 524 358 138 140 226 284 277 454 34 114 39 300 10 403 -54 187 -186 351 -347 429 -117 56 -206 74 -339 68 -58 -3 -115 -9 -128 -13 -21 -6 -17 6 41 122 36 71 89 185 117 254 97 232 149 319 259 434 135 141 328 244 513 275 88 14 243 12 326 -5z m-959 -1259 c85 -22 161 -66 221 -126 99 -100 143 -215 143 -369 -1 -248 -158 -501 -428 -692 -280 -196 -707 -363 -1164 -453 -201 -40 -371 -64 -364 -51 6 11 38 57 475 691 122 176 295 428 386 560 239 346 233 339 306 380 121 68 301 93 425 60z';
-const FINCH_EYE_PATH =
-  'M3653 4124 c-88 -44 -104 -166 -29 -232 47 -41 94 -48 151 -23 62 27 87 70 82 139 -7 103 -111 162 -204 116z';
-
 export function FinchMark({
   size = 20,
   title = 'Finch',
   animate = 'none',
   chip = false,
 }: {
+  /** The BIRD's square, in px — not the disc's, when `chip` is set. */
   size?: number;
+  /** Accessible name. Pass `''` where the mark sits beside the word "Finch"
+   *  and would otherwise be read twice. */
   title?: string;
   animate?: 'draw' | 'none';
+  /** Draw the blue gradient disc too. Off by default: every mount site in the
+   *  platform draws its own, and nesting one gradient disc inside another gives
+   *  two independently-animating gradients stacked a pixel apart. */
   chip?: boolean;
 }) {
-  const gradientId = `finch-mark-gradient-${useId()}`;
-  const decorative = !title;
-
-  const svg = (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 512 512"
-      fill="none"
-      role={decorative ? undefined : 'img'}
-      aria-hidden={decorative || undefined}
-      aria-label={decorative ? undefined : title}
-      className={animate === 'draw' ? 'finch-mark-pop' : undefined}
-    >
-      {decorative ? null : <title>{title}</title>}
-      <defs>
-        <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1="0" y1="5120" x2="5120" y2="0">
-          <stop offset="0%" stopColor="#FFFFFF" />
-          <stop offset="100%" stopColor="#F0873C" />
-        </linearGradient>
-      </defs>
-      <g transform="translate(0,512) scale(0.1,-0.1)" fill={`url(#${gradientId})`} stroke="none">
-        <path d={FINCH_BODY_PATH} />
-        <path d={FINCH_EYE_PATH} />
-      </g>
-    </svg>
+  const bird = (
+    <FinchBirdMark
+      color="#FFFFFF"
+      size={size}
+      className={animate === 'draw' ? 'finch-mark-pop' : ''}
+    />
   );
 
-  if (!chip) return svg;
+  // FinchBirdMark is `aria-hidden` (it is a painted shape). When the mark has to
+  // carry a name, the wrapper carries it — role + label on the element, so the
+  // mask underneath stays out of the tree.
+  const labelled = title ? (
+    <span role="img" aria-label={title} className="inline-flex">
+      {bird}
+    </span>
+  ) : (
+    bird
+  );
 
+  if (!chip) return labelled;
+
+  // 0.4 × size of padding on each edge — the footprint the traced-glyph version
+  // had, kept so a caller that swaps `chip` on does not have to re-measure.
   const pad = Math.max(5, Math.round(size * 0.4));
   return (
     <span
@@ -72,7 +87,7 @@ export function FinchMark({
         boxShadow: '0 2px 10px -2px rgba(62,143,224,0.6)',
       }}
     >
-      {svg}
+      {labelled}
     </span>
   );
 }
