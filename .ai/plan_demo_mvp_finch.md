@@ -64,8 +64,10 @@ in exactly the `documents.extracted_data.line_items` shape `run.ts:828-871` read
 1. `npm run build` + `npx tsc --noEmit` fail on untracked `lib/platform/whatsapp-ingest.ts:4`
    (`extractOrderFromText` missing). Vercel builds from git so prod is unaffected, but no local
    build gate is possible and the WhatsApp WIP must not be committed as-is.
-2. `vercel.json` is modified/uncommitted → the `price-watch` (03:45 UTC) and `digest`
-   (Mon 04:00 UTC) crons are **not deployed**.
+2. ~~`vercel.json` is modified/uncommitted → crons not deployed~~ **Corrected in Phase A
+   (2026-08-17): the `price-watch` (03:45 UTC) and `digest` (Mon 04:00 UTC) crons were already
+   committed in `32973a2` and are live in prod.** The local diff was only the WhatsApp cron
+   line, now on `feat/whatsapp-ordering`. Only the env vars (blocker 3) are missing.
 3. `PRICE_WATCH_ORG_IDS` and `PRICE_WATCH_DIGEST_TO` unset (locally and, as far as the repo
    shows, in Vercel) → cron no-ops, digest 503s.
 4. Meridian has **zero** `pw_items`/`pw_price_points`/`agent_findings` rows → the Brief renders
@@ -138,6 +140,17 @@ B1. **`supabase/demo-refresh-2026-08.sql`** (new file, house style: Meridian-sco
 B2. **Josh — paste into Supabase SQL editor** (prod project). Re-run `demo-all-in-one.sql`
     first ONLY if Meridian is in a bad state (it's destructive to Meridian rows only; Fresh
     Valley purge section is already a no-op).
+    **ORDER MATTERS (learned in B1, 2026-08-17): apply `demo-refresh-2026-08.sql` BEFORE the
+    first Price Watch run.** The seed alone fires 5 findings (chicken portions +8.4 %, frying
+    medium +11.8 % as well as the three we want); the refresh adds August points that keep
+    those two under the 8 % floor. `detect.ts` never retracts an open finding, so if the cron
+    ran first, dismiss the two extras by hand. Verified numbers after refresh: fish +10.0 %
+    (≈ R141k/yr), oil +10.1 % (≈ R361k/yr), cheese +11.0 % (≈ R223k/yr) — bigger than the
+    plan's R20–90k guess because the seed's buying volumes are R5.5M/mo-sized; honest arithmetic.
+    **Known gap:** seed documents have `storage_path` values with NO objects in Storage → Doc-U
+    file preview will 404 for every demo invoice; extracted fields/lines still render. Decide in
+    Phase F: upload 12 generated PDF invoices to those paths (Josh, dashboard) or make the
+    preview pane degrade to "file not available" cleanly.
 B3. Re-run Price Watch (cron route). Wipe-and-rerun rule from `.ai/implementation.md`
     "Backfill diagnosis" applies if the first run's points are wrong: delete Meridian's
     `pw_price_points` + `agent_findings where agent='price_watch'`, keep `pw_items`/matches.
