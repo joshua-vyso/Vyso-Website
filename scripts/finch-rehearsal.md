@@ -21,6 +21,28 @@ what the model actually *says*.
    "Reading price history…", "Checking stock cover…" or "Sizing the margin
    effect…". No tool line at all means it answered from memory — that is a fail
    however right the answer looks.
+   - **Each line appears once.** The same line twice in a row (the first run
+     showed "Sizing the margin effect…" doubled, because the tool was called
+     twice) is a fail — consecutive repeats are collapsed now.
+   - The same line again **after a different one** is correct and expected: that
+     is a genuine second look.
+
+### What the answer must NOT contain (all four questions)
+
+Finch runs up to five model turns, and a turn that then calls a tool can still
+say something first. Those asides are **narration**, not the answer. They now
+appear as **muted italic lines under the ✦ block while it works**, and they must
+**not** be in the answer body — the first run produced:
+
+> "I'll look up the cooking oil price history and see who else supplies it.Now
+> let me get the price history over the past 12 months.Cooking Oil is up 19%…"
+
+— three turns glued together with no separator, the first two in the future
+tense about work already done. The answer must **begin with the finding**
+("Cooking Oil is up 19%…"). Any sentence starting "I'll…", "Let me…", "Now let
+me…" inside the answer body is a fail, and so is any missing space between
+sentences. Reopening the chat later must show only the answer: the asides are
+deliberately not stored.
 
 Days-of-cover figures move with the calendar (they divide the last 30 days of
 the ledger). The ones below are what the week of **18 Aug 2026** reads;
@@ -47,6 +69,9 @@ Must say:
 
 Must not say:
 
+- Anything in the future tense about work it has already done. See "What the
+  answer must NOT contain" above — this question is where the glued narration
+  showed up first.
 - A second supplier for cooking oil. There is none.
 - The Cape Cold Chain / Prepared Salad Mix series (that one is *falling*,
   −4 % end to end) — it belongs in this answer only if you ask about Cape Cold
@@ -74,13 +99,33 @@ Must say:
 - Line Fish Fillet first, and that it is **already out**, not "running low".
 - On hand against the threshold for each line, in the line's own unit.
 - Days of cover as an approximation ("about 12 days at last month's usage").
+- **If the live org still has unconfigured catalogue rows** (the first run had
+  at least 16 — Garlic-Whole, Lettuce-Iceberg, Avocado, Cabbage-White,
+  Brinjals, Peppers-Red, Lettuce-Baby leaf, Pineapples, Grapes-Black, Danya,
+  Mint, Parsley, Watermelon, Sweetmelon, Sweet Potato-Whole, Spinach): one
+  closing sentence naming the **count only**, e.g. *"16 other lines have no
+  threshold set, so I've left them out — say the word if you want any of them."*
+  A clean org says nothing at all here, which is also correct.
 
 Must not say:
 
+- **Any of those unconfigured lines, by name, as "out of stock".** This was the
+  first run's failure: twelve of them filled the answer at "0 days of cover"
+  and pushed all five real lines out. They have no threshold, nothing on hand
+  and no receipts — they are catalogue residue, not an emergency.
 - A rand value on any of them. Nothing has been lost yet; there is nothing to
   price, and the tool deliberately returns no money at all.
 - Chicken Portions (72 against a threshold of 40 — comfortably fine).
 - That it has ordered, reordered or told anyone. It drafts; Josh sends.
+
+Follow-up that must still work: **"how much Garlic-Whole have I got?"** →
+answered plainly — *"none on hand, and there's no low threshold set on that
+line"*. Naming a line always answers, hidden or not; the filter is on the LIST,
+not on the catalogue.
+
+If the count in that closing sentence looks wrong, run
+`scripts/demo-stray-stock-lines.sql` part (A): its `hidden_by_finch` figure is
+the same rule, computed in SQL, and the two must agree.
 
 Follow-up worth asking: **"anything odd in the stock counts?"** → Chicken
 Portions, **14 boxes written off, ~12 % of the 114 that came in**, and Cheese
@@ -119,6 +164,29 @@ If Price Watch's matcher named the buy-side item something whose core is not
 say *"your recipes don't reference this line yet, so I can only size the cost,
 not the margin effect."* That is also a **pass** — it is the honest fallback —
 but note it, because it means the catalogue name drifted.
+
+### The two failures this question caught on the first run
+
+1. **"It isn't finding the item."** The first call passed the supplier's NAME
+   as `supplier_id`; Postgres rejected it as a uuid and the whole read failed.
+   The tool now drops a `supplier_id` that is not a uuid and reports
+   `supplier_filter: 'ignored'` — and a real-but-unmatched id falls back to all
+   suppliers as `'not_matched'`. Either way the answer must still be the four
+   Riebeek invoices. **If the answer names a single supplier while
+   `supplier_filter` is set, that is a fail** — it is then an all-suppliers
+   figure being described as one supplier's.
+2. **"Your recipes don't reference cooking oil."** False — it feeds three. It
+   happened because a second catalogue row shares the name core, and the old
+   rule treated any ambiguity as no link. The tool now prefers the line with a
+   threshold, a recipe reference or receipts behind it, then the one holding
+   more stock.
+
+Only a genuine tie — two lines with identical evidence and identical on-hand —
+returns `margin_effect.reason: 'ambiguous_stock_line'`, and then the answer must
+**give the R360 937 anyway** (it is priced off invoices, not off the stock line)
+and **ask**, naming both: *"I couldn't tell which stock line is the oil — you
+have two: X and Y."* Saying "your recipes don't reference this line" in that
+case is a fail; so is silently picking one.
 
 ---
 

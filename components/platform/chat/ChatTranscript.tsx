@@ -32,6 +32,7 @@ export function ChatTranscript({
   turns,
   streaming = false,
   streamText = '',
+  streamInterim = [],
   streamTools = [],
   error = null,
   /** Files being uploaded/read right now (W5). Drawn after the last turn,
@@ -45,6 +46,10 @@ export function ChatTranscript({
   turns: readonly ChatTurn[];
   streaming?: boolean;
   streamText?: string;
+  /** What Vyso said on its way to a tool call. Drawn as a muted aside under the
+   *  ✦ lines, live only — see lib/ai/finch/narration.ts for why it is not part
+   *  of the answer and is never stored. */
+  streamInterim?: readonly string[];
   streamTools?: readonly string[];
   error?: string | null;
   attaching?: readonly AttachmentProgress[];
@@ -55,7 +60,7 @@ export function ChatTranscript({
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [turns, streamText, streamTools, streaming, attaching]);
+  }, [turns, streamText, streamInterim, streamTools, streaming, attaching]);
 
   return (
     <div className={`flex flex-col gap-[22px] ${className}`}>
@@ -84,6 +89,19 @@ export function ChatTranscript({
       {streaming ? (
         <div className="flex flex-col gap-[14px]">
           <ToolStatusLines tools={streamTools} pulsing />
+          {/* "I'll look up the price history and see who else supplies it." —
+              true, worth seeing while it happens, and not the answer. Muted and
+              italic so it reads as an aside rather than a paragraph, and gone
+              from the finished turn (the server stores only the answer). */}
+          {streamInterim.length > 0 ? (
+            <div className="flex flex-col gap-1 pl-0.5">
+              {streamInterim.map((line, i) => (
+                <p key={i} className="text-[12.5px] italic leading-[1.5] text-[var(--pf-text-faint)]">
+                  {line}
+                </p>
+              ))}
+            </div>
+          ) : null}
           {streamText ? (
             <AssistantMessage text={streamText} streaming />
           ) : (

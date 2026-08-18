@@ -295,7 +295,11 @@ const PRICE_WATCH_TOOLS: AgentTool[] = [
       type: 'object',
       properties: {
         pw_item_id: { type: 'string', description: 'The item id from a pw_find_items result.' },
-        supplier_id: { type: 'string', description: 'Optional — restrict to one supplier from that result.' },
+        supplier_id: {
+          type: 'string',
+          description:
+            'Optional — restrict to one supplier. MUST be the supplier_id (a uuid) copied from a pw_find_items result, never a supplier name. A name is ignored and the result then covers every supplier, which the answer must reflect.',
+        },
         months: { type: 'integer', description: 'How far back to look (default 6, max 24).' },
       },
       required: ['pw_item_id'],
@@ -317,12 +321,16 @@ const MARGIN_TOOLS: AgentTool[] = [
   {
     name: 'pw_margin_exposure',
     description:
-      "Size what a price increase on one catalogue item is costing over a year, and find which recipes (if any) use it. Returns the latest price, the 60-day median, the per-unit difference, the estimated annual cost of the move, and either the recipes that carry this line into a sale price or margin_effect:'not_linked'. Call this when the user asks what an increase is costing them, or how it hits their margin — after pw_find_items. When margin_effect is 'not_linked', say their recipes don't reference this line yet, so you can size the COST but not the margin effect; NEVER state or estimate a margin percentage that isn't in the result. Restricted to admins — a non-admin caller gets a note that these figures are hidden.",
+      "Size what a price increase on one catalogue item is costing over a year, and find which recipes (if any) use it. Returns the latest price, the 60-day median, the per-unit difference, the estimated annual cost of the move, and either the recipes that carry this line into a sale price, margin_effect:'not_linked', or a margin_effect whose reason is 'ambiguous_stock_line' (two stock lines share the name — give the cost and ask which one they mean, naming both). Call this when the user asks what an increase is costing them, or how it hits their margin — after pw_find_items. When margin_effect is 'not_linked', say their recipes don't reference this line yet, so you can size the COST but not the margin effect; NEVER state or estimate a margin percentage that isn't in the result. Restricted to admins — a non-admin caller gets a note that these figures are hidden.",
     input_schema: {
       type: 'object',
       properties: {
         pw_item_id: { type: 'string', description: 'The item id from a pw_find_items result.' },
-        supplier_id: { type: 'string', description: 'Optional — the supplier whose increase to size.' },
+        supplier_id: {
+          type: 'string',
+          description:
+            'Optional — the supplier whose increase to size. MUST be the supplier_id (a uuid) from a pw_find_items result, never a name; a name is ignored and the figures then cover every supplier.',
+        },
       },
       required: ['pw_item_id'],
       additionalProperties: false,
@@ -341,7 +349,7 @@ const PROCUREPULSE_TOOLS: AgentTool[] = [
   {
     name: 'pp_get_stock_position',
     description:
-      "Read live stock: what is on hand per line, its low threshold, how much was consumed in the last 30 days, roughly how many days of cover that leaves, whether it is ok/low/out, and what the month's stock counts wrote off. Call this whenever the user asks what they are running low on, what they will run out of, whether to reorder, or how much of something they have. Set only_at_risk true for \"what will I run out of this week?\" — it returns just the lines that are low, out, or under a week of cover, soonest first. A line with days_of_cover null has not moved at all in the month: say the cover is unknown rather than that it is fine or urgent.",
+      "Read live stock: what is on hand per line, its low threshold, how much was consumed in the last 30 days, roughly how many days of cover that leaves, whether it is ok/low/out, and what the month's stock counts wrote off. Call this whenever the user asks what they are running low on, what they will run out of, whether to reorder, or how much of something they have. Set only_at_risk true for \"what will I run out of this week?\" — it returns just the lines that are low, out, or under a week of cover, soonest first. A line with days_of_cover null has not moved at all in the month: say the cover is unknown rather than that it is fine or urgent. not_stocked_hidden counts catalogue lines left out because no threshold is set, nothing is on hand and nothing has come in for 90 days — mention the NUMBER in one closing sentence, never list them as out of stock. Pass query to ask about one line by name; that always answers, even for a line nobody stocks.",
     input_schema: {
       type: 'object',
       properties: {

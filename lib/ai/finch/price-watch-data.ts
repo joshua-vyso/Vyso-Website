@@ -251,6 +251,14 @@ function round(n: number, dp: number): number {
   return Math.round(n * f) / f;
 }
 
+/** PostgREST hands numerics back as number|string depending on driver; null
+ *  stays null, because "unknown level" and "none on hand" are different facts. */
+function numeric(v: number | string | null | undefined): number | null {
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 /** One series, as a tool prints it. Everything nullable is null — never 0 —
  *  when it could not be established (series.ts's truthfulness rule). */
 export interface ShapedSeries {
@@ -328,21 +336,77 @@ export function shapeSeriesForTool(
 }
 
 /**
- * The ProcurePulse line a buy-side catalogue item corresponds to, by name core.
+ * The ProcurePulse lines whose name core equals a buy-side item's.
  *
- * AMBIGUITY IS A NON-MATCH. Two stock lines sharing a core ("Cooking Oil (4×5L
- * case)" and "Cooking Oil (20L)") means we do not know which one the recipes
- * are about, and picking the first would attach a margin claim to the wrong
- * product. Returns null and the tool says the link could not be made.
+ * Split out from the resolution below so the caller can see HOW MANY there are
+ * before deciding whether the extra reads that break a tie are worth doing —
+ * on the one-candidate path (which is every well-kept catalogue) they are not.
  */
-export function linkStockItem<T extends { id: string; name: string | null }>(
+export function stockNameCoreMatches<T extends { id: string; name: string | null }>(
   pwItemName: string | null,
   stockItems: readonly T[],
-): T | null {
+): T[] {
   const core = itemNameCore(pwItemName);
-  if (core.length < MIN_CORE_CHARS) return null;
-  const hits = stockItems.filter((s) => itemNameCore(s.name) === core);
-  return hits.length === 1 ? hits[0] : null;
+  if (core.length < MIN_CORE_CHARS) return [];
+  return stockItems.filter((s) => itemNameCore(s.name) === core);
+}
+
+/** A ProcurePulse line that could be the one, with the evidence that it is the
+ *  one the business actually uses. Every flag is OPTIONAL and absent means
+ *  "not looked up" — which scores the same as false, so a caller that skips the
+ *  tie-breaking reads still gets a sane answer on an unambiguous catalogue. */
+export interface StockCandidate {
+  id: string;
+  name: string | null;
+  onHand?: number | null;
+  /** Someone has set a low threshold on it. */
+  hasThreshold?: boolean;
+  /** A recipe references it. */
+  hasRecipeRef?: boolean;
+  /** Stock has come in on it. */
+  hasReceipt?: boolean;
+}
+
+export type StockLink =
+  | { kind: 'linked'; item: StockCandidate }
+  | { kind: 'ambiguous'; candidates: StockCandidate[] }
+  | { kind: 'none' };
+
+/** How much evidence says this is the line the business runs on. */
+function candidateScore(c: StockCandidate): number {
+  return (c.hasThreshold ? 1 : 0) + (c.hasRecipeRef ? 1 : 0) + (c.hasReceipt ? 1 : 0);
+}
+
+/**
+ * Which of several same-named stock lines the margin answer is about.
+ *
+ * WHY THIS REPLACED "AMBIGUITY IS A NON-MATCH". The old rule was honest and
+ * wrong in practice: a single stray catalogue row sharing a name core with the
+ * real line — which is exactly what Meridian had — turned every margin answer
+ * into "your recipes don't reference this line yet", a sentence that is FALSE
+ * about a line feeding three recipes. Silence about a real link is not a safe
+ * default; it is a confident wrong answer with a reassuring shape.
+ *
+ * So: prefer the candidate the business demonstrably uses (a threshold on it, a
+ * recipe referencing it, stock coming in), then the one holding the most stock.
+ * Only a genuine tie — two lines with identical evidence and identical levels —
+ * comes back `ambiguous`, and then the tool NAMES them so the model can ask
+ * which was meant instead of guessing or going quiet.
+ */
+export function resolveStockLink(candidates: readonly StockCandidate[]): StockLink {
+  if (candidates.length === 0) return { kind: 'none' };
+  if (candidates.length === 1) return { kind: 'linked', item: candidates[0] };
+
+  const best = Math.max(...candidates.map(candidateScore));
+  let top = candidates.filter((c) => candidateScore(c) === best);
+  if (top.length > 1) {
+    // A line holding stock beats an identical-looking line holding none. Null
+    // on-hand is unknown, which is not the same as zero and must not win.
+    const level = (c: StockCandidate) => (typeof c.onHand === 'number' ? c.onHand : Number.NEGATIVE_INFINITY);
+    const highest = Math.max(...top.map(level));
+    top = top.filter((c) => level(c) === highest);
+  }
+  return top.length === 1 ? { kind: 'linked', item: top[0] } : { kind: 'ambiguous', candidates: [...top] };
 }
 
 // ---------------------------------------------------------------------------
@@ -479,7 +543,35 @@ export interface PriceHistory {
   months: number;
   series: ShapedSeries[];
   series_total: number;
+  /** Only present when the supplier the model asked for was not used. */
+  supplier_filter?: SupplierFilterOutcome;
   hint?: string;
+}
+
+/**
+ * What happened to the model's `supplier_id`.
+ *
+ * 'ignored'      — it was not a uuid (a supplier NAME, almost always), so it
+ *                  could not be a `supplier_id` and was dropped.
+ * 'not_matched'  — a real uuid, but no price point for this item carries it.
+ * Absent         — it was applied, or none was asked for.
+ */
+export type SupplierFilterOutcome = 'ignored' | 'not_matched';
+
+/**
+ * A uuid, as PostgREST needs one.
+ *
+ * THIS IS WHY THE REHEARSAL'S MARGIN CALL FAILED. `supplier_id` is documented
+ * as "the supplier from a pw_find_items result", and the model, mid-conversation
+ * about Riebeek Oils & Fats, sent the NAME. `.eq('supplier_id', 'Riebeek Oils &
+ * Fats')` reaches Postgres as a uuid comparison, which raises 22P02 (invalid
+ * input syntax for type uuid) — an ERROR, not an empty result — and the whole
+ * read came back `read_failed: "The price history could not be read."` The model
+ * read that as "it can't find the item" and told the owner so. A filter that
+ * cannot possibly be an id is now dropped before it reaches the database.
+ */
+export function isUuid(value: string | null | undefined): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((value ?? '').trim());
 }
 
 /** Read one item's points, grouped into series. Shared by the history tool and
@@ -491,7 +583,9 @@ async function readSeries(
   supplierId: string | null,
   months: number,
   now: Date,
-): Promise<{ item: PwItemRow; series: ShapedSeries[] } | ToolFailure> {
+): Promise<
+  { item: PwItemRow; series: ShapedSeries[]; supplierFilter: SupplierFilterOutcome | null } | ToolFailure
+> {
   const { data: item, error: itemError } = await db
     .from('pw_items')
     .select('id, name, base_unit')
@@ -504,18 +598,34 @@ async function readSeries(
   }
   if (!item) return { ok: false, reason: 'not_found', note: 'No catalogue item with that id.' };
 
-  let query = db
-    .from('pw_price_points')
-    .select('supplier_id, line_supplier, invoice_date, unit_price, quantity_base, document_id, line_index')
-    .eq('org_id', orgId)
-    .eq('pw_item_id', pwItemId)
-    .gte('invoice_date', monthsBack(now, months));
-  if (supplierId) query = query.eq('supplier_id', supplierId);
+  const readPoints = async (filterBy: string | null) => {
+    let query = db
+      .from('pw_price_points')
+      .select('supplier_id, line_supplier, invoice_date, unit_price, quantity_base, document_id, line_index')
+      .eq('org_id', orgId)
+      .eq('pw_item_id', pwItemId)
+      .gte('invoice_date', monthsBack(now, months));
+    if (filterBy) query = query.eq('supplier_id', filterBy);
+    return query
+      .order('invoice_date', { ascending: false })
+      .limit(POINT_READ_LIMIT)
+      .returns<PricePointRow[]>();
+  };
 
-  const { data: rows, error } = await query
-    .order('invoice_date', { ascending: false })
-    .limit(POINT_READ_LIMIT)
-    .returns<PricePointRow[]>();
+  const asked = (supplierId ?? '').trim();
+  const usable = isUuid(asked) ? asked : null;
+  let supplierFilter: SupplierFilterOutcome | null = asked && !usable ? 'ignored' : null;
+
+  let { data: rows, error } = await readPoints(usable);
+  // A SUPPLIER FILTER MUST NEVER LOSE THE ANSWER. Narrowing to one supplier is
+  // a refinement of a question the unfiltered read can answer, so an error or an
+  // empty result on the narrow read falls back to the wide one and says which
+  // happened — the alternative is the tool reporting "no lines for this item"
+  // about an item it can see four invoices for.
+  if (usable && (error || (rows ?? []).length === 0)) {
+    ({ data: rows, error } = await readPoints(null));
+    supplierFilter = 'not_matched';
+  }
   if (error) {
     if (isMissingRelation(error)) return NOT_AVAILABLE;
     return { ok: false, reason: 'read_failed', note: 'The price history could not be read.' };
@@ -530,7 +640,7 @@ async function readSeries(
   // Most-observed series first: that is the supplier the owner actually buys
   // this line from, and it should not be third in the list behind two one-offs.
   shaped.sort((a, b) => b.points_total - a.points_total);
-  return { item, series: shaped };
+  return { item, series: shaped, supplierFilter };
 }
 
 /**
@@ -557,6 +667,7 @@ export async function priceHistory(
     months,
     series: kept,
     series_total: read.series.length,
+    ...(read.supplierFilter ? { supplier_filter: read.supplierFilter } : {}),
     ...(kept.length === 0
       ? { hint: `no invoice lines for this item in the last ${months} months` }
       : {}),
@@ -593,11 +704,21 @@ export interface MarginExposure {
     sale_price: number | null;
     target_margin_pct: number | null;
   }>;
+  /** Only present when the supplier the model asked for was not used. */
+  supplier_filter?: SupplierFilterOutcome;
   margin_effect:
     | 'not_linked'
     | {
         linked_stock_item: { id: string; name: string | null };
         target_margin_pct: number | null;
+        note: string;
+      }
+    | {
+        /** Two stock lines are equally plausibly this item and nothing in the
+         *  data separates them. The COST above is still sound — it is priced
+         *  off invoices, not off the stock line — so the tool answers and asks. */
+        reason: 'ambiguous_stock_line';
+        candidates: Array<{ id: string; name: string | null }>;
         note: string;
       };
 }
@@ -647,11 +768,43 @@ export async function marginExposure(
   // ---- the recipe link -----------------------------------------------------
   const { data: stockRows } = await db
     .from('pp_stock_items')
-    .select('id, name')
+    .select('id, name, on_hand')
     .eq('org_id', orgId)
     .limit(2000)
-    .returns<Array<{ id: string; name: string | null }>>();
-  const linked = linkStockItem(read.item.name, stockRows ?? []);
+    .returns<Array<{ id: string; name: string | null; on_hand: number | string | null }>>();
+  const matches = stockNameCoreMatches(read.item.name, stockRows ?? []);
+
+  // The tie-breaking reads run ONLY when there is a tie to break. One candidate
+  // is the shape of every healthy catalogue, and it costs nothing there.
+  const candidates: StockCandidate[] = matches.map((m) => ({
+    id: m.id,
+    name: m.name,
+    onHand: numeric(m.on_hand),
+  }));
+  if (candidates.length > 1) {
+    const ids = candidates.map((c) => c.id);
+    const [thresholds, recipeRefs, receipts] = await Promise.all([
+      db.from('pp_stock_thresholds').select('stock_item_id').eq('org_id', orgId).in('stock_item_id', ids)
+        .returns<Array<{ stock_item_id: string }>>(),
+      db.from('pp_recipe_ingredients').select('stock_item_id').eq('org_id', orgId).in('stock_item_id', ids)
+        .returns<Array<{ stock_item_id: string }>>(),
+      db.from('pp_movements').select('stock_item_id, change').eq('org_id', orgId).in('stock_item_id', ids)
+        .gt('change', 0).limit(500)
+        .returns<Array<{ stock_item_id: string; change: number | string | null }>>(),
+    ]);
+    const has = (rows: Array<{ stock_item_id: string }> | null) => new Set((rows ?? []).map((r) => r.stock_item_id));
+    const withThreshold = has(thresholds.data);
+    const withRecipe = has(recipeRefs.data);
+    const withReceipt = has(receipts.data);
+    for (const c of candidates) {
+      c.hasThreshold = withThreshold.has(c.id);
+      c.hasRecipeRef = withRecipe.has(c.id);
+      c.hasReceipt = withReceipt.has(c.id);
+    }
+  }
+
+  const link = resolveStockLink(candidates);
+  const linked = link.kind === 'linked' ? link.item : null;
 
   const recipes: MarginExposure['recipes'] = [];
   let targetMarginPct: number | null = null;
@@ -719,6 +872,7 @@ export async function marginExposure(
     basis:
       'latest unit price minus the trailing 60-day median, times the last 12 weeks of buying annualised — an estimate, so say "about"',
     recipes,
+    ...(read.supplierFilter ? { supplier_filter: read.supplierFilter } : {}),
     margin_effect:
       linked && recipes.length > 0
         ? {
@@ -726,6 +880,12 @@ export async function marginExposure(
             target_margin_pct: targetMarginPct,
             note: 'Batch counts and per-recipe sale prices are not tracked, so the cost is sized but the margin percentage is not.',
           }
-        : 'not_linked',
+        : link.kind === 'ambiguous'
+          ? {
+              reason: 'ambiguous_stock_line' as const,
+              candidates: link.candidates.map((c) => ({ id: c.id, name: c.name })),
+              note: 'More than one stock line carries this name and nothing separates them. Ask which one is meant; the cost figure above stands either way.',
+            }
+          : 'not_linked',
   };
 }

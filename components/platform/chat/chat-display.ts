@@ -35,11 +35,29 @@ const TOOL_LINES: Record<string, string> = {
   docu_find_documents: 'Searching your documents…',
   docu_get_document_summary: 'Reading a document…',
   onboarding_get_progress: 'Checking what has landed so far…',
+  // P1.2's read tools. The route streams these as sentences already (its own
+  // TOOL_ACTIVITY map); these are for the STORED turn, which carries the raw
+  // tool names — without them a reopened chat read "Pw Margin Exposure…".
+  pw_find_items: 'Finding the line…',
+  pw_get_price_history: 'Reading price history…',
+  pp_get_stock_position: 'Checking stock cover…',
+  pw_margin_exposure: 'Sizing the margin effect…',
 };
 
+/** A tool NAME is snake_case and nothing else — no spaces, no capitals. */
+const TOOL_NAME_RE = /^[a-z][a-z0-9_]*$/;
+
+/**
+ * `name` may be either half of the same idea, and both reach this function:
+ * the STORED turn carries raw tool names (the server writes `tu.name`), while
+ * a LIVE turn carries the route's already-human status line. Title-casing the
+ * latter produced "Sizing The Margin Effect……" on screen, so anything that is
+ * not a bare snake_case identifier is passed through as the sentence it is.
+ */
 export function toolLine(name: string): string {
   const known = TOOL_LINES[name];
   if (known) return known;
+  if (!TOOL_NAME_RE.test(name)) return name.trim() || 'Working…';
   const words = name.split(/[_\s-]+/).filter(Boolean);
   if (words.length === 0) return 'Working…';
   return `${words.map((w) => w[0].toUpperCase() + w.slice(1)).join(' ')}…`;

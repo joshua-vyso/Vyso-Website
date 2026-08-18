@@ -7,6 +7,7 @@ import { buildSystemPrompt } from '@/lib/ai/finch/knowledge';
 import { buildTitlePrompt, normaliseChatTitle } from '@/lib/ai/finch/chat-title';
 import { attachmentContextLine } from '@/lib/ai/finch/attachments';
 import { CREATE_ORDER_RE } from '@/lib/ai/finch/order-intent';
+import { splitTurnText, type TurnText } from '@/lib/ai/finch/narration';
 import { toolDefsFor, runTool, type ToolContext } from '@/lib/ai/finch/tools';
 import { canSeeMoney as roleSeesMoney } from '@/lib/platform/access';
 import { rateLimitAllowed } from '@/lib/platform/rate-limit';
@@ -293,12 +294,29 @@ export async function POST(req: Request) {
         role: m.role,
         content: i === lastUserIndex && attachmentLine ? `${attachmentLine}\n\n${m.content}` : m.content,
       }));
-      // The answer as the user sees it: every text delta across every turn of
-      // the loop, in order — the same string the client accumulates.
-      let answer = '';
+      /* Text PER TURN, not one running string (see lib/ai/finch/narration.ts).
+       *
+       * A turn that ends by calling a tool can still have said something first
+       * — "I'll look up the price history and see who else supplies it." Glued
+       * onto the answer, that reads as a promise about something that has
+       * already happened, with no space before the next sentence. So each
+       * turn's text is kept apart, the turn is marked `interim` the moment its
+       * `stop_reason` proves it was on its way somewhere, and only the final
+       * turn's text becomes the answer that is streamed as the body and stored.
+       *
+       * The CLIENT is told the same thing as it happens: text deltas carry
+       * their turn index, and `{ interim: n }` retro-classifies turn n once the
+       * model has committed to a tool call. */
+      const turnTexts: TurnText[] = [];
+      /** The tool status line last sent, so two identical ones in a row (the
+       *  same tool called twice while the model refines its arguments) do not
+       *  read as a stutter in the transcript. */
+      let lastActivity: string | null = null;
 
       try {
         for (let turn = 0; turn < MAX_TURNS; turn++) {
+          const current: TurnText = { turn, text: '', interim: false };
+          turnTexts.push(current);
           // On the final allowed turn, withhold tools so the model MUST produce a
           // text answer rather than requesting a tool whose result nothing reads.
           const offerTools = tools.length > 0 && turn < MAX_TURNS - 1;
@@ -314,14 +332,20 @@ export async function POST(req: Request) {
           );
           for await (const event of modelStream) {
             if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-              answer += event.delta.text;
-              safeEnqueue(send({ text: event.delta.text }));
+              current.text += event.delta.text;
+              safeEnqueue(send({ text: event.delta.text, turn }));
             }
           }
           const finalMsg = await modelStream.finalMessage();
           convo.push({ role: 'assistant', content: finalMsg.content });
 
           if (finalMsg.stop_reason !== 'tool_use') break;
+
+          // Everything this turn said was said on the way to a tool call. Tell
+          // the client so it can move that text out of the answer and under the
+          // ✦ lines, where an aside belongs.
+          current.interim = true;
+          if (current.text.trim()) safeEnqueue(send({ interim: turn }));
 
           // Run each requested tool through the RLS-scoped client, then feed the
           // results back for the model's next turn.
@@ -331,7 +355,11 @@ export async function POST(req: Request) {
           const results: Anthropic.ToolResultBlockParam[] = [];
           for (const tu of toolUses) {
             outcome.tools.push(tu.name);
-            safeEnqueue(send({ tool: TOOL_ACTIVITY[tu.name] ?? 'Looking things up…' }));
+            const activity = TOOL_ACTIVITY[tu.name] ?? 'Looking things up…';
+            // Consecutive only: the same tool again AFTER a different one is a
+            // second look and the owner should see it.
+            if (activity !== lastActivity) safeEnqueue(send({ tool: activity }));
+            lastActivity = activity;
             const { content, isError } = await runTool(
               module,
               tu.name,
@@ -350,7 +378,11 @@ export async function POST(req: Request) {
           convo.push({ role: 'user', content: results });
         }
         // Reached only when the loop ended on its own terms — this is what
-        // makes the turn "complete" and therefore storable.
+        // makes the turn "complete" and therefore storable. ONLY the final
+        // turn's text is stored: "let me get the price history" is not
+        // something Finch should still be saying when this chat is reopened
+        // next week.
+        const { answer } = splitTurnText(turnTexts);
         if (answer.trim()) outcome.answer = answer;
         safeEnqueue(send({ done: true }));
       } catch (err) {

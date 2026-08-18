@@ -81,7 +81,8 @@ const SCRIM = 'w-full bg-[linear-gradient(180deg,rgba(255,255,255,0)_0%,#FFFFFF_
 
 export function GlobalChatDock() {
   const { email, finchEnabled, trial } = usePlatform();
-  const { turns, streaming, streamText, streamTools, error, attaching, attachError } = useFinchChat();
+  const { turns, streaming, streamText, streamInterim, streamTools, error, attaching, attachError } =
+    useFinchChat();
   const pathname = usePathname() ?? '';
 
   const [transcriptHidden, setTranscriptHidden] = useState(false);
@@ -130,6 +131,7 @@ export function GlobalChatDock() {
             turns={turns}
             streaming={streaming}
             streamText={streamText}
+            streamInterim={streamInterim}
             streamTools={streamTools}
             error={error}
             attaching={attaching}

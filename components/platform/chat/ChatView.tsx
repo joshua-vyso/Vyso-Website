@@ -37,7 +37,17 @@ import { ChatTranscript } from './ChatTranscript';
  * adoption simply waits for A to land instead of splicing A's reply into B.
  */
 export function ChatView({ chatId, initial }: { chatId: string; initial: ChatTurn[] }) {
-  const { turns, streaming, streamText, streamTools, error, activeChatId, adoptChat, attaching } =
+  const {
+    turns,
+    streaming,
+    streamText,
+    streamInterim,
+    streamTools,
+    error,
+    activeChatId,
+    adoptChat,
+    attaching,
+  } =
     useFinchChat();
 
   // Stable identity across renders so the effect below doesn't re-fire on every
@@ -58,6 +68,7 @@ export function ChatView({ chatId, initial }: { chatId: string; initial: ChatTur
       // Only ever draw the in-flight turn onto the chat it belongs to.
       streaming={live && streaming}
       streamText={live ? streamText : ''}
+      streamInterim={live ? streamInterim : []}
       streamTools={live ? streamTools : []}
       error={live ? error : null}
       // Same rule as the stream: an upload belongs to the conversation it was

@@ -2389,3 +2389,167 @@ Not verified: nothing here has been run against a live Meridian. That is what
 pulled from `supabase/demo-refresh-2026-08.sql`, including the reminder that
 `pw_*` is written by the Price Watch RUN, not by the seed, so the price
 questions answer "not switched on yet" until the agent has run once.
+
+---
+
+## Finch read tools — rehearsal fixes (P1.2b)
+
+Josh ran `scripts/finch-rehearsal.md` against the live Meridian org as admin.
+Three of the four questions failed, in three unrelated ways. This wave is those
+three causes and nothing else.
+
+### 1. "What will I run out of this week?" answered with the wrong twelve lines
+
+**Cause.** The live org carries `pp_stock_items` rows outside the seed's 32: no
+low threshold, nothing on hand, historic consumption in the ledger, no receipts.
+`daysOfCover(0, usage)` is **0** for every one of them, and the ranking was
+purely `days_of_cover asc` — so twelve dormant rows (Garlic-Whole,
+Lettuce-Iceberg, Avocado, Brinjals, Danya, Mint…) took every slot under the
+twelve-line cap and **all five** lines the demo is built on fell off the end.
+Nothing was numerically wrong; the ordering was, and the cap turned a bad
+ordering into a wrong answer.
+
+**Fix** (`lib/ai/finch/procurepulse-data.ts`):
+
+- `isNotStocked` — no threshold set **and** nothing on hand **and** no receipt in
+  90 days. All three, because any one of them failing means it is a real line: a
+  threshold is a human watching it, stock on hand means it exists, a receipt
+  means it is being bought. Those lines are dropped from both lists and reported
+  as a **count**, `not_stocked_hidden`, which the knowledge doc turns into one
+  closing sentence ("16 other lines have no threshold set, so I've left them
+  out"). Naming a line in `query` still answers about it — the filter is on the
+  LIST, never on the catalogue.
+- Ranking is now **configured before unconfigured** (threshold > 0 first), then
+  how soon, then `out` before `low` before `ok`, then name. `urgency()` treats an
+  `out` line as 0 whatever the ledger says — "you have none" is today's problem —
+  while `days_of_cover` itself stays **null** on that line, so the model still
+  says the cover is unknown. The two are different questions and were being
+  answered with one number.
+- The movement read widened 30 → **90 days** for `receiptedItemIds` only. The
+  usage tally is untouched: `tallyMovements` windows itself to 30, and widening
+  that would move every days-of-cover figure on the platform, including the
+  Brief's cards.
+- A row with a NULL threshold is no longer dropped from the read — it is
+  threshold 0, "nobody has set one". `isNotStocked` needs to see those rows to
+  be able to count them.
+
+`shapeStockPosition` now returns `{ lines, not_stocked_hidden }` rather than an
+array; the tests use a `linesOf(...)` wrapper where they only care about the
+lines.
+
+### 2. The margin answer said "your recipes don't reference cooking oil"
+
+Two independent bugs, one sentence.
+
+**Cause A — the first call failed outright.** `pw_margin_exposure`'s
+`supplier_id` was sent as the supplier's **name** ("Riebeek Oils & Fats"),
+mid-conversation, which the tool description invites. `.eq('supplier_id', <name>)`
+reaches Postgres as a uuid comparison and raises **22P02**, so supabase-js
+returned an **error, not an empty result**, and `readSeries` answered
+`read_failed: "The price history could not be read."` The model reported that as
+"it isn't finding the item" — about an item it had read four invoices for a
+minute earlier. `tests/finch-price-watch-data.test.ts` reproduces exactly that
+shape (a fake db that errors the moment a `supplier_id` filter reaches it).
+
+**Fix.** `isUuid()` drops a filter that cannot possibly be an id **before** the
+query, and a real-but-unmatched uuid falls back to the unfiltered read rather
+than reporting "no lines for this item". Either way the result carries
+`supplier_filter: 'ignored' | 'not_matched'`, and the knowledge doc tells the
+model it is then looking at ALL suppliers and must not attribute the figure to
+one. A supplier filter is a refinement of a question the wide read can answer;
+it must never be able to lose the answer.
+
+**Cause B — one stray catalogue row made the link "ambiguous".** `linkStockItem`
+required **exactly one** name-core candidate, and the live org has a second
+"cooking oil" row. Ambiguity fell through to `margin_effect: 'not_linked'`,
+whose knowledge-doc wording is "your recipes don't reference this line yet" — a
+confident **false statement** about a line feeding three recipes. Silence is not
+a safe default when the fallback wording asserts something.
+
+**Fix.** `stockNameCoreMatches` + `resolveStockLink` replace it. With more than
+one candidate (and only then — the extra reads cost nothing on a healthy
+catalogue) the tool reads `pp_stock_thresholds`, `pp_recipe_ingredients` and
+positive `pp_movements` for those ids and prefers the line the business
+demonstrably uses, then the one holding more stock (a null level is unknown and
+never beats a known one). Only a genuine tie returns a third `margin_effect`
+variant, `reason: 'ambiguous_stock_line'`, carrying the candidate NAMES — and
+`ok` stays true with the full cost figure, because the R360 937 is priced off
+invoices, not off the stock line. The knowledge doc maps it to "I couldn't tell
+which stock line is the oil — you have two: X and Y."
+
+> Deviation from the brief, on purpose: the ask was `{ok:false, reason}` for the
+> ambiguous case. Refusing there would drop the annual cost figure — the actual
+> answer to "how is the oil increase hitting my margin?", and the number the
+> rehearsal checks against the Brief card. The reason string exists and is
+> mapped; it rides inside `margin_effect` so the honest partial answer survives.
+
+### 3. Narration was glued into the answer
+
+**Cause.** The agentic loop accumulated every text delta of every turn into one
+string. A turn that ends in `tool_use` can still emit text first, so the owner
+read *"I'll look up the cooking oil price history and see who else supplies
+it.Now let me get the price history over the past 12 months.Cooking Oil is up
+19%…"* — three turns, no separator, the first two in the future tense about work
+already finished.
+
+**Fix.** `lib/ai/finch/narration.ts` — pure, no imports, shared by the route
+(server) and the provider (client) so the transcript and the stored row cannot
+disagree about what Finch said.
+
+- The route keeps text **per turn** and marks a turn `interim` the moment its
+  `stop_reason` proves it was on its way to a tool. Text deltas now carry
+  `{ text, turn }`, and `{ interim: n }` retro-classifies turn n. `splitTurnText`
+  gives the answer; **only that is persisted**.
+- The provider keeps a turn-keyed map and re-derives `streamText` /
+  `streamInterim` on every event. An older server (no `turn`) reads as turn 0,
+  never interim — the wire stays backwards-compatible.
+- `ChatTranscript` draws interim text as **muted italic lines under the ✦
+  block**, live only. They are deliberately never stored: "let me get the price
+  history" is not something Finch should still be saying next week.
+- `dedupeConsecutive` collapses a repeated status line. The route stops sending
+  the repeat; `ToolStatusLines` also dedupes on render, so a chat stored **before**
+  this fix (the rehearsal's own doubled "Sizing the margin effect…") reads
+  correctly on reopen. Consecutive only — the same tool after a different one is
+  a real second look.
+- Side bug found and fixed: the route streams `{tool}` as a human sentence while
+  the SERVER stores raw tool names, and `toolLine()` title-cased whatever it got
+  → "Sizing The Margin Effect……" live, "Pw Margin Exposure…" on reload. It now
+  passes through anything that is not a bare snake_case identifier, and the four
+  P1.2 tool names were added to `TOOL_LINES`.
+
+### 4. Diagnostic SQL (not run)
+
+`scripts/demo-stray-stock-lines.sql`. Part (A) is read-only: Meridian's
+`pp_stock_items` outside the seed's 32 **literal** uuids (written out, not
+prefix-matched — a LIKE would spare a 33rd row created in the same shape, which
+is exactly what is being hunted), with on-hand, both thresholds, movement /
+receipt / recipe / order / supplier counts and `created_at`; plus a
+`hidden_by_finch` figure that must agree with the tool's `not_stocked_hidden`.
+Part (B) is a **commented-out** transactional delete of those rows and their
+`pp_movements` / `pp_stock_thresholds` / `pp_item_suppliers`, skipping anything
+referenced by `pp_recipe_ingredients` or `pp_stock_order_items` — both FKs are
+`on delete set null`, so a reference does not block the delete, it silently
+orphans the link. Nothing in this file has been run against any database.
+
+### Files
+
+Created: `lib/ai/finch/narration.ts`, `tests/finch-narration.test.ts`,
+`scripts/demo-stray-stock-lines.sql`.
+Modified: `lib/ai/finch/{procurepulse-data,price-watch-data,tools,knowledge}.ts`,
+`app/api/ai/agent/route.ts`,
+`components/platform/chat/{ChatTranscript,ToolStatusLine,chat-display,ChatView}.tsx`,
+`components/platform/shell/{FinchChatProvider,FinchBubble,GlobalChatDock}.tsx`,
+`tests/finch-{price-watch,procurepulse}-data.test.ts`,
+`scripts/finch-rehearsal.md`.
+
+### Gates
+
+`npx tsc --noEmit` clean · `npm test` **459 pass / 0 fail** (433 + 26 new) ·
+`npm run build` clean · `npm run lint` 50 errors, 38 warnings — byte-identical to
+the pre-wave baseline, every touched file clean bar the pre-existing
+`no-assign-module-variable` on the agent route.
+
+Not verified: none of this has been run against the live Meridian org.
+`scripts/finch-rehearsal.md` now states the exact wording each fix should
+produce — including what a PASS looks like when the org still has unconfigured
+catalogue rows in it.

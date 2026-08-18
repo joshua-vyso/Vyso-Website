@@ -27,6 +27,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { isMissingRelation } from '../../platform/db-errors.ts';
 import { daysOfCover, stockStatus } from '../../platform/procurepulse.ts';
 import {
+  COUNT_ADJUSTMENT_REASON,
   WINDOW_DAYS,
   tallyMovements,
   type MovementTally,
@@ -40,6 +41,11 @@ const LINE_LIMIT = 12;
 /** "This week": under a week of cover is the question "what will I run out of
  *  this week?" turned into arithmetic. */
 export const AT_RISK_COVER_DAYS = 7;
+/** How far back a RECEIPT still counts as "this line is stocked". Three months
+ *  is longer than any of this catalogue's lead times and longer than the 30-day
+ *  usage window, so a line that has genuinely been bought recently cannot be
+ *  mistaken for one nobody stocks. */
+export const RECEIPT_WINDOW_DAYS = 90;
 /** Hard stop on one catalogue read (stock-cover/run.ts uses the same). */
 const STOCK_READ_LIMIT = 2000;
 const MOVEMENT_READ_LIMIT = 20_000;
@@ -58,7 +64,13 @@ export interface StockLineInput {
   name: string;
   unit: string;
   onHand: number;
+  /** The threshold that wins (pp_stock_thresholds over the item's own). 0 when
+   *  nobody has set one — "not configured", not "configured as zero". */
   lowThreshold: number;
+  /** Has anything been RECEIVED on this line in the last 90 days? Decides
+   *  whether an empty, thresholdless line is a line about to run out or a line
+   *  this business does not stock. */
+  hasRecentReceipt?: boolean;
 }
 
 export interface StockLine {
@@ -94,6 +106,58 @@ function round(n: number, dp: number): number {
 }
 
 /**
+ * A line this business does not actually stock.
+ *
+ * WHAT WENT WRONG WITHOUT THIS. Meridian's catalogue carries rows nobody has
+ * configured — no threshold, nothing on hand, nothing received in months, but
+ * historic consumption in the ledger. `daysOfCover(0, usage)` is 0 for every
+ * one of them, so "what will I run out of this week?" ranked twelve dormant
+ * lines above every line the owner actually needed to hear about, and the cap
+ * pushed the real answer off the end. The five lines that WERE about to run out
+ * did not appear at all.
+ *
+ * THREE CONDITIONS, ALL OF THEM. No threshold set (nobody has said what low
+ * means here), nothing on hand, and no receipt in 90 days. A line failing any
+ * one of them is a real line: a threshold means someone is watching it, stock
+ * on hand means it exists, and a recent receipt means it is being bought. Only
+ * all three together mean "this row is catalogue residue", and residue is not
+ * an emergency.
+ */
+export function isNotStocked(item: StockLineInput): boolean {
+  return item.lowThreshold <= 0 && item.onHand <= 0 && item.hasRecentReceipt !== true;
+}
+
+/** 'out' before 'low' before 'ok', for lines that tie on how soon. */
+const STATUS_RANK: Record<StockLine['status'], number> = { out: 0, low: 1, ok: 2 };
+
+/**
+ * How soon this line becomes a problem, as one sortable number.
+ *
+ * An OUT line is 0 whatever the ledger says. `days_of_cover` stays null on the
+ * line itself — the model must still tell the owner the cover is unknown — but
+ * "you have none" is a today problem and cannot be sorted below a line with
+ * twelve days left just because nothing moved last month.
+ */
+function urgency(l: StockLine): number {
+  if (l.status === 'out') return 0;
+  return l.days_of_cover ?? Number.POSITIVE_INFINITY;
+}
+
+/** A line someone has set a low threshold on. Configured lines always outrank
+ *  unconfigured ones: a threshold is a human saying "tell me about this". */
+function isConfigured(l: StockLine): boolean {
+  return l.low_threshold > 0;
+}
+
+export interface ShapedStockPosition {
+  lines: StockLine[];
+  /** Lines dropped by `isNotStocked`. Reported rather than silently swallowed:
+   *  "12 lines with no threshold set aren't included" is the difference between
+   *  a filtered answer and a wrong one. */
+  not_stocked_hidden: number;
+}
+
+/**
  * Stock lines → what the tool answers with. PURE: the query around it is two
  * `.select()`s, and everything that could be quietly wrong (the usage window,
  * the ranking, which lines count as at risk) is here and tested.
@@ -102,18 +166,29 @@ function round(n: number, dp: number): number {
  * not the morning's problem; a line at 12 of 16 that goes out the door daily
  * is. Lines with no usage sort last — unknown is not urgent, and it is not
  * calm either, so they are still listed.
+ *
+ * NAMING A LINE OVERRIDES ALL OF IT. `query` is the owner asking about one
+ * line by name, and they are entitled to an answer about a line nobody has
+ * configured — "you have no Garlic-Whole and no threshold on it" is true and
+ * useful. The not-stocked filter only applies to the LISTS.
  */
 export function shapeStockPosition(
   items: readonly StockLineInput[],
   tallies: ReadonlyMap<string, MovementTally>,
   opts: { query?: string | null; onlyAtRisk?: boolean; limit?: number } = {},
-): StockLine[] {
+): ShapedStockPosition {
   const wanted = (opts.query ?? '').trim().toLowerCase();
   const limit = opts.limit ?? LINE_LIMIT;
 
   const lines: StockLine[] = [];
+  let hidden = 0;
   for (const item of items) {
     if (wanted && !item.name.toLowerCase().includes(wanted)) continue;
+    // Named lines are always answered about; unnamed residue is counted, not listed.
+    if (!wanted && isNotStocked(item)) {
+      hidden += 1;
+      continue;
+    }
     const tally = tallies.get(item.id) ?? { consumed: 0, received: 0, adjusted: 0 };
     const cover = daysOfCover(item.onHand, tally.consumed / WINDOW_DAYS);
     const status = statusOf(item.onHand, item.lowThreshold);
@@ -141,14 +216,48 @@ export function shapeStockPosition(
   const atRisk = (l: StockLine) => l.status !== 'ok' || (l.days_of_cover != null && l.days_of_cover < AT_RISK_COVER_DAYS);
   const kept = opts.onlyAtRisk ? lines.filter(atRisk) : lines;
 
-  return kept
+  const ranked = kept
     .sort((a, b) => {
-      const ac = a.days_of_cover ?? Number.POSITIVE_INFINITY;
-      const bc = b.days_of_cover ?? Number.POSITIVE_INFINITY;
-      if (ac !== bc) return ac - bc;
+      // A line someone is watching outranks one nobody has configured, however
+      // empty the unconfigured one looks.
+      if (isConfigured(a) !== isConfigured(b)) return isConfigured(a) ? -1 : 1;
+      const ua = urgency(a);
+      const ub = urgency(b);
+      if (ua !== ub) return ua - ub;
+      if (STATUS_RANK[a.status] !== STATUS_RANK[b.status]) return STATUS_RANK[a.status] - STATUS_RANK[b.status];
       return a.name.localeCompare(b.name);
     })
     .slice(0, Math.max(1, limit));
+
+  return { lines: ranked, not_stocked_hidden: hidden };
+}
+
+/**
+ * Which lines have had stock COME IN inside the window.
+ *
+ * A count adjustment is excluded even when it is positive: a stock count that
+ * found more than the book said is a correction, not a delivery, and a line
+ * whose only positive movement is a correction has still not been bought.
+ * Deliberately NOT folded into `tallyMovements` — that one is the 30-day usage
+ * window the Brief's cards are raised on, and widening it to 90 days here would
+ * change every days-of-cover figure on the platform.
+ */
+export function receiptedItemIds(
+  movements: readonly StockCoverMovement[],
+  params: { today: string; windowDays?: number },
+): Set<string> {
+  const out = new Set<string>();
+  const todayMs = Date.parse(`${params.today}T00:00:00Z`);
+  if (!Number.isFinite(todayMs)) return out;
+  const startMs = todayMs - (params.windowDays ?? RECEIPT_WINDOW_DAYS) * 86_400_000;
+  for (const m of movements) {
+    if (m.reason === COUNT_ADJUSTMENT_REASON) continue;
+    const at = Date.parse(m.occurredAt);
+    if (!Number.isFinite(at) || at < startMs || at > todayMs + 86_400_000) continue;
+    const change = Number(m.change);
+    if (Number.isFinite(change) && change > 0) out.add(m.stockItemId);
+  }
+  return out;
 }
 
 export interface StockPosition {
@@ -157,6 +266,9 @@ export interface StockPosition {
   window_days: number;
   lines: StockLine[];
   lines_total: number;
+  /** Lines left out because nothing is on hand, no threshold is set and none
+   *  has come in for 90 days. Say the number; do not list them. */
+  not_stocked_hidden: number;
   hint?: string;
 }
 
@@ -202,7 +314,10 @@ export async function stockPosition(
     if (value != null) thresholdById.set(row.stock_item_id, value);
   }
 
-  const windowStart = new Date(Date.parse(`${today}T00:00:00Z`) - WINDOW_DAYS * 86_400_000).toISOString();
+  // 90 days, not 30: the usage tally still only reads the last 30 (tallyMovements
+  // windows it itself), but "has anything come in on this line?" needs to look
+  // further back than one month or a slow-moving line reads as abandoned.
+  const windowStart = new Date(Date.parse(`${today}T00:00:00Z`) - RECEIPT_WINDOW_DAYS * 86_400_000).toISOString();
   const { data: movementRows, error: movementError } = await db
     .from('pp_movements')
     .select('stock_item_id, change, reason, occurred_at')
@@ -221,19 +336,34 @@ export async function stockPosition(
     movements.push({ stockItemId: row.stock_item_id, change, reason: row.reason, occurredAt: row.occurred_at });
   }
 
+  const tallies = tallyMovements(movements, { today });
+  const receipted = receiptedItemIds(movements, { today });
+
   const items: StockLineInput[] = [];
   for (const row of stockRows ?? []) {
     const onHand = num(row.on_hand);
-    const lowThreshold = thresholdById.get(row.id) ?? num(row.low_threshold);
-    // A line with no name, level or threshold cannot be spoken about truthfully
+    // A MISSING threshold is 0 — "nobody has set one" — not a reason to drop the
+    // line. `isNotStocked` is what decides whether it is worth listing, and it
+    // needs to see these rows to be able to count them.
+    const lowThreshold = thresholdById.get(row.id) ?? num(row.low_threshold) ?? 0;
+    // A line with no name or no level cannot be spoken about truthfully
     // (stock-cover/run.ts drops these for the same reason).
-    if (!row.name || onHand == null || lowThreshold == null) continue;
-    items.push({ id: row.id, name: row.name, unit: row.unit ?? '', onHand, lowThreshold });
+    if (!row.name || onHand == null) continue;
+    items.push({
+      id: row.id,
+      name: row.name,
+      unit: row.unit ?? '',
+      onHand,
+      lowThreshold,
+      hasRecentReceipt: receipted.has(row.id),
+    });
   }
 
-  const tallies = tallyMovements(movements, { today });
   const onlyAtRisk = input.onlyAtRisk === true;
-  const lines = shapeStockPosition(items, tallies, { query: input.query, onlyAtRisk });
+  const { lines, not_stocked_hidden } = shapeStockPosition(items, tallies, {
+    query: input.query,
+    onlyAtRisk,
+  });
 
   return {
     ok: true,
@@ -241,6 +371,7 @@ export async function stockPosition(
     window_days: WINDOW_DAYS,
     lines,
     lines_total: items.length,
+    not_stocked_hidden,
     ...(lines.length === 0
       ? {
           hint: onlyAtRisk

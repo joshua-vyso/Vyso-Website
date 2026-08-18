@@ -23,6 +23,7 @@ import {
   type OrderIngestResult,
 } from '@/lib/platform/docu/order-ingest-client';
 import { agentModuleForPathname, isBubbleRoute } from '@/lib/ai/finch/module-route';
+import { splitTurnText, type TurnText } from '@/lib/ai/finch/narration';
 import { looksLikeOrderRequest } from '@/lib/ai/finch/order-intent';
 import type { ParsedOrder } from '@/lib/ai/finch/order-handoff';
 import type { AgentModule } from '@/lib/ai/finch/config';
@@ -205,6 +206,13 @@ interface OrderDraftEvent {
 
 interface SseEvent {
   text?: string;
+  /** Which turn of the agentic loop this text came from. Absent on older
+   *  servers, which is read as turn 0 — one turn, all of it the answer. */
+  turn?: number;
+  /** "The text you have from turn N was narration on the way to a tool call."
+   *  Arrives after that turn's deltas, because that is when the model commits
+   *  to calling something (lib/ai/finch/narration.ts). */
+  interim?: number;
   tool?: string;
   done?: boolean;
   error?: string;
@@ -317,8 +325,14 @@ interface FinchChatValue {
   input: string;
   setInput: (value: string) => void;
   streaming: boolean;
-  /** The partial answer as it arrives; '' between turns. */
+  /** The partial answer as it arrives; '' between turns. Narration the model
+   *  emitted on its way to a tool call is NOT in here — see `streamInterim`. */
   streamText: string;
+  /** What Finch said while it was still working ("I'll look up the price
+   *  history…"), oldest first. Live only: it is drawn as a muted aside under
+   *  the ✦ lines and is never stored, because it is a thing said in passing,
+   *  not part of the answer. Empty between turns. */
+  streamInterim: string[];
   /** Tool names reported by the turn in flight, for a live status line. Empty
    *  between turns. (Nothing renders these yet — W2 does.) */
   streamTools: string[];
@@ -406,6 +420,7 @@ export function FinchChatProvider({
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [streamText, setStreamText] = useState('');
+  const [streamInterim, setStreamInterim] = useState<string[]>([]);
   const [streamTools, setStreamTools] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -485,6 +500,7 @@ export function FinchChatProvider({
     setTurns([]);
     setInput('');
     setStreamText('');
+    setStreamInterim([]);
     setStreamTools([]);
     setError(null);
     setActiveChatId(null);
@@ -617,6 +633,7 @@ export function FinchChatProvider({
     setStreaming(true);
     streamingRef.current = true;
     setStreamText('');
+    setStreamInterim([]);
     setStreamTools([]);
 
     // The prelude rides on the FIRST user turn only — the findings don't change
@@ -645,6 +662,26 @@ export function FinchChatProvider({
 
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+    /* The turn-by-turn accumulator (lib/ai/finch/narration.ts). The server
+     * cannot know a turn was narration until the model calls a tool, so text
+     * arrives first and its classification arrives after — which is why this is
+     * a keyed list rather than one running string. `splitTurnText` then answers
+     * the only two questions the UI has: what is the answer, and what did it
+     * say on the way. */
+    const byTurn = new Map<number, TurnText>();
+    const textOf = (turn: number) => {
+      const existing = byTurn.get(turn);
+      if (existing) return existing;
+      const fresh: TurnText = { turn, text: '', interim: false };
+      byTurn.set(turn, fresh);
+      return fresh;
+    };
+    const redraw = () => {
+      const { interim, answer } = splitTurnText([...byTurn.values()]);
+      setStreamText(answer);
+      setStreamInterim(interim);
+      return answer;
+    };
     let acc = '';
     const usedTools: string[] = [];
 
@@ -730,9 +767,19 @@ export function FinchChatProvider({
           // difference between a pause and a hang. They ride on the finished
           // turn so a reopened chat shows what the answer was built from; the
           // server stores the same list on the row.
+          // The route already drops a repeat of the line it just sent; this is
+          // the second belt, for a chat streamed by an older server.
           else if (evt.tool) {
-            usedTools.push(evt.tool);
-            setStreamTools([...usedTools]);
+            if (usedTools[usedTools.length - 1] !== evt.tool) {
+              usedTools.push(evt.tool);
+              setStreamTools([...usedTools]);
+            }
+          }
+          // Turn N's text was narration, not the answer: move it under the ✦
+          // lines. Arrives after that turn's deltas, by construction.
+          else if (typeof evt.interim === 'number') {
+            textOf(evt.interim).interim = true;
+            acc = redraw();
           }
           // The workflow tier prepared an order. It is display data — the route
           // saves nothing — so the card IS the handover: it stashes the draft
@@ -752,8 +799,10 @@ export function FinchChatProvider({
             ]);
             orderModeRef.current = false;
           } else if (evt.text) {
-            acc += evt.text;
-            setStreamText(acc);
+            // No `turn` = an older server, which streamed one string: turn 0,
+            // never interim, so this reads exactly as it always did.
+            textOf(typeof evt.turn === 'number' ? evt.turn : 0).text += evt.text;
+            acc = redraw();
           }
         }
       }
@@ -791,6 +840,7 @@ export function FinchChatProvider({
       if (!ctrl.signal.aborted) {
         setStreaming(false);
         setStreamText('');
+        setStreamInterim([]);
         setStreamTools([]);
       }
       // Outside the guard: an ABORTED turn is not in flight either, and a queued
@@ -948,6 +998,7 @@ export function FinchChatProvider({
       setInput,
       streaming,
       streamText,
+      streamInterim,
       streamTools,
       error,
       activeChatId,
@@ -974,6 +1025,7 @@ export function FinchChatProvider({
       input,
       streaming,
       streamText,
+      streamInterim,
       streamTools,
       error,
       activeChatId,

@@ -12,6 +12,17 @@ import type { AgentModule } from './config';
  * link, no days of cover without usage) are the whole point of these tools, and
  * a second paraphrase is where one of them quietly goes missing. */
 
+/** Spliced into every place a tool takes `supplier_id`. The rehearsal's first
+ *  margin call sent the supplier's NAME there, which used to fail the whole
+ *  read; the tool now drops the filter and says so, and the model has to know
+ *  what that means or it will quietly report a one-supplier figure as an
+ *  all-suppliers one. */
+const SUPPLIER_FILTER_KNOWLEDGE = `- supplier_filter 'ignored' means the supplier_id you sent was not an id (a
+  NAME, usually) and was dropped — the result covers ALL suppliers, so do not
+  say "from <supplier>". supplier_filter 'not_matched' means no invoice line
+  for this item carries that supplier, and the result is again all suppliers.
+  Only ever pass a supplier_id copied from a pw_find_items result.`;
+
 const PRICE_HISTORY_KNOWLEDGE = `## Price history (ask Finch)
 You can read this business's real buy-side price history.
 - A PRICE SERIES is one supplier's unit prices for one catalogue item, always
@@ -40,6 +51,7 @@ You can read this business's real buy-side price history.
   line. If there is only one, say so plainly — one supplier is a real answer.
 - Not every price move is bad news. A series that came DOWN is worth saying out
   loud too.
+${SUPPLIER_FILTER_KNOWLEDGE}
 - Good follow-ups to offer: "show me the invoices", "who else supplies it",
   "draft an email to them".`;
 
@@ -61,6 +73,14 @@ month's stock counts wrote off.
 - variance_30d is what the stock counts wrote off as a share of what came in —
   the shrinkage conversation. Mention it when asked about counts, losses or a
   specific line; it is not part of "what am I running out of".
+- not_stocked_hidden is a COUNT of catalogue lines left out of the list: no low
+  threshold set, nothing on hand, and nothing received in 90 days. They are rows
+  nobody stocks, not lines about to run out. When it is above zero, close with
+  one short sentence — "N other lines have no threshold set, so I've left them
+  out" — and offer to look at any of them by name. Do NOT list them, and do NOT
+  describe them as out of stock.
+- Asking about one line BY NAME always answers, including an unstocked one:
+  "you have no Garlic-Whole on hand and no threshold set on it" is the truth.
 - These are operational figures, so every user can see them. They carry NO rand
   value, and you must not attach one.`;
 
@@ -133,6 +153,12 @@ looking at.
 - margin_effect 'not_linked' means the recipes don't reference this line yet.
   Say exactly that — you can size the COST but not the margin effect — and
   NEVER state or estimate a margin percentage that is not in the tool result.
+- margin_effect with reason 'ambiguous_stock_line' means TWO stock lines carry
+  this name and nothing separates them. Give the cost figure (it is priced off
+  invoices and is not in doubt), then ask which line they mean, naming both:
+  "I couldn't tell which stock line is the oil — you have two: X and Y."
+  Do not pick one, and do not say the recipes don't reference it.
+${SUPPLIER_FILTER_KNOWLEDGE}
 - When it IS linked, name the recipes and quote the business's target margin
   from the result. Batch counts and per-recipe sale prices aren't tracked, so
   uses_per_month and sale_price come back null; say what you can't work out.
@@ -322,6 +348,11 @@ annualised. It is an ESTIMATE — say "about", and say "a year".
   cost, not the margin effect." NEVER produce a margin percentage that is not
   in the tool result — an invented margin % is the most believable wrong number
   you could give this business.
+- margin_effect with reason 'ambiguous_stock_line' is DIFFERENT and must not be
+  read as 'not_linked': two stock lines share this name and nothing in the data
+  separates them. Give the cost figure, then ask which one they mean and name
+  both — "I couldn't tell which stock line is the oil — you have two: X and Y."
+${SUPPLIER_FILTER_KNOWLEDGE}
 - When it IS linked, name the recipes the line feeds and quote the business's
   target margin from the result. Batch counts and per-recipe sale prices are not
   tracked, so uses_per_month and sale_price come back null — say what you cannot

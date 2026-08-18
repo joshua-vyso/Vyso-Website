@@ -54,6 +54,7 @@ export function FinchBubble() {
     turns,
     streaming,
     streamText,
+    streamInterim,
     streamTools,
     error,
     attaching,
@@ -174,6 +175,7 @@ export function FinchBubble() {
                   turns={turns}
                   streaming={streaming}
                   streamText={streamText}
+                  streamInterim={streamInterim}
                   streamTools={streamTools}
                   error={error}
                   attaching={attaching}
