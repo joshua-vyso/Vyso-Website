@@ -10,14 +10,13 @@
  *
  * WHY A LITERAL TABLE RATHER THAN THE MODULES REGISTRY. `AgentModule` is not the
  * module list: it is the agent's unit of KNOWLEDGE (a system prompt in
- * knowledge.ts plus a tool set in TOOLS_BY_MODULE), and only two of the nine
- * modules have one. ProcurePulse, PricePilot, WasteWatch and the rest have no
- * Finch knowledge of their own, so on those screens the honest answer is the
- * cross-module 'brief' agent — which is also what the plan asks for on the
- * non-module routes (settings, organisation, notifications). Deriving the table
- * from MODULES would therefore say nothing true; `tests/finch-module-route.test.ts`
- * pins each route below against the registry so a renamed route still cannot
- * drift silently.
+ * knowledge.ts plus a tool set in TOOLS_BY_MODULE), and only three of the nine
+ * modules have one. PricePilot, WasteWatch and the rest have no Finch knowledge
+ * of their own, so on those screens the honest answer is the cross-module
+ * 'brief' agent — which is also what the plan asks for on the non-module routes
+ * (settings, organisation, notifications). Deriving the table from MODULES would
+ * therefore say nothing true; `tests/finch-module-route.test.ts` pins each route
+ * below against the registry so a renamed route still cannot drift silently.
  *
  * Type-only import: this file is loaded by a client component AND by
  * `node --test`, and `config.ts` reads `process.env` at module scope.
@@ -30,6 +29,10 @@ import type { AgentModule } from './config';
 export const AGENT_MODULE_ROUTES: readonly (readonly [route: string, module: AgentModule])[] = [
   ['/app/orderflow', 'orderflow'],
   ['/app/docu', 'docu'],
+  // Joined in P1.2, when ProcurePulse got a knowledge doc and the stock-position
+  // tool. Before that its screens honestly belonged to the cross-module agent —
+  // the rule below has not changed, ProcurePulse has.
+  ['/app/procurepulse', 'procurepulse'],
 ];
 
 /**

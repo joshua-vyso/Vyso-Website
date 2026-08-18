@@ -99,8 +99,13 @@ export interface FindingCandidate extends PriceSeriesIdentity {
 /** Trailing window for the comparison median. 60 days is v1's blunt answer
  *  to seasonal produce-price volatility (plan "Edge cases": no seasonality
  *  modelling in v1); shorter would chase noise, longer would blur through a
- *  real move for weeks. */
-const MEDIAN_WINDOW_DAYS = 60;
+ *  real move for weeks.
+ *
+ *  EXPORTED for Finch's price-history tool (lib/ai/finch/price-watch-data.ts),
+ *  which quotes "vs your 60-day median" in a sentence the owner reads. Two
+ *  copies of the window is how the chat and the Brief end up disagreeing about
+ *  the same series by a few percent. Export only — the value is unchanged. */
+export const MEDIAN_WINDOW_DAYS = 60;
 
 /** A price move under 8% is within the range normal produce-market
  *  fluctuation already produces week to week — flagging it would train
@@ -212,7 +217,11 @@ function toTime(date: string): number {
   return new Date(`${date}T00:00:00`).getTime();
 }
 
-function medianOf(values: number[]): number {
+/** The median, with the even-length average. EXPORTED for the same reason as
+ *  MEDIAN_WINDOW_DAYS above: Finch quotes this number back to the owner, and a
+ *  second implementation that took the lower of the middle pair would put the
+ *  chat a percent off the finding it is explaining. */
+export function medianOf(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
@@ -234,8 +243,13 @@ function round1(n: number): number {
  *   - the actual span between the earliest and latest point in the window
  *     is under MIN_ANNUALISE_SPAN_DAYS (too short to extrapolate honestly —
  *     e.g. two deliveries on the same day tell you nothing about the year).
+ *
+ * EXPORTED for Finch's margin-exposure tool (P1.2). That tool sizes the same
+ * increase the Brief card already priced, and the owner reads both in one
+ * sitting: computing the volume a second way would put "about R361k a year" on
+ * the card and a different number in the chat, for the same move.
  */
-function trailingAnnualUnits(series: PwPricePoint[], asOfDate: string): number | null {
+export function trailingAnnualUnits(series: PwPricePoint[], asOfDate: string): number | null {
   const asOfTime = toTime(asOfDate);
   const windowStart = asOfTime - VOLUME_WINDOW_DAYS * DAY_MS;
   const windowPoints = series.filter((p) => {

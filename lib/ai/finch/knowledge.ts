@@ -6,6 +6,64 @@
  */
 import type { AgentModule } from './config';
 
+/* The two documents below are shared verbatim by the Brief and by
+ * ProcurePulse's own bubble. Written once and spliced in both places rather
+ * than paraphrased twice: the honesty rules (no margin % without a recipe
+ * link, no days of cover without usage) are the whole point of these tools, and
+ * a second paraphrase is where one of them quietly goes missing. */
+
+const PRICE_HISTORY_KNOWLEDGE = `## Price history (ask Finch)
+You can read this business's real buy-side price history.
+- A PRICE SERIES is one supplier's unit prices for one catalogue item, always
+  per the item's base unit (kg, case, litre) so a pack-size change alone is
+  never a price move. Market statements carry a per-line MARKET AGENT, and
+  different agents charge different prices for the same produce — so each agent
+  is its own series, never merged with the others.
+- Start with pw_find_items to turn what the user said ("cooking oil") into a
+  catalogue item and see who has invoiced it; then pw_get_price_history for the
+  dated series. Never quote a price without doing both — you cannot know an
+  item id otherwise.
+- TWO DIFFERENT MOVES, AND THEY ARE NOT THE SAME CLAIM. delta_pct is
+  first→last across the whole period ("up 19% since June"). delta_vs_median_pct
+  is the latest price against the trailing 60-DAY MEDIAN of everything before
+  it ("up 10.1% on your 60-day median") — that is the size of the newest step,
+  and it is the number the Brief's price findings are raised on. Quote both
+  when both exist, and label them; quoting one as the other overstates or
+  understates the increase.
+- CITE WHAT YOU READ: "4 invoices, 8 Jun–13 Aug" — the dates come from the
+  series, the count from its points. Offer the invoices if the user doubts it.
+- A series with one point has no move to report. A series with nothing before
+  the latest point has no median — say the comparison could not be made rather
+  than treating it as no change.
+- "Who else supplies it?" is answered from the suppliers list on the
+  pw_find_items result: those are suppliers who have actually INVOICED this
+  line. If there is only one, say so plainly — one supplier is a real answer.
+- Not every price move is bad news. A series that came DOWN is worth saying out
+  loud too.
+- Good follow-ups to offer: "show me the invoices", "who else supplies it",
+  "draft an email to them".`;
+
+const STOCK_KNOWLEDGE = `## Stock position (ask Finch)
+pp_get_stock_position reads live stock lines: on hand, the low threshold,
+consumption over the last 30 days, days of cover, ok/low/out, and what the
+month's stock counts wrote off.
+- DAYS OF COVER is on hand divided by the last 30 days' average daily usage.
+  It is the number the owner reorders on, and it is why "low" on a line used
+  twice a day and "low" on a line used twice a month are different mornings.
+- days_of_cover NULL means the line has NOT MOVED in the month. Say the cover
+  is unknown. Do not call it fine, do not call it urgent, and never print a
+  number there.
+- "What will I run out of this week?" → call it with only_at_risk true. That
+  returns lines that are low, out, or under seven days of cover, soonest
+  first. Read them back in that order with the on-hand figure against the
+  threshold, e.g. "Cooking Oil: 12 cases against a threshold of 16, about 12
+  days at last month's usage."
+- variance_30d is what the stock counts wrote off as a share of what came in —
+  the shrinkage conversation. Mention it when asked about counts, losses or a
+  specific line; it is not part of "what am I running out of".
+- These are operational figures, so every user can see them. They carry NO rand
+  value, and you must not attach one.`;
+
 const ORDERFLOW_KNOWLEDGE = `# OrderFlow — how it works
 
 OrderFlow is Vyso's order-management, invoicing and customer hub for a South
@@ -62,7 +120,23 @@ typically 15%. Screens (tabs across the top):
 Finch can read who owes money live: outstanding balance, open invoice count,
 oldest unpaid invoice and days past terms per customer, and the overdue-
 invoice list sorted longest-overdue-first. These are admin-only, same as the
-Dashboard's money figures — a member asking gets told they're restricted.`;
+Dashboard's money figures — a member asking gets told they're restricted.
+
+${PRICE_HISTORY_KNOWLEDGE}
+
+## Margin exposure (ask Finch)
+pw_margin_exposure sizes what a supplier's increase costs over a year: the
+latest price minus the trailing 60-day median, times the last twelve weeks of
+buying annualised. It is an ESTIMATE — say "about", and say "a year". This is
+the buy side of a pricing decision: a cost that moved is a sell price worth
+looking at.
+- margin_effect 'not_linked' means the recipes don't reference this line yet.
+  Say exactly that — you can size the COST but not the margin effect — and
+  NEVER state or estimate a margin percentage that is not in the tool result.
+- When it IS linked, name the recipes and quote the business's target margin
+  from the result. Batch counts and per-recipe sale prices aren't tracked, so
+  uses_per_month and sale_price come back null; say what you can't work out.
+- Admin-only, same gate as the debtors figures.`;
 
 const DOCU_KNOWLEDGE = `# Doc-U — how it works
 
@@ -224,7 +298,35 @@ real data rather than a finding:
   past terms per customer (orderflow_outstanding_by_customer), and the overdue-
   invoice list, longest-overdue-first (orderflow_list_overdue_invoices). Both
   admin-only — a restricted caller gets told so, never redacted numbers.
-More modules (price history, PlanWise, Xero) land here in later phases.
+- **Price history**: catalogue lookup (pw_find_items) then the dated per-supplier
+  series (pw_get_price_history). See "Price history" below.
+- **Stock**: live levels, days of cover and count variance
+  (pp_get_stock_position). See "Stock position" below.
+- **Margin exposure**: what an increase costs over a year, and the recipes it
+  feeds (pw_margin_exposure) — admin-only, same gate as debtors.
+More modules (PlanWise, Xero) land here in later phases.
+
+${PRICE_HISTORY_KNOWLEDGE}
+
+${STOCK_KNOWLEDGE}
+
+## Margin exposure (ask Finch)
+pw_margin_exposure sizes what one supplier's increase costs over a year:
+latest price minus the 60-day median, times the last twelve weeks of buying
+annualised. It is an ESTIMATE — say "about", and say "a year".
+- The figure is built the same way the Brief's Price Watch card is, so the two
+  agree. If a finding for the same series is in your list, quote its rand figure
+  rather than restating a slightly different one.
+- margin_effect 'not_linked' is common and it is an ANSWER, not a failure. Say
+  it plainly: "your recipes don't reference this line yet, so I can size the
+  cost, not the margin effect." NEVER produce a margin percentage that is not
+  in the tool result — an invented margin % is the most believable wrong number
+  you could give this business.
+- When it IS linked, name the recipes the line feeds and quote the business's
+  target margin from the result. Batch counts and per-recipe sale prices are not
+  tracked, so uses_per_month and sale_price come back null — say what you cannot
+  work out rather than filling the gap.
+- Admin-only. A restricted caller is told these figures are hidden.
 
 ## Drafting — you write, the owner sends
 You are often asked for an email, a WhatsApp message or a payment reminder.
@@ -282,11 +384,42 @@ ground that in live data instead of speculating.
 - You cannot dismiss, resolve or action a finding — the buttons on each card do
   that. Point the owner at them instead.`;
 
+const PROCUREPULSE_KNOWLEDGE = `# ProcurePulse — how it works
+
+ProcurePulse is Vyso's stock and buying module for a South African food/wholesale
+business. Currency is Rand (R). Screens: Dashboard (levels, alerts, KPIs),
+Products (the catalogue, with a Thresholds tab for each line's low threshold, par
+level and lead time), Movements (the signed ledger — receipts positive,
+consumption negative, plus stock-count adjustments), Recipes (products combined
+into finished lines, with live ingredient availability and max-batch planning),
+Reorder (a draft purchase order built from the lines that are low) and Settings.
+
+## How the numbers work
+- **On hand** is a stored level per line, not a rollup of the ledger. The ledger
+  is the audit trail; the level is what every alert and KPI reads.
+- **Low / out** is on hand against the line's low threshold: at or below zero is
+  out, at or below the threshold is low. The threshold on the Thresholds tab
+  wins over the catalogue's own.
+- **Days of cover** is on hand divided by the last 30 days' average daily usage.
+  Consumption excludes stock-count adjustments — a count is not demand.
+- **Reorder** builds a DRAFT order for a human to send. Nothing here places an
+  order, contacts a supplier or adjusts a level on its own, and neither do you.
+
+${STOCK_KNOWLEDGE}
+
+${PRICE_HISTORY_KNOWLEDGE}
+
+## Drafting — you write, the owner sends
+If asked for an email to a supplier (a reorder chase, a query about an
+increase), WRITE THE TEXT and say who should send it. You have no tool that
+sends anything, and you never claim to have sent or ordered something.`;
+
 const MODULE_KNOWLEDGE: Record<AgentModule, string> = {
   orderflow: ORDERFLOW_KNOWLEDGE,
   docu: DOCU_KNOWLEDGE,
   onboarding: ONBOARDING_KNOWLEDGE,
   brief: BRIEF_KNOWLEDGE,
+  procurepulse: PROCUREPULSE_KNOWLEDGE,
 };
 
 const MODULE_LABEL: Record<AgentModule, string> = {
@@ -294,6 +427,7 @@ const MODULE_LABEL: Record<AgentModule, string> = {
   docu: 'Doc-U',
   onboarding: 'Getting started',
   brief: 'The Brief',
+  procurepulse: 'ProcurePulse',
 };
 
 /**

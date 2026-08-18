@@ -42,6 +42,10 @@ const TOOL_ACTIVITY: Record<string, string> = {
   orderflow_find_customer: 'Looking up the customer…',
   orderflow_prepare_order: 'Putting the order together…',
   onboarding_get_progress: 'Checking your setup progress…',
+  pw_find_items: 'Finding the line…',
+  pw_get_price_history: 'Reading price history…',
+  pp_get_stock_position: 'Checking stock cover…',
+  pw_margin_exposure: 'Sizing the margin effect…',
 };
 
 /**

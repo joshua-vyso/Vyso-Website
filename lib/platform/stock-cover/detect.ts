@@ -97,6 +97,64 @@ export interface StockCoverFinding {
   dedupeKey: string;
 }
 
+/**
+ * What one stock line's last month of ledger adds up to.
+ *
+ * EXTRACTED FROM `detectStockCoverFindings` (P1.2, no behaviour change) because
+ * Finch's stock-position tool needs exactly these three numbers — consumption to
+ * divide into days of cover, and receipts/adjustments to state a count variance
+ * — and a second tally written next door would let the chat and the Brief
+ * disagree about how much of the month's usage was really a stock count.
+ */
+export interface MovementTally {
+  /** Units consumed (positive) EXCLUDING count adjustments — real usage, so a
+   *  stock count cannot masquerade as demand. */
+  consumed: number;
+  /** Units received (positive). */
+  received: number;
+  /** Signed sum of count adjustments — negative when the count found less. */
+  adjusted: number;
+}
+
+/**
+ * The last `windowDays` of ledger, per stock line. Pure: `today` is passed in
+ * rather than read from a clock so a run, a test and a Finch answer given in
+ * the same minute all agree.
+ *
+ * Rows outside the window, unparseable rows and zero-change rows are dropped
+ * rather than counted as nothing-in-particular. An unreadable `today` yields an
+ * empty map — the caller then says it cannot establish usage, which is the
+ * honest outcome.
+ */
+export function tallyMovements(
+  movements: readonly StockCoverMovement[],
+  params: { today: string; windowDays?: number },
+): Map<string, MovementTally> {
+  const tallies = new Map<string, MovementTally>();
+  const todayMs = Date.parse(`${params.today}T00:00:00Z`);
+  if (!Number.isFinite(todayMs)) return tallies;
+  // Inclusive of the window's first day: a movement exactly WINDOW_DAYS ago is
+  // "last month's usage", not older than it.
+  const windowStartMs = todayMs - (params.windowDays ?? WINDOW_DAYS) * 86_400_000;
+
+  for (const m of movements) {
+    const at = Date.parse(m.occurredAt);
+    if (!Number.isFinite(at) || at < windowStartMs || at > todayMs + 86_400_000) continue;
+    const change = Number(m.change);
+    if (!Number.isFinite(change) || change === 0) continue;
+    const t = tallies.get(m.stockItemId) ?? { consumed: 0, received: 0, adjusted: 0 };
+    if (m.reason === COUNT_ADJUSTMENT_REASON) {
+      t.adjusted += change;
+    } else if (change > 0) {
+      t.received += change;
+    } else {
+      t.consumed += -change;
+    }
+    tallies.set(m.stockItemId, t);
+  }
+  return tallies;
+}
+
 const WEEKDAYS = [
   'Sunday',
   'Monday',
@@ -179,37 +237,8 @@ export function detectStockCoverFindings(
   params: { today: string; isoWeek: string },
 ): StockCoverFinding[] {
   const { today, isoWeek } = params;
-  const todayMs = Date.parse(`${today}T00:00:00Z`);
-  if (!Number.isFinite(todayMs)) return [];
-  // Inclusive of the window's first day: a movement exactly WINDOW_DAYS ago is
-  // "last month's usage", not older than it.
-  const windowStartMs = todayMs - WINDOW_DAYS * 86_400_000;
-
-  interface Tally {
-    /** Units consumed (positive number) excluding count adjustments — real
-     *  usage, so a stock count cannot masquerade as demand. */
-    consumed: number;
-    /** Units received (positive number). */
-    received: number;
-    /** Signed sum of count adjustments — negative when the count found less. */
-    adjusted: number;
-  }
-  const tallies = new Map<string, Tally>();
-  for (const m of movements) {
-    const at = Date.parse(m.occurredAt);
-    if (!Number.isFinite(at) || at < windowStartMs || at > todayMs + 86_400_000) continue;
-    const change = Number(m.change);
-    if (!Number.isFinite(change) || change === 0) continue;
-    const t = tallies.get(m.stockItemId) ?? { consumed: 0, received: 0, adjusted: 0 };
-    if (m.reason === COUNT_ADJUSTMENT_REASON) {
-      t.adjusted += change;
-    } else if (change > 0) {
-      t.received += change;
-    } else {
-      t.consumed += -change;
-    }
-    tallies.set(m.stockItemId, t);
-  }
+  if (!Number.isFinite(Date.parse(`${today}T00:00:00Z`))) return [];
+  const tallies = tallyMovements(movements, { today });
 
   const findings: StockCoverFinding[] = [];
   for (const item of items) {

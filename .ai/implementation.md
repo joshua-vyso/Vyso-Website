@@ -2296,3 +2296,96 @@ its exact markup and Tailwind classes in the browser at 1180px and at 375px
 (nine realistic rows across three agents); the bird was checked white-on-blue at
 15/17/19/21px in a 24px disc, and at the dock, avatar and panel sizes. Anything
 role- or data-dependent still needs a signed-in session.
+
+
+## Finch read tools P1.2 — price history, stock position, margin exposure (2026-08-18, branch `main`)
+
+Implements `.ai/plan_finch_read_tools_p12.md` in full. Four tools, two new data
+modules, one new agent module, a rehearsal script.
+
+### Tools
+
+| tool | input | output | module(s) |
+| --- | --- | --- | --- |
+| `pw_find_items` | `{query}` | ≤6 catalogue items, each with the suppliers/market agents who have INVOICED it, point count and `last_seen` | brief, orderflow, procurepulse |
+| `pw_get_price_history` | `{pw_item_id, supplier_id?, months?=6}` | ≤4 series (one per supplier × market agent), each ≤24 dated points, `first/last/delta_pct`, `median_60d`, `delta_vs_median_pct`, volume, ≤6 evidence document ids | brief, orderflow, procurepulse |
+| `pp_get_stock_position` | `{query?, only_at_risk?=false}` | ≤12 lines: on hand, threshold, `consumption_30d`, `days_of_cover`, `ok/low/out`, `variance_30d` | brief, procurepulse |
+| `pw_margin_exposure` | `{pw_item_id, supplier_id?}` | per-unit delta, annual cost delta, recipes the line feeds, `margin_effect: 'not_linked' \| {…}` | brief, orderflow |
+
+Gating: price history and stock are **operational** — no `canSeeMoney` check, and
+`pp_get_stock_position` deliberately returns no rand figure at all, which is what
+keeps that honest (`avg_unit_price` is never read). `pw_margin_exposure` is
+**admin-only**, refused before any query runs, same shape as the debtors tools.
+
+### Decisions the plan left open
+
+1. **`procurepulse` became a real `AgentModule`.** The plan asks for
+   `TOOLS_BY_MODULE.procurepulse` and a `PROCUREPULSE_KNOWLEDGE` doc, and
+   `AgentModule` is the agent's unit of knowledge (doc + tool set) — so
+   ProcurePulse earned an entry by acquiring one. `AGENT_MODULE_ROUTES` gains
+   `/app/procurepulse`, and `tests/finch-module-route.test.ts`'s assertion that
+   that route falls to `brief` was updated (it was correct until this wave; the
+   rule did not change, ProcurePulse did). PricePilot and the rest still fall to
+   the cross-module agent.
+2. **Median maths imported, not copied — which meant three `export` keywords in
+   `lib/platform/price-watch/detect.ts`** (`MEDIAN_WINDOW_DAYS`, `medianOf`,
+   `trailingAnnualUnits`). The plan lists that file under "do not touch" AND asks
+   the tools to reuse its median; export-widening is the smallest way to satisfy
+   both — zero behaviour change, `tests/price-watch-detect.test.ts` unchanged and
+   green.
+3. **The annual figure uses `trailingAnnualUnits`, not `shapeSeries.monthlyVolume`.**
+   Two honest volume windows exist in the repo (a fixed trailing 12 weeks in
+   detect.ts, the last 90 days in series.ts) and they disagree by ~40 % on the
+   Meridian oil series. The Brief's card is built on the first, and the owner
+   reads the card and the chat in the same minute, so the tool uses the same one:
+   `annual_cost_delta` comes out at exactly the card's R360 937.
+   `monthly_volume_estimate` (the plan's field name) is that annual figure ÷ 12,
+   so the two cannot drift.
+4. **`tallyMovements` extracted from `lib/platform/stock-cover/detect.ts`** (pure
+   refactor, no behaviour change) so the tool's `consumption_30d` and
+   `variance_30d` are the agent's own numbers rather than a second tally.
+5. **Recipe linking is by NAME CORE, not `matchByName`.** `pw_items` is named by
+   the Price Watch matcher off supplier descriptions ("Cooking oil (5L)");
+   `pp_stock_items` is named by the owner ("Cooking Oil (4×5L case)"). A
+   substring rule misses that pair in both directions. `itemNameCore` strips the
+   pack-size parenthetical and all punctuation, then requires **exact equality of
+   the resulting core, ≥4 characters, and exactly one candidate** — ambiguity is
+   a non-match, because picking the first would attach a margin claim to the
+   wrong product.
+6. **`uses_per_month` and `sale_price` are always null.** Vyso stores no batch
+   counts and no per-recipe sale price. The fields exist because the plan names
+   them; they are null because that is the only true value, and the knowledge doc
+   tells the model to say what it cannot work out rather than multiply its way to
+   a margin percentage.
+7. **The optional finch-suggestions chip was NOT built.** The plan marks it
+   "only if trivial"; it is not — the chip row has per-source quotas, a 4-chip
+   cap and label dedupe, all pinned by `tests/finch-suggestions.test.ts`. Left
+   for a wave that wants it.
+8. **The two data modules carry no `server-only` and no `@/` alias** (relative
+   `.ts` imports, like `lib/platform/orderflow-debtors.ts`) so `node --test` can
+   load them and pin the shaping. The `server-only` fence stays on
+   `lib/ai/finch/tools.ts`, the only importer.
+
+### Files
+
+Created: `lib/ai/finch/price-watch-data.ts`, `lib/ai/finch/procurepulse-data.ts`,
+`tests/finch-price-watch-data.test.ts`, `tests/finch-procurepulse-data.test.ts`,
+`scripts/finch-rehearsal.md`.
+Modified: `lib/ai/finch/{tools,knowledge,config,module-route}.ts`,
+`app/api/ai/agent/route.ts` (`TOOL_ACTIVITY` only),
+`lib/platform/price-watch/detect.ts` (exports only),
+`lib/platform/stock-cover/detect.ts` (tally extraction),
+`tests/finch-module-route.test.ts`.
+
+### Gates
+
+`npx tsc --noEmit` clean · `npm test` 433 pass / 0 fail (401 + 32 new) ·
+`npm run build` clean · `npm run lint` 50 errors, 38 warnings — unchanged from
+baseline, every touched file lints clean (the 50 are pre-existing, incl. the
+`no-assign-module-variable` error on the route this wave edited).
+
+Not verified: nothing here has been run against a live Meridian. That is what
+`scripts/finch-rehearsal.md` is for — four questions with the expected facts
+pulled from `supabase/demo-refresh-2026-08.sql`, including the reminder that
+`pw_*` is written by the Price Watch RUN, not by the seed, so the price
+questions answer "not switched on yet" until the agent has run once.

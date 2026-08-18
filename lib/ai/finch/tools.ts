@@ -22,6 +22,8 @@ import {
   type DraftItemInput,
 } from './orderflow-data';
 import { findDocuments, documentSummary } from './docu-data';
+import { findPriceItems, priceHistory, marginExposure, clampMonths } from './price-watch-data';
+import { stockPosition } from './procurepulse-data';
 
 /** Runtime context handed to every tool. `canSeeMoney` mirrors the OrderFlow
  *  finance gate (members don't see revenue/outstanding). */
@@ -260,6 +262,105 @@ const DOCU_TOOLS: AgentTool[] = [
   },
 ];
 
+/**
+ * Price Watch — what a line has cost, from whom, and over what history (P1.2).
+ *
+ * TWO TOOLS, IN ORDER, ON PURPOSE. The model cannot know a `pw_item_id`; it
+ * knows "cooking oil". `pw_find_items` turns the spoken name into ids AND names
+ * the suppliers behind them (which is half of "who else supplies it?"), and
+ * `pw_get_price_history` then draws one series per supplier. Collapsing the two
+ * into a single name-taking tool would mean guessing which item was meant on
+ * every call, silently, with a price series as the answer.
+ */
+const PRICE_WATCH_TOOLS: AgentTool[] = [
+  {
+    name: 'pw_find_items',
+    description:
+      'Find the buy-side catalogue items matching a product the user named ("cooking oil", "line fish", "cheese") and see WHICH SUPPLIERS have invoiced each one, how many price points there are and when each was last seen. Call this FIRST whenever the user asks how a product\'s price has moved, what they pay for something, or who supplies it — you need the pw_item_id it returns before you can read a price history. If it comes back empty, tell the user no priced lines match that name; do not guess an item.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The product name as the user said it, e.g. "cooking oil".' },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+    run: (ctx, input) => findPriceItems(ctx.supabase, ctx.orgId, String(input.query ?? '')).then((r) => JSON.stringify(r)),
+  },
+  {
+    name: 'pw_get_price_history',
+    description:
+      "Get one catalogue item's dated price history — one series per supplier (and per market agent on a market statement), each with every invoice date and unit price, the first→last move, the trailing 60-day median, the move against that median, the estimated buying volume, and the document ids of the invoices behind it. Call this after pw_find_items when the user asks how a price has moved, whether a supplier put them up, or how one supplier compares with another. Quote BOTH moves when both exist: first→last is the whole period, the median comparison is the size of the latest step — they are different claims. Cite the dates and how many invoices you read.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        pw_item_id: { type: 'string', description: 'The item id from a pw_find_items result.' },
+        supplier_id: { type: 'string', description: 'Optional — restrict to one supplier from that result.' },
+        months: { type: 'integer', description: 'How far back to look (default 6, max 24).' },
+      },
+      required: ['pw_item_id'],
+      additionalProperties: false,
+    },
+    run: (ctx, input) =>
+      priceHistory(ctx.supabase, ctx.orgId, {
+        pwItemId: String(input.pw_item_id ?? ''),
+        supplierId: input.supplier_id != null ? String(input.supplier_id) : null,
+        months: clampMonths(input.months),
+      }).then((r) => JSON.stringify(r)),
+  },
+];
+
+/** Margin exposure is a rand figure and a margin target, so it sits with the
+ *  debtors tools behind `canSeeMoney` — enforced in the data function, which
+ *  answers a restricted caller with a note rather than redacted rows. */
+const MARGIN_TOOLS: AgentTool[] = [
+  {
+    name: 'pw_margin_exposure',
+    description:
+      "Size what a price increase on one catalogue item is costing over a year, and find which recipes (if any) use it. Returns the latest price, the 60-day median, the per-unit difference, the estimated annual cost of the move, and either the recipes that carry this line into a sale price or margin_effect:'not_linked'. Call this when the user asks what an increase is costing them, or how it hits their margin — after pw_find_items. When margin_effect is 'not_linked', say their recipes don't reference this line yet, so you can size the COST but not the margin effect; NEVER state or estimate a margin percentage that isn't in the result. Restricted to admins — a non-admin caller gets a note that these figures are hidden.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        pw_item_id: { type: 'string', description: 'The item id from a pw_find_items result.' },
+        supplier_id: { type: 'string', description: 'Optional — the supplier whose increase to size.' },
+      },
+      required: ['pw_item_id'],
+      additionalProperties: false,
+    },
+    run: (ctx, input) =>
+      marginExposure(ctx.supabase, ctx.orgId, ctx.canSeeMoney, {
+        pwItemId: String(input.pw_item_id ?? ''),
+        supplierId: input.supplier_id != null ? String(input.supplier_id) : null,
+      }).then((r) => JSON.stringify(r)),
+  },
+];
+
+/** Stock is operational, not financial — every member needs it to do their job,
+ *  and the output carries no rand figure, which is what keeps that honest. */
+const PROCUREPULSE_TOOLS: AgentTool[] = [
+  {
+    name: 'pp_get_stock_position',
+    description:
+      "Read live stock: what is on hand per line, its low threshold, how much was consumed in the last 30 days, roughly how many days of cover that leaves, whether it is ok/low/out, and what the month's stock counts wrote off. Call this whenever the user asks what they are running low on, what they will run out of, whether to reorder, or how much of something they have. Set only_at_risk true for \"what will I run out of this week?\" — it returns just the lines that are low, out, or under a week of cover, soonest first. A line with days_of_cover null has not moved at all in the month: say the cover is unknown rather than that it is fine or urgent.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Optional — restrict to lines whose name contains this.' },
+        only_at_risk: {
+          type: 'boolean',
+          description: 'True to return only lines that are low, out, or have under 7 days of cover.',
+        },
+      },
+      additionalProperties: false,
+    },
+    run: (ctx, input) =>
+      stockPosition(ctx.supabase, ctx.orgId, {
+        query: input.query != null ? String(input.query) : null,
+        onlyAtRisk: input.only_at_risk === true,
+      }).then((r) => JSON.stringify(r)),
+  },
+];
+
 /** Read-only count of the org's rows in a table, tolerant of a missing table
  *  (returns 0 rather than throwing so onboarding progress never crashes). */
 async function orgRowCount(ctx: ToolContext, table: string): Promise<number> {
@@ -302,14 +403,28 @@ const ONBOARDING_TOOLS: AgentTool[] = [
 ];
 
 const TOOLS_BY_MODULE: Record<AgentModule, AgentTool[]> = {
-  orderflow: [...ORDERFLOW_TOOLS, ...DEBTORS_TOOLS],
+  // Margin exposure rides with OrderFlow because that is where a cost increase
+  // becomes a pricing decision — and it is money, so it keeps the debtors tools'
+  // company.
+  orderflow: [...ORDERFLOW_TOOLS, ...DEBTORS_TOOLS, ...PRICE_WATCH_TOOLS, ...MARGIN_TOOLS],
   docu: DOCU_TOOLS,
   onboarding: ONBOARDING_TOOLS,
+  // ProcurePulse's own bubble answers about stock, and about the price history
+  // behind the line it is telling the owner to reorder — "you are about to
+  // reorder oil from the supplier who just put you up 10%" is one conversation,
+  // not two screens.
+  procurepulse: [...PROCUREPULSE_TOOLS, ...PRICE_WATCH_TOOLS],
   // The Brief's findings ride in with the conversation (the page already read
   // them through the caller's RLS-scoped client) — but it's the cross-module
-  // COO surface, so it also gets the read tools built for P1 (Doc-U search +
-  // debtors so far; more modules land here as later waves ship).
-  brief: [...DOCU_TOOLS, ...DEBTORS_TOOLS],
+  // COO surface, so it gets everything: Doc-U search, debtors, price history,
+  // stock and margin exposure.
+  brief: [
+    ...DOCU_TOOLS,
+    ...DEBTORS_TOOLS,
+    ...PRICE_WATCH_TOOLS,
+    ...PROCUREPULSE_TOOLS,
+    ...MARGIN_TOOLS,
+  ],
 };
 
 /** The tool objects (with run handlers) for a module. Workflow tools are only

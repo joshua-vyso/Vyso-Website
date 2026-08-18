@@ -21,6 +21,10 @@ test('a module with its own knowledge gets its own agent', () => {
   assert.equal(agentModuleForPathname('/app/orderflow/orders/new'), 'orderflow');
   assert.equal(agentModuleForPathname('/app/docu'), 'docu');
   assert.equal(agentModuleForPathname('/app/docu/review'), 'docu');
+  // ProcurePulse earned its own agent in P1.2 (knowledge doc + the
+  // stock-position tool). Before that it fell to 'brief', below.
+  assert.equal(agentModuleForPathname('/app/procurepulse'), 'procurepulse');
+  assert.equal(agentModuleForPathname('/app/procurepulse/products'), 'procurepulse');
 });
 
 test('the Brief and the chat pages are the brief agent', () => {
@@ -30,9 +34,8 @@ test('the Brief and the chat pages are the brief agent', () => {
 });
 
 test('modules with no Finch knowledge fall to the cross-module agent', () => {
-  // Not a fallback — ProcurePulse has no knowledge doc and no tools of its own,
+  // Not a fallback — PricePilot has no knowledge doc and no tools of its own,
   // so the honest answer on its screens is the COO surface.
-  assert.equal(agentModuleForPathname('/app/procurepulse'), 'brief');
   assert.equal(agentModuleForPathname('/app/pricepilot/items'), 'brief');
   assert.equal(agentModuleForPathname('/app/suppliers'), 'brief');
 });
