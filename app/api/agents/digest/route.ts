@@ -4,6 +4,8 @@ import { createServiceSupabase } from '@/lib/platform/supabase-service';
 import { parseEnvList } from '@/lib/platform/price-watch/run';
 import { agentOrgIds, NO_ORGS_MESSAGE } from '@/lib/platform/agents/org-allowlist';
 import { isInformationalFinding } from '@/lib/platform/agents/finding-kinds';
+import { orgHasEnabledSchedules } from '@/lib/platform/brief-notify';
+import { escapeHtml, formatRand } from '@/lib/platform/brief-email-shared';
 
 export const maxDuration = 300;
 
@@ -48,17 +50,11 @@ const AGENT_LABELS: Record<string, string> = {
  *  deployment would send Josh to a preview build's data. */
 const APP_URL = 'https://vyso.co.za/app';
 
-const escapeHtml = (s: string) =>
-  s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-
-/** "R 12,480" — whole rand. A digest is a prompt to look, not a ledger. */
-function formatRand(n: number): string {
-  return `R ${Math.round(n).toLocaleString('en-ZA')}`;
-}
+// `escapeHtml` and `formatRand` used to be defined here. They now live in
+// lib/platform/brief-email-shared.ts and are imported by both this digest and
+// the per-user brief, because two copies of "how Vyso writes a rand figure in
+// an email" is how one of them ends up rounding differently — and because the
+// unit tests over there now cover this route's formatting too.
 
 interface DigestFinding {
   agent: string;
@@ -82,6 +78,10 @@ interface DigestFinding {
  * now, so the subject line, the heading and the sign-off say "Vyso" — an email
  * headed "Price Watch" listing a customer who is 40 days past terms would be
  * wrong about its own contents. Each item is attributed instead.
+ *
+ * IT IS NOW A FALLBACK. Per-user brief schedules (`/api/agents/brief-notify`)
+ * are the way a person gets their Brief by email; this weekly digest runs only
+ * for orgs where NOBODY has set one up. See the check at the top of the loop.
  *
  * DOC WATCH IS EXCLUDED. Its findings are receipts — one per document read — and
  * a weekly email of "we read 84 invoices" is the definition of a digest nobody
@@ -130,9 +130,32 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, sent: 0, message: NO_ORGS_MESSAGE });
   }
 
-  const results: { orgId: string; findings: number; sent: boolean; error?: string }[] = [];
+  const results: {
+    orgId: string;
+    findings: number;
+    sent: boolean;
+    error?: string;
+    /** Set when per-user brief schedules have taken over for this org. */
+    superseded?: true;
+  }[] = [];
 
   for (const orgId of orgIds) {
+    // SCHEDULES SUPERSEDE THIS EMAIL, per org.
+    //
+    // An org where somebody has set up brief notifications is an org that has
+    // said when it wants to hear from Vyso and who by name
+    // (supabase/brief-schedules.sql, /api/agents/brief-notify). Sending the
+    // Monday digest as well would mean the same findings arriving twice on a
+    // Monday morning, once to the operator-configured PRICE_WATCH_DIGEST_TO
+    // address and once to the person who actually asked — and the second of
+    // those is the one that is right. So this route stands down rather than
+    // being deleted: it is still the fallback for every org that has NOT set a
+    // schedule up, including any org whose users are all members.
+    if (await orgHasEnabledSchedules(supabase, orgId)) {
+      results.push({ orgId, findings: 0, sent: false, superseded: true });
+      continue;
+    }
+
     // Service-role client: RLS is bypassed, so org_id is filtered by hand on
     // every read (lib/platform/supabase-service.ts's contract).
     const { data: org } = await supabase

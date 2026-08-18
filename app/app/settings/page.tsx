@@ -12,6 +12,9 @@ import {
   XeroIntegrationCard,
   type XeroConnectionSummary,
 } from '@/components/platform/settings/XeroIntegrationCard';
+import { BriefNotifications } from '@/components/platform/settings/BriefNotifications';
+import { canSeeBrief } from '@/lib/platform/access';
+import { listSchedules } from '@/lib/platform/brief-schedules';
 import { INGEST_DOMAIN, addressFor } from '@/lib/platform/email-ingest-policy';
 import { serviceRoleConfigured } from '@/lib/platform/supabase-service';
 import { xeroOAuthConfigured } from '@/lib/platform/xero';
@@ -65,6 +68,15 @@ export default async function WorkspaceSettings({
   const role = session.profile?.role;
   const canManage = role === 'owner' || role === 'admin';
 
+  // Brief notifications are PER-USER, not per-org, so this read is keyed on the
+  // signed-in user as well as the org — and it is skipped entirely for a member,
+  // who has no Brief to be notified about (v2b made it admin-only). Awaited
+  // after the org reads above rather than beside them because it is the only
+  // query on this page whose answer nobody else needs.
+  const briefSchedules = canSeeBrief(role)
+    ? await listSchedules(orgId, session.userId, db)
+    : null;
+
   return (
     <div className="px-8 py-7">
       <div className="min-w-0">
@@ -75,6 +87,14 @@ export default async function WorkspaceSettings({
       </div>
 
       <div className="mt-6 max-w-[820px] space-y-4">
+        {briefSchedules ? (
+          <BriefNotifications
+            initialSlots={briefSchedules.slots}
+            email={session.email}
+            tableMissing={briefSchedules.tableMissing}
+          />
+        ) : null}
+
         <UnitsCard initialCustom={settings?.custom_units ?? []} />
 
         <EmailIngestCard

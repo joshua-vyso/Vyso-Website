@@ -2561,3 +2561,198 @@ Not verified: none of this has been run against the live Meridian org.
 `scripts/finch-rehearsal.md` now states the exact wording each fix should
 produce — including what a PASS looks like when the org still has unconfigured
 catalogue rows in it.
+
+---
+
+# Brief schedules — per-user morning/evening briefs by email (2026-08-18, branch `main`)
+
+Implements `.ai/plan_brief_schedules.md` in full: Josh's ask on 2026-08-18 —
+"a setting that lets users choose how often to receive brief notifications, what
+time of day they want them at… one to view overnight changes in the morning, and
+one after work to view how the day went".
+
+Nothing in `lib/platform/*watch*/`, `lib/platform/stock-cover/*`,
+`lib/platform/doc-watch/*`, the price-watch/doc-watch/debtors/stock-cover agent
+routes, `components/finch/*`, the chat shell or marketing was touched (plan §4).
+The only pre-existing agent route modified is `/api/agents/digest`, which the
+plan asks for.
+
+## Files
+
+Created:
+`supabase/brief-schedules.sql`,
+`lib/platform/brief-schedules-shared.ts` (pure),
+`lib/platform/brief-email-shared.ts` (pure),
+`lib/platform/brief-schedules.ts` (RLS data module),
+`lib/platform/brief-notify.ts` (service role I/O),
+`app/api/agents/brief-notify/route.ts`,
+`app/api/settings/brief-schedules/route.ts`,
+`components/platform/settings/BriefNotifications.tsx`,
+`tests/brief-schedules.test.ts`, `tests/brief-email.test.ts`.
+
+Modified: `lib/platform/sast.ts` (two new readings of the same clock),
+`app/app/settings/page.tsx` (mount, admin-only),
+`app/api/agents/digest/route.ts` (stand down per org; helpers imported not
+duplicated), `vercel.json` (`*/15 * * * *`), `docs/demo-runbook.md` (§3.3).
+
+## Verified before designing the send path: where the recipient's address lives
+
+The plan told the implementer to establish this rather than assume it, and the
+answer changes the whole route.
+
+**`profiles` has no email column.** `Profile` in `lib/platform/types.ts` is
+`id, org_id, full_name, role, avatar_url, created_at`; `app/app/organisation/
+page.tsx` — the members list, the one screen that would show an address if one
+existed — selects `id, full_name, role, created_at` and renders initials off
+`full_name`; there is no checked-in DDL for the table (AUDIT_FINDINGS.md) to
+contradict either. `supabase/tns-users-roles.sql` settles it: it links people to
+profiles by looking their email up in **`auth.users`**, and its prerequisite note
+says auth users cannot be created from SQL at all.
+
+**So the cron reads `auth.admin.getUserById`, which needs the service role** —
+which this route needed anyway for `brief_schedules` (a cron has no session for
+RLS to key off). Read at SEND time, never copied onto the schedule row: a stored
+address is one more copy to go stale the day someone changes their login, and a
+brief is not something to send to an address the user has stopped reading. The
+settings card shows `session.email` instead — same value, from the session the
+page already has, no admin call on a render path.
+
+## Decisions the plan left open
+
+**The lookback replaces the "last successful run per org" cursor.** Plan §5 asks
+for a window measured "since the last successful run for this org, capped at 60
+min". That needs a cursor table, and a cursor is a second thing that must not
+lie. It is not needed: because `unique (schedule_id, local_date)` already makes a
+send idempotent, the window can simply be a CONSTANT one-hour lookback
+(`DUE_LOOKBACK_MINUTES`). A slot gets four chances (07:00, 07:15, 07:30, 07:45)
+and the delivery row guarantees exactly one email. Widening the window can only
+make the feature more reliable; it cannot make it send twice. Same behaviour the
+plan asked for, one table fewer.
+
+**Gate 4 — a slot saved after its own time today does not fire.** The lookback
+cannot distinguish "we missed this" from "this did not exist yet", so a user who
+saved a 07:00 slot at 07:20 would receive their "overnight brief" forty seconds
+later. Comparing the row's own `created_at` against the slot time in SAST
+separates them exactly. Not in the plan; pinned by a test, because it is the
+first thing anyone setting this up will experience.
+
+**A Save preserves row identity; it is not delete-then-insert.** The plan says
+"replace-all semantics", which is the API's contract and is kept — but
+implementing it literally would have been a data-loss bug:
+`brief_deliveries.schedule_id` cascades, so wiping the schedules on every Save
+would destroy the delivery history that "since your last brief" reads and that
+stops a slot re-sending. Rows the body still names by id are UPDATEd, rows it
+does not are deleted, new ones inserted. Editing 07:00 to 07:15 keeps its
+history; deleting the slot discards it, which is what deleting should mean.
+
+**"Resolved / dismissed since your last brief" is NOT reported, because it
+cannot be proved.** `agent_findings` has no `updated_at` and no `resolved_at`
+(`supabase/agents-price-watch.sql`): a row that is closed now carries no record
+of WHEN it closed. The plan asked for "findings created / resolved / dismissed
+since the previous delivery". Created is exact (`created_at` is real) and is
+reported; resolved/dismissed is not derivable and would have had to be
+approximated, which the Brief's one rule forbids. What IS provable is reported
+instead, and is why `brief_deliveries.finding_ids` exists: *"3 of the 4 items in
+it now closed"*. The copy never claims a time.
+
+**The email is sent even when there is nothing to report — the opposite of the
+Monday digest's rule, deliberately.** The digest sends nothing rather than train
+its reader to archive it unread. This one arrives at a time the reader picked, so
+silence is indistinguishable from a cron that has stopped, which is the failure
+this feature can least afford. Zero open findings gets a real sentence
+("nothing needs your attention this morning"), not "0 things need your
+attention".
+
+**The email does not resolve cited documents' TYPES.** The Brief's own
+`resolveEvidence` reads the documents to say "2 statements" rather than "2
+documents". That is one extra read per finding on a path that runs every fifteen
+minutes, to sharpen a noun by one word. `documentEvidenceLabel` — the same
+function — already produces the honest catch-all for an unknown set, so the email
+can never invent a noun the Brief would not use. Stock and invoice nouns are
+exact, because those need no read.
+
+**`escapeHtml` and `formatRand` moved out of the digest route rather than being
+copied.** The plan says "reuse its helpers rather than a second renderer". Two
+emails legitimately need two templates — a weekly operator digest and a personal
+brief are different documents — so what is shared is the helpers, now in
+`brief-email-shared.ts` and imported by both. **The comment they arrived with was
+wrong**: it claimed `formatRand` produces "R 12,480", and en-ZA groups thousands
+with a SPACE. Behaviour unchanged (it is right for a South African reader), the
+comment corrected, and `tests/brief-email.test.ts` now pins it — which means the
+digest's own formatting is under test for the first time.
+
+**The four-slot cap is enforced in TypeScript, not Postgres.** "At most 4 rows
+per user" needs a statement trigger (a check constraint cannot see other rows),
+and a trigger fires on the demo seed and on any future backfill as well as on the
+settings card. The cap is a product decision about how many emails a day is
+reasonable, not an integrity rule — a fifth row would be untidy, not corrupt.
+
+**Two new readings of the SAST clock, in `sast.ts` rather than beside the
+schedules.** `sastMinutesOfDay` (an hour alone would fire a 17:30 slot at 17:00)
+and `sastWeekday` (derived from `sastDay`, so a schedule can never disagree with
+the date line printed at the top of the same email). `sastHour` is untouched.
+`sastMinutesOfDay` uses `hourCycle: 'h23'` + `formatToParts` rather than
+`hour12: false`, which has historically rendered midnight as "24" in some ICU
+builds — that would put 00:10 twenty-four hours from 00:00 and silently kill
+every early-morning brief.
+
+**`brief_deliveries` is SELECT-only under RLS.** Every write is a record of an
+email the server sent; a client that could insert one could silence its own
+brief. Its `user_id` is deliberately not an FK to `profiles`, so the record of
+what was sent survives the person leaving.
+
+**No `?now=` and no `?force=` on the cron route.** The plan argues itself out of
+both in §6 and the conclusion is kept: a query parameter that changes which
+emails go out will eventually be pasted into a browser by someone debugging at
+07:05. Test sends go through the settings card, which is rate-limited (3/hour/
+user), addressed to the caller alone, and writes no delivery row.
+
+**The settings route uses `resolveUser`, not `getPlatformSession`.** Same reason
+`app/api/finch/chats/route.ts` does: it is a route a client component posts to,
+and the mobile app's bearer token has to work there too. `canSeeBrief` is
+enforced in the route as well as at send time and at mount; hiding the card from
+a member is the courtesy, the route is the control.
+
+## Edge cases covered (plan §5)
+
+| Case | Behaviour |
+|---|---|
+| User demoted to member | `canSeeBrief` re-checked at send time; slots skipped, counted in `skipped` |
+| User removed | `brief_schedules.user_id` cascades from `profiles` |
+| Two slots at the same time | ONE email (`groupDueSlots`); every slot in the group gets a delivery row |
+| Partial delivery rows for a group | Rows backfilled, email NOT re-sent — a duplicate brief is the worse wrong |
+| Cron 20 min late | Still sends (one-hour lookback) |
+| Cron runs 4× in the hour | Sends once (delivery row) |
+| A 23:50 slot missed until 00:05 | Skipped — the SAST day rolled over and the email's content is "today" |
+| Org not in the allowlist | Nothing, 200, and the message names both env vars |
+| Resend failure | No delivery row, logged, retried on the next tick inside the window |
+| Test send | Ignores days and time, writes no delivery row, goes to the session's address only |
+| Migration not applied | Card explains itself; tick answers `{"tableMissing":true}`; digest keeps working |
+| Two due slots for one person on one tick | Second email measures "since" from the first (`loadSince(before)`) |
+
+## Known cost, flagged rather than fixed
+
+`brief-schedules-shared.ts` is imported by the client card (for `MAX_SLOTS`,
+`WEEKDAY_LABELS`, `daysLabel`, `kindLabel`, `defaultSlots`) and therefore pulls
+`agents/finding-kinds.ts` → `agents/dedupe-keys.ts` into the settings bundle, for
+`sinceLastBrief`'s receipt test — which only the server calls. Both are
+dependency-free leaves of a few hundred bytes. Splitting the file three ways to
+save that would cost more in readability than it saves in bytes; duplicating
+`isInformationalFinding` to avoid the import would be worse than either.
+
+## SQL Josh must paste
+
+`supabase/brief-schedules.sql` — idempotent, safe to re-run. Nothing works until
+it is run, and nothing breaks before it is: the settings card says it is not set
+up and the cron answers `{"tableMissing":true}`.
+
+## Gates
+
+`npx tsc --noEmit` clean · `npm test` **484 pass / 0 fail** (460 + 24 new) ·
+`npm run build` clean, listing `/api/agents/brief-notify` and
+`/api/settings/brief-schedules` · `npx eslint .` **50 errors, 40 warnings** —
+byte-identical to the pre-wave baseline, nothing new introduced.
+
+Not verified: nothing here has been run against a live database or sent a real
+email. `runBriefNotify`, `sendTestBrief` and the data module are I/O and are not
+unit tested by design; every decision they make is, in the two `-shared` modules.

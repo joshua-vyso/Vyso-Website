@@ -183,9 +183,48 @@ receipts excluded. Subject: `Vyso weekly brief — Meridian Food Co. — N findi
 | `/api/agents/debtors-watch` | `50 3 * * *` | 05:50 daily |
 | `/api/agents/stock-cover` | `55 3 * * *` | 05:55 daily |
 | `/api/agents/digest` | `0 4 * * 1` | **Monday** 06:00 |
+| `/api/agents/brief-notify` | `*/15 * * * *` | every 15 min |
 
 Every route is idempotent, so a manual run before a demo is safe and the ordering
 above is a courtesy to the reader of the Brief, not a correctness requirement.
+
+### 3.3 Brief notifications (per-user morning/evening briefs)
+
+`/api/agents/brief-notify` is the tick that emails people their Brief at times
+they chose themselves. It reads `brief_schedules`, and **it supersedes the Monday
+digest**: an org with at least one enabled schedule gets `{"superseded":true}`
+from `/api/agents/digest` and no weekly e-mail, so the demo org never sends both.
+
+**Prerequisite (once):** paste `supabase/brief-schedules.sql` into the Supabase
+SQL editor. Until you do, the settings card says so and the tick answers
+`{"tableMissing":true}` — neither is an error.
+
+Setting the two demo slots for the prospect user, in the product rather than in
+SQL (this is the flow to show, not work around):
+
+1. Sign in as the prospect (§6), open **`/app/settings`**.
+2. **Brief notifications** is the first card — it only renders for an owner or
+   admin, because the Brief itself is admin-only.
+3. Press **Use 07:00 and 17:30** on the empty state, then **Save**.
+4. Press **Send me a test now** to prove the address works. The test goes to the
+   signed-in user only, ignores the schedule, and does **not** count as that
+   day's brief — so the real 07:00 send still happens tomorrow.
+
+Reading the tick's response:
+
+| Response | Meaning |
+|---|---|
+| `{"ok":true,"sent":1,…}` | one brief e-mailed |
+| `{"due":0,…}` | nothing fell due in the last hour — the normal answer 90+ times a day |
+| `{"alreadySent":2,…}` | the slots fired earlier today; the delivery rows are doing their job |
+| `{"skipped":n,…}` | the user is no longer an owner/admin, or has no address in `auth.users` |
+| `{"tableMissing":true}` | `supabase/brief-schedules.sql` has not been pasted in yet |
+
+A slot is due from its own minute for **one hour** (`DUE_LOOKBACK_MINUTES`), so a
+late Vercel tick still sends; `unique (schedule_id, local_date)` on
+`brief_deliveries` is what stops the other three ticks in that hour sending it
+again. There is deliberately **no `?now=` or `?force=` override** — use the
+settings card's test button.
 
 ---
 
