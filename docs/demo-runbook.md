@@ -42,7 +42,11 @@ their expected numbers), `scripts/demo-invoice-pdfs.mjs` (the paper).
 Agent routes, all **GET**, all bearer-authenticated with `CRON_SECRET`:
 
 `/api/agents/doc-watch` · `/api/agents/price-watch` · `/api/agents/debtors-watch` ·
-`/api/agents/stock-cover` · `/api/agents/digest`
+`/api/agents/stock-cover` · `/api/agents/xero-watch` · `/api/agents/digest`
+
+Plus one route that is **not** an agent but runs on the same cron and the same
+bearer token — `/api/integrations/xero/sync` (§3.4). It copies rows; it writes no
+findings and forms no opinion.
 
 ---
 
@@ -134,7 +138,7 @@ delete the org's `pw_price_points` and its `agent_findings where agent =
 
 ## 3. Running the agents by hand
 
-All five are `GET` and take the cron secret as a bearer token. Set the secret in
+All six are `GET` and take the cron secret as a bearer token. Set the secret in
 your shell first — **never paste it into a document, a chat or a commit**:
 
 ```sh
@@ -142,7 +146,7 @@ read -rs CRON_SECRET && export CRON_SECRET   # paste, press enter, nothing echoe
 ```
 
 ```sh
-for a in doc-watch price-watch debtors-watch stock-cover; do
+for a in xero-watch doc-watch price-watch debtors-watch stock-cover; do
   echo "── $a"
   curl -s -H "Authorization: Bearer $CRON_SECRET" "https://vyso.co.za/api/agents/$a"
   echo
@@ -178,6 +182,8 @@ receipts excluded. Subject: `Vyso weekly brief — Meridian Food Co. — N findi
 | Path | UTC | SAST |
 |---|---|---|
 | `/api/email/process` | `0 3 * * *` | 05:00 daily |
+| `/api/integrations/xero/sync` | `20 3 * * *` | 05:20 daily |
+| `/api/agents/xero-watch` | `30 3 * * *` | 05:30 daily |
 | `/api/agents/doc-watch` | `40 3 * * *` | 05:40 daily |
 | `/api/agents/price-watch` | `45 3 * * *` | 05:45 daily |
 | `/api/agents/debtors-watch` | `50 3 * * *` | 05:50 daily |
@@ -227,6 +233,43 @@ again. There is deliberately **no `?now=` or `?force=` override** — use the
 settings card's test button.
 
 ---
+
+### 3.4 Plugins → Xero (sync + Xero Watch)
+
+**Meridian has no Xero connection, and must not get one.** The plugin page is
+still worth showing on a demo: `/app/plugins/xero` renders the connect state,
+which is exactly what a prospect's own workspace would look like on day one.
+Never demo a real customer's Xero data.
+
+Two routes, and they are NOT both agents:
+
+```sh
+# The sync — copies invoices and contacts from Xero into Vyso's mirror.
+curl -s -H "Authorization: Bearer $CRON_SECRET" \
+  https://vyso.co.za/api/integrations/xero/sync
+# The agent — reads that mirror and writes findings.
+curl -s -H "Authorization: Bearer $CRON_SECRET" \
+  https://vyso.co.za/api/agents/xero-watch
+```
+
+Run them **in that order**: the agent reads whatever the sync last left, and its
+first rule exists precisely to notice when that is stale.
+
+**Prerequisite (once):** paste `supabase/xero-sync.sql` into the Supabase SQL
+editor. Until you do, the sync answers `{"tablesMissing":true}` and the plugin
+page says the mirror is not set up — neither is an error.
+
+| Response | Meaning |
+|---|---|
+| sync `{"ok":true,"ran":0,"message":"No organisation has Xero connected."}` | nobody has connected Xero. A 200 by design |
+| sync `summaries[].invoices.fullRead: true` | no usable cursor, so the whole ledger was read. Normal on a first run |
+| sync `summaries[].invoices.partial: true` | the read stopped early (a rate limit, a bad page). The cursor was **not** advanced, so tomorrow re-reads that window |
+| sync warning `Xero rate-limited the read…` | Xero's 60/min per-tenant ceiling. Harmless; a partial sync was recorded |
+| xero-watch `{"ok":true,"ran":0,…}` | the **agent allowlist** is empty — `AGENTS_ORG_IDS`. Note the sync has no allowlist and the agent does: connecting Xero is consent to be READ, not consent to have opinions written into your Brief |
+| xero-watch `connectionStatus: null` | that org has no Xero connection row, so the agent did nothing |
+
+The sync's `POST` twin is the plugin page's **Sync now** button: signed-in
+owner/admin, their own org, six times an hour.
 
 ## 4. Rotating `CRON_SECRET`
 

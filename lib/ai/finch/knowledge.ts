@@ -84,6 +84,43 @@ month's stock counts wrote off.
 - These are operational figures, so every user can see them. They carry NO rand
   value, and you must not attach one.`;
 
+/**
+ * Xero (Plugins X1). Spliced into the OrderFlow and Brief docs — the two
+ * surfaces where somebody asks about cash.
+ *
+ * MOST OF THIS PARAGRAPH IS ABOUT WHAT NOT TO SAY, and deliberately. The tool's
+ * dangerous answer is the empty one: a mirror that has not been filled looks
+ * exactly like a business with no unpaid invoices, and a model that reads it
+ * that way tells the owner something false about their own accounting system.
+ * The second trap is the double count — Vyso's OrderFlow invoices and this
+ * org's Xero receivables are frequently the same debt recorded twice, and
+ * adding them would produce a debtors figure that exists nowhere.
+ */
+const XERO_KNOWLEDGE = `## Xero (ask Finch)
+xero_get_snapshot reads VYSO'S NIGHTLY COPY of this business's Xero ledger:
+what they are owed and how much of it is overdue (with the worst contacts and
+how many days late their oldest invoice is), what they owe suppliers, how much
+falls due in the next seven days, and how much is already late.
+- It is a COPY, read at 03:20 each morning. Say "as of the last sync" when the
+  figures matter. Vyso never writes to Xero — it cannot raise, edit, pay or
+  send anything there, and must not offer to.
+- \`synced: false\` means Vyso has NOT READ their Xero: not connected, or the
+  sync has not run. Say exactly that, and point them at Plugins → Xero. NEVER
+  turn it into "you have no unpaid invoices" — that is a claim about their
+  accounting system that this result does not support.
+- Xero receivables and OrderFlow invoices are DIFFERENT ROWS, and often the
+  same debt recorded in both. Never add them together. Say which one you are
+  quoting: "per Xero" or "per your OrderFlow invoices".
+- Figures are in the \`currency\` field. If \`excluded_currencies\` is present,
+  invoices in other currencies were left OUT of the totals — Vyso does no
+  currency conversion. Say so; do not imply the totals cover everything.
+- The Xero Watch agent writes its own cards to The Brief overnight (connection
+  health, supplier invoices Doc-U read that never reached Xero, overdue
+  receivables, the week's payables, duplicate bills). If a card is already on
+  the Brief, refer to it rather than re-deriving it.
+- Admin-only, same gate as the debtors figures. A member gets told they are
+  restricted.`;
+
 /** Spliced into every module doc: a document dropped into ANY chat (drop zone
  *  or paperclip) goes into Doc-U through the exact same path as the Doc-U
  *  upload screen — Storage object, `documents` row, extraction — before the
@@ -180,6 +217,8 @@ Finch can read who owes money live: outstanding balance, open invoice count,
 oldest unpaid invoice and days past terms per customer, and the overdue-
 invoice list sorted longest-overdue-first. These are admin-only, same as the
 Dashboard's money figures — a member asking gets told they're restricted.
+
+${XERO_KNOWLEDGE}
 
 ${ATTACHMENT_KNOWLEDGE}
 
@@ -373,11 +412,15 @@ real data rather than a finding:
   (pp_get_stock_position). See "Stock position" below.
 - **Margin exposure**: what an increase costs over a year, and the recipes it
   feeds (pw_margin_exposure) — admin-only, same gate as debtors.
-More modules (PlanWise, Xero) land here in later phases.
+- **Xero**: what the accounting ledger says is owed and owing
+  (xero_get_snapshot) — admin-only, and a COPY read nightly. See "Xero" below.
+More modules (PlanWise) land here in later phases.
 
 ${PRICE_HISTORY_KNOWLEDGE}
 
 ${STOCK_KNOWLEDGE}
+
+${XERO_KNOWLEDGE}
 
 ## Margin exposure (ask Finch)
 pw_margin_exposure sizes what one supplier's increase costs over a year:

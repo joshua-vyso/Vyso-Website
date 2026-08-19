@@ -56,6 +56,15 @@ const AGENT_CHIPS: Record<string, { label: string; bg: string; fg: string; dot: 
   debtors_watch: { label: 'Debtors', bg: 'var(--tone-warning-bg)', fg: 'var(--tone-warning-fg)', dot: '#BE5D23' },
   stock_cover: { label: 'Stock', bg: 'var(--tone-neutral-bg)', fg: 'var(--tone-neutral-fg)', dot: '#8A8E86' },
   doc_watch: { label: 'Read', bg: 'var(--tone-info-bg)', fg: 'var(--tone-info-fg)', dot: '#3E8FE0' },
+  // INFO, not warning, even though three of its five rules quote money. Xero
+  // Watch mostly reports what another system already knows and Vyso has merely
+  // noticed — a bill falling due on agreed terms, a connection that needs
+  // re-authorising, a number that appears twice. Taking Price Watch's warning
+  // pair would put "R 41 000 of bills fall due on Friday" at the same visual
+  // pitch as "your supplier put you up 12%", and an ordinary week would read as
+  // a bad one. The label is the system's name, because that is what the owner
+  // needs to know to check the claim.
+  xero_watch: { label: 'Xero', bg: 'var(--tone-info-bg)', fg: 'var(--tone-info-fg)', dot: '#3E8FE0' },
 };
 
 export interface AgentChip {

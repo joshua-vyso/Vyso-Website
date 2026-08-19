@@ -24,6 +24,7 @@ import {
 import { findDocuments, documentSummary } from './docu-data';
 import { findPriceItems, priceHistory, marginExposure, clampMonths } from './price-watch-data';
 import { stockPosition } from './procurepulse-data';
+import { xeroSnapshot } from './xero-data';
 
 /** Runtime context handed to every tool. `canSeeMoney` mirrors the OrderFlow
  *  finance gate (members don't see revenue/outstanding). */
@@ -343,6 +344,29 @@ const MARGIN_TOOLS: AgentTool[] = [
   },
 ];
 
+/**
+ * Xero — the accounting ledger Vyso mirrors nightly (Plugins X1).
+ *
+ * ONE READ-ONLY TOOL, behind `canSeeMoney` like the debtors and margin ones,
+ * and enforced inside the data function so a restricted caller gets a note
+ * rather than redacted rows.
+ *
+ * THE DESCRIPTION SPENDS MOST OF ITS WORDS ON WHAT `synced: false` MEANS, and
+ * that is not padding. The failure mode of this tool is a model that reads an
+ * empty mirror and tells the owner they have no unpaid invoices — a confident,
+ * false statement about their own accounting system, made by a product whose
+ * entire claim is that it only says what it can prove.
+ */
+const XERO_TOOLS: AgentTool[] = [
+  {
+    name: 'xero_get_snapshot',
+    description:
+      "Get this business's Xero position from Vyso's nightly mirror of their ledger: total owed to them (and how much is overdue, by contact, with how many days late the oldest invoice is), total they owe suppliers, how much of that falls due in the next 7 days, and how much is already overdue. Call this when the user asks about Xero, their accounting, cash coming in or going out, who owes them per Xero, or what bills are due. IMPORTANT: if `synced` is false, Vyso has not read their Xero ledger (not connected, or the sync has not run) — say exactly that and NEVER conclude they have no invoices. Figures are in the `currency` field; if `excluded_currencies` is present, some invoices were left out because Vyso does not convert currencies — say so rather than implying the totals cover everything. These are Xero's own figures as of the last sync, not Vyso's own OrderFlow invoices, which are a separate set of rows. Restricted to admins — a non-admin caller gets a note that money figures are hidden.",
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+    run: (ctx) => xeroSnapshot(ctx.supabase, ctx.orgId, ctx.canSeeMoney).then((r) => JSON.stringify(r)),
+  },
+];
+
 /** Stock is operational, not financial — every member needs it to do their job,
  *  and the output carries no rand figure, which is what keeps that honest. */
 const PROCUREPULSE_TOOLS: AgentTool[] = [
@@ -414,7 +438,10 @@ const TOOLS_BY_MODULE: Record<AgentModule, AgentTool[]> = {
   // Margin exposure rides with OrderFlow because that is where a cost increase
   // becomes a pricing decision — and it is money, so it keeps the debtors tools'
   // company.
-  orderflow: [...ORDERFLOW_TOOLS, ...DEBTORS_TOOLS, ...PRICE_WATCH_TOOLS, ...MARGIN_TOOLS],
+  // Xero rides with OrderFlow because that is where "who owes us?" is asked, and
+  // because the two answers are different rows about (often) the same money —
+  // the model needs both in reach to say which it is quoting.
+  orderflow: [...ORDERFLOW_TOOLS, ...DEBTORS_TOOLS, ...PRICE_WATCH_TOOLS, ...MARGIN_TOOLS, ...XERO_TOOLS],
   docu: DOCU_TOOLS,
   onboarding: ONBOARDING_TOOLS,
   // ProcurePulse's own bubble answers about stock, and about the price history
@@ -432,6 +459,7 @@ const TOOLS_BY_MODULE: Record<AgentModule, AgentTool[]> = {
     ...PRICE_WATCH_TOOLS,
     ...PROCUREPULSE_TOOLS,
     ...MARGIN_TOOLS,
+    ...XERO_TOOLS,
   ],
 };
 

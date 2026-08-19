@@ -18,6 +18,8 @@ import {
   DEBTORS_WATCH_AGENT,
   DOC_WATCH_AGENT,
   STOCK_COVER_AGENT,
+  XERO_WATCH_AGENT,
+  parseXeroWatchDedupeKey,
   type StockCoverRule,
 } from './dedupe-keys.ts';
 
@@ -91,7 +93,7 @@ export function isInformationalExpired(createdAt: string, now: Date): boolean {
  * already says what kind of thing an agent cites, so the resolver branches on it
  * and no migration is needed.
  */
-export type EvidenceKind = 'documents' | 'invoices' | 'stock';
+export type EvidenceKind = 'documents' | 'invoices' | 'stock' | 'xero';
 
 /** The default is `documents` — the only case before Phase C — so an agent
  *  nobody has taught this function about degrades to the behaviour the Brief
@@ -99,8 +101,35 @@ export type EvidenceKind = 'documents' | 'invoices' | 'stock';
 export function evidenceKindOf(agent: string): EvidenceKind {
   if (agent === DEBTORS_WATCH_AGENT) return 'invoices';
   if (agent === STOCK_COVER_AGENT) return 'stock';
+  if (agent === XERO_WATCH_AGENT) return 'xero';
   // price_watch and doc_watch both cite Doc-U documents.
   return 'documents';
+}
+
+/**
+ * XERO WATCH IS THE FIRST AGENT WHOSE REFS ARE NOT ONE KIND OF ROW.
+ *
+ * Four of its five rules cite `xero_invoices` mirror rows; the fifth — "these
+ * bills are in Doc-U but not in Xero" — cites `documents.id`, because the whole
+ * point of that finding is paper that has NO Xero row to point at. One agent
+ * slug, two tables.
+ *
+ * `evidence_refs` has no type column (the decision `agent-findings.ts` records:
+ * the agent slug was supposed to be enough), so the tie-breaker is the dedupe
+ * key's RULE, which is recorded on every Xero finding by construction. A key
+ * that will not parse falls back to the mirror, because that is four rules out of
+ * five and the resolver verifies its ids against the table before it links
+ * anything — a wrong guess costs a missing link, never a wrong one.
+ */
+export function xeroRefsAreDocuments(dedupeKey: string | null | undefined): boolean {
+  return parseXeroWatchDedupeKey(dedupeKey ?? '')?.rule === 'missing';
+}
+
+/** "3 Xero invoices" / "1 Xero invoice" — named for the system they live in,
+ *  because an owner reading this card has OrderFlow invoices on the same Brief
+ *  and the two are different rows about (sometimes) the same money. */
+export function xeroInvoiceEvidenceLabel(count: number): string {
+  return `${count} Xero ${count === 1 ? 'invoice' : 'invoices'}`;
 }
 
 /** Plural nouns for the document types agents cite. Anything outside this map
@@ -146,6 +175,9 @@ export const STOCK_EVIDENCE_LABEL = '1 stock line';
 export function evidenceSourceName(kind: EvidenceKind): string {
   if (kind === 'invoices') return 'OrderFlow';
   if (kind === 'stock') return 'ProcurePulse';
+  // Xero, by name. The owner knows exactly what that means, and saying "Plugins"
+  // would name the section rather than the system the rows are actually in.
+  if (kind === 'xero') return 'Xero';
   return 'Doc-U';
 }
 
@@ -158,12 +190,20 @@ export function evidenceSourceName(kind: EvidenceKind): string {
  * agent did, so it gets the honest word instead.
  */
 export function evidenceHeadingWord(kind: EvidenceKind): string {
-  return kind === 'stock' ? 'Subject' : 'Evidence';
+  // Xero joins stock on "Subject" for the same reason: its rows are what a
+  // finding is ABOUT, not proof that Vyso computed something. "R 41 000 of
+  // supplier bills fall due by Friday" does not need the bills as evidence — it
+  // IS the bills — and calling them evidence would be a small lie about what the
+  // agent did. (The one Xero rule that genuinely cites proof, "these Doc-U bills
+  // never reached Xero", resolves as `documents` and gets the honest "Evidence".)
+  return kind === 'stock' || kind === 'xero' ? 'Subject' : 'Evidence';
 }
 
-/** "Evidence · 3 invoices from OrderFlow" / "Subject · stock line". */
+/** "Evidence · 3 invoices from OrderFlow" / "Subject · stock line" /
+ *  "Subject · 3 Xero invoices". */
 export function evidenceHeading(kind: EvidenceKind, label: string): string {
   if (kind === 'stock') return `${evidenceHeadingWord(kind)} · ${STOCK_EVIDENCE_LABEL}`;
+  if (kind === 'xero') return `${evidenceHeadingWord(kind)} · ${label}`;
   return `${evidenceHeadingWord(kind)} · ${label} from ${evidenceSourceName(kind)}`;
 }
 
@@ -178,6 +218,14 @@ export function evidenceHeading(kind: EvidenceKind, label: string): string {
 export function evidenceMissingCopy(kind: EvidenceKind): string {
   if (kind === 'invoices') return 'The invoices behind this finding are no longer available.';
   if (kind === 'stock') return 'The stock line behind this finding is no longer available.';
+  if (kind === 'xero') {
+    // Worded as a fact about the MIRROR, not about Xero. The rows may be alive
+    // and well in Xero; what has happened is that Vyso's copy of them has gone —
+    // a disconnect, or a sync that has not run since they were cited. Saying "no
+    // longer in Xero" would be a claim about the customer's accounting system
+    // that this product cannot make.
+    return 'The Xero invoices behind this finding are no longer in Vyso’s copy of your ledger.';
+  }
   return 'The documents behind this finding are no longer available.';
 }
 

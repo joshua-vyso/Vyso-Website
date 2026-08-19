@@ -11,6 +11,7 @@ import {
   stockRuleLabel,
 } from '@/lib/platform/agents/finding-kinds';
 import { seriesForFinding, type FindingSeries } from '@/lib/platform/price-watch/series';
+import { xeroMoney } from '@/lib/platform/xero-sync-shared';
 import { rand } from '@/lib/platform/procurepulse';
 import { firstOpenableModuleHref, railModules } from '@/components/platform/shell/shell-data';
 import { FindingDetail } from '@/components/platform/brief/FindingDetail';
@@ -144,6 +145,43 @@ function evidencePanel(evidence: FindingEvidence, series: FindingSeries | null):
         // The BALANCE, not the invoice total: the headline is "R190,900
         // outstanding", and these lines have to be what adds up to it.
         detail: [rand(inv.balance), daysPastTermsLabel(inv.days_overdue)].filter(Boolean).join(' · '),
+      })),
+    };
+  }
+
+  if (evidence.kind === 'xero') {
+    return {
+      ...base,
+      // Paper, not a crate: a Xero invoice is a document the business issued or
+      // received, exactly like an OrderFlow one.
+      mark: 'paper',
+      items: evidence.invoices.map((inv) => ({
+        id: inv.id,
+        // THE ONLY EVIDENCE LINK IN THIS PRODUCT THAT LEAVES IT. The row lives in
+        // Xero and that is where anything can be done about it. The URL was
+        // recorded at sync time rather than built here, so a card keeps the link
+        // that worked when it was written. A row the sync never gave one falls
+        // back to the plugin page — a real destination, and the place the owner
+        // would go next anyway.
+        href: inv.xero_url ?? '/app/plugins/xero',
+        title: inv.invoice_number ? `Invoice ${inv.invoice_number}` : 'Xero invoice',
+        // "Northern Suburbs Deli · due 4 Jul 2026 · you owe" — every clause is
+        // optional and the separator follows, so a row missing a contact name is
+        // still a sentence. The ledger is named because the same strip can carry
+        // both directions of money on a duplicate-bill card.
+        subtitle: [
+          inv.contact_name,
+          inv.due_date ? `due ${shortDate(inv.due_date)}` : null,
+          inv.type === 'ACCPAY' ? 'you owe' : inv.type === 'ACCREC' ? 'owed to you' : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        // Xero's OWN amount_due, quoted, never recomputed — see
+        // `listXeroEvidence`. `xeroMoney` keeps a foreign-currency ledger from
+        // being drawn with a rand sign.
+        detail: [xeroMoney(inv.amount_due, inv.currency), daysPastTermsLabel(inv.days_overdue)]
+          .filter(Boolean)
+          .join(' · '),
       })),
     };
   }

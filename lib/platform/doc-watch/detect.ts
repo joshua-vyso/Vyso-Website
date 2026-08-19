@@ -141,7 +141,13 @@ function fieldValue(fields: DocWatchField[], pattern: RegExp): string | null {
  * all three are tried before giving up — and giving up is fine, the templates
  * below drop the number rather than inventing one.
  */
-function documentNumber(fields: DocWatchField[]): string | null {
+// EXPORTED for Xero Watch (Plugins X1), which has to ask the same question of
+// the same `extracted_data` — "what number is on this invoice, and what does it
+// say the total is?" — before it can decide whether that bill reached Xero.
+// Re-implementing these label patterns beside it would mean two definitions of
+// how Vyso reads a document number, drifting the day extraction learns a new
+// label. Nothing about the behaviour or the callers here changed.
+export function documentNumber(fields: DocWatchField[]): string | null {
   return fieldValue(fields, /\b(invoice|statement|document|reference|sheet)\s*(no\.?|number|#)/i);
 }
 
@@ -152,7 +158,7 @@ function documentNumber(fields: DocWatchField[]): string | null {
  * lines are ex-VAT and adding them up would produce a number that appears
  * nowhere on the paper.
  */
-function statedTotal(fields: DocWatchField[]): number | null {
+export function statedTotal(fields: DocWatchField[]): number | null {
   const inclusive = fieldValue(fields, /total.*(incl|inc\.|vat)/i);
   const parsedInclusive = parseAmount(inclusive);
   if (parsedInclusive != null) return parsedInclusive;

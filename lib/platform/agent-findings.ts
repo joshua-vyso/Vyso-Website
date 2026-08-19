@@ -56,6 +56,8 @@ import {
   isInformationalExpired,
   isInformationalFinding,
   STOCK_EVIDENCE_LABEL,
+  xeroInvoiceEvidenceLabel,
+  xeroRefsAreDocuments,
   type EvidenceKind,
 } from './agents/finding-kinds';
 import type { StockCoverRule } from './agents/dedupe-keys';
@@ -211,7 +213,14 @@ async function resolveEvidence(
 
   const byKind = new Map<EvidenceKind, AgentFinding[]>();
   for (const f of findings) {
-    const kind = evidenceKindOf(f.agent);
+    // Xero Watch is the one agent whose refs are not all one kind of row: its
+    // "these Doc-U bills never reached Xero" rule cites `documents.id`, because
+    // that finding is precisely about paper with no Xero row to point at. The
+    // dedupe key says which, and `xeroRefsAreDocuments` reads it — so those
+    // findings are re-filed under `documents` here and resolve, link and label
+    // exactly like a Doc Watch card.
+    let kind = evidenceKindOf(f.agent);
+    if (kind === 'xero' && xeroRefsAreDocuments(f.dedupe_key)) kind = 'documents';
     const arr = byKind.get(kind) ?? [];
     arr.push(f);
     byKind.set(kind, arr);
@@ -226,8 +235,63 @@ async function resolveEvidence(
   );
   await resolveInvoiceEvidence(supabase, orgId, byKind.get('invoices') ?? [], evidence);
   await resolveStockEvidence(supabase, orgId, byKind.get('stock') ?? [], evidence);
+  await resolveXeroEvidence(supabase, orgId, byKind.get('xero') ?? [], evidence);
 
   return { evidence, supplierCount };
+}
+
+/**
+ * Xero Watch — `evidence_refs` are `xero_invoices` ids (the MIRROR's own uuids,
+ * not Xero's text guids), in the detector's order: worst-first for a debtor,
+ * soonest-due for the week's payables.
+ *
+ * THE LINK LEAVES VYSO. Every other agent's evidence link goes to a Vyso screen;
+ * this one goes to `go.xero.com`, because that is where the row lives and where
+ * anything can be done about it. The URL is not built here — it was recorded on
+ * the mirror row at SYNC time (`xero_url`), so a card keeps the link that worked
+ * when it was written even if Xero moves the page.
+ *
+ * A finding whose ids resolve to nothing gets no link at all, exactly like the
+ * other three resolvers: a dead link into someone's accounting system is worse
+ * than none.
+ *
+ * The health rule cites nothing (`evidence_refs` is empty) and therefore never
+ * reaches the query below — it simply has no evidence entry, and the card shows
+ * no link. That is correct: "your Xero connection is broken" is not a claim about
+ * any particular invoice.
+ */
+async function resolveXeroEvidence(
+  supabase: ServerSupabase,
+  orgId: string,
+  findings: AgentFinding[],
+  into: Record<string, EvidenceSummary>,
+): Promise<void> {
+  const ids = [...new Set(findings.flatMap((f) => f.evidence_refs))].slice(0, EVIDENCE_PROBE_LIMIT);
+  if (ids.length === 0) return;
+
+  const { data, error } = await supabase
+    .from('xero_invoices')
+    .select('id, xero_url')
+    .eq('org_id', orgId)
+    .in('id', ids)
+    .returns<{ id: string; xero_url: string | null }[]>();
+
+  if (error || !data) return;
+
+  const byId = new Map(data.map((r) => [r.id, r]));
+  for (const f of findings) {
+    const rows = f.evidence_refs.map((id) => byId.get(id)).filter((r) => r != null);
+    if (rows.length === 0) continue;
+    into[f.id] = {
+      count: rows.length,
+      label: xeroInvoiceEvidenceLabel(rows.length),
+      // The first cited row's Xero page — the same "link the first one, count
+      // them all honestly" shape the document and invoice branches use. Null
+      // when the sync never recorded a URL for it (a type Vyso does not deep-link),
+      // in which case the card shows the count without a link.
+      href: rows[0]?.xero_url ?? null,
+    };
+  }
 }
 
 /** Price Watch / Doc Watch — ids are `documents.id`. Returns the distinct
@@ -441,10 +505,31 @@ export interface EvidenceStockLine {
  * its evidence was "no longer available" when it was sitting in OrderFlow the
  * whole time.
  */
+/** One mirrored Xero invoice, as the detail page's subject strip draws it. Xero
+ *  Watch's `evidence_refs` are `xero_invoices` ids — the mirror's own uuids, not
+ *  Xero's text guids, because `agent_findings.evidence_refs` is a `uuid[]`. */
+export interface EvidenceXeroInvoice {
+  id: string;
+  invoice_number: string | null;
+  contact_name: string | null;
+  /** 'ACCREC' (owed to the business) or 'ACCPAY' (owed by it). */
+  type: string;
+  /** yyyy-mm-dd, or null. */
+  due_date: string | null;
+  amount_due: number | null;
+  currency: string | null;
+  /** Days past terms as of today. Null when there is no due date to be past. */
+  days_overdue: number | null;
+  /** The `go.xero.com` page, recorded at sync time. Null when the sync did not
+   *  record one. */
+  xero_url: string | null;
+}
+
 export type FindingEvidence =
   | { kind: 'documents'; documents: EvidenceDocument[]; label: string; missing: boolean }
   | { kind: 'invoices'; invoices: EvidenceInvoice[]; label: string; missing: boolean }
-  | { kind: 'stock'; item: EvidenceStockLine | null; label: string; missing: boolean };
+  | { kind: 'stock'; item: EvidenceStockLine | null; label: string; missing: boolean }
+  | { kind: 'xero'; invoices: EvidenceXeroInvoice[]; label: string; missing: boolean };
 
 /**
  * Resolve one finding's evidence, in citation order — the detail route's read.
@@ -475,6 +560,13 @@ export async function listFindingEvidence(
       return listInvoiceEvidence(supabase, orgId, finding);
     case 'stock':
       return listStockEvidence(supabase, orgId, finding);
+    case 'xero':
+      // The one agent with two kinds of ref — its "not in Xero yet" rule cites
+      // Doc-U documents, everything else cites the mirror. Same tie-breaker the
+      // feed's resolver uses, so the strip and the card cannot disagree.
+      return xeroRefsAreDocuments(finding.dedupe_key)
+        ? listDocumentEvidence(supabase, orgId, finding)
+        : listXeroEvidence(supabase, orgId, finding);
     default:
       return listDocumentEvidence(supabase, orgId, finding);
   }
@@ -631,6 +723,83 @@ async function listStockEvidence(
     kind: 'stock',
     item: { id: data.id, name: data.name ?? 'This stock line', rule: parsed.rule },
     label: STOCK_EVIDENCE_LABEL,
+    missing: false,
+  };
+}
+
+/**
+ * Xero Watch — `evidence_refs` are `xero_invoices` ids, in the detector's own
+ * order (worst-first for a debtor, soonest-due for the week's payables), so the
+ * first one that resolves is the right one to open.
+ *
+ * A PLAIN SELECT, unlike the OrderFlow branch above. That one goes through
+ * `loadInvoiceRows` because an OrderFlow invoice's outstanding balance is a
+ * DERIVATION (totals minus payments minus credit notes) with exactly one correct
+ * definition. A Xero invoice's is not: `amount_due` is Xero's own figure, already
+ * net of everything Xero knows about, and re-deriving it here would mean Vyso
+ * disagreeing with the system of record about the system of record's own number.
+ * The mirror is quoted, never recomputed.
+ *
+ * `missing` is distinguished from empty for the reason the union's docblock
+ * gives: a health finding cites nothing (empty, section omitted) and a finding
+ * whose mirror rows have been swept away cites something unreadable (missing,
+ * said in words).
+ */
+async function listXeroEvidence(
+  supabase: ServerSupabase,
+  orgId: string,
+  finding: Pick<AgentFinding, 'evidence_refs'>,
+): Promise<FindingEvidence> {
+  const refs = finding.evidence_refs ?? [];
+  if (refs.length === 0) return { kind: 'xero', invoices: [], label: '', missing: false };
+  const ids = refs.slice(0, EVIDENCE_PROBE_LIMIT);
+
+  const { data, error } = await supabase
+    .from('xero_invoices')
+    .select('id, invoice_number, contact_name, type, due_date, amount_due, currency, xero_url')
+    .eq('org_id', orgId)
+    .in('id', ids)
+    .returns<
+      {
+        id: string;
+        invoice_number: string | null;
+        contact_name: string | null;
+        type: string;
+        due_date: string | null;
+        amount_due: number | string | null;
+        currency: string | null;
+        xero_url: string | null;
+      }[]
+    >();
+
+  if (error || !data) return { kind: 'xero', invoices: [], label: '', missing: true };
+
+  const byId = new Map(data.map((r) => [r.id, r]));
+  // Citation order, not database order — the detector sorted these and the strip
+  // reads top to bottom in the same direction.
+  const cited = ids.map((id) => byId.get(id)).filter((r) => r != null);
+  if (cited.length === 0) return { kind: 'xero', invoices: [], label: '', missing: true };
+
+  const todayMs = Date.parse(`${todayIso()}T00:00:00Z`);
+  const invoices: EvidenceXeroInvoice[] = cited.map((r) => {
+    const amount = r.amount_due == null ? null : Number(r.amount_due);
+    return {
+      id: r.id,
+      invoice_number: r.invoice_number,
+      contact_name: r.contact_name,
+      type: r.type,
+      due_date: r.due_date,
+      amount_due: amount != null && Number.isFinite(amount) ? amount : null,
+      currency: r.currency,
+      days_overdue: r.due_date ? daysSince(r.due_date, todayMs) : null,
+      xero_url: r.xero_url,
+    };
+  });
+
+  return {
+    kind: 'xero',
+    invoices,
+    label: xeroInvoiceEvidenceLabel(invoices.length),
     missing: false,
   };
 }

@@ -2756,3 +2756,276 @@ byte-identical to the pre-wave baseline, nothing new introduced.
 Not verified: nothing here has been run against a live database or sent a real
 email. `runBriefNotify`, `sendTestBrief` and the data module are I/O and are not
 unit tested by design; every decision they make is, in the two `-shared` modules.
+
+---
+
+# Plugins X1 — Xero (rail section, plugin pages, nightly sync + mirror, Xero Watch, Finch snapshot) (2026-08-19, branch `main`)
+
+Implements **wave X1 only** of `.ai/plan_plugins_xero.md`. X2 (Hubdoc
+cross-upload) is a placeholder card on the plugin page, as the plan asks.
+
+Josh's ask, verbatim (2026-08-18): "a separate section for integrations that has
+all integrations in one place (call the section Plugins, just above the under the
+hood section) that highlights findings, cross uploads invoices to HubDoc, and has
+an agent flag any issues. We'll do this just for Xero for now".
+
+Nothing in `lib/platform/price-watch/*`, `lib/platform/debtors-watch/*`,
+`lib/platform/stock-cover/*`, `components/finch/*`, `app/globals.css` or the
+marketing site was touched. `lib/platform/xero-core.ts` is untouched (plan §
+"Do not touch"). The only pre-existing agent file modified is
+`lib/platform/doc-watch/detect.ts`, and only to add two `export` keywords — see
+"Deviations" below.
+
+## Files
+
+Created:
+`lib/platform/plugins.ts` (pure),
+`lib/platform/plugins-data.ts`,
+`lib/platform/xero-sync-shared.ts` (pure),
+`lib/platform/xero-sync.ts`,
+`lib/platform/xero-mirror.ts`,
+`lib/platform/xero-watch/{detect,run}.ts`,
+`lib/ai/finch/xero-data.ts`,
+`app/app/plugins/page.tsx`, `app/app/plugins/xero/page.tsx`,
+`app/api/integrations/xero/sync/route.ts`,
+`app/api/agents/xero-watch/route.ts`,
+`components/platform/shell/Plugins.tsx`,
+`components/platform/plugins/{PluginCard,XeroConnection,XeroSnapshot,XeroFindings}.tsx`,
+`supabase/xero-sync.sql`,
+`tests/{plugins,xero-sync,xero-watch-detect}.test.ts`.
+
+Modified: `components/platform/shell/{AppRail,MobileTopBar,MobileDrawer}.tsx`,
+`app/app/layout.tsx` (one extra read, skipped for members),
+`app/app/settings/page.tsx` (link instead of card),
+`app/app/finding/[id]/page.tsx` (the Xero subject strip),
+`lib/platform/agents/{dedupe-keys,finding-kinds}.ts`,
+`lib/platform/agent-findings.ts` (Xero evidence, feed + detail),
+`lib/platform/xero.ts` (one new export, one changed return path),
+`lib/platform/doc-watch/detect.ts` (two `export` keywords),
+`components/platform/brief/brief-display.ts` (the chip),
+`lib/ai/finch/{tools,knowledge}.ts`,
+`app/api/integrations/xero/{connect,callback}/route.ts` (return path),
+`vercel.json` (2 crons), `.env.example` (the five Xero names — they were NOT
+there), `docs/demo-runbook.md` (§1, §3, §3.2, new §3.4).
+
+Deleted: `components/platform/settings/XeroIntegrationCard.tsx` — moved to
+`components/platform/plugins/XeroConnection.tsx` (git records it as a rename).
+
+## Decisions the plan left open
+
+**The registry carries no per-plugin icon.** The plan's sketch had one; the row it
+feeds already carries a status dot, which is the thing an owner scans the section
+for, and a glyph beside a one-row list is decoration this brand does not spend.
+A one-line addition when a second plugin needs telling apart.
+
+**Three tones, not five statuses.** `xero_connections.status` has five values and
+the rail has one dot. `syncing` draws as connected (a dot that flicked amber for
+the length of a sync would teach the owner to distrust the colour); `error` and
+`reauth_required` are one thing to a person; `disconnected` and "no row" are the
+same fact. Unknown values fail to grey, never to green.
+
+**`Plugins.tsx` copies `UnderTheHood.tsx` rather than sharing a `<RailSection>`.**
+They differ in exactly the thing an abstraction would parameterise (status dots
+here, a lock branch and a modal there), so the shared version's body would be two
+`if`s on which caller it has. Extract on the third section.
+
+**The OAuth round-trip was repointed at the plugin page.** Not in the plan's
+modify list, but the plan moves the connect card off `/app/settings` and both
+`/api/integrations/xero/{connect,callback}` hardcoded `/app/settings` as their
+destination — an owner would have come back from Xero's consent screen to a page
+that no longer mentions it, and the `?xero_connected` notice would have had
+nothing to render on. `xero.ts`'s stored `return_path` default moved with them.
+
+**The sync has NO org allowlist; the agent does.** `AGENTS_ORG_IDS` exists because
+an agent writes opinions into a customer's Brief off data nobody reviewed. The
+sync only copies rows the owner has already granted Vyso access to inside Xero's
+own consent screen — the connection IS the opt-in, and gating it twice would mean
+a customer who connects Xero and sees nothing happen. Recorded in both routes.
+
+**The sync syncs `error` orgs, not `reauth_required` ones.** `error` means the
+last read failed and tonight's run is exactly what heals it; a revoked grant needs
+a human, and retrying it nightly would just rewrite the same failure.
+
+**`recordSyncOutcome` never overwrites `reauth_required`.** That status is set by
+the token path when Xero has actually revoked the grant and is the one state a
+human must clear; a later run writing `error` over it would replace "reconnect
+Xero" with "something went wrong".
+
+**The cursor advances to the instant the run STARTED, not finished, and only on a
+complete read.** An invoice edited while page 7 was in flight would otherwise fall
+in the gap between the window asked for and the window recorded, and never be read
+again. Re-reading a few rows is free; missing one is not.
+
+**A cursor older than 14 days is ignored and the resource is read in full.** That
+is what repairs a mirror which drifted while the connection was broken, and what
+eventually retires rows voided in Xero months ago — nothing is ever deleted from
+the mirror, because telling "deleted" from "unchanged" would need a full read
+every night, which is what `If-Modified-Since` exists to avoid.
+
+**`If-Modified-Since` is sent in Xero's format** (`2026-08-19T03:20:00`, UTC, no
+zone, no milliseconds), not RFC-1123. Xero answers a full resync for anything it
+cannot parse — expensive rather than wrong, i.e. exactly the bug that hides for
+months. Pinned by a test.
+
+**`Retry-After` is capped at 30s.** Xero can quote a daily-limit retry in the tens
+of thousands of seconds; honouring that literally would burn the cron's whole
+budget asleep instead of recording a partial sync and trying again tomorrow.
+
+**Multi-currency: one currency, named; the rest excluded and counted.** Vyso holds
+no exchange rates. `summariseXeroMirror` totals the DOMINANT currency (by row
+count), reports every other as `excludedCurrencies`, and the page, the chat tool
+and the agent all say so. Rows with no `CurrencyCode` ride with the dominant one,
+because Xero omits it on single-currency organisations. Inventing an FX rate would
+be wrong by an amount nobody can see, which is the worst kind of wrong.
+
+**Invoice-number matching emits TWO keys** — the full alphanumeric one and the
+trailing run of digits when there are ≥3 of them — so "INV-9268" on a supplier's
+paper matches "9268" keyed into Xero by hand. Three digits is the floor: a
+two-digit tail collides with everything, and a false "it's already in Xero" hides
+a bill nobody paid. Rule 5 (duplicates) deliberately uses the STRICT key only,
+because both of its rows came out of the same ledger and a loose match would
+accuse the bookkeeper of a mistake they did not make.
+
+**Rule 2's window is the document's `created_at`, not its extracted invoice date.**
+The invoice date is free text in `extracted_data` in whatever format the supplier
+prints; a window built on it would drift silently with every mis-parse.
+`created_at` is also the honest subject: "we read this recently and it never
+reached Xero".
+
+**Rule 2 and rule 4 carry `rand_impact: null`.** `rand_impact` means "what is at
+stake" everywhere else on the Brief — it orders the feed and it is the figure in
+the greeting. Unrecorded paperwork is not a loss, and bills falling due on terms
+you agreed are not money at risk; putting either number there would make an admin
+chore or an ordinary Tuesday outrank a real problem. Both totals are in the
+sentence, where they belong.
+
+**Rule 3 suppresses itself against open `debtors_watch` findings.** Vyso's own
+OrderFlow invoices and this org's Xero receivables are frequently the same debt
+recorded twice. Debtors Watch keeps the card (it reads the ledger the business
+operates in and can quote a balance net of payments and credit notes); Xero Watch
+stands down. Matched on customer name at the same dice floor rule 2 uses.
+
+**Rule 5's `rand_impact` is the LARGER of the two amounts, not their sum.** What is
+at stake is paying one of them twice.
+
+**`xero_invoices` gets an OWNER/ADMIN select policy, stricter than
+`xero_connections`' member one.** A member may see that Xero is connected (chrome);
+they may not see what is in it (money). It is the database-level twin of
+`canSeeMoney`, which the routes and pages enforce on top.
+
+**Xero is the first agent whose `evidence_refs` are not all one kind of row** —
+four rules cite mirror uuids, rule 2 cites `documents.id`. The tie-breaker is the
+dedupe key's rule (`xeroRefsAreDocuments`), because `evidence_refs` has no type
+column and the agent slug is no longer enough. An unparseable key falls back to
+the mirror, and the resolver verifies ids against the table before linking — so a
+wrong guess costs a missing link, never a wrong one.
+
+**The Xero evidence link LEAVES VYSO** (`go.xero.com`) — the only one in the
+product that does, because that is where the row lives and where anything can be
+done about it. The URL is recorded on the mirror row at SYNC time rather than
+built at render time, so a card keeps the link that worked when it was written.
+Rows without one fall back to `/app/plugins/xero`.
+
+**The Xero strip is headed "Subject", not "Evidence"** (joining Stock Cover). "R
+41 000 of bills fall due by Friday" does not have those bills as proof — it IS
+them. The one rule that genuinely cites proof (rule 2, Doc-U documents) resolves as
+`documents` and gets the honest "Evidence".
+
+**The Brief chip is INFO tone, not warning.** Xero Watch mostly reports what
+another system already knows and Vyso has merely noticed. Price Watch's warning
+pair would put "bills fall due on Friday" at the same pitch as "your supplier put
+you up 12%".
+
+**Finch gets ONE tool, on `orderflow` and `brief`.** Five would be five decisions
+the model has to make before it can answer "how are we on cash?". Most of the tool
+description and the knowledge paragraph are about what NOT to say: an unsynced
+mirror looks exactly like a business with no unpaid invoices, and the tool returns
+`synced: false` plus a note so the model says "Vyso has not read Xero yet" rather
+than making a false claim about the customer's accounting system. It is also told
+never to add Xero receivables to OrderFlow invoices — frequently the same debt.
+
+**Cron order: sync 03:20, Xero Watch 03:30**, before Doc Watch (03:40). The agent
+does NOT trigger a sync: it reads whatever the 03:20 run left and rule 1 exists to
+notice when that is stale. An agent that synced first would hide the failure it is
+supposed to report. Both are idempotent, so the ordering is a courtesy.
+
+## Deviations from the plan, and why
+
+**A third test file, `tests/plugins.test.ts`.** The plan names two. The status dot
+is the only thing the rail says about a connection and it says it in a colour, so
+the status→tone mapping is pinned rather than trusted to a glance at a `?:` chain.
+
+**`lib/platform/plugins-data.ts` and `lib/platform/xero-mirror.ts` are not in the
+plan's file list.** The plan has the layout fetching `xero_connections.status`
+"once" and the page reading the mirror, without saying where those live. Both are
+I/O beside a pure, tested leaf — the same split `finding-kinds.ts` /
+`agent-findings.ts` already has, and the reason is the same: `node --test` cannot
+resolve `next/headers`. `xero-mirror.ts` takes a client rather than making one, so
+the page (RLS), Finch (RLS) and the agent (service role) share one loader.
+
+**`lib/platform/doc-watch/detect.ts` gained two `export` keywords.** The plan says
+not to touch other agents. Rule 2 has to ask the same question of the same
+`extracted_data` — "what number is on this invoice, and what is its stated
+total?" — and re-implementing those label patterns beside it would mean two
+definitions of how Vyso reads a document number, drifting the day extraction
+learns a new label. No behaviour, no caller and no signature changed.
+
+**`getXeroAccessTokenForOrg` was added to `lib/platform/xero.ts`.** The plan says
+the sync gets its token "via `getXeroAccessToken`", which is private and takes a
+context built from a signed-in session. The new export wraps it with
+`userId: ''` — safe because that field is read only by the three OAuth paths
+(start, consume state, record who connected), none of which is reachable from the
+sync. Documented at the function.
+
+**`/app/settings` lost its `searchParams`.** With the callback landing on the
+plugin page, `?xero_connected` / `?xero_error` never arrive there again, so the
+prop and the two reads it fed were removed rather than left as dead parameters.
+
+## SQL Josh must paste
+
+`supabase/xero-sync.sql` — idempotent, safe to re-run. Requires
+`supabase/xero-integration.sql` (already applied). Nothing works until it is run
+and nothing breaks before it is: the sync answers `{"tablesMissing":true}`, the
+plugin page's Snapshot says the mirror is not set up, and the agent stands down
+with a warning rather than raising a "nothing has synced" card that would send the
+owner to reconnect a connection that is fine.
+
+## Cron entries added to `vercel.json`
+
+| Path | UTC | Why there |
+|---|---|---|
+| `/api/integrations/xero/sync` | `20 3 * * *` | before every agent — it is what fills the mirror they read |
+| `/api/agents/xero-watch` | `30 3 * * *` | ten minutes after the sync, ten before Doc Watch |
+
+## Gates
+
+`npx tsc --noEmit` clean · `npm test` **600 pass / 0 fail** (484 + 116 new) ·
+`npm run build` clean, listing `/app/plugins`, `/app/plugins/xero`,
+`/api/integrations/xero/sync` and `/api/agents/xero-watch` · `npx eslint .`
+**50 errors, 40 warnings** — byte-identical to the pre-wave baseline, nothing new
+introduced and nothing pre-existing fixed.
+
+## Not verified, and flagged rather than hidden
+
+**Nothing in this wave has talked to Xero.** No test and no shell command made a
+network call to `api.xero.com`, by instruction. Every payload the mappers are
+tested against is a hand-built fixture written to Xero's published response shapes
+for `GET /api.xro/2.0/Invoices` and `GET /api.xro/2.0/Contacts`, and the fields
+relied on are listed in `xero-sync-shared.ts`'s docblock. **If the live API differs
+from those fixtures, the fixtures are the first thing to correct** — they are the
+specification this code was written against. The highest-risk assumption is the
+.NET date serialisation (`/Date(1518685950940+0000)/`): a parser that silently
+returned null there would produce a mirror with no dates, which every rule
+downstream reads as "nothing is overdue" — a total failure that looks exactly like
+a well-behaved business.
+
+**Nothing has been run against a live database.** `syncXeroOrg`, `runXeroWatch`,
+`xero-mirror.ts` and `plugins-data.ts` are I/O and are not unit tested by design;
+every decision they make is, in `xero-sync-shared.ts`, `plugins.ts` and
+`xero-watch/detect.ts`.
+
+**The two `go.xero.com` deep-link paths are not confirmed against a live tenant.**
+They are the long-standing `AccountsReceivable/View.aspx?InvoiceID=` and
+`AccountsPayable/View.aspx?InvoiceID=` routes. They are stored per row at sync
+time, so if Xero has moved them the fix is one function
+(`xeroInvoiceUrl`) plus a resync, and old cards keep whatever was recorded.
