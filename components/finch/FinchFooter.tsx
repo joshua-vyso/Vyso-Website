@@ -1,5 +1,5 @@
-import Image from "next/image";
 import Link from "next/link";
+import { BrandLockup } from "./BrandLockup";
 
 import { TrackedLink } from "./TrackedLink";
 
@@ -87,13 +87,9 @@ export function FinchFooter() {
         </div>
 
         <div className="mt-[48px] flex flex-wrap items-center gap-x-[22px] gap-y-[10px] border-t border-fn-line-2 pt-[28px] text-[12.5px] text-fn-muted lg:mt-[64px] lg:text-[13px]">
-          <Image
-            src="/finch/vyso-wordmark.svg"
-            alt="Vyso"
-            width={51}
-            height={13}
-            className="block h-[13px] w-auto opacity-70"
-          />
+          {/* The same lockup as the nav. A footer that says only "Vyso" leaves
+              the reader to guess which of the two products they were on. */}
+          <BrandLockup product="finch" size="footer" className="opacity-75" />
           <span>Built by Vyso in Johannesburg.</span>
           <TrackedLink
             href={`mailto:${CONTACT_EMAIL}`}

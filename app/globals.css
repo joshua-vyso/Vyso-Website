@@ -1223,3 +1223,125 @@ html.lenis, html.lenis body { height: auto; }
 /* Focus rings: `[data-ground]` covers content inside a Band, but the nav, the
    footer and the waitlist form sit outside one. */
 .orbit-site :focus-visible { outline: 2px solid var(--fn-focus-dark); outline-offset: 2px; }
+
+/* ── Soft seams — the Orbit ground is one ground ─────────────────────────────
+   Josh, 2026-08-19: "sections don't blend — the page background is one colour
+   and the hero band another with a hard edge."
+
+   Correct, and it is what §2's band rhythm does on paper: there, a hard edge
+   between paper and ink is the *point* — two materials meeting. On Orbit there
+   is only one material. Every band is ink; the alternation is `--ob-bg` against
+   `--ob-bg-2`, a four-percent step in lightness. A step that small does not
+   read as two surfaces, it reads as a seam somebody forgot to finish, and a
+   1px-sharp one at that.
+
+   ── The mechanism ───────────────────────────────────────────────────────────
+   `.orbit-site` already paints `--ob-bg` on the shell, so `--ob-bg` bands need
+   no fill of their own — they *are* the page. That makes the fix a one-sided
+   one: the bands that differ from the page ground stop painting a flat block
+   and paint a gradient that starts and ends at the page ground instead. A band
+   therefore rises out of the ground over ~180px and settles back into it over
+   the same distance, and the join between any two bands is 360px of ramp with
+   no edge anywhere in it. Nothing needs to know what its neighbour is, which is
+   why this is a stylesheet block and not a `seam` prop threaded through thirty
+   `<Band>`s on nine pages.
+
+   Four details carry it:
+
+   - **Unlayered, so it beats the utility.** Tailwind's `bg-ob-bg-2` lives in
+     `@layer utilities`; an unlayered rule outranks every layer regardless of
+     specificity. Same mechanism the `.finch-site` link reset above relies on.
+   - **`bg-ob-bg-2` is the contract.** These selectors key on the class an Orbit
+     page passes to `<Band className>` to choose the second ink fill, because
+     that class is the only place the choice is written down. An Orbit band that
+     wants the second fill says `bg-ob-bg-2`, as all of them already do; one
+     that invents another way of getting there will step.
+   - **`min(180px, 22%)`.** A short band — the trades strip is ~330px at
+     desktop — would otherwise be nothing but ramp and never reach its own
+     colour.
+   - **`--ob-fade-b: 0` on the last band in `<main>`.** Every Orbit page ends on
+     `WaitlistBand`, which is `--ob-bg-2`, and so is the footer directly under
+     it. Fading out and straight back in would put a 360px dip of `--ob-bg`
+     between two bands of the same colour — a seam invented by the fix for
+     seams. The footer is left flat for the same reason, and its top border is
+     gone with it: a hairline over a gradient is the hard edge again.
+
+   The `SeamHairline` is untouched. It is a 3px orange→blue rule that a band
+   *asks* for, and a deliberate mark is not what any of this is about.         */
+.orbit-site {
+  /* The ramp. `--ob-fade` is the fixed length every *texture* fades over;
+     `--ob-fade-t/-b` are the per-edge lengths the *fill* fades over, and only
+     those two are ever zeroed (below), because only a fill can dip. */
+  --ob-fade:   min(180px, 22%);
+  --ob-fade-t: min(180px, 22%);
+  --ob-fade-b: min(180px, 22%);
+}
+
+/* One ramp, used as an alpha mask by both texture layers. */
+@supports (mask-image: linear-gradient(#000, #000)) {
+  .orbit-site main > [data-ground] > [data-band-device],
+  .orbit-site main > [data-ground].fn-ground-grain::before {
+    -webkit-mask-image: linear-gradient(
+      180deg,
+      transparent 0,
+      #000 var(--ob-fade),
+      #000 calc(100% - var(--ob-fade)),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      180deg,
+      transparent 0,
+      #000 var(--ob-fade),
+      #000 calc(100% - var(--ob-fade)),
+      transparent 100%
+    );
+  }
+}
+
+.orbit-site main > [data-ground].bg-ob-bg-2 {
+  background: linear-gradient(
+    180deg,
+    var(--ob-bg) 0,
+    var(--ob-bg-2) var(--ob-fade-t),
+    var(--ob-bg-2) calc(100% - var(--ob-fade-b)),
+    var(--ob-bg) 100%
+  );
+}
+
+/* The blue bands keep §2's deep→lighter vertical ramp; they just start and end
+   on the ink ground instead of on a cut. */
+.orbit-site main > [data-ground="blue"] {
+  background: linear-gradient(
+    180deg,
+    var(--ob-bg) 0,
+    var(--fn-blue-900) var(--ob-fade-t),
+    var(--fn-blue-700) calc(100% - var(--ob-fade-b)),
+    var(--ob-bg) 100%
+  );
+}
+
+/* ── …and the textures, which paint over it ─────────────────────────────────
+   The band's fill is only half of what the reader sees.
+
+   `FacetPlane` covers a blue band edge to edge in opaque facets, so a ramp
+   underneath it is a ramp underneath a lid: the first attempt at these seams
+   left the ink→blue join exactly as hard as it had been. `OscillatingGrid` and
+   `Glow` are subtler about it but stop just as abruptly at the band's last
+   pixel. And the ink grain is the one that shows *first* on this subsite —
+   `.orbit-site` paints `--ob-bg` on the shell, the hero band paints `--ob-bg`
+   too, and the only difference between the nav's ground and the hero's is 7% of
+   noise, which is exactly enough to draw a line under the nav and make the hero
+   look like a separate slab (Josh: "the page background is one colour and the
+   hero band another").
+
+   Both therefore carry the ramp as an alpha mask — see `--ob-fade` above, where
+   they are declared together. They use the *fixed* length rather than the
+   per-edge one on purpose: a texture cannot produce the dip that the per-edge
+   zeroing below exists to prevent, and a grain that stops dead against a
+   footer with no grain is the 5-unit step this rule was written for.          */
+
+/* Two bands of the same fill in a row: no dip between them. */
+.orbit-site main > [data-ground].bg-ob-bg-2:has(+ [data-ground].bg-ob-bg-2) { --ob-fade-b: 0px; }
+.orbit-site main > [data-ground].bg-ob-bg-2 + [data-ground].bg-ob-bg-2 { --ob-fade-t: 0px; }
+/* …and none between the last band and the footer, which is the same fill. */
+.orbit-site main > [data-ground]:last-child { --ob-fade-b: 0px; }

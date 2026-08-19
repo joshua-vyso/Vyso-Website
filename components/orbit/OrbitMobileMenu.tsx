@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { BRAND_LABEL, BrandLockup } from "@/components/finch/BrandLockup";
 
 import type { OrbitNavSection } from "./OrbitNav";
 
@@ -130,14 +130,13 @@ export function OrbitMobileMenu({
           className="fixed inset-0 z-50 flex flex-col overflow-y-auto bg-ob-bg lg:hidden"
         >
           <div className="flex items-center gap-[28px] border-b border-ob-line px-[20px] py-[18px]">
-            <Link href="/orbit" onClick={close} className="flex items-center">
-              <Image
-                src="/orbit/orbit-primary-dark.svg"
-                alt="Orbit"
-                width={1200}
-                height={425}
-                className="block h-[26px] w-auto"
-              />
+            <Link
+              href="/orbit"
+              onClick={close}
+              aria-label={BRAND_LABEL.orbit}
+              className="flex items-center"
+            >
+              <BrandLockup product="orbit" size="sheet" />
             </Link>
             <button
               type="button"

@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
+import { BRAND_LABEL, BrandLockup } from "./BrandLockup";
 import { usePathname } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
 
@@ -156,16 +156,13 @@ export function MobileMenu({
               was and the sheet reads as the nav expanding rather than a new
               screen arriving. */}
           <div className="flex items-center gap-[36px] border-b border-fn-line px-[20px] py-[18px]">
-            <Link href="/" onClick={close} className="flex items-center gap-[10px]">
-              <Image
-                src="/finch/vyso-wordmark.svg"
-                alt="Vyso"
-                width={59}
-                height={15}
-                className="block h-[13px] w-auto"
-              />
-              <span className="h-[14px] w-px bg-fn-line-3" />
-              <span className="font-fn-serif text-[16px] tracking-[-0.01em]">Finch</span>
+            <Link
+              href="/"
+              onClick={close}
+              aria-label={BRAND_LABEL.finch}
+              className="flex items-center"
+            >
+              <BrandLockup product="finch" size="sheet" />
             </Link>
             <button
               type="button"

@@ -1,7 +1,7 @@
-import Image from "next/image";
 import Link from "next/link";
 
 import { TRADES } from "@/lib/orbit/trades";
+import { BRAND_LABEL, BrandLockup } from "@/components/finch/BrandLockup";
 
 import { OrbitMobileMenu } from "./OrbitMobileMenu";
 
@@ -45,15 +45,12 @@ export function OrbitNav({ active = "none" }: { active?: OrbitNavSection }) {
          later sibling. */
       className="relative z-30 mx-auto flex max-w-[1160px] items-center gap-[28px] px-[20px] py-[18px] text-ob-text lg:px-[40px] lg:py-[24px]"
     >
-      <Link href="/orbit" className="flex shrink-0 items-center">
-        <Image
-          src="/orbit/orbit-primary-dark.svg"
-          alt="Orbit"
-          width={1200}
-          height={425}
-          priority
-          className="block h-[26px] w-auto lg:h-[30px]"
-        />
+      {/* `Vyso | Orbit`, the same lockup component the Finch nav draws as
+          `Vyso | Finch`. Orbit is a product of the company, not a company, and
+          a top-left that says only "Orbit" is the one place a reader would
+          never find that out. */}
+      <Link href="/orbit" aria-label={BRAND_LABEL.orbit} className="flex shrink-0 items-center">
+        <BrandLockup product="orbit" size="nav" />
       </Link>
 
       <div className="ml-auto flex items-center gap-[16px] text-[14px] font-medium lg:gap-[24px]">

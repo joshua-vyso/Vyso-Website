@@ -4243,3 +4243,165 @@ covers marketing pages) · `npm run build` clean, all 24 Orbit routes prerendere
 · `npm run lint` **50 errors, 40 warnings**, byte-identical to the pre-change
 baseline; `npx eslint app/orbit components/orbit lib/orbit lib/og/orbit.tsx`
 reports **zero** problems.
+
+# Orbit v2 — a real phone, one company lockup, soft seams, faster scroll (2026-08-19, branch `main`)
+
+Josh's review of the live Orbit pages, four notes, all four fixed. The phone and
+the lockup are component changes; the seams are a stylesheet block; the scroll is
+one number in the sequence plus a second Lenis mode.
+
+## 1. "You've made a half phone"
+
+`components/orbit/WhatsAppPhone.tsx` sized its screen by its contents, so
+`HERO_GLIMPSE` (two messages) drew a 320×350 slab. A phone is 19.5:9.
+
+The screen is now a fixed box — `PHONE_SCREEN_W` 300 × `PHONE_SCREEN_H` 649,
+which is 390×844 logical points to the pixel of rounding — inside a 10px bezel on
+**all four** sides, so the frame is 320×669. Inside it is a flex column: status
+bar, chat header, the conversation, compose bar, home indicator.
+
+- **The conversation is the only thing that flexes** (`flex-1 min-h-0
+  justify-end overflow-hidden`). Wallpaper runs header-to-compose-bar whatever
+  the script is; a short script sits on the bottom edge with wallpaper above it,
+  which is what a real thread looks like; a long one scrolls off the top.
+  `Bubble` and `DayChip` gained `shrink-0` so they clip rather than squash.
+- **The home indicator moved out of the compose bar** into its own strip at the
+  bottom of the screen, where iOS draws it.
+- **Side buttons**, three hairlines on the rails. Cheap, and the last tell.
+- **`PhoneFrame` takes a `scale`.** The wrapper takes the scaled box in flow, so
+  a scaled phone still sizes its column. Only the pinned sequence uses it.
+
+Every render is the one component: hero, `/orbit/how-it-works` ×4, every trade
+page, `/orbit/waitlist`, `/orbit/compare/[slug]`, and both storyboard and pinned
+paths of `OrbitSequence`. The OG images never drew a phone. Nothing clips it —
+the sticky stage's `overflow-hidden` is handled by the scale below, and the
+busiest script (`MATERIALS`, four messages with two row tables) measures ~430px
+into a 489px chat area, verified in `.ai/verification/orbit/v2/`.
+
+## 2. Vyso | Orbit, and Vyso | Finch
+
+New `components/finch/BrandLockup.tsx`: company wordmark · 1px rule · product,
+one link, one accessible name. Both sites import it, so there is now exactly one
+answer to "whose site is this?".
+
+- **Orbit** was a bare Orbit logo. It is now the Vyso wordmark in paper +
+  divider + the Orbit mark, `aria-label="Vyso — Orbit"`.
+- **Finch's nav** already composed it; it now composes it *from the same file*
+  and carries `aria-label="Vyso — Finch"` (previously three separate
+  announcements: "Vyso", the divider, "Finch").
+- **Finch's footer** said only "Vyso". It now matches the nav.
+- **Both mobile sheets** match their navs.
+
+`public/orbit/vyso-wordmark-paper.svg` is the Finch wordmark's paths at
+`--ob-text`, not a filter: `globals.css` inverts nav `<img>`s to `#FFFFFF` over
+dark bands, and `OrbitNav` is labelled `Orbit` specifically to opt out of that
+block. The Finch divider keeps its `bg-fn-line-3` class because the same block
+keys the divider's inversion on exactly that selector — verified on `/pricing`'s
+dark hero.
+
+## 3. The bands did not blend
+
+On paper, a hard edge between two grounds is §2 working: two materials meeting.
+Orbit has one material — every band is ink, and the alternation is `--ob-bg`
+against `--ob-bg-2`, a four-percent step in lightness. That does not read as two
+surfaces; it reads as an unfinished seam.
+
+New block at the end of `app/globals.css`. `.orbit-site` already paints
+`--ob-bg` on the shell, so the fix is one-sided: bands that differ from the page
+ground paint a gradient that *starts and ends* at it. A band rises out of the
+ground over 180px and settles back over the same distance, so any join is 360px
+of ramp. Nothing needs to know its neighbour, which is why this is a stylesheet
+block rather than a `seam` prop threaded through thirty `<Band>`s on nine pages.
+
+Two things had to follow, and the first attempt missed both:
+
+- **The devices paint over the fill.** `FacetPlane` covers a blue band edge to
+  edge, so the ink→blue join was exactly as hard after the fill ramp as before
+  it. `[data-band-device]` now carries the ramp as an alpha mask.
+- **So does the grain.** `.fn-ground-grain::before` is 7% noise over the whole
+  band — and since the hero's fill is the same `--ob-bg` as the shell, that 7%
+  *was* the line under the nav that Josh described. Same mask.
+
+Both textures use a fixed `--ob-fade`; only the fill's per-edge `--ob-fade-t/-b`
+are ever zeroed, which happens where two same-fill bands touch and at the last
+band in `<main>` (every page ends on `WaitlistBand`, and the footer is the same
+fill — fading out and back in would invent a dip). `OrbitFooter` lost its
+`border-t` for the same reason: a hairline over a gradient is the hard edge
+again. `SeamHairline` is untouched — a rule a band *asks* for is not what any of
+this is about.
+
+**Measured**, on full-page captures of all ten Orbit routes, as the worst
+row-to-row RGB step in a row-mean across the left gutter (a row-mean because a
+canvas dot is local and a seam is not):
+
+| | worst step |
+|---|---|
+| before, hero→sequence | **10 units over 2px** (`.ai/verification/orbit/orbit-1440.jpg` y=521) |
+| before, ink→blue | **~90 units in 1px** (`#0B1020` → `#163F7A`, by construction) |
+| after, every seam on every page | **≤ 5.4 units**, and the four worst are device lines crossing the sample, not joins |
+
+## 4. Scrolling felt slow
+
+Diagnosed in the browser at 1440×900, all four hypotheses:
+
+**(a) Lenis config — a contributing cause.** `SNAPPY` (`lerp 0.25`,
+`wheelMultiplier 1.1`) is right for Finch, where paper and ink bands alternate
+and a hard edge is always arriving to tell the reader the page is moving. Orbit
+is ten bands of near-identical ink — more so now that the seams are soft — so
+there is nothing in frame to calibrate against and the same easing reads as lag.
+`SmoothScroll` gains an `ORBIT` mode (`lerp 0.32`, `wheelMultiplier 1.2`),
+selected by an `isOrbit` boolean in the effect's dep array exactly as
+`isPlatform` is, so navigating *within* the subsite never rebuilds the instance.
+`data-lenis-mode` on `<html>` names it. Settle-to-half-a-pixel, derived from
+Lenis's own damping law (`ln(2d)/(60·lerp)`) and cross-checked against this
+file's earlier stopwatch numbers to within 2%: one notch 360→**285ms**, three
+433→**343ms**, a 1200px fling 525→**415ms**.
+
+**(b) The pinned sequence — the main cause.** `OrbitSequence`'s wrapper was
+`320vh`. The pin is `WRAP_VH − 100`, so the reader pushed **2.2 viewports
+(1,980px)** of wheel to advance three chat bubbles — ~660px per message, on a
+page only 9.47 viewports long end to end. A third of the subsite's entire scroll
+was spent in a section that does not move. `WRAP_VH` is now **220**: the pin is
+**1.2 viewports (1,080px)**, inside the ≤1.5× the review asked for, and because
+`BEATS` are fractions of the range each message now arrives in ~173px of wheel
+instead of ~317px. Page total: **8,523px → 7,861px (9.47 → 8.74 viewports)**,
+despite the phone growing 320px taller.
+
+**(c) `scroll-behavior: smooth` — refuted, not the cause.** It is set on `<html>`
+(`globals.css:124`) and the `.lenis.lenis-smooth` guard below it is effectively
+dead, because Lenis only carries that class transiently while
+`isScrolling === "smooth"`. It does not matter: Lenis's `setScroll` passes
+`behavior: "instant"` explicitly (`lenis.mjs:532-541`), and Next wraps route
+scrolls in `disableSmoothScrollDuringRouteTransition`
+(`client/components/layout-router.js:163`). The only thing still animated by it
+is an in-page hash jump, which is wanted. Left alone; the stale comment in
+`SmoothScroll` about anchors relying on "the browser's instant jump" is the one
+inaccuracy, and it is a comment.
+
+**(d) `will-change` / canvas jank — not a factor.** `grep` finds no
+`will-change` on any Orbit route; the canvas devices are `IntersectionObserver`
+-gated and DPR-capped in `canvas-stage.ts`; and `/orbit`'s first viewport mounts
+zero canvases. Frame timing could not be sampled directly — the agent's browser
+pane keeps the document `hidden`, which pauses `requestAnimationFrame` outright —
+so this one is argued from the code and the device inventory rather than a trace.
+
+**Also fixed while in there:** the pinned stage now measures the viewport and
+*scales* the phone into it (`STAGE_CHROME` 132, floor 0.85) rather than letting a
+669px frame shear against a short `h-screen` box, and `MIN_STAGE_H` drops
+760 → 720 because a scaled phone fits where a fixed one did not.
+
+## Verified
+
+`.ai/verification/orbit/v2/` — 36 captures against `next start` on a production
+build, via headless Chrome over CDP (viewport-exact, no dev overlay): every
+Orbit route at **1440×900 and 390×844**, full-page seam audits of `/orbit` at
+both widths and of `/orbit/how-it-works`, the pinned sequence at t = 0.25 / 0.50
+/ 0.75 / 1.00, the short-viewport scale (1440×760) and the storyboard fallback
+(1440×700), both mobile sheets open, both footers, and the Finch side of the
+lockup change including `/pricing`'s dark hero where the wordmark inverts.
+
+## Gates
+
+`npx tsc --noEmit` clean · `npm test` **736 pass / 0 fail** · `npm run build`
+clean · `npx eslint .` **50 errors, 40 warnings** — unchanged from the baseline;
+none of the touched files contributes one.

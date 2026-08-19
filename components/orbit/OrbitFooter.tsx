@@ -1,7 +1,7 @@
-import Image from "next/image";
 import Link from "next/link";
 
 import { WaveField } from "@/components/finch/ground/WaveField";
+import { BrandLockup } from "@/components/finch/BrandLockup";
 import { ORBIT } from "@/lib/orbit/site";
 import { TRADES } from "@/lib/orbit/trades";
 import { ORBIT_ARTICLES } from "@/lib/orbit/articles";
@@ -68,7 +68,11 @@ export function OrbitFooter() {
   const year = new Date().getFullYear();
 
   return (
-    <footer data-ground="ink" className="relative isolate overflow-hidden border-t border-ob-line bg-ob-bg-2">
+    /* No `border-t`. The band above this one is `--ob-bg-2` as well and the
+       soft-seam block in `globals.css` runs the two together on purpose; a
+       hairline across that join is the hard edge the seams exist to remove.
+       The wave field is what separates the footer from the page. */
+    <footer data-ground="ink" className="relative isolate overflow-hidden bg-ob-bg-2">
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
         <WaveField static lines={9} amplitude={18} color="--ob-blue" colorFallback="#0369FD" opacity={0.22} />
       </div>
@@ -136,13 +140,7 @@ export function OrbitFooter() {
         </div>
 
         <div className="mt-[40px] flex flex-wrap items-center gap-x-[20px] gap-y-[12px] border-t border-ob-line-2 pt-[26px]">
-          <Image
-            src="/orbit/orbit-primary-dark.svg"
-            alt="Orbit"
-            width={1200}
-            height={425}
-            className="block h-[22px] w-auto opacity-80"
-          />
+          <BrandLockup product="orbit" size="footer" className="opacity-85" />
           <span className="text-[12.5px] text-ob-mono">{ORBIT.status}</span>
           <span className="ml-auto text-[12.5px] text-ob-mono">
             &copy; {year} Vyso · Johannesburg

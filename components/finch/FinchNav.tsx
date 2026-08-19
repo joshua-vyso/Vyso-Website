@@ -1,5 +1,5 @@
-import Image from "next/image";
 import Link from "next/link";
+import { BRAND_LABEL, BrandLockup } from "./BrandLockup";
 
 import { MobileMenu } from "./MobileMenu";
 import { TrackedLink } from "./TrackedLink";
@@ -45,17 +45,11 @@ export function FinchNav({ active = "none" }: { active?: FinchNavSection }) {
          page — the nav is the topmost element there anyway. */
       className="relative z-30 mx-auto flex max-w-[1160px] items-center gap-[36px] px-[20px] py-[18px] lg:px-[40px] lg:py-[26px]"
     >
-      <Link href="/" className="flex items-center gap-[10px] lg:gap-[12px]">
-        <Image
-          src="/finch/vyso-wordmark.svg"
-          alt="Vyso"
-          width={59}
-          height={15}
-          priority
-          className="block h-[13px] w-auto lg:h-[15px]"
-        />
-        <span className="h-[14px] w-px bg-fn-line-3 lg:h-[16px]" />
-        <span className="font-fn-serif text-[16px] tracking-[-0.01em] lg:text-[18px]">Finch</span>
+      {/* The company lockup, not a Finch wordmark: `Vyso | Finch`, the same
+          component the Orbit nav draws as `Vyso | Orbit`. One link, one
+          accessible name — see `BrandLockup`. */}
+      <Link href="/" aria-label={BRAND_LABEL.finch} className="flex items-center">
+        <BrandLockup product="finch" size="nav" />
       </Link>
 
       <div className="ml-auto flex items-center gap-[14px] text-[14px] font-medium lg:gap-[26px]">

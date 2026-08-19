@@ -7,7 +7,7 @@ import { useStaticMotion } from "@/components/finch/motion-preference";
 import { JOB_TO_INVOICE } from "@/lib/orbit/sequences";
 
 import { HERO_INVOICE, HERO_JOB, InvoiceDraftCard, JobCard } from "./JobRecordCard";
-import { Bubble, ChatBody, DayChip, PhoneFrame } from "./WhatsAppPhone";
+import { Bubble, ChatBody, DayChip, PHONE_FRAME_H, PhoneFrame } from "./WhatsAppPhone";
 
 /* ── The Orbit sequence ──────────────────────────────────────────────────────
    The homepage's one pinned section: a phone on the left playing the flagship
@@ -20,10 +20,10 @@ import { Bubble, ChatBody, DayChip, PhoneFrame } from "./WhatsAppPhone";
 
    Three things are deliberately different from the Finch sequence:
 
-   - **It is shorter.** 320vh, not 480. Four messages and two cards is less
-     choreography than five beats of invoice extraction, and a wrapper taller
-     than its content is a section the reader scrolls through wondering when it
-     will end.
+   - **It is shorter.** 220vh, not 480 and no longer 320. Four messages and two
+     cards is less choreography than five beats of invoice extraction, and a
+     wrapper taller than its content is a section the reader scrolls through
+     wondering when it will end. See `WRAP_VH` for why 320 was wrong.
    - **It is direction-agnostic.** `PlatformShowcase` plays forward and reverse
      because its content is a comparison. A conversation only reads one way, so
      scrolling back up simply un-plays it, which is the correct behaviour for a
@@ -54,6 +54,24 @@ const CAPTIONS = ["01 YOU TEXT", "02 ORBIT TRACKS", "03 YOU SAY INVOICE", "04 OR
     state, and in practice a section that looks broken for the second and a
     half before the reader scrolls again. The tradesperson's message is the
     premise, not a beat; Orbit's answer to it is the thing worth revealing. */
+/* ── How long the stage stays pinned ────────────────────────────────────────
+   **220, not 320** (2026-08-19, Josh: "scrolling feels slow / anti-movement").
+
+   The wrapper is the scroll *range*; the pin is the part of it where nothing
+   moves, and that is `WRAP_VH − 100` because the sticky stage is one viewport
+   tall. At 320 the reader pushed 2.2 viewports of wheel — 1,980px at a 900px
+   window — to advance three chat bubbles, which is ~660px of scrolling per
+   message on a page that is only 9.5 viewports long end to end. A third of the
+   whole subsite's scroll was spent in a section that does not move.
+
+   220 makes the pin 1.2 viewports (1,080px at 900), which is inside the ≤1.5×
+   the review asked for, and — because `BEATS` are fractions of the range rather
+   than absolute distances — each message now arrives in ~173px of wheel instead
+   of ~317px. The section reads as *responding* to the scroll rather than
+   absorbing it. Nothing else changed: the beats, the captions and the record
+   column are the same numbers doing the same thing over a shorter run.         */
+const WRAP_VH = 220;
+
 const BEATS: [number, number][] = [
   [0.10, 0.26],
   [0.34, 0.50],
@@ -113,7 +131,7 @@ function RecordColumn({
 
 /* ── Desktop: the sticky, scroll-linked stage ───────────────────────────── */
 
-function PinnedSequence() {
+function PinnedSequence({ scale }: { scale: number }) {
   const wrap = useRef<HTMLDivElement>(null);
   const { scrollYProgress: t } = useScroll({ target: wrap, offset: ["start start", "end end"] });
 
@@ -145,7 +163,7 @@ function PinnedSequence() {
   const invoiceY = useTransform(invoiceOpacity, (p) => (1 - p) * 18);
 
   return (
-    <div ref={wrap} className="relative h-[320vh]">
+    <div ref={wrap} className="relative" style={{ height: `${WRAP_VH}vh` }}>
       <div className="sticky top-0 flex h-screen items-center overflow-hidden">
         <div className="mx-auto flex w-full max-w-[1160px] flex-col gap-[26px] px-[40px]">
           <div className="flex items-center justify-center gap-[64px]">
@@ -153,6 +171,7 @@ function PinnedSequence() {
               label={JOB_TO_INVOICE.alt}
               statusTime={MESSAGES[0].time}
               header={{ name: "Orbit", presence: "online" }}
+              scale={scale}
             >
               <ChatBody>
                 <DayChip />
@@ -233,29 +252,52 @@ function useIsDesktop(): boolean | null {
   );
 }
 
-/** The pinned stage needs a viewport tall enough to hold a 640px phone plus
-    the captions. Below that it falls back to the storyboard rather than
-    clipping the phone against the top of a sticky 100vh box. */
-const MIN_STAGE_H = 760;
+/* ── Fitting a real phone into a sticky viewport ────────────────────────────
+   The phone is now 669px tall (19.5:9 — `WhatsAppPhone`'s header explains why),
+   which is 200px more than the squat frame this stage was built around. The
+   sticky box is `h-screen overflow-hidden`, so on a short laptop the difference
+   between "fits" and "the top of the phone is sheared off" is a few pixels of
+   window chrome.
 
-function useTallEnough(): boolean {
-  const [tall, setTall] = useState(true);
+   So the stage measures the viewport and *scales* the phone to it rather than
+   letting it clip. `STAGE_CHROME` is what has to fit around it: the captions
+   row, the 26px gap above it, and enough air top and bottom that the phone is
+   framed rather than wedged.
+
+   Below `MIN_STAGE_H` the storyboard takes over — at that point the scale would
+   be doing more harm (unreadable chat) than the fallback does. */
+const STAGE_CHROME = 132;
+const MIN_STAGE_H = 720;
+/** Never below this: a phone drawn smaller than ~0.85 stops being readable,
+    which is the whole reason this component draws text instead of an image. */
+const MIN_PHONE_SCALE = 0.85;
+
+const phoneScale = (viewportH: number) =>
+  Math.min(1, Math.max(MIN_PHONE_SCALE, (viewportH - STAGE_CHROME) / PHONE_FRAME_H));
+
+/** The viewport height, measured before paint. `0` until the layout effect has
+    run, which renders the storyboard for one commit and no frames — the same
+    trick `useIsDesktop` plays with `null`. */
+function useViewportHeight(): number {
+  const [height, setHeight] = useState(0);
   useLayoutEffect(() => {
-    const measure = () => setTall(window.innerHeight >= MIN_STAGE_H);
+    const measure = () => setHeight(window.innerHeight);
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, []);
-  return tall;
+  return height;
 }
 
 export function OrbitSequence() {
   const reduceMotion = useStaticMotion();
   const isDesktop = useIsDesktop();
-  const tallEnough = useTallEnough();
+  const viewportH = useViewportHeight();
 
-  if (isDesktop === null || reduceMotion || !isDesktop || !tallEnough) return <Storyboard />;
-  return <PinnedSequence />;
+  if (isDesktop === null || reduceMotion || !isDesktop || viewportH < MIN_STAGE_H) {
+    return <Storyboard />;
+  }
+  return <PinnedSequence scale={phoneScale(viewportH)} />;
 }
 
 export default OrbitSequence;

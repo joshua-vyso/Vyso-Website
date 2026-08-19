@@ -37,9 +37,35 @@ import type { ChatMessage, ChatScript } from "@/lib/orbit/sequences";
    means by "alt text on every phone render". The text stays in the DOM, so
    crawlers and answer engines still read the conversation itself.              */
 
+/* ── Proportions ─────────────────────────────────────────────────────────────
+   **A phone is 19.5:9, and the first version of this file was not.** It sized
+   the screen by its contents, so a two-bubble script drew a 320×350 slab that
+   Josh correctly called "half a phone" (2026-08-19). The screen is now a fixed
+   19.5:9 box — the iPhone's own 390×844 logical points, scaled to the width the
+   slot can carry — and the *conversation* is what varies inside it.
+
+   Why 300 rather than 390 CSS px: at 390 the whole drawing would have to be
+   scaled to ~0.77 to fit a hero column, and 14.5px chat text at 0.77 is 11px,
+   which loses the readability argument this file's header makes at length. So
+   the geometry is 390×844's ratio at a 300px width, and the type stays the size
+   a person can actually read. `scale` on `PhoneFrame` is there for the callers
+   that genuinely have less room than that — currently the pinned sequence on a
+   short viewport, which is the one place a fixed 669px frame will not fit.     */
+
 /** Screen width. The frame adds 10px of bezel on each side, so a phone is
     320px wide — which fits a 390px viewport with the site's 20px gutters. */
 export const PHONE_SCREEN_W = 300;
+
+/** Screen height: `PHONE_SCREEN_W × 844/390`, i.e. exactly 19.5:9. */
+export const PHONE_SCREEN_H = Math.round((PHONE_SCREEN_W * 844) / 390); // 649
+
+/** Bezel on every side — top and bottom included, which is the other half of
+    "half a phone": a frame with side rails and no chin is a tablet. */
+export const PHONE_BEZEL = 10;
+
+/** The outer frame, unscaled. */
+export const PHONE_FRAME_W = PHONE_SCREEN_W + PHONE_BEZEL * 2; // 320
+export const PHONE_FRAME_H = PHONE_SCREEN_H + PHONE_BEZEL * 2; // 669
 
 /* ── The wallpaper ───────────────────────────────────────────────────────────
    An abstract 96px tile: rings, dashes, chevrons and dots at low alpha over the
@@ -80,7 +106,7 @@ function StatusBar({ time }: { time: string }) {
   return (
     <div
       aria-hidden
-      className="relative z-10 flex h-[38px] items-end justify-between bg-[#F6F6F6] px-[20px] pb-[5px] text-[12.5px] font-semibold text-[#111B21]"
+      className="relative z-10 flex h-[42px] shrink-0 items-end justify-between bg-[#F6F6F6] px-[20px] pb-[6px] text-[12.5px] font-semibold text-[#111B21]"
     >
       <span className="tracking-[-0.01em]">{time}</span>
       <span className="flex items-center gap-[4px]">
@@ -136,7 +162,7 @@ export function ChatHeader({ name, presence }: { name: string; presence: string 
   return (
     <div
       aria-hidden
-      className="relative z-10 flex items-center gap-[9px] border-b border-[#D8D2CB] bg-[#F6F6F6] px-[10px] py-[7px]"
+      className="relative z-10 flex shrink-0 items-center gap-[9px] border-b border-[#D8D2CB] bg-[#F6F6F6] px-[10px] py-[7px]"
     >
       <svg width="11" height="18" viewBox="0 0 11 18" fill="none" stroke="#0369FD" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M9 1.6 1.9 9 9 16.4" />
@@ -162,7 +188,7 @@ export function ChatHeader({ name, presence }: { name: string; presence: string 
 /** The date chip a chat client puts above the first message of a day. */
 function DayChip({ label = "TODAY" }: { label?: string }) {
   return (
-    <div aria-hidden className="mb-[10px] flex justify-center">
+    <div aria-hidden className="mb-[10px] flex shrink-0 justify-center">
       <span className="rounded-[7px] bg-[#FFFFFF]/85 px-[10px] py-[4px] text-[10.5px] font-medium tracking-[0.04em] text-[#54656F] shadow-[0_1px_1px_rgba(11,20,26,0.08)]">
         {label}
       </span>
@@ -219,7 +245,10 @@ export function Bubble({
     <div
       style={style}
       className={
-        "relative flex " + (out ? "justify-end " : "justify-start ") + className
+        /* `shrink-0`: the chat column is a flex box with `overflow-hidden`, and
+           a bubble that shrank to fit would clip its own text rather than
+           scroll off the top. */
+        "relative flex shrink-0 " + (out ? "justify-end " : "justify-start ") + className
       }
     >
       <div
@@ -265,10 +294,14 @@ export function Bubble({
 }
 
 /** The compose bar. Inert — it is a drawing of a control, not a control, so
-    nothing here is focusable and nothing announces itself as an input. */
+    nothing here is focusable and nothing announces itself as an input.
+
+    `shrink-0`: it is pinned to the bottom of a fixed-height screen whose chat
+    area is the flexible one, and without this a tall conversation would squash
+    the bar rather than scroll under it. */
 export function ChatInputBar() {
   return (
-    <div aria-hidden className="relative z-10 border-t border-[#D8D2CB] bg-[#F6F6F6] px-[8px] pt-[7px] pb-[6px]">
+    <div aria-hidden className="relative z-10 shrink-0 border-t border-[#D8D2CB] bg-[#F6F6F6] px-[8px] pt-[7px] pb-[8px]">
       <div className="flex items-center gap-[9px]">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#0369FD" strokeWidth="1.9" strokeLinecap="round">
           <path d="M10 4.4v11.2M4.4 10h11.2" />
@@ -290,8 +323,19 @@ export function ChatInputBar() {
           <rect x="6.2" y="15" width="1.6" height="3.6" rx="0.8" />
         </svg>
       </div>
-      {/* The home indicator. Two pixels of realism for one div. */}
-      <div className="mx-auto mt-[7px] h-[4px] w-[112px] rounded-full bg-[#111B21]/25" />
+    </div>
+  );
+}
+
+/** The home indicator. Its own strip at the bottom of the *screen* rather than
+    a line inside the compose bar, because that is where iOS draws it — below
+    the app's own chrome, on the app's own background. Two pixels of realism for
+    one div, and the thing that tells the eye the screen ends here and the bezel
+    begins. */
+function HomeIndicator() {
+  return (
+    <div aria-hidden className="relative z-10 shrink-0 bg-[#F6F6F6] pt-[6px] pb-[8px]">
+      <div className="mx-auto h-[4px] w-[112px] rounded-full bg-[#111B21]/30" />
     </div>
   );
 }
@@ -304,6 +348,7 @@ export function PhoneFrame({
   header,
   children,
   className = "",
+  scale = 1,
 }: {
   /** The one-sentence description a screen reader gets. */
   label: string;
@@ -311,45 +356,99 @@ export function PhoneFrame({
   header: { name: string; presence: string };
   children: ReactNode;
   className?: string;
+  /** Draw the whole phone smaller without re-laying anything out. The wrapper
+      takes the scaled box in flow, so a scaled phone still pushes its column to
+      the right height — a bare `transform: scale` would leave a 669px hole. */
+  scale?: number;
 }) {
-  return (
+  const frame = (
     <div
       role="img"
       aria-label={label}
       className={
-        "relative shrink-0 rounded-[44px] bg-[#080B12] p-[10px] " +
-        "shadow-[0_28px_70px_rgba(2,6,16,0.55),0_2px_0_rgba(255,255,255,0.06)_inset] " +
+        "relative shrink-0 rounded-[46px] bg-[#080B12] " +
+        "shadow-[0_36px_90px_rgba(2,6,16,0.6),0_2px_0_rgba(255,255,255,0.07)_inset] " +
         "ring-1 ring-[#2A3652] " +
-        className
+        (scale === 1 ? className : "")
       }
-      style={{ width: PHONE_SCREEN_W + 20 }}
+      style={{
+        width: PHONE_FRAME_W,
+        height: PHONE_FRAME_H,
+        padding: PHONE_BEZEL,
+        ...(scale === 1 ? null : { transform: `scale(${scale})`, transformOrigin: "top left" }),
+      }}
     >
-      <div className="relative overflow-hidden rounded-[35px] bg-[#E5DDD3]">
+      {/* The side buttons. Two hairlines on the outside of the rail — the last
+          tell that separates "a phone" from "a rounded rectangle". */}
+      <span aria-hidden className="absolute -left-[2px] top-[112px] h-[26px] w-[2px] rounded-l-[2px] bg-[#2A3652]" />
+      <span aria-hidden className="absolute -left-[2px] top-[152px] h-[42px] w-[2px] rounded-l-[2px] bg-[#2A3652]" />
+      <span aria-hidden className="absolute -right-[2px] top-[142px] h-[58px] w-[2px] rounded-r-[2px] bg-[#2A3652]" />
+
+      {/* The screen. A fixed 19.5:9 box, and a flex column: status bar, chat
+          header, the conversation (which takes the slack), compose bar, home
+          indicator. `overflow-hidden` so a script longer than the screen
+          scrolls off the top exactly as a real thread does. */}
+      <div
+        className="relative flex flex-col overflow-hidden rounded-[36px] bg-[#E5DDD3]"
+        style={{ width: PHONE_SCREEN_W, height: PHONE_SCREEN_H }}
+      >
         {/* The island. Above the status bar, which is why the bar's clock and
             indicators are pushed to the outer thirds. */}
         <span
           aria-hidden
-          className="absolute left-1/2 top-[7px] z-30 h-[21px] w-[80px] -translate-x-1/2 rounded-full bg-[#080B12]"
+          className="absolute left-1/2 top-[9px] z-30 h-[25px] w-[86px] -translate-x-1/2 rounded-full bg-[#080B12]"
         />
         <StatusBar time={statusTime} />
         <ChatHeader name={header.name} presence={header.presence} />
         {children}
         <ChatInputBar />
+        <HomeIndicator />
       </div>
+    </div>
+  );
+
+  if (scale === 1) return frame;
+
+  /* The scaled case: an outer box of the scaled size so flow layout, centring
+     and the parent's own height all see the picture the reader sees. */
+  return (
+    <div
+      className={"relative shrink-0 " + className}
+      style={{ width: PHONE_FRAME_W * scale, height: PHONE_FRAME_H * scale }}
+    >
+      {frame}
     </div>
   );
 }
 
-/** The scrollable body, wallpaper included. Separated from `PhoneFrame` so
-    `OrbitSequence` can put motion-driven children inside the same box. */
-/* No `minHeight`. The sequence animates opacity and offset only — every
-   message is laid out from the first frame whether or not it is visible — so
-   the phone's height is fixed by its script and nothing reserves anything. An
-   earlier version carried a measured floor here and it was dead weight. */
+/** The conversation, wallpaper included. Separated from `PhoneFrame` so
+    `OrbitSequence` can put motion-driven children inside the same box.
+
+    Three classes carry the whole behaviour, and none of them is decorative:
+
+    - **`flex-1 min-h-0`** — this is the one part of the screen that flexes, so
+      the wallpaper runs from the header to the compose bar whatever the script
+      is. `min-h-0` because a flex child's default `min-height: auto` refuses to
+      shrink below its content, which would push the compose bar off the bottom
+      of a fixed-height screen.
+    - **`justify-end`** — a chat thread sits on its bottom edge and grows
+      upward. A two-message script therefore shows two bubbles above the compose
+      bar with wallpaper over them, which is what a real thread looks like, and
+      not two bubbles marooned at the top of an empty screen.
+    - **`overflow-hidden`** — the overflow direction that follows from
+      `justify-end` is off the *top*, i.e. into the scrollback, which is where a
+      long conversation belongs.
+
+    No `minHeight`. The sequence animates opacity and offset only — every
+    message is laid out from the first frame whether or not it is visible — so
+    revealing a bubble never moves the ones already on screen. */
 export function ChatBody({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
     <div
-      className={"relative flex flex-col gap-[7px] px-[9px] pt-[12px] pb-[10px] " + className}
+      className={
+        "relative flex min-h-0 flex-1 flex-col justify-end gap-[7px] overflow-hidden px-[9px] pt-[12px] pb-[10px] " +
+        className
+      }
       style={WALLPAPER}
     >
       {children}
@@ -363,10 +462,14 @@ export function WhatsAppPhone({
   script,
   className = "",
   showDayChip = true,
+  scale = 1,
 }: {
   script: ChatScript;
   className?: string;
   showDayChip?: boolean;
+  /** See `PhoneFrame`. Every page currently draws at 1; the prop exists so a
+      narrow slot has an answer other than a squashed phone. */
+  scale?: number;
 }) {
   /* The clock in the status bar is the first message's own time. A phone
      showing 09:41 above a 16:41 conversation is the kind of detail that makes
@@ -379,6 +482,7 @@ export function WhatsAppPhone({
       statusTime={statusTime}
       header={{ name: "Orbit", presence: "online" }}
       className={className}
+      scale={scale}
     >
       <ChatBody>
         {showDayChip ? <DayChip /> : null}

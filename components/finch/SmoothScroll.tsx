@@ -77,6 +77,50 @@ const SNAPPY = {
   anchors: false,
 } as const;
 
+/* ── The Orbit tuning ────────────────────────────────────────────────────────
+   Josh, 2026-08-19: the subsite "feels slow / anti-movement". The bulk of that
+   was the homepage's pinned sequence — 320vh of wrapper, 2.2 viewports of it
+   spent not moving, on a page only 9.5 viewports long (`OrbitSequence`'s
+   `WRAP_VH` carries the numbers and the fix). But it is not the whole of it,
+   and the rest is a property of the subsite rather than of Lenis:
+
+   Finch's pages are paper bands alternating with dark ones. A reader always has
+   a hard edge arriving to tell them the page is moving. Orbit is ten bands of
+   near-identical ink — even more so now that the seams between them are soft on
+   purpose — so between headings there is very little in the frame that changes.
+   The same lerp that reads as "eased" on `/` reads as "lagging" here, because
+   there is nothing else moving to calibrate against.
+
+   So the subsite gets a lighter instance: settle faster, and cover slightly
+   more ground per wheel notch.
+
+   The numbers are **derived, not measured** — from Lenis's own damping law
+   rather than from a stopwatch, because the two differ by a rounding error and
+   the law generalises. `Animate.advance` is
+   `damp(value, to, lerp * 60, dt)` = `lerp(value, to, 1 - e^(-lerp*60*dt))`
+   (node_modules/lenis/dist/lenis.mjs:37,86), so the distance still to travel
+   decays as `d·e^(−60·lerp·t)` and the time to fall inside half a pixel is
+   `ln(2d)/(60·lerp)`, with `d` the wheel delta times `wheelMultiplier`:
+
+   | mode          | one notch | three | a fling (1200) |
+   |---|---|---|---|
+   | `SNAPPY` (0.25 / 1.1) | 360ms | 433ms | 525ms |
+   | `ORBIT`  (0.32 / 1.2) | 285ms | 343ms | 415ms |
+
+   The `SNAPPY` row is the check on the arithmetic: those three figures are
+   within 2% of the ones actually measured on a wheel probe when this file's
+   0.25 was chosen (366 / 433 / 533, table above), so the law describes what the
+   library does and the `ORBIT` row can be trusted without re-measuring.
+
+   Not a different feel — the same feel with the subsite's ground accounted for.
+   Everything else is inherited verbatim, including `syncTouch: false`, because
+   the phone behaviour has nothing to do with any of this.                      */
+const ORBIT = {
+  ...SNAPPY,
+  lerp: 0.32,
+  wheelMultiplier: 1.2,
+} as const;
+
 export const LENIS_KEY = "fn:lenis";
 /** Dispatched by the `/design` toggle so the change takes effect without a
     reload. `storage` only fires in *other* tabs, which is the opposite of
@@ -156,6 +200,11 @@ export function SmoothScroll() {
   // route like `/apply` or `/appointments`. The platform is `/app` exactly, or
   // anything below it.
   const isPlatform = pathname === "/app" || pathname.startsWith("/app/");
+  /* Same shape as `isPlatform`, and a boolean for the same reason: it is in the
+     dep array, and navigating *within* the subsite must not tear the instance
+     down mid-scroll. Only crossing the Finch↔Orbit boundary rebuilds it, which
+     is a full-page change of ground anyway. */
+  const isOrbit = pathname === "/orbit" || pathname.startsWith("/orbit/");
 
   useEffect(() => {
     const root = document.documentElement;
@@ -163,6 +212,7 @@ export function SmoothScroll() {
     if (reduceMotion || isPlatform) {
       delete root.dataset.lenis;
       delete root.dataset.lenisSnappy;
+      delete root.dataset.lenisMode;
       return;
     }
 
@@ -179,6 +229,7 @@ export function SmoothScroll() {
       instance = null;
       delete root.dataset.lenis;
       delete root.dataset.lenisSnappy;
+      delete root.dataset.lenisMode;
     };
 
     const start = async () => {
@@ -188,9 +239,10 @@ export function SmoothScroll() {
          the wrong offsets. */
       root.dataset.lenis = "on";
       root.dataset.lenisSnappy = "on";
+      root.dataset.lenisMode = isOrbit ? "orbit" : "snappy";
       const { default: Lenis } = await import("lenis");
       if (cancelled || instance) return;
-      instance = new Lenis(SNAPPY);
+      instance = new Lenis(isOrbit ? ORBIT : SNAPPY);
       const loop = (time: number) => {
         instance?.raf(time);
         raf = requestAnimationFrame(loop);
@@ -215,7 +267,7 @@ export function SmoothScroll() {
       window.removeEventListener("storage", sync);
       stop();
     };
-  }, [reduceMotion, isPlatform]);
+  }, [reduceMotion, isPlatform, isOrbit]);
 
   return null;
 }
