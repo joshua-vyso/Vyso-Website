@@ -137,6 +137,100 @@ If the price points are wrong (rather than missing), the wipe-and-rerun rule is:
 delete the org's `pw_price_points` and its `agent_findings where agent =
 'price_watch'`, keep `pw_items` and `pw_item_matches`, then re-run the route.
 
+### 2.4 08b refresh — the Review queue
+
+`supabase/demo-refresh-2026-08b.sql` is a third, smaller file that runs **after**
+`demo-refresh-2026-08.sql`. It exists for one shot in the Loom: the rail's
+**Review** row, and the grouped chain at `/app/chat/review`.
+
+**What it seeds** — six rows, and nothing else:
+
+| Group on screen | Rows | ids |
+|---|---|---|
+| Doc-U · Invoices to approve | Helderberg Packaging **INV-9188**, 18 Aug, R195 454.00 incl VAT · Swartland Grain & Mill **INV-5241**, 19 Aug, R358 432.00 incl VAT | documents 911, 912 |
+| Doc-U · Statements | Bergriver Growers — **Statement, July 2026**, closing R437 000.00 | document 913 |
+| Doc-U · Flagged | Peninsula Beverage Supply **INV-3077**, 19 Aug, R86 721.50 incl VAT, **confidence 58** | document 914 |
+| OrderFlow · Quote requests | **Elmarie van Wyk**, Boland Trading Co. (an existing customer, so "Add as new customer" reads *already a customer*) · **Thandi Mokoena**, Karoo Function Hire (a new prospect — 40 tubs prepared salad mix, 20 kg line fish, 29 Aug) | of_quote_requests 911, 912 |
+
+Every one of them is priced **flat against that supplier's last seen invoice**,
+or belongs to a supplier with no documents at all, so **no Price Watch series
+moves** and none of the Loom's figures go stale. The file's header explains each
+choice.
+
+**It also quietens the seed's backlog (§3 of the file).** The Review queue is
+computed, not stored, from `documents status in ('extracted','pending','error')`
+and `of_quote_requests status='new' and flagged_spam=false` — and
+`demo-all-in-one.sql` seeds 24 documents and 6 enquiries matching those
+predicates, for KPI surfaces that predate Review. Left alone, the chain opens on
+thirty rows. §3 moves the seed's `extracted` → `reviewed`, its `pending`/`error`
+→ `archived`, and its six `new` enquiries → `dismissed`, scoped to seed counters
+0-99 only. Nothing else in the demo moves: those statuses are outside Price
+Watch's `EXCLUDED_STATUSES` either way, and the archived four carry no price
+observations.
+
+**Re-runnable**, with one ordering rule:
+
+> `demo-refresh-2026-08.sql`'s delete preamble matches document counters
+> **900-999**, which includes 08b's 911-914. **Re-running 08 deletes 08b's
+> documents. Always re-run 08b after 08.** The reverse is safe — 08b's own
+> preamble is pinned to 910-919.
+
+**Verify** with the file's own §4 block. Expect `extracted 3` / `error 1`, two
+`status='new'` enquiries with `already_a_customer` reading `Boland Trading Co.`
+on exactly one of them, and §4.4 totalling **6**.
+
+**PDFs.** The four new filenames follow the house rule
+(`storage_path = 'demo/docu/' || filename`) and
+`scripts/demo-invoice-pdfs.mjs` now lists 08b in its `SEED_FILES`, so §7's
+generate-and-upload step covers them — 41 files instead of 37. Render just these
+four with `--only 911,912,913,914`. The Review pane is a **preview beside the
+fields**, so an un-uploaded object there is a visibly empty half-screen.
+
+#### Resetting Review between prospects
+
+Approving a document and adding a customer are real writes. Put them back:
+
+```sql
+-- The four Review documents, back to awaiting a decision.
+update documents
+   set status = case when id = '20000000-7e5d-4c1a-9b3f-000000000914'
+                     then 'error' else 'extracted' end,
+       approved_at = null,
+       approved_by = null
+ where org_id = '01000000-7e5d-4c1a-9b3f-000000000001'
+   and id in ('20000000-7e5d-4c1a-9b3f-000000000911',
+              '20000000-7e5d-4c1a-9b3f-000000000912',
+              '20000000-7e5d-4c1a-9b3f-000000000913',
+              '20000000-7e5d-4c1a-9b3f-000000000914');
+
+-- The two enquiries, back to un-actioned. customer_id is what
+-- "Add as new customer" wrote; clearing it is what makes the button live again.
+update of_quote_requests
+   set status = 'new', customer_id = null, quote_id = null
+ where org_id = '01000000-7e5d-4c1a-9b3f-000000000001'
+   and id in ('41000000-7e5d-4c1a-9b3f-000000000911',
+              '41000000-7e5d-4c1a-9b3f-000000000912');
+```
+
+Then **delete the customer the demo created** — otherwise the next prospect's
+"Add as new customer" answers *already a customer* and the beat is gone. It is
+the only `of_customers` row in this org without a seed-shaped id:
+
+```sql
+select id, name, email, created_at from of_customers
+ where org_id = '01000000-7e5d-4c1a-9b3f-000000000001'
+   and id::text !~ '-9b3f-[0-9]{12}$';
+-- read that list, then delete by id. of_activity cascades.
+```
+
+Re-running the whole of 08b does the same job and more (it rewrites all six rows
+from scratch) — use it if you would rather not hand-pick.
+
+To undo §3 and put the seed's own backlog back, reverse the three updates: the
+`reviewed` rows in counters 0-99 to `extracted`, the `archived` ones to their
+original `pending`/`error` (docs 23 and 29 were `pending`; 16 and 34 were
+`error`) with `archived_at = null`, and the six `dismissed` enquiries to `new`.
+
 ---
 
 ## 3. Running the agents by hand
@@ -546,9 +640,12 @@ node scripts/demo-invoice-pdfs.mjs --pdfkit /tmp/pdfgen --out /tmp/demo-pdfs
 node scripts/demo-invoice-pdfs.mjs --list      # what it would render, and why
 ```
 
-37 one-page A4 PDFs: 22 supplier invoices (the 9 price-observation ones, 6 more
-July invoices, the 6 August refresh invoices, doc 16's failed-extraction one), 7
-delivery notes, 4 statements, 3 price lists, 1 customer order. The content is
+41 one-page A4 PDFs: 25 supplier invoices (the 9 price-observation ones, 6 more
+July invoices, the 6 August refresh invoices, doc 16's failed-extraction one, and
+08b's 3 — Helderberg INV-9188, Swartland INV-5241, the flagged Peninsula
+Beverage INV-3077), 7 delivery notes, 5 statements (08b adds Bergriver's July
+one), 3 price lists, 1 customer order. `--only 911,912,913,914` renders just
+08b's four; see §2.4. The content is
 **parsed out of the seed files themselves** — supplier name/town/e-mail from the
 `suppliers` rows, and invoice number, date, VAT, totals and every line item from
 that document's own `extracted_data` — so the paper and Doc-U's extraction cannot
@@ -646,11 +743,15 @@ Check: Storage → `documents` → **Policies**. Then pick one:
 ## 9. Pre-demo checklist
 
 - [ ] `demo-refresh-2026-08.sql` applied (August rows present, MTD ≈ R2.8M)
+- [ ] `demo-refresh-2026-08b.sql` applied **after** it (§2.4), and its §4.4
+      verification totals **6** — Review reads 2 invoices / 1 statement /
+      1 flagged / 2 quote requests
 - [ ] `select count(*) from pw_price_points where org_id = …` > 0
 - [ ] All four agents run today, in the order of §3
 - [ ] Findings read out loud against their source invoices — every rand figure
       defensible
-- [ ] The 37 PDFs uploaded and one preview verified (§7.3)
+- [ ] The 41 PDFs uploaded and one preview verified (§7.3) — including 08b's
+      four, or the Review pane's preview half is empty
 - [ ] `agent_findings` reset to `new` and the last prospect's `finch_chats`
       deleted (§6.3)
 - [ ] A fresh prospect user created, signed into once by you, landing on a

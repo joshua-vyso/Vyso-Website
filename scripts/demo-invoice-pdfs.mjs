@@ -52,6 +52,11 @@ const REPO = resolve(HERE, '..');
 const SEED_FILES = [
   join(REPO, 'supabase', 'demo-all-in-one.sql'),
   join(REPO, 'supabase', 'demo-refresh-2026-08.sql'),
+  // Counters 911-914: the four documents that make the Review queue read
+  // 2 invoices / 1 statement / 1 flagged for the Loom. Nothing else in this
+  // file needed changing — `parseDocuments` reads the SQL generically, and
+  // 08b's rows are written in the same shape DOC_ROW matches.
+  join(REPO, 'supabase', 'demo-refresh-2026-08b.sql'),
 ];
 
 /* The bill-to. `organisations` row, demo-all-in-one.sql §0.2. */
