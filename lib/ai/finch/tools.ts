@@ -4,8 +4,10 @@
  * entries (the route/loop is generic). Every tool runs through the caller's
  * RLS-scoped Supabase client, so a tool can only ever read the caller's own org.
  *
- * Phase 2 = READ tools only (analytics + lookups). Write/workflow tools are a
- * later phase and will carry their own confirmation guardrails.
+ * Phase 2 = READ tools only (analytics + lookups). The two exceptions carry
+ * their own confirmation guardrail rather than acting: `orderflow_prepare_order`
+ * opens a draft the user saves, and `hubdoc_prepare_send` opens a card the user
+ * presses. Neither writes anything, and no tool here sends anything.
  */
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -22,6 +24,7 @@ import {
   type DraftItemInput,
 } from './orderflow-data';
 import { findDocuments, documentSummary } from './docu-data';
+import { prepareHubdocSend } from './hubdoc-data';
 import { findPriceItems, priceHistory, marginExposure, clampMonths } from './price-watch-data';
 import { stockPosition } from './procurepulse-data';
 import { xeroSnapshot } from './xero-data';
@@ -264,6 +267,58 @@ const DOCU_TOOLS: AgentTool[] = [
 ];
 
 /**
+ * Hubdoc — the chat hand-off (Plugins X2 — chat hand-off).
+ *
+ * THE ONE TOOL IN THIS REGISTRY THAT IS NOT A READ, AND IT STILL SENDS NOTHING.
+ * It resolves which documents were meant, checks each against the same
+ * eligibility rules the buttons use, and returns a list. The SSE `card` event
+ * the route emits from its result draws a confirm card, and the card's button
+ * posts to `POST /api/integrations/hubdoc/send` — the existing route, with its
+ * existing gates, caps and log. A person presses; the model never does.
+ *
+ * ADMIN ONLY, twice over: `ctx.canSeeMoney` is checked before any read, and the
+ * Hubdoc tables are admin-select under RLS. A member's call comes back as a
+ * refusal with the same sentence the send route's 403 uses.
+ */
+const HUBDOC_TOOLS: AgentTool[] = [
+  {
+    name: 'hubdoc_prepare_send',
+    description:
+      'Prepare sending one or more supplier invoices/statements to this business\'s Hubdoc inbox, for the user to confirm. Call this WHENEVER the user asks to push, send, forward, file or cross-upload a document to Hubdoc (or "to the bookkeeper" via Hubdoc) — never tell them you cannot send to Hubdoc. Pass document_ids when you know the ids (the attachment ids named in this turn are exactly that — use them for "this one"/"that statement"), or query with the supplier name or filename they said. It does NOT send: it opens a confirmation card listing each document, ticked or greyed with the reason it cannot go, and the masked Hubdoc address — the user presses "Send to Hubdoc" themselves. After calling it, say in one short line what is on the card and name anything greyed out and why; never claim anything has been sent. If the result is {ok:false}, tell the user its `reason` VERBATIM — it names where to fix it — and do not retry. Pass resend:true only when the user explicitly asks to send something again that Vyso has already sent.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        document_ids: {
+          type: 'array',
+          description:
+            'The document ids to prepare, usually the attachment ids named in this turn or ids from a docu_find_documents result.',
+          items: { type: 'string' },
+        },
+        query: {
+          type: 'string',
+          description:
+            'Used only when you have no ids: the supplier name or filename the user said, e.g. "Umgeni" or "october-statement.pdf".',
+        },
+        resend: {
+          type: 'boolean',
+          description:
+            'True only when the user explicitly asks to send a document Vyso has already sent to Hubdoc a second time.',
+        },
+      },
+      additionalProperties: false,
+    },
+    run: (ctx, input) =>
+      prepareHubdocSend(ctx.supabase, ctx.orgId, ctx.canSeeMoney, {
+        documentIds: Array.isArray(input.document_ids)
+          ? input.document_ids.map((id) => String(id))
+          : undefined,
+        query: input.query != null ? String(input.query) : undefined,
+        resend: input.resend === true,
+      }).then((r) => JSON.stringify(r)),
+  },
+];
+
+/**
  * Price Watch — what a line has cost, from whom, and over what history (P1.2).
  *
  * TWO TOOLS, IN ORDER, ON PURPOSE. The model cannot know a `pw_item_id`; it
@@ -442,7 +497,9 @@ const TOOLS_BY_MODULE: Record<AgentModule, AgentTool[]> = {
   // because the two answers are different rows about (often) the same money —
   // the model needs both in reach to say which it is quoting.
   orderflow: [...ORDERFLOW_TOOLS, ...DEBTORS_TOOLS, ...PRICE_WATCH_TOOLS, ...MARGIN_TOOLS, ...XERO_TOOLS],
-  docu: DOCU_TOOLS,
+  // Doc-U's chat is where a document is being looked at, so it is where "push
+  // it to Hubdoc" gets asked. The tool refuses a non-admin itself.
+  docu: [...DOCU_TOOLS, ...HUBDOC_TOOLS],
   onboarding: ONBOARDING_TOOLS,
   // ProcurePulse's own bubble answers about stock, and about the price history
   // behind the line it is telling the owner to reorder — "you are about to
@@ -455,6 +512,7 @@ const TOOLS_BY_MODULE: Record<AgentModule, AgentTool[]> = {
   // stock and margin exposure.
   brief: [
     ...DOCU_TOOLS,
+    ...HUBDOC_TOOLS,
     ...DEBTORS_TOOLS,
     ...PRICE_WATCH_TOOLS,
     ...PROCUREPULSE_TOOLS,

@@ -47,6 +47,7 @@ const TOOL_ACTIVITY: Record<string, string> = {
   pw_get_price_history: 'Reading price history…',
   pp_get_stock_position: 'Checking stock cover…',
   pw_margin_exposure: 'Sizing the margin effect…',
+  hubdoc_prepare_send: 'Preparing the Hubdoc hand-off…',
 };
 
 /**
@@ -72,6 +73,40 @@ function buildOrderDraft(toolResult: string): {
     };
   } catch {
     return { customerName: null, items: [] };
+  }
+}
+
+/**
+ * Turn a `hubdoc_prepare_send` result into the confirm card the client draws
+ * (Plugins X2 — chat hand-off).
+ *
+ * ONLY A SUCCESSFUL PREPARE BECOMES A CARD. A refusal ({ok:false}) is a sentence
+ * the model is instructed to repeat verbatim — "add your Hubdoc address under
+ * Plugins → Xero → Hubdoc" belongs in the answer, not in a card with a button
+ * that cannot work.
+ *
+ * NOTHING IS SENT BY THIS ROUTE. The card carries document ids and a masked
+ * address; its button posts them to `POST /api/integrations/hubdoc/send`, which
+ * re-checks the caller's role, the org, and every id. This is display data, the
+ * same way `buildOrderDraft` above is.
+ */
+function buildHubdocCard(toolResult: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(toolResult) as {
+      ok?: boolean;
+      intake_email_masked?: unknown;
+      documents?: unknown;
+      confirm_token?: unknown;
+    };
+    if (parsed.ok !== true || !Array.isArray(parsed.documents)) return null;
+    return {
+      kind: 'hubdoc_confirm',
+      token: typeof parsed.confirm_token === 'string' ? parsed.confirm_token : '',
+      intakeEmailMasked: typeof parsed.intake_email_masked === 'string' ? parsed.intake_email_masked : '',
+      documents: parsed.documents,
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -373,6 +408,14 @@ export async function POST(req: Request) {
             // display data only — no order is saved server-side.
             if (tu.name === 'orderflow_prepare_order' && !isError) {
               safeEnqueue(send({ orderDraft: buildOrderDraft(content) }));
+            }
+
+            // The Hubdoc prepare tool streams its list to the client as a
+            // `card`, which is the confirm card the OWNER presses. Same channel,
+            // same rule: display data, nothing saved and nothing sent here.
+            if (tu.name === 'hubdoc_prepare_send' && !isError) {
+              const card = buildHubdocCard(content);
+              if (card) safeEnqueue(send({ card }));
             }
           }
           convo.push({ role: 'user', content: results });

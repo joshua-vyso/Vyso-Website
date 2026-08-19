@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { stashParsedOrder, type ParsedOrder } from '@/lib/ai/finch/order-handoff';
 import type { DockCard } from '@/components/platform/shell/FinchChatProvider';
+import { HubdocConfirmCard } from './HubdocConfirmCard';
 import type { OrderIngestResult } from '@/lib/platform/docu/order-ingest-client';
 
 /**
@@ -52,7 +53,11 @@ export function DockCards({
   return (
     <div className="flex flex-col gap-3">
       {cards.map((card) =>
-        card.kind === 'draft' ? (
+        card.kind === 'hubdoc_confirm' ? (
+          // Plugins X2 — chat hand-off. Unlike the two below it has nowhere to
+          // navigate to: the decision it carries is made here.
+          <HubdocConfirmCard key={card.id} card={card} onDismiss={() => onDismiss(card.id)} />
+        ) : card.kind === 'draft' ? (
           <OrderDraftCard
             key={card.id}
             order={card.order}

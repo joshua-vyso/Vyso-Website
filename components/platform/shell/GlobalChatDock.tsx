@@ -7,6 +7,7 @@ import { AttachError } from '@/components/platform/chat/AttachmentCard';
 import { ChatComposer } from '@/components/platform/chat/ChatComposer';
 import { ChatDropZone } from '@/components/platform/chat/ChatDropZone';
 import { ChatTranscript } from '@/components/platform/chat/ChatTranscript';
+import { HubdocCards } from '@/components/platform/chat/HubdocConfirmCard';
 import { isBubbleRoute } from '@/lib/ai/finch/module-route';
 import { FinchBubble } from './FinchBubble';
 import { useFinchChat } from './FinchChatProvider';
@@ -136,6 +137,11 @@ export function GlobalChatDock() {
             error={error}
             attaching={attaching}
           />
+          {/* Plugins X2 — chat hand-off. The Brief's panel gets the confirm card
+              for the same reason the chat page does: "push it to Hubdoc" is
+              asked wherever the owner is standing. The order/ingest cards stay
+              bubble-only — they can only arise on an OrderFlow screen. */}
+          <HubdocCards />
         </ChatDropZone>
       ) : null}
 

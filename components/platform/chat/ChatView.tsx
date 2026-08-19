@@ -3,6 +3,7 @@
 import { useEffect, useMemo } from 'react';
 import { useFinchChat, type ChatTurn } from '@/components/platform/shell/FinchChatProvider';
 import { ChatTranscript } from './ChatTranscript';
+import { HubdocCards } from './HubdocConfirmCard';
 
 /**
  * One stored conversation, live (`/app/chat/[id]`, design 1b).
@@ -63,17 +64,24 @@ export function ChatView({ chatId, initial }: { chatId: string; initial: ChatTur
   const shown = live ? turns : initialTurns;
 
   return (
-    <ChatTranscript
-      turns={shown}
-      // Only ever draw the in-flight turn onto the chat it belongs to.
-      streaming={live && streaming}
-      streamText={live ? streamText : ''}
-      streamInterim={live ? streamInterim : []}
-      streamTools={live ? streamTools : []}
-      error={live ? error : null}
-      // Same rule as the stream: an upload belongs to the conversation it was
-      // dropped into, not to whichever chat happens to be on screen.
-      attaching={live ? attaching : []}
-    />
+    <>
+      <ChatTranscript
+        turns={shown}
+        // Only ever draw the in-flight turn onto the chat it belongs to.
+        streaming={live && streaming}
+        streamText={live ? streamText : ''}
+        streamInterim={live ? streamInterim : []}
+        streamTools={live ? streamTools : []}
+        error={live ? error : null}
+        // Same rule as the stream: an upload belongs to the conversation it was
+        // dropped into, not to whichever chat happens to be on screen.
+        attaching={live ? attaching : []}
+      />
+      {/* Plugins X2 — chat hand-off. The one card kind that can arrive on this
+          screen: "send this statement to Hubdoc" is asked wherever the owner is,
+          and this page IS the Brief agent's conversation. Same rule as the
+          stream above — a card belongs to the chat that produced it. */}
+      <HubdocCards live={live} />
+    </>
   );
 }

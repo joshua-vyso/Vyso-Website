@@ -9,6 +9,12 @@ import {
   hubdocSubject,
   hubdocTooLargeReason,
   validateHubdocIntakeEmail,
+  hubdocEligibleIds,
+  hubdocPrepareDocuments,
+  hubdocSentMessage,
+  maskHubdocIntakeEmail,
+  HUBDOC_ALREADY_SENT_REASON,
+  HUBDOC_CHAT_REFUSALS,
   HUBDOC_FROM,
   HUBDOC_INTAKE_DOMAIN,
   HUBDOC_MAX_ATTACHMENT_BYTES,
@@ -301,4 +307,138 @@ test('the log says WHO sent it, because that is the question the log answers', (
 test('a failure reads as a failure whatever triggered it', () => {
   assert.equal(hubdocForwardLabel({ status: 'failed', triggeredBy: 'auto', resend: false }), 'Failed');
   assert.equal(hubdocForwardLabel({ status: 'failed', triggeredBy: 'user', resend: true }), 'Failed');
+});
+
+// ---------------------------------------------------------------------------
+// The chat hand-off (Plugins X2 — chat hand-off)
+// ---------------------------------------------------------------------------
+
+/**
+ * STILL NO EMAIL. `hubdoc_prepare_send` returns a list and a masked address; the
+ * send is the card's button posting to the route that already existed. What is
+ * pinned below is the only thing the chat path adds to the decision: WHICH
+ * documents get a tick, and what the refusals say — the two things a model must
+ * not be able to talk its way past.
+ */
+
+/** A document that would pass every gate, so each case below can spoil exactly
+ *  one thing and prove which sentence that produces. */
+function sendable(overrides: Partial<Parameters<typeof hubdocPrepareDocuments>[0][number]> = {}) {
+  return {
+    id: 'doc-1',
+    filename: 'umgeni-oct.pdf',
+    supplier: 'Umgeni Oils',
+    number: 'INV-9268',
+    facts: {
+      documentType: 'invoice',
+      status: 'extracted',
+      supplierId: 'sup-1',
+      storagePath: 'org/doc-1.pdf',
+    },
+    alreadySent: false,
+    ...overrides,
+  };
+}
+
+test('the intake address is shown recognisably and never in full', () => {
+  const masked = maskHubdocIntakeEmail(`turnandslice@${HUBDOC_INTAKE_DOMAIN}`);
+  // Enough to recognise: the first two characters and the whole domain. The
+  // local part is effectively a bearer secret — anyone holding it can file
+  // paperwork into this organisation's books.
+  assert.equal(masked, `tu•••@${HUBDOC_INTAKE_DOMAIN}`);
+  assert.equal(masked.includes('turnandslice'), false);
+});
+
+test('a short or malformed address still masks rather than leaking', () => {
+  assert.equal(maskHubdocIntakeEmail('a@x.co'), 'a•••@x.co');
+  assert.equal(maskHubdocIntakeEmail('not-an-address'), '•••');
+  assert.equal(maskHubdocIntakeEmail(null), '');
+});
+
+test('an eligible document is ticked, with nothing to explain', () => {
+  const [row] = hubdocPrepareDocuments([sendable()]);
+  assert.equal(row.eligible, true);
+  assert.equal(row.reason, undefined);
+  assert.equal(row.filename, 'umgeni-oct.pdf');
+  assert.equal(row.supplier, 'Umgeni Oils');
+  assert.equal(row.number, 'INV-9268');
+});
+
+test('an ineligible document is KEPT on the card, with the eligibility sentence', () => {
+  // Dropping it would be quietly disagreeing with the person who named it.
+  const [row] = hubdocPrepareDocuments([
+    sendable({ filename: 'delivery-note.pdf', facts: { ...sendable().facts, documentType: 'delivery_note' } }),
+  ]);
+  assert.equal(row.eligible, false);
+  assert.equal(row.reason, 'Hubdoc takes supplier invoices and statements. This document is neither.');
+});
+
+test('the reasons come from hubdocEligibility, one per way of being wrong', () => {
+  const reasonFor = (facts: Record<string, unknown>) =>
+    hubdocPrepareDocuments([sendable({ facts: { ...sendable().facts, ...facts } })])[0].reason;
+  assert.match(String(reasonFor({ storagePath: null })), /no file attached/);
+  assert.match(String(reasonFor({ supplierId: null })), /not matched a supplier/);
+  assert.match(String(reasonFor({ status: 'pending' })), /has not read this document yet/);
+});
+
+test('a document Vyso has already sent is greyed, not silently re-sent', () => {
+  const [row] = hubdocPrepareDocuments([sendable({ alreadySent: true })]);
+  assert.equal(row.eligible, false);
+  assert.equal(row.reason, HUBDOC_ALREADY_SENT_REASON);
+});
+
+test('resend is the explicit override, and only that', () => {
+  const [row] = hubdocPrepareDocuments([sendable({ alreadySent: true })], { resend: true });
+  assert.equal(row.eligible, true);
+  // It overrides the already-sent check and NOTHING else: a delivery note is
+  // still a delivery note however many times somebody asks.
+  const [note] = hubdocPrepareDocuments(
+    [sendable({ alreadySent: true, facts: { ...sendable().facts, documentType: 'price_list' } })],
+    { resend: true },
+  );
+  assert.equal(note.eligible, false);
+  assert.match(String(note.reason), /supplier invoices and statements/);
+});
+
+test('why-it-cannot-go beats already-sent when both are true', () => {
+  // "It already went" would be a strange thing to say about a document that
+  // could never have gone.
+  const [row] = hubdocPrepareDocuments([
+    sendable({ alreadySent: true, facts: { ...sendable().facts, storagePath: null } }),
+  ]);
+  assert.match(String(row.reason), /no file attached/);
+});
+
+test('only the ticked ids are ever posted to the send route', () => {
+  const documents = hubdocPrepareDocuments([
+    sendable({ id: 'doc-a' }),
+    sendable({ id: 'doc-b', alreadySent: true }),
+    sendable({ id: 'doc-c', facts: { ...sendable().facts, supplierId: null } }),
+  ]);
+  assert.deepEqual(hubdocEligibleIds(documents), ['doc-a']);
+});
+
+test('the order the documents were named in is the order they are drawn in', () => {
+  const documents = hubdocPrepareDocuments([
+    sendable({ id: 'doc-a', filename: 'a.pdf' }),
+    sendable({ id: 'doc-b', filename: 'b.pdf' }),
+  ]);
+  assert.deepEqual(documents.map((d) => d.filename), ['a.pdf', 'b.pdf']);
+});
+
+test('the transcript line NAMES what went, up to two of them', () => {
+  assert.equal(hubdocSentMessage(['umgeni-oct.pdf']), 'Sent umgeni-oct.pdf to Hubdoc.');
+  assert.equal(hubdocSentMessage(['a.pdf', 'b.pdf']), 'Sent a.pdf and b.pdf to Hubdoc.');
+  assert.equal(hubdocSentMessage(['a.pdf', 'b.pdf', 'c.pdf', 'd.pdf']), 'Sent a.pdf, b.pdf and 2 more to Hubdoc.');
+  // Nothing sent must not read as something sent.
+  assert.equal(hubdocSentMessage([]), 'Nothing was sent to Hubdoc.');
+  assert.equal(hubdocSentMessage(['  ']), 'Nothing was sent to Hubdoc.');
+});
+
+test('every chat refusal says where to fix it — that is the whole point of them', () => {
+  assert.match(HUBDOC_CHAT_REFUSALS.notAdmin, /owner or admin/);
+  assert.match(HUBDOC_CHAT_REFUSALS.notConnected, /Plugins → Xero/);
+  assert.match(HUBDOC_CHAT_REFUSALS.noIntakeEmail, /Plugins → Xero → Hubdoc/);
+  assert.match(HUBDOC_CHAT_REFUSALS.tablesMissing, /supabase\/hubdoc\.sql/);
+  assert.match(HUBDOC_CHAT_REFUSALS.noDocuments, /which document/);
 });

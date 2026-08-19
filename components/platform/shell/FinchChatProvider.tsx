@@ -196,9 +196,81 @@ export interface IngestDockCard {
   result: OrderIngestResult;
 }
 
+/** One document on a Hubdoc confirm card. Mirrors `HubdocPreparedDocument` in
+ *  lib/platform/hubdoc-shared.ts — declared here rather than imported because
+ *  that module is reached through server code and this is a client component's
+ *  view of what the SSE event carried. */
+export interface HubdocConfirmDocument {
+  id: string;
+  filename: string;
+  supplier: string | null;
+  number: string | null;
+  /** May this one go? Ineligible rows are drawn greyed, with their reason. */
+  eligible: boolean;
+  reason?: string;
+}
+
+/**
+ * A Hubdoc hand-off the owner has been asked to confirm (Plugins X2 — chat
+ * hand-off).
+ *
+ * THE CARD IS THE CONSENT. `hubdoc_prepare_send` resolved and checked these
+ * documents and sent nothing; pressing the card's button posts their ids to
+ * `POST /api/integrations/hubdoc/send`, the same route the document page's
+ * button uses. Provider state, never persisted — a stale "Send to Hubdoc"
+ * button redrawn from history tomorrow would be an offer to re-file paperwork
+ * against a state of the world nobody re-checked.
+ */
+export interface HubdocConfirmDockCard {
+  kind: 'hubdoc_confirm';
+  id: string;
+  /** Identifies the prepared batch, for the log line if one is ever needed. */
+  token: string;
+  /** Never the address itself (lib/platform/hubdoc-shared.ts). */
+  intakeEmailMasked: string;
+  documents: HubdocConfirmDocument[];
+}
+
 /** The non-sentence things Finch hands back. Drawn by chat/OrderCards.tsx under
  *  the bubble's transcript; see that file for why they are not messages. */
-export type DockCard = OrderDraftDockCard | IngestDockCard;
+export type DockCard = OrderDraftDockCard | IngestDockCard | HubdocConfirmDockCard;
+
+/** The `{card}` SSE event, before it is trusted. Everything is optional: this
+ *  is a payload from the wire, and one malformed field must degrade the card,
+ *  never throw inside the reader loop. */
+interface CardEvent {
+  kind?: unknown;
+  token?: unknown;
+  intakeEmailMasked?: unknown;
+  documents?: unknown;
+}
+
+/** Narrow a `{card}` event into a dock card, or null when it is not one this
+ *  build knows how to draw (an older/newer server, or a truncated payload). */
+function parseCardEvent(raw: CardEvent, id: string): HubdocConfirmDockCard | null {
+  if (raw.kind !== 'hubdoc_confirm' || !Array.isArray(raw.documents)) return null;
+  const documents = raw.documents
+    .filter((d): d is Record<string, unknown> => !!d && typeof d === 'object')
+    .map((d) => ({
+      id: typeof d.id === 'string' ? d.id : '',
+      filename: typeof d.filename === 'string' ? d.filename : 'Document',
+      supplier: typeof d.supplier === 'string' ? d.supplier : null,
+      number: typeof d.number === 'string' ? d.number : null,
+      // Anything that is not literally true is drawn as ineligible. A document
+      // this client cannot read the verdict for must never gain a tick.
+      eligible: d.eligible === true,
+      ...(typeof d.reason === 'string' ? { reason: d.reason } : {}),
+    }))
+    .filter((d) => d.id);
+  if (documents.length === 0) return null;
+  return {
+    kind: 'hubdoc_confirm',
+    id,
+    token: typeof raw.token === 'string' ? raw.token : '',
+    intakeEmailMasked: typeof raw.intakeEmailMasked === 'string' ? raw.intakeEmailMasked : '',
+    documents,
+  };
+}
 
 interface OrderDraftEvent {
   customerName?: string | null;
@@ -220,6 +292,10 @@ interface SseEvent {
   /** The workflow tier's prepared order (W4). Dropped by this provider until
    *  this wave, because nothing here could draw it. */
   orderDraft?: OrderDraftEvent;
+  /** A card the answer wants a decision on — today only the Hubdoc confirm
+   *  (Plugins X2 — chat hand-off). Same channel as `orderDraft`, but typed by
+   *  `kind` so the next one is a case rather than a second field. */
+  card?: CardEvent;
 }
 
 /** The transcript as GET /api/finch/chats/[id] returns it. Mirrors
@@ -361,6 +437,18 @@ interface FinchChatValue {
   /** Throw one away. The order it described was never saved server-side, so
    *  this is the whole of "no thanks". */
   dismissCard: (id: string) => void;
+  /**
+   * Append a line to the transcript that no model wrote (Plugins X2 — chat
+   * hand-off).
+   *
+   * "Sent Umgeni-Oct.pdf to Hubdoc." is a fact about what a button did, and
+   * paying a model to say it would be slower, dearer, and able to get it wrong.
+   * LOCAL ONLY: it is not written to `finch_messages`, because the only writer
+   * of that table is the agent route's `after()` and a second door into it —
+   * an endpoint that appends arbitrary assistant text — is not worth opening
+   * for one sentence. The plugin page's Hubdoc log is the durable receipt.
+   */
+  appendAssistantLine: (text: string) => void;
   /** Is the module bubble open? Held here so walking between module screens
    *  doesn't collapse a conversation the owner left open. */
   bubbleOpen: boolean;
@@ -568,6 +656,13 @@ export function FinchChatProvider({
    *  delete by design. */
   const dismissCard = useCallback((id: string) => {
     setCards((prev) => prev.filter((c) => c.id !== id));
+  }, []);
+
+  /** See `appendAssistantLine` on the context type. */
+  const appendAssistantLine = useCallback((text: string) => {
+    const line = text.trim();
+    if (!line) return;
+    setTurns((prev) => [...prev, { role: 'assistant', content: line }]);
   }, []);
 
   /**
@@ -837,6 +932,13 @@ export function FinchChatProvider({
               },
             ]);
             orderModeRef.current = false;
+          }
+          // A card the answer wants a decision on (Plugins X2 — chat hand-off).
+          // `hubdoc_prepare_send` sent nothing; this is the surface on which a
+          // PERSON decides whether anything leaves Vyso.
+          else if (evt.card) {
+            const card = parseCardEvent(evt.card, `card_${cardSeq.current++}`);
+            if (card) setCards((prev) => [...prev, card]);
           } else if (evt.text) {
             // No `turn` = an older server, which streamed one string: turn 0,
             // never interim, so this reads exactly as it always did.
@@ -1056,6 +1158,7 @@ export function FinchChatProvider({
       agentModule,
       cards,
       dismissCard,
+      appendAssistantLine,
       bubbleOpen,
       setBubbleOpen,
       bubbleUnread,
@@ -1084,6 +1187,7 @@ export function FinchChatProvider({
       agentModule,
       cards,
       dismissCard,
+      appendAssistantLine,
       bubbleOpen,
       setBubbleOpen,
       bubbleUnread,

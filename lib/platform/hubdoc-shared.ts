@@ -352,3 +352,147 @@ export function hubdocForwardLabel(entry: Pick<HubdocForwardEntry, 'status' | 't
   if (entry.resend) return 'Sent again';
   return entry.triggeredBy === 'auto' ? 'Sent automatically' : 'Sent';
 }
+
+// ---------------------------------------------------------------------------
+// The chat hand-off (Plugins X2 — chat hand-off)
+// ---------------------------------------------------------------------------
+
+/**
+ * "Push it to Hubdoc", asked in the chat.
+ *
+ * WHAT CHANGED AND WHAT DID NOT. Finch can now PREPARE a Hubdoc hand-off —
+ * resolve which documents were meant, check each against `hubdocEligibility`
+ * above, and hand the list to a card. It still cannot SEND: the card's button
+ * posts to `/api/integrations/hubdoc/send`, the same route the document page's
+ * button posts to, with the same gates, the same log and the same caps. The
+ * model chooses nothing about whether an email leaves; a person still presses.
+ *
+ * Everything in this section is pure so `tests/hubdoc.test.ts` can pin the two
+ * decisions that matter — which documents are offered, and what the refusals
+ * say — without a Supabase client or a model in the room.
+ */
+
+/**
+ * Why the chat CANNOT prepare a hand-off. Four sentences, each naming the fix,
+ * because the model is instructed to say exactly one of them and nothing else:
+ * a refusal that does not say where to go is how "Finch said it can't" became a
+ * support ticket in the first place.
+ */
+export const HUBDOC_CHAT_REFUSALS = {
+  /** Not an owner or admin. Same line the send route's 403 uses. */
+  notAdmin: 'Only an owner or admin can send documents to Hubdoc.',
+  notConnected:
+    'Xero is not connected for this business, so there is no Hubdoc hand-off yet. Connect it under Plugins → Xero.',
+  noIntakeEmail:
+    'No Hubdoc upload address is saved for this business. Add it under Plugins → Xero → Hubdoc.',
+  tablesMissing:
+    'The Hubdoc tables are not in this database yet — paste supabase/hubdoc.sql into the SQL editor.',
+  noDocuments:
+    'Tell me which document to send — attach it to this chat, or name the supplier invoice or statement you mean.',
+} as const;
+
+/** A document Vyso has already put into Hubdoc. Not a failure, and the sentence
+ *  says what to do if a second copy really is wanted. */
+export const HUBDOC_ALREADY_SENT_REASON =
+  'Vyso has already sent this one to Hubdoc. Ask me to send it again if you want a second copy filed.';
+
+/**
+ * The intake address, masked for the chat.
+ *
+ * SHOWN, NEVER QUOTED IN FULL. The card has to prove the owner is about to send
+ * to the inbox they configured, and the local part of a Hubdoc upload address is
+ * effectively a bearer secret — anyone holding it can file paperwork into that
+ * organisation's books. Enough of it survives to be recognised (the first two
+ * characters and the whole domain, which is what a person actually checks) and
+ * no more. A model turn never sees the unmasked address at all: this is what
+ * `hubdoc_prepare_send` returns.
+ */
+export function maskHubdocIntakeEmail(email: string | null | undefined): string {
+  const raw = (email ?? '').trim();
+  const at = raw.lastIndexOf('@');
+  if (at <= 0) return raw ? '•••' : '';
+  const local = raw.slice(0, at);
+  const domain = raw.slice(at);
+  const head = local.slice(0, Math.min(2, local.length));
+  return `${head}•••${domain}`;
+}
+
+/** One document as the prepare tool resolved it, before the verdict. */
+export interface HubdocCandidate {
+  id: string;
+  filename: string;
+  /** The resolved supplier's name, or null when none was matched. */
+  supplier: string | null;
+  /** The invoice/statement number extraction found, or null. */
+  number: string | null;
+  facts: HubdocDocumentFacts;
+  /** Vyso has already sent this document successfully. */
+  alreadySent: boolean;
+}
+
+/** One row of the confirm card. `reason` is present only when `eligible` is
+ *  false, and is always a sentence written to be shown. */
+export interface HubdocPreparedDocument {
+  id: string;
+  filename: string;
+  supplier: string | null;
+  number: string | null;
+  eligible: boolean;
+  reason?: string;
+}
+
+/**
+ * The card's list: every document the owner named, with a tick or a reason.
+ *
+ * INELIGIBLE DOCUMENTS ARE KEPT, NOT DROPPED. If the owner said "send these
+ * three" and one is a delivery note, a card showing two is a card that quietly
+ * disagreed with them. Showing all three, one greyed with "Hubdoc takes supplier
+ * invoices and statements", answers the question they will otherwise ask.
+ *
+ * ALREADY-SENT IS THE LAST TEST, deliberately after `hubdocEligibility`: a
+ * document that could never have gone should say why it cannot, not that it
+ * already did. `resend` skips it — the same override the document page's "Send
+ * again" carries, spoken instead of clicked.
+ */
+export function hubdocPrepareDocuments(
+  candidates: readonly HubdocCandidate[],
+  opts: { resend?: boolean } = {},
+): HubdocPreparedDocument[] {
+  return candidates.map((candidate) => {
+    const base = {
+      id: candidate.id,
+      filename: candidate.filename,
+      supplier: candidate.supplier,
+      number: candidate.number,
+    };
+    const eligibility = hubdocEligibility(candidate.facts);
+    if (!eligibility.ok) return { ...base, eligible: false, reason: eligibility.reason };
+    if (candidate.alreadySent && opts.resend !== true) {
+      return { ...base, eligible: false, reason: HUBDOC_ALREADY_SENT_REASON };
+    }
+    return { ...base, eligible: true };
+  });
+}
+
+/** The ids the card's button will actually post. Nothing else may be sent — the
+ *  route re-checks every one of them, but the card must not offer a document it
+ *  has just drawn a reason against. */
+export function hubdocEligibleIds(documents: readonly HubdocPreparedDocument[]): string[] {
+  return documents.filter((d) => d.eligible).map((d) => d.id);
+}
+
+/**
+ * The line the transcript keeps after a send: "Sent Umgeni-Oct.pdf to Hubdoc."
+ *
+ * NAMED, NOT COUNTED, up to two files — "Sent 3 to Hubdoc" read back next week
+ * says nothing about which three, and this line is the only record of the
+ * hand-off inside the conversation (the full receipt is the plugin page's log).
+ * Written by the CLIENT, not by a model: it is a fact about what a button did.
+ */
+export function hubdocSentMessage(filenames: readonly string[]): string {
+  const names = filenames.map((n) => n.trim()).filter(Boolean);
+  if (names.length === 0) return 'Nothing was sent to Hubdoc.';
+  if (names.length === 1) return `Sent ${names[0]} to Hubdoc.`;
+  if (names.length === 2) return `Sent ${names[0]} and ${names[1]} to Hubdoc.`;
+  return `Sent ${names[0]}, ${names[1]} and ${names.length - 2} more to Hubdoc.`;
+}

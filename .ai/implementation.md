@@ -3928,3 +3928,131 @@ change is layout, orchestration, or a route's response timing — the pure layer
 `tests/review-actions.test.ts` covers is untouched) · `npm run build` clean,
 still listing `/api/review/{approve,customer,item}` · `npx eslint .` **50 errors,
 40 warnings** — byte-identical to the pre-change baseline.
+
+# Plugins X2 — chat hand-off ("push it to Hubdoc", with a confirm card) (2026-08-19, branch `main`)
+
+Josh, signed in as an admin on Turn 'n Slice with the Hubdoc intake address
+already saved under Plugins → Xero → Hubdoc, dropped a statement into a chat and
+asked Finch to push it to Hubdoc. Finch said it couldn't. It was telling the
+truth — X2 deliberately gave the send NO Finch tool ("an outbound send is not
+something a chat model gets to decide", `lib/platform/hubdoc.ts`) — and it was
+useless, because the product could do the thing, in two clicks, on another
+screen.
+
+## The line this wave draws
+
+**The model prepares; a person presses.** `hubdoc_prepare_send` resolves which
+documents were meant, checks each against the *same* `hubdocEligibility` the
+buttons use, and returns a list plus a MASKED intake address. It sends nothing
+and cannot: the send is still `forwardDocumentToHubdoc`, still reachable only
+from `POST /api/integrations/hubdoc/send`, and the confirm card's button posts
+there — same role gate, same rate limit, same 25-per-request cap, same
+`hubdoc_forwards` log, same per-document re-check. There is no chat-specific
+send path, on purpose.
+
+So the drafts-only rule survives intact. What changed is that the press now
+happens in the conversation the owner was already having, instead of after being
+sent to a screen.
+
+## Files
+
+Created: `lib/ai/finch/hubdoc-data.ts` (the tool's reads + gates),
+`components/platform/chat/HubdocConfirmCard.tsx` (the card, and `HubdocCards`,
+the context-reading wrapper the two non-bubble surfaces use).
+
+Modified: `lib/platform/hubdoc-shared.ts` (the pure half of the hand-off —
+`maskHubdocIntakeEmail`, `hubdocPrepareDocuments`, `hubdocEligibleIds`,
+`hubdocSentMessage`, `HUBDOC_CHAT_REFUSALS`, `HUBDOC_ALREADY_SENT_REASON`),
+`lib/ai/finch/tools.ts` (`HUBDOC_TOOLS`, registered on `docu` and `brief`),
+`lib/ai/finch/knowledge.ts` (`HUBDOC_KNOWLEDGE` into DOCU and BRIEF, two
+amendments to `ATTACHMENT_KNOWLEDGE`, the Brief's "you write, the owner sends"
+carve-out, and one clause on the system prompt's `actionLine`),
+`app/api/ai/agent/route.ts` (`TOOL_ACTIVITY` label, `buildHubdocCard`, the
+`{card}` SSE event), `components/platform/shell/FinchChatProvider.tsx`
+(`HubdocConfirmDockCard` on the `DockCard` union, `parseCardEvent`, the `card`
+event branch, `appendAssistantLine`), `components/platform/chat/OrderCards.tsx`
+(one case), `components/platform/chat/ChatView.tsx` and
+`components/platform/shell/GlobalChatDock.tsx` (`<HubdocCards />`),
+`tests/hubdoc.test.ts` (+12).
+
+## Decisions worth the words
+
+**The refusals are constants, and each names its fix.** A tool that answers
+"no" without saying where to go is the failure this wave exists to fix, one
+level down. There are exactly five, in `HUBDOC_CHAT_REFUSALS`:
+
+| when | what the owner is told |
+| --- | --- |
+| not owner/admin (`canSeeMoney`) | "Only an owner or admin can send documents to Hubdoc." |
+| Xero not connected | "Xero is not connected for this business, so there is no Hubdoc hand-off yet. Connect it under Plugins → Xero." |
+| no intake address | "No Hubdoc upload address is saved for this business. Add it under Plugins → Xero → Hubdoc." |
+| `supabase/hubdoc.sql` not applied | "The Hubdoc tables are not in this database yet — paste supabase/hubdoc.sql into the SQL editor." |
+| nothing resolved | "Tell me which document to send — attach it to this chat, or name the supplier invoice or statement you mean." |
+
+The knowledge doc instructs the model to repeat the `reason` word for word and
+not to retry, which is why they are written as sentences and not codes.
+
+**`hubdocStateForDocument` is composed from, not called.** It answers the same
+three questions for the document page's button — but with `null`, which is right
+for "draw a control or don't" and wrong here, where the owner asked out loud and
+deserves to know *which* of the three is missing. The tool therefore reuses its
+parts (`loadHubdocSettings`, `xeroStatusTone`, `hubdocEligibility`,
+`hubdocSentDocumentIds`) rather than its verdict. A degraded Xero connection
+still counts as connected, for the reason that function already gives.
+
+**The Xero check reads through the CALLER's client**, not through
+`xeroConnectionStatus`, which builds a cookie-scoped client of its own — the
+agent route also serves bearer-token callers, for whom that read comes back
+empty and a perfectly connected org would be refused.
+
+**The intake address is masked (`tu•••@upload.hubdoc.com`).** The local part of a
+Hubdoc upload address is effectively a bearer secret: anyone holding it can file
+paperwork into that organisation's books. A model turn never sees the unmasked
+value — `hubdoc_prepare_send` returns only the mask, so it cannot end up in a
+transcript, a title, or a log line.
+
+**Ineligible documents stay on the card, greyed, with their reason.** Dropping
+them would be quietly disagreeing with the person who named them. Already-sent is
+tested LAST, after eligibility, so a document that could never have gone says why
+rather than claiming it already went. `resend: true` overrides that one check and
+nothing else.
+
+**The "Sent …" line is written by the client, not by a model.** It is a fact
+about what a button did, so paying a turn for it would be slower, dearer and able
+to get it wrong. It is NOT persisted to `finch_messages`: the only writer of that
+table is the agent route's `after()`, and opening a second door — an endpoint
+that appends arbitrary assistant text to a chat — is not worth one sentence. The
+durable receipt is the Hubdoc log on Plugins → Xero, which the send route writes
+exactly as it always did. The card is provider state and is not persisted either,
+for the same reason the order card is not.
+
+**Three surfaces draw the card, not one.** `DockCards` (the module bubble) gained
+a case; the Brief's dock panel and `/app/chat/[id]` gained `<HubdocCards />`,
+which filters the provider's cards to this one kind. The order/ingest cards stay
+bubble-only because they can only arise on an OrderFlow screen — a Hubdoc
+hand-off is asked for wherever the owner is standing, and `/app/chat/*` is the
+Brief agent's own screen.
+
+**One clause had to go into the system prompt itself**, not only the module
+reference: the Q&A `actionLine` says "You cannot TAKE ACTIONS … If asked to do
+something, explain how to do it themselves", and a model reading that first will
+apologise before it reaches the reference. On `brief` and `docu` it now carries
+the Hubdoc exception. Promising it there costs nothing when it is unavailable —
+the tool refuses with a sentence naming the fix.
+
+## Not verified
+
+**Nothing has been run against a live database, and no email was sent by any of
+this.** The tool's reads, the SSE `card` event and the card's POST are
+typechecked and reasoned about, not observed end to end. The pure half is pinned
+by tests; the wiring is not.
+
+**No tool-registration test exists to extend.** `lib/ai/finch/tools.ts` is
+`server-only` and reaches Supabase, so `node --test` cannot import it; the
+registry's shape is covered by `tsc` and by the route, not by a test.
+
+## Gates
+
+`npx tsc --noEmit` clean · `npm test` **736 pass / 0 fail** (724 + 12) ·
+`npm run build` clean · `npx eslint .` **50 errors, 40 warnings** — byte-identical
+to the pre-change baseline; none of the touched files contribute.
