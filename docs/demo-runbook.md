@@ -271,6 +271,47 @@ page says the mirror is not set up — neither is an error.
 The sync's `POST` twin is the plugin page's **Sync now** button: signed-in
 owner/admin, their own org, six times an hour.
 
+### 3.5 Plugins → Xero → Hubdoc (cross-upload)
+
+**Nothing here runs on a cron, and nothing here sends without a person.** The
+Hubdoc cross-upload emails a supplier invoice Doc-U has read to the org's Hubdoc
+"upload by email" inbox — that is Hubdoc's only supported intake, there is no
+write API — and it happens on a button press, or on the org-level auto-forward
+toggle that ships **off**.
+
+**Prerequisite (once):** paste `supabase/hubdoc.sql` into the Supabase SQL
+editor. Until you do, the Hubdoc card says so and every send refuses.
+
+**Never demo this with a real customer's documents, and never send to a real
+Hubdoc inbox from a demo.** Meridian has no Xero connection, so the whole
+section is hidden there anyway (the control needs a live connection and an
+intake address). If you want to show it, show the card's copy and the log —
+not a send.
+
+**Finding an org's intake address:** Hubdoc → the organisation's settings →
+**"Upload by email"**. It usually ends in `@upload.hubdoc.com`. Vyso accepts any
+valid address but warns on anything else, because some businesses point it at
+their own bookkeeper instead.
+
+The end-to-end check, in order:
+
+1. Plugins → Xero → **Hubdoc** → paste the intake address → **Save**.
+2. Open a Doc-U supplier invoice (`/app/docu/<id>`) that has been read and has a
+   supplier matched. **Send to Hubdoc** is in the top-right action row.
+3. The row appears in the Hubdoc card's log within a refresh, and the email
+   arrives in the Hubdoc inbox with the original file attached.
+
+| What you see | Meaning |
+|---|---|
+| No "Send to Hubdoc" button at all | you are not an owner/admin, **or** Xero is not connected, **or** no intake address is set. The button only renders when it would work |
+| A sentence instead of a button | the org is set up but this document cannot go — wrong type (only invoices and statements), no supplier matched, not read yet, or no stored file |
+| "Sent to Hubdoc" + a quiet "Send again" | it has already gone. "Send again" is the deliberate override and logs its own row as *Sent again* |
+| A row in the log marked **Failed** | the send was attempted and did not land; the error is on the row. Retrying is allowed — only a *successful* non-resend forward is one-per-document |
+| **Sent automatically** in the log | the auto-forward toggle is on for that org. It is off by default and records who turned it on |
+
+`RESEND_API_KEY` is what makes any of this work — the same key the briefs and
+the digest use. Without it the card says email sending is not configured.
+
 ## 4. Rotating `CRON_SECRET`
 
 Vercel marks it **sensitive**: once saved it cannot be read back in the

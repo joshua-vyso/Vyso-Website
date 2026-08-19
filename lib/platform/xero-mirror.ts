@@ -2,6 +2,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { isMissingRelation } from './db-errors';
 import { todayIso } from './orderflow-debtors';
 import { summariseXeroMirror, type XeroMirrorSnapshot, type XeroSnapshotInput } from './xero-sync-shared';
+import { matchesXeroBill } from './xero-watch/detect';
+import { loadDocuSupplierInvoices } from './xero-watch/run';
 
 /**
  * Reading the Xero mirror — the one query behind the plugin page's Snapshot, the
@@ -130,4 +132,87 @@ export async function loadXeroInvoices(
     return { rows: [], tableMissing: isMissingRelation(error) };
   }
   return { rows: data ?? [], tableMissing: false };
+}
+
+// ---------------------------------------------------------------------------
+// "Not in Xero yet" — the list the Hubdoc bulk send works from (Plugins X2)
+// ---------------------------------------------------------------------------
+
+/** One supplier invoice Doc-U has read that the mirror cannot account for. */
+export interface XeroMissingBill {
+  documentId: string;
+  supplierName: string;
+  invoiceNumber: string;
+  /** The document's own stated total, or null when none could be read. Never a
+   *  figure this module computed — see `statedTotal`. */
+  total: number | null;
+  /** yyyy-mm-dd, the day the paper reached Vyso. */
+  day: string;
+}
+
+/**
+ * The supplier invoices Doc-U has read that are not in the Xero mirror.
+ *
+ * THE SAME ANSWER XERO WATCH'S RULE 2 GIVES, by construction: the same loader
+ * (`loadDocuSupplierInvoices`), the same matcher (`matchesXeroBill`, invoice
+ * number plus a supplier-name dice floor), the same 45-day window, the same
+ * "biggest first" order. This function is rule 2 without the sentence and
+ * without the cutoff at five — the plugin page shows the whole list, because the
+ * page is where an owner acts on it rather than reads about it.
+ *
+ * NOTHING HERE SENDS ANYTHING. It builds a list; the buttons on it post to
+ * `/api/integrations/hubdoc/send`, one document at a time, on a click.
+ *
+ * A MISSING MIRROR YIELDS AN EMPTY LIST, not "everything is missing". Before the
+ * first sync every Doc-U invoice would technically be un-matched, and a page
+ * offering to post a business's entire filing cabinet into their bookkeeper's
+ * inbox is the single worst thing this feature could do. `tableMissing` and an
+ * empty mirror are therefore both reported, and the page says why it is showing
+ * nothing.
+ */
+export async function loadNotInXeroBills(
+  supabase: SupabaseClient,
+  orgId: string,
+  today: string = todayIso(),
+): Promise<{ bills: XeroMissingBill[]; tableMissing: boolean; mirrorEmpty: boolean }> {
+  const { rows, tableMissing } = await loadXeroInvoices(supabase, orgId);
+  if (tableMissing) return { bills: [], tableMissing: true, mirrorEmpty: true };
+  if (rows.length === 0) return { bills: [], tableMissing: false, mirrorEmpty: true };
+
+  // Every ACCPAY, whatever its status: a bill already PAID in Xero is very much
+  // "in Xero". Rule 2 makes the same call, for the same reason.
+  const bills = rows
+    .filter((r) => r.type === 'ACCPAY')
+    .map((r) => ({
+      id: r.id,
+      type: r.type,
+      status: r.status,
+      contactId: r.contact_id,
+      contactName: r.contact_name,
+      invoiceNumber: r.invoice_number,
+      dueDate: r.due_date,
+      amountDue: r.amount_due,
+      total: r.total,
+    }));
+
+  // The agent collects warnings; this page has nowhere to put them and nothing
+  // it would do differently, so they are dropped rather than surfaced as noise
+  // beside a list of documents.
+  const docs = await loadDocuSupplierInvoices(supabase, orgId, today, []);
+
+  const missing = docs
+    .filter((doc) => !bills.some((bill) => matchesXeroBill(doc, bill)))
+    .map((doc) => ({
+      documentId: doc.documentId,
+      supplierName: doc.supplierName,
+      invoiceNumber: doc.invoiceNumber,
+      total: doc.total,
+      day: doc.day,
+    }))
+    // Biggest first, so the bills worth acting on are the ones on screen. A
+    // document with no total sorts last rather than being dropped — it is still
+    // missing, it just cannot be priced.
+    .sort((a, b) => (b.total ?? -1) - (a.total ?? -1) || a.supplierName.localeCompare(b.supplierName));
+
+  return { bills: missing, tableMissing: false, mirrorEmpty: false };
 }

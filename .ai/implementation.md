@@ -3244,3 +3244,266 @@ shape the three Doc-U pages already use (`supplier:suppliers(id,name,initials)`)
 If PostgREST returns it as an array on some deployment, `reviewDocumentTitle`
 falls through to the filename rather than throwing — the failure mode is a
 duller title, not a broken card.
+
+---
+
+# Plugins X2 — Hubdoc cross-upload (settings, send-to-Hubdoc, auto-forward, log) (2026-08-19, branch `main`)
+
+Implements **wave X2 only** of `.ai/plan_plugins_xero.md`, on top of X1. The
+placeholder card X1 left on `/app/plugins/xero` is now the feature.
+
+Josh's ask, verbatim (2026-08-18), of which this is the middle third: "a separate
+section for integrations that has all integrations in one place (call the section
+Plugins, just above the under the hood section) that highlights findings, **cross
+uploads invoices to HubDoc**, and has an agent flag any issues".
+
+## What it does
+
+Hubdoc has no public write API. Its supported intake is **email** — every Hubdoc
+organisation has an "upload by email" address (Hubdoc → the org's settings →
+"Upload by email"), and a document attached to a message sent there is filed for
+coding into Xero. So the cross-upload is exactly one thing: an email through
+Resend with the original file attached, `attachments: [{ filename, content }]`
+with `content` a base64 string (verified against `node_modules/resend`'s
+`Attachment` interface, which types it `string | Buffer`).
+
+Three ways a document gets there, and **all three are a person or a switch a
+person set**:
+1. **A button on the document's own page** (`/app/docu/[id]`, top-right action
+   row) — one press, admin only.
+2. **"Send to Hubdoc" / "Send all N" on the plugin page's "Not in Xero yet"
+   list** — the same bills Xero Watch's rule 2 names, now actionable.
+3. **The org-level auto-forward toggle**, DEFAULT OFF, which fires from
+   `app/api/ai/extract/route.ts`'s `after()` the moment Doc-U finishes reading a
+   supplier invoice.
+
+Every attempt — sent or failed, by hand or automatic — writes a row to
+`hubdoc_forwards` and is listed under the toggle that authorised it.
+
+## Files
+
+Created:
+`supabase/hubdoc.sql`,
+`lib/platform/hubdoc-shared.ts` (pure),
+`lib/platform/hubdoc.ts`,
+`app/api/integrations/hubdoc/{settings,send}/route.ts`,
+`components/platform/plugins/{HubdocCard,XeroMissingBills}.tsx`,
+`components/platform/docu/SendToHubdoc.tsx`,
+`tests/hubdoc.test.ts`.
+
+Modified: `app/app/plugins/xero/page.tsx` (placeholder → two sections, four more
+reads), `app/app/docu/[id]/page.tsx` (the control's gates), `components/platform/
+docu/DocumentDetailPanel.tsx` (one prop, one control in the action row),
+`app/api/ai/extract/route.ts` (one `after()`), `lib/platform/xero-mirror.ts`
+(`loadNotInXeroBills`), `lib/platform/xero-watch/run.ts` (one `export`, one
+parameter type), `docs/demo-runbook.md` (new §3.5).
+
+Nothing in `components/platform/shell/*`, `app/app/layout.tsx`, `app/app/chat/
+review/*`, `lib/platform/review-queue*.ts`, `lib/platform/finch-chats.ts`,
+`lib/ai/finch/knowledge.ts` or `app/globals.css` was touched — the Review chat
+wave was landing concurrently and owns those.
+
+## Decisions the plan left open
+
+**The `unique (document_id)` constraint became a PARTIAL unique index.** The plan
+asked for `unique (document_id)` *and* for "Send again" to insert a second row.
+Both cannot be true. The constraint is therefore narrowed to what the rule
+actually means — `unique (document_id) where resend = false and status = 'sent'`
+— which makes the two things Vyso must never do impossible at the database level
+(an auto-forward racing a button cannot double-post a bill; a doubled cron cannot
+either) while still allowing the two it must do: retry a send that FAILED, and
+honour an owner who explicitly asks again. `forwardDocumentToHubdoc` checks the
+same fact before sending, so a duplicate is never discovered *after* delivery.
+
+**"Not customer-side" is read as "has a resolved `supplier_id`".** The plan says
+supplier invoices and statements, "not customer-side", without saying how a row
+is known to be one. `document_type in ('invoice','statement')` covers the type;
+`supplier_id` covers the side. A document that has been through extraction has
+had its supplier resolved by `resolveSupplierProfile`, which deliberately never
+lets the org's own name become a supplier — so a row with no supplier is either
+the business's own outgoing paper or a scan nobody could read a counterparty off.
+Neither belongs in a bookkeeper's supplier inbox, and the subject line would have
+nothing to name it with.
+
+**A non-Hubdoc intake domain WARNS rather than refuses.** The plan allows it; the
+reasons are that Hubdoc has changed its intake domain before and that some
+businesses deliberately point this at their own bookkeeper. The warning is
+recomputed on every render rather than stored — a warning frozen into a row would
+outlive the reason for it.
+
+**Clearing the address turns auto-forward off, in the same write**, and the
+toggle is disabled until an address exists. A standing instruction with nowhere
+to send does nothing but write a failed row on every upload.
+
+**The service role is used on BOTH send paths, including the signed-in one.** The
+auto path runs inside `after()` on an extraction request any MEMBER may have
+made, so gating the log write on the caller's role would mean a member's upload
+quietly failing to honour an instruction their owner gave. The org id comes from
+the session (or, for the cron-less auto path, from the document's own row as the
+route already resolved it) and every statement pins `.eq('org_id', orgId)` by
+hand. Same argument `app/api/integrations/xero/sync/route.ts` makes.
+
+**One send route for one document and for many.** The per-document button, the
+per-row button and "Send all N" are the same act repeated, so they post the same
+`documentIds` array to one endpoint — a separate bulk route would be a second
+place four gates have to be right. Serial, not parallel: parallel sends would
+race the already-sent check. Capped at 25 per request and 60 per org per hour.
+
+**Partial success is reported as partial success** (200, with `sent`, `skipped`
+and per-document results). Reporting a batch where three of four went as a
+failure invites a retry that re-sends the three — they would be caught, but a UI
+that teaches people to retry a completed action will eventually double-post
+something.
+
+**The document-page control renders only when it would work** — admin, Xero
+connected, intake address set. A disabled button on a document detail page
+invites the click that proves it does nothing, and Plugins → Xero is the screen
+whose job is explaining the setup. The one exception is a document that cannot go
+for its OWN reasons (wrong type, no supplier, not read, no file): there the
+sentence replaces the button, because that is information the owner did not have.
+
+**A DEGRADED Xero connection still shows the control.** `error` and
+`reauth_required` mean the ledger cannot be read; Hubdoc is a different system on
+a different transport, and hiding the way to file a bill because a token expired
+would punish the owner for the outage. Only "not connected at all" removes it.
+
+**"Send again" lives on the document page, never on the bulk list.** A second
+copy of a bill in a bookkeeper's inbox costs somebody real time, so the person
+choosing it should be looking at the document while they choose.
+
+**No Finch tool, as the plan decided** — and no knowledge paragraph either. The
+plan's X2 section registers no tool ("**No** — outbound; keep it a button") and
+asks for no knowledge; adding one would have meant touching
+`lib/ai/finch/knowledge.ts`, which the concurrent Review wave owns. An outbound
+send is not something a chat model gets to decide, which is the same drafts-only
+line the outreach module already holds.
+
+**The subject is "{Supplier} — invoice {number}", with no "Vyso" in it.** That is
+the order a bookkeeper searches in, and a constant word at the front of every
+subject makes every subject start the same way. "Vyso" is in the From name
+instead. The body is three lines of plain text: no HTML, no branding, no tracking
+pixel — a filing inbox is read by a machine and, when something goes wrong, by a
+person.
+
+**The attachment filename is sanitised** (last path segment, control characters
+and `" ' ;` stripped, truncated to 120) because it is written into a MIME header
+and then onto somebody's disk, and a Vyso filename is whatever the uploader
+called it. The extension is preserved: a PDF that arrives as `invoice` is a PDF
+nobody can open.
+
+**15 MB ceiling on the attachment**, matching the extract route's own
+`MAX_EXTRACT_BYTES` rather than Resend's 40 MB. A document too big for Vyso to
+read is not one it should be posting into somebody's accounting inbox, and the
+buffer is base64'd in memory (a third bigger again) inside a serverless function.
+Over the limit is a logged failure with both figures in the sentence.
+
+**"Not in Xero yet" shows nothing at all before the first sync.** Every Doc-U
+invoice would technically be unmatched against an empty mirror, and a page
+offering to post a business's entire filing cabinet into their bookkeeper's inbox
+is the single worst thing this feature could do. `tableMissing` and "mirror
+empty" both render as "Vyso has not read your Xero ledger yet".
+
+**The Hubdoc card sits BELOW the missing-bills list**, not above it. That is the
+order an owner arrives in — "Xero Watch told me four bills are missing" — and the
+list's empty state points down at the card when no address is set.
+
+## Deviations from the plan, and why
+
+**`lib/platform/hubdoc-shared.ts` is not in the plan's file list.** The plan names
+`lib/platform/hubdoc.ts` alone. Every decision that makes a send WRONG (should
+this document have gone; where did it go; what does the message say) is pure, and
+`node --test` cannot import `hubdoc.ts` at all — it pulls in `server-only`,
+`resend` and a Supabase client. The split is the same one `xero-sync-shared.ts`
+has beside `xero-sync.ts`, and it is what makes the plan's "tests: pure
+eligibility + subject builder" possible rather than aspirational.
+
+**`buildHubdocEmail` is in the pure module too**, so the exact payload Resend is
+handed — the base64 attachment shape, the single recipient, the ABSENCE of
+reply-to/cc/bcc — is pinned by a test rather than by reading the send function.
+The plan's "Resend call mocked" is honoured more strongly than asked: **no test
+imports `resend` at all**, and the send itself is behind `sendThroughResend`,
+reachable only from `forwardDocumentToHubdoc`, reachable only from a route. No
+email was sent by any test or shell command in this wave.
+
+**`loadNotInXeroBills` was added to `lib/platform/xero-mirror.ts`, and
+`loadDocuSupplierInvoices` was exported from `lib/platform/xero-watch/run.ts`.**
+The plan asks for a "Not in Xero yet" list on the plugin page without saying
+where it comes from. It has to be the SAME answer rule 2 gives — same loader,
+same matcher, same 45-day window — because a reconciliation screen that disagrees
+with the agent that sent you to it is worse than no screen. The loader's fourth
+parameter changed from the run summary to a bare `string[]` so the page can pass
+an array it drops; no behaviour, no other caller and no signature beyond that
+changed.
+
+**`components/platform/docu/DocumentDetailPanel.tsx` gained one optional prop.**
+The plan says "a 'Send to Hubdoc' button on `/app/docu/[id]`" without saying
+where. The header action row (beside "Push to…", the type and folder pickers) is
+where every other action on that page lives; rendering it above the panel instead
+would have been a second action area on a screen that already has one. It sits
+FIRST in the row because it is the only action there that leaves Vyso.
+
+**`HubdocDocumentState` is declared in `SendToHubdoc.tsx`, not in the page.** A
+Next route file may only export the names the framework knows about; a stray
+`export interface` in `page.tsx` is a build error, not a shared type.
+
+## SQL Josh must paste
+
+`supabase/hubdoc.sql` — idempotent, safe to re-run. Requires
+`supabase/xero-integration.sql` and `supabase/xero-sync.sql` (both already
+applied). Nothing works until it is run and nothing breaks before it is: the
+Hubdoc card says the tables are missing, every send refuses with the same
+sentence, and the auto-forward path reads "not configured" and does nothing.
+
+Two tables: `org_integrations_hubdoc` (org_id pk, intake_email, auto_forward
+default **false**, updated_by, updated_at) and `hubdoc_forwards` (the receipts).
+Both are OWNER/ADMIN select, service-role write — the same model
+`supabase/xero-sync.sql` uses, for the same reason.
+
+## Gates
+
+`npx tsc --noEmit` clean · `npm test` **663 pass / 0 fail** (633 before this wave
+— 601 at X1 plus 32 from the concurrent Review wave — and **30 new** in
+`tests/hubdoc.test.ts`) · `npm run build` clean, the route manifest listing
+`ƒ /api/integrations/hubdoc/send` and `ƒ /api/integrations/hubdoc/settings` ·
+`npx eslint .` **50 errors, 40 warnings** — byte-identical to the pre-wave
+baseline; **none** of them are in a file this wave created or modified.
+
+## Not verified, and flagged rather than hidden
+
+**No email has been sent.** Not by a test, not by a shell command, not to a real
+Hubdoc inbox. The Resend call shape is verified against the installed package's
+types and pinned by a test on `buildHubdocEmail`; whether Hubdoc *accepts* a
+message in this shape has not been observed and cannot be until Josh points a
+real intake address at it. The first live send is the thing to watch.
+
+**Nothing has been run against a live database.** `lib/platform/hubdoc.ts` is I/O
+and is not unit tested by design; every decision it makes is tested in
+`hubdoc-shared.ts`. In particular the partial unique index
+(`hubdoc_forwards_one_per_document`) has not been exercised — its behaviour under
+a genuine race is reasoned about, not observed.
+
+**The auto-forward path has never fired.** It is one `after()` callback gated on
+a flag that no org has set. The gate is the first statement in
+`autoForwardDocumentToHubdoc` and returns before touching the document, so an org
+that has not opted in pays one small select and nothing else — but "an org that
+HAS opted in gets exactly one email per invoice" is an assertion about a code
+path nobody has walked.
+
+**Storage downloads of large or unusual files.** The 15 MB check reads
+`file.size` from the Storage blob; a Storage backend that returned a zero size
+would let an oversized file through to Resend, which would reject it, which would
+be logged as a failure. Acceptable, but untested.
+
+## The click-through to walk first
+
+1. Paste `supabase/hubdoc.sql`.
+2. Plugins → Xero → Hubdoc → paste the intake address (Hubdoc → org settings →
+   "Upload by email") → Save. Expect no warning if it ends `@upload.hubdoc.com`.
+3. Open a Doc-U supplier invoice that has been read and has a supplier matched.
+   Expect **Send to Hubdoc** top-right. Press it.
+4. Expect: a row in the Hubdoc card's log marked **Sent**, and the email in the
+   Hubdoc inbox with the original file attached and the subject
+   "{Supplier} — invoice {number}".
+5. Press again on the same document: expect "Sent to Hubdoc" and a "Send again"
+   link, and a second log row marked **Sent again** only if you press it.
+6. Leave the auto-forward toggle OFF until step 4 has been seen to work.

@@ -9,6 +9,7 @@ import { ApprovalActions } from './ApprovalActions';
 import { DocumentRename } from './DocumentRename';
 import { FolderPicker } from './FolderPicker';
 import { PushToButton } from './PushToButton';
+import { SendToHubdoc, type HubdocDocumentState } from './SendToHubdoc';
 import { TypePicker } from './TypePicker';
 import { StatementTotalsCard } from './StatementTotalsCard';
 import { FlagsList } from './FlagsList';
@@ -43,6 +44,7 @@ export function DocumentDetailPanel({
   linkedOrder,
   originalUrl,
   isImage,
+  hubdoc,
 }: {
   doc: DocumentWithSupplier;
   orgDocs: DocumentWithSupplier[];
@@ -54,6 +56,10 @@ export function DocumentDetailPanel({
   linkedOrder: LinkedOrder | null;
   originalUrl: string | null;
   isImage: boolean;
+  /** Hubdoc cross-upload state, or null to draw nothing at all (Plugins X2).
+   *  Resolved by the page — the gates are role, Xero connection and intake
+   *  address, and none of them are this component's business. */
+  hubdoc?: HubdocDocumentState | null;
 }) {
   const [showMore, setShowMore] = useState(false);
 
@@ -129,6 +135,17 @@ export function DocumentDetailPanel({
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {/* First in the action row because it is the one action here that
+              leaves Vyso — "Push to…" moves a document between this product's
+              own modules, and grouping an outbound send in among them would let
+              it read as one more internal routing choice. */}
+          {hubdoc ? (
+            <SendToHubdoc
+              documentId={doc.id}
+              alreadySent={hubdoc.alreadySent}
+              reason={hubdoc.reason}
+            />
+          ) : null}
           <PushToButton documentId={doc.id} docType={doc.document_type} features={features} />
           <TypePicker documentId={doc.id} documentType={doc.document_type} extractedData={extracted} />
           <FolderPicker documentId={doc.id} folders={folders} currentFolderId={doc.folder_id} />

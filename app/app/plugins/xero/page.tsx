@@ -4,7 +4,13 @@ import { createServerSupabase, getPlatformSession } from '@/lib/platform/supabas
 import { canSeeMoney } from '@/lib/platform/access';
 import { fetchFindings } from '@/lib/platform/agent-findings';
 import { XERO_WATCH_AGENT } from '@/lib/platform/agents/dedupe-keys';
-import { loadXeroSnapshot } from '@/lib/platform/xero-mirror';
+import { loadNotInXeroBills, loadXeroSnapshot } from '@/lib/platform/xero-mirror';
+import {
+  hubdocSendConfigured,
+  hubdocSentDocumentIds,
+  loadHubdocForwards,
+  loadHubdocSettings,
+} from '@/lib/platform/hubdoc';
 import { serviceRoleConfigured } from '@/lib/platform/supabase-service';
 import { xeroOAuthConfigured } from '@/lib/platform/xero';
 import { SAST } from '@/lib/platform/sast';
@@ -14,6 +20,8 @@ import {
 } from '@/components/platform/plugins/XeroConnection';
 import { XeroFindings } from '@/components/platform/plugins/XeroFindings';
 import { XeroSnapshot } from '@/components/platform/plugins/XeroSnapshot';
+import { XeroMissingBills } from '@/components/platform/plugins/XeroMissingBills';
+import { HubdocCard } from '@/components/platform/plugins/HubdocCard';
 import { firstOpenableModuleHref, railModules } from '@/components/platform/shell/shell-data';
 
 /**
@@ -99,7 +107,11 @@ export default async function XeroPluginPage({
   const canManage = role === 'owner' || role === 'admin';
 
   const db = await createServerSupabase();
-  const [query, connectionRow, feed, mirror] = await Promise.all([
+  // Six reads, all through the caller's RLS-scoped client, all soft. The Hubdoc
+  // three (X2) join the X1 three for the same reason those were batched: they
+  // have no dependency on each other, and a plugin page that fetched them in
+  // sequence would spend six round-trips rendering one screen.
+  const [query, connectionRow, feed, mirror, hubdoc, forwards, missing] = await Promise.all([
     searchParams,
     db
       .from('xero_connections')
@@ -108,7 +120,16 @@ export default async function XeroPluginPage({
       .maybeSingle(),
     fetchFindings(orgId),
     loadXeroSnapshot(db, orgId),
+    loadHubdocSettings(db, orgId),
+    loadHubdocForwards(db, orgId),
+    loadNotInXeroBills(db, orgId),
   ]);
+
+  // Which of the un-reconciled bills have already gone. A seventh read, and it
+  // has to wait for the sixth: it is a lookup BY the ids that one produced.
+  const sentDocumentIds = [
+    ...(await hubdocSentDocumentIds(db, orgId, missing.bills.map((b) => b.documentId))),
+  ];
 
   const connection = (connectionRow.data as XeroConnectionSummary | null) ?? null;
   const findings = feed.open.filter((f) => f.agent === XERO_WATCH_AGENT);
@@ -155,26 +176,29 @@ export default async function XeroPluginPage({
 
         <XeroFindings findings={findings} evidence={feed.evidence} now={now} />
 
-        {/* X2 — the Hubdoc cross-upload. A placeholder card rather than nothing,
-            because Josh's ask was one feature ("highlights findings, cross
-            uploads invoices to HubDoc, and has an agent flag any issues") and a
-            page that silently omitted a third of it would read as a page that
-            had forgotten it. Deliberately NOT a disabled button: there is
-            nothing to press yet, and a greyed control invites the click that
-            proves it. */}
-        <section>
-          <h2 className="of-display text-[16px] font-semibold text-[#171A17]">Hubdoc</h2>
-          <div className="mt-3 rounded-2xl border border-dashed border-[#DDE2E9] bg-[#FAFBFC] p-5">
-            <div className="text-[13.5px] font-semibold text-[#171A17]">
-              Cross-upload to Hubdoc — coming in the next update
-            </div>
-            <p className="mt-1 text-[13px] text-[#6B6F68]">
-              Send a supplier invoice Doc-U has read straight to your Hubdoc intake address, one
-              document at a time or as a standing instruction you switch on yourself. Nothing will
-              ever be forwarded without you asking for it.
-            </p>
-          </div>
-        </section>
+        {/* X2 — the Hubdoc cross-upload, in the order the work happens: WHAT is
+            unaccounted for, then WHERE it goes and what has already gone. The
+            list is above the settings because that is the sequence an owner
+            arrives in ("Xero Watch told me four bills are missing"), and the
+            list's own empty state points down at the card when there is no
+            address set. */}
+        <XeroMissingBills
+          bills={missing.bills}
+          sentDocumentIds={sentDocumentIds}
+          currency={mirror.snapshot.currency}
+          canSend={canManage}
+          intakeEmailSet={hubdoc.intakeEmail !== null}
+          mirrorReady={!missing.tableMissing && !missing.mirrorEmpty}
+        />
+
+        <HubdocCard
+          intakeEmail={hubdoc.intakeEmail}
+          autoForward={hubdoc.autoForward}
+          canManage={canManage}
+          configured={hubdocSendConfigured}
+          tableMissing={hubdoc.tableMissing || forwards.tableMissing}
+          forwards={forwards.entries}
+        />
       </div>
     </div>
   );

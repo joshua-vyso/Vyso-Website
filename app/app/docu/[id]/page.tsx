@@ -3,6 +3,13 @@ import { redirect } from 'next/navigation';
 import { getPlatformSession, createServerSupabase } from '@/lib/platform/supabase-server';
 import { DocumentDetailPanel } from '@/components/platform/docu/DocumentDetailPanel';
 import { allUnits } from '@/lib/platform/procurepulse/units';
+import { canSeeMoney } from '@/lib/platform/access';
+import { xeroConnectionStatus } from '@/lib/platform/plugins-data';
+import { xeroStatusTone } from '@/lib/platform/plugins';
+import { hubdocSentDocumentIds, loadHubdocSettings } from '@/lib/platform/hubdoc';
+import { hubdocEligibility } from '@/lib/platform/hubdoc-shared';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { HubdocDocumentState } from '@/components/platform/docu/SendToHubdoc';
 import type { DocumentFolder, DocumentWithSupplier } from '@/lib/platform/types';
 
 export default async function DocumentReviewPage({
@@ -95,6 +102,26 @@ export default async function DocumentReviewPage({
   const originalUrl =
     (signedRes as { data: { signedUrl?: string } | null }).data?.signedUrl ?? null;
 
+  // ---- "Send to Hubdoc" (Plugins X2) --------------------------------------
+  //
+  // The control appears ONLY when it would work: an owner or admin (`canSeeMoney`
+  // — pushing a supplier invoice into the company's bookkeeping is finance, not
+  // chrome), a live Xero connection, and an intake address set. Anything less and
+  // this page says nothing at all about Hubdoc: Plugins → Xero is the screen
+  // whose job is explaining how to set it up, and a disabled button here would
+  // just be a worse version of that explanation.
+  //
+  // AFTER the batch above rather than inside it, because two of the three reads
+  // are conditional on the first — a member's document page must not pay for
+  // three queries about a feature they cannot use.
+  const hubdoc = await hubdocForDocument(supabase, doc.org_id, doc.id, {
+    documentType: doc.document_type,
+    status: doc.status,
+    supplierId: doc.supplier_id,
+    storagePath: doc.storage_path,
+    canSend: canSeeMoney(session.profile?.role),
+  });
+
   // Detect image vs PDF by filename extension (the row carries no mime type).
   const ext = (doc.filename || doc.storage_path || '')
     .toLowerCase()
@@ -125,7 +152,59 @@ export default async function DocumentReviewPage({
         linkedOrder={linkedOrder}
         originalUrl={originalUrl}
         isImage={isImage}
+        hubdoc={hubdoc}
       />
     </div>
   );
+}
+
+/**
+ * Resolve the Hubdoc control's state for one document, or null to draw nothing.
+ *
+ * THREE GATES BEFORE ANY READ HAPPENS, cheapest first: the caller's role, then
+ * the org's Xero connection, then its Hubdoc address. Each one short-circuits,
+ * so a member opening a document page pays for nothing and an org that has never
+ * heard of Hubdoc pays for one small select.
+ *
+ * A DEGRADED XERO CONNECTION STILL COUNTS AS CONNECTED HERE, deliberately.
+ * `xeroStatusTone` folds `error`/`reauth_required` into "needs attention" — the
+ * ledger cannot be read, but Hubdoc is a different system on a different
+ * transport, and hiding the way to file a bill because a token expired would
+ * punish the owner for the outage rather than help them through it. Only "not
+ * connected at all" removes the control, because Hubdoc without Xero is a
+ * cross-upload to nowhere the plugin can see.
+ *
+ * SOFT ON EVERYTHING. Every read below already degrades to "not set up", and
+ * this whole feature is one button on a page whose job is reviewing a document.
+ */
+async function hubdocForDocument(
+  supabase: SupabaseClient,
+  orgId: string,
+  documentId: string,
+  facts: {
+    documentType: string | null;
+    status: string | null;
+    supplierId: string | null;
+    storagePath: string | null;
+    canSend: boolean;
+  },
+): Promise<HubdocDocumentState | null> {
+  if (!facts.canSend) return null;
+
+  const tone = xeroStatusTone(await xeroConnectionStatus(orgId));
+  if (tone === 'idle') return null;
+
+  const settings = await loadHubdocSettings(supabase, orgId);
+  if (!settings.intakeEmail) return null;
+
+  const eligibility = hubdocEligibility({
+    documentType: facts.documentType,
+    status: facts.status,
+    supplierId: facts.supplierId,
+    storagePath: facts.storagePath,
+  });
+  if (!eligibility.ok) return { alreadySent: false, reason: eligibility.reason };
+
+  const sent = await hubdocSentDocumentIds(supabase, orgId, [documentId]);
+  return { alreadySent: sent.has(documentId), reason: null };
 }

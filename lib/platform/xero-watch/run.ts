@@ -245,7 +245,7 @@ export async function runXeroWatch(
   }));
 
   // ---- 3. What Doc-U has read ---------------------------------------------
-  const docuInvoices = await loadDocuSupplierInvoices(supabase, orgId, today, summary);
+  const docuInvoices = await loadDocuSupplierInvoices(supabase, orgId, today, summary.warnings);
   summary.docuInvoicesSeen = docuInvoices.length;
 
   // ---- 4. What Debtors Watch is already saying ----------------------------
@@ -336,12 +336,19 @@ export async function runXeroWatch(
  * A DOCUMENT WITHOUT BOTH A SUPPLIER AND A NUMBER IS SKIPPED. Rule 2's match
  * needs both, and a card that said "1 supplier invoice isn't in Xero" about a
  * scan Vyso could not even read a number off would be unactionable.
+ *
+ * EXPORTED SINCE X2, and it takes a `string[]` rather than the run summary for
+ * exactly that reason. The plugin page's "Not in Xero yet" list has to ask the
+ * same question of the same rows as rule 2 — a second loader with its own idea
+ * of which documents count would let the Brief and the page disagree about which
+ * bills are missing, which is the one thing a reconciliation screen may not do.
+ * The agent passes `summary.warnings`; the page passes an array it drops.
  */
-async function loadDocuSupplierInvoices(
+export async function loadDocuSupplierInvoices(
   supabase: SupabaseClient,
   orgId: string,
   today: string,
-  summary: XeroWatchSummary,
+  warnings: string[],
 ): Promise<DocuSupplierInvoice[]> {
   const since = new Date(Date.parse(`${today}T00:00:00Z`) - DOCU_LOOKBACK_DAYS * 86_400_000)
     .toISOString();
@@ -361,7 +368,7 @@ async function loadDocuSupplierInvoices(
     // Soft: without Doc-U rows rule 2 simply says nothing, and the other four
     // rules are unaffected.
     if (!isMissingRelation(error)) {
-      summary.warnings.push(`Could not read Doc-U invoices: ${error.message}`);
+      warnings.push(`Could not read Doc-U invoices: ${error.message}`);
     }
     return [];
   }
@@ -398,7 +405,7 @@ async function loadDocuSupplierInvoices(
     });
   }
   if (unusable > 0) {
-    summary.warnings.push(
+    warnings.push(
       `${unusable} Doc-U invoice(s) skipped: no supplier or no invoice number could be read, so they cannot be looked for in Xero.`,
     );
   }

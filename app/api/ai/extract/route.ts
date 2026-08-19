@@ -9,6 +9,7 @@ import { syncOrderFromDocument } from '@/lib/platform/orderflow-from-doc';
 // identically everywhere: alias ruling → suppliers row (race-safe) → SupplySync
 // profile, with the org's own name never becoming a supplier.
 import { resolveSupplierProfile } from '@/lib/platform/document-ingest';
+import { autoForwardDocumentToHubdoc } from '@/lib/platform/hubdoc';
 import type { Document } from '@/lib/platform/types';
 
 // Multi-page statements with many line items can take a while to parse.
@@ -243,6 +244,45 @@ export async function POST(req: Request) {
       await docWatchForDocument(supabase, doc.org_id, doc.id);
     } catch (err) {
       console.error('doc-watch: immediate card failed', doc.id, err);
+    }
+  });
+
+  // The Hubdoc standing instruction (plan `.ai/plan_plugins_xero.md`, X2 "Auto
+  // mode"): if — and only if — this org's owner has switched auto-forward on,
+  // the supplier invoice that was just read goes to their Hubdoc inbox.
+  //
+  // OFF FOR EVERY ORG UNTIL SOMEBODY TURNS IT ON. `autoForwardDocumentToHubdoc`
+  // reads `org_integrations_hubdoc.auto_forward` (default false) as its FIRST
+  // act and returns without touching the document, sending anything or writing a
+  // log row when it is off. That is why this line is safe to run on every
+  // extraction in the product: for almost every org it is one small select and
+  // nothing else.
+  //
+  // A SEPARATE `after()` FROM DOC WATCH'S, on purpose. They are independent
+  // best-effort side-effects and one must not be able to cancel the other: a
+  // Hubdoc send that throws would otherwise take the Brief card with it, and the
+  // Brief card is the thing the user can actually see.
+  //
+  // INSIDE `after()` FOR THE SAME REASONS DOC WATCH IS (node_modules/next/dist/
+  // docs/01-app/03-api-reference/04-functions/after.md): extraction has already
+  // succeeded, the response below is the user's answer, and a Storage download
+  // plus an SMTP round-trip has no business delaying it. On Vercel the callback
+  // runs under `waitUntil`.
+  //
+  // NOT the caller's RLS client. Any member may upload and extract a document,
+  // and `hubdoc_forwards` is service-role-write — see the header of
+  // lib/platform/hubdoc.ts for why gating a standing instruction on the
+  // uploader's role would be wrong.
+  after(async () => {
+    try {
+      const result = await autoForwardDocumentToHubdoc(doc.org_id, doc.id);
+      // A refusal is normal (wrong document type, no supplier, already sent) and
+      // is already recorded where it matters. Only a genuine failure is logged.
+      if (!result.ok && !result.skipped) {
+        console.error('hubdoc: auto-forward did not send', doc.id, result.error);
+      }
+    } catch (err) {
+      console.error('hubdoc: auto-forward failed', doc.id, err);
     }
   });
 
