@@ -3625,3 +3625,156 @@ tests against an injected clock; a real invocation being killed at `maxDuration`
 despite the 30s reserve (one org that takes longer than the reserve) remains
 possible and would look exactly like today's failure mode, for one org instead of
 the whole run.
+
+
+# Review v2 — grouped chain, split-view detail, batch + master approvals (2026-08-19, branch `main`)
+
+Implements `.ai/plan_review_v2.md` in full.
+
+Josh's ask, verbatim (2026-08-19): "review chain needs automatic approvals.
+grouped by module, then subgrouped by task (quotes separated from new orders).
+batch approve button for each task, on each module and a master 'approve all' at
+the top. clicking an item expands that block in place (not a new page) showing
+the original document and key items (total, date, confidence…; for quotes:
+message body, email, 'add new customer' which adds them to OrderFlow). 'view in
+{module}' for line-by-line. review chain centred on open, moves left and the
+expanded view appears on the right; close returns it to centre in a fluid
+animation".
+
+Still no `review_items` table, still no migration, still no cron: the queue is
+computed exactly as v1 computed it. What is new is that the chain can now WRITE —
+and every one of those writes is a call into the module that owns it.
+
+## Every approval, and the function it delegates to
+
+| Item | Action | Calls |
+| --- | --- | --- |
+| document | Approve | `commitDocument` — `lib/platform/document-ingest.ts` |
+| document | Reject | `discardDocument` — same file (factored out of `/api/docu/review`) |
+| quote request | Dismiss | `status:'dismissed'` — the Quotes screen's own patch |
+| quote request | Add as new customer | the `of_customers` insert + `logActivity` the Customers screen runs |
+
+`discardDocument` did not exist before this wave: the UPDATE was inline in
+`app/api/docu/review/route.ts`. It was lifted out **unchanged** — same patch,
+same three predicates (`org_id`, `status in ('extracted','pending')`, the
+`reviewClaimableOr` claim guard), same 404 sentence — and that route now calls
+it. One write path, not two opinions about what "discard" means.
+
+`hubdocForDocument` moved the same way, from a private helper in
+`app/app/docu/[id]/page.tsx` to `hubdocStateForDocument` in
+`lib/platform/hubdoc.ts`, so the pane's "Send to Hubdoc" renders on exactly X2's
+gates. A route file cannot export a helper, so the alternative was a second copy
+of the three gates — which is how a control ends up appearing on one screen and
+not the other for the same document.
+
+## Files
+
+Created:
+`lib/platform/review-actions-shared.ts` (pure),
+`lib/platform/review-actions.ts` (the writes + the pane's payload),
+`tests/review-actions.test.ts` (40 tests),
+`app/api/review/{approve,customer,item}/route.ts`,
+`components/platform/review/{ReviewChain,ReviewGroup,ReviewItemRow,ReviewPane,
+DocumentReviewPane,QuoteReviewPane,ApproveAllButton}.tsx`,
+`components/platform/docu/DocumentPreview.tsx`.
+
+Modified:
+`lib/platform/review-queue-shared.ts` (module/task grouping; `module`/`task` on
+every item; `withReviewFocus`), `lib/platform/document-ingest.ts`
+(`discardDocument`), `lib/platform/hubdoc.ts` (`hubdocStateForDocument`),
+`app/api/docu/review/route.ts` (discard → the shared function),
+`app/app/docu/[id]/page.tsx` (helper removed, import added),
+`components/platform/docu/DocumentDetailPanel.tsx` (preview → the shared
+component), `app/app/chat/review/page.tsx` (chain + pane, `searchParams`),
+`components/platform/shell/FinchChatProvider.tsx` (`setReviewFocus` +
+`withReviewFocus` in the prelude), `app/globals.css` (one commented `.review-*`
+block), `lib/ai/finch/knowledge.ts` (the Review section says batch approve
+exists and still says Finch cannot approve), `tests/review-queue.test.ts`.
+
+Deleted: `components/platform/chat/ReviewOpening.tsx` (replaced by
+`ReviewChain`; nothing imported it).
+
+Untouched, as the plan required: agents, price-watch, marketing, and Plugins
+X1/X2 beyond reusing the Hubdoc button.
+
+## Decisions the plan left open
+
+**"New orders" is omitted, not invented.** The plan allowed the sub-group "only
+if the existing data model has an unconfirmed-order concept". `of_orders.status`
+has a `'draft'`, but nothing treats it as a decision queue — no screen lists
+drafts awaiting confirmation, and `REVIEW_SOURCES` has no order source — so the
+group would have required inventing the queue behind it.
+
+**Low confidence is NOT folded into "Flagged".** The plan's third Doc-U task was
+"Flagged / low confidence"; it ships as **"Flagged — Vyso could not read
+these"**, on status alone. The two are different kinds of thing: a flagged
+document is `status='error'` and `commitDocument` will not claim it, whereas a
+low-confidence one is an ordinary extracted document Doc-U is perfectly willing
+to approve. Folding them together would have removed the Approve button from the
+documents that most deserve a quick yes. A low-confidence row stays in its type's
+task and says its confidence on the row and again in the pane.
+
+**Two tasks are therefore NOT approvable, and no batch includes them.**
+`docu:flagged` (no commit path exists) and `orderflow:quotes` (OrderFlow's
+actions on a lead are "draft a quote" and "dismiss" — neither is an approval, and
+a batched Dismiss would bin real enquiries on one click). This is what makes the
+master button's label conditional: `approveAllLabel` says "Approve all you can
+(N)" whenever N is short of the queue total, which is the plan's own §3 wording
+for the mixed-permission case, applied to every reason a batch can be short.
+
+**"Mark handled" is labelled Dismiss.** `of_quote_requests.status` is
+`new | quoted | dismissed`; `'quoted'` is set by the quote builder, so the only
+"done" a person sets directly is `'dismissed'` — exactly what the Quotes screen's
+Dismiss writes. Giving one write a second name on a second screen is the second
+approval semantics the plan forbids in the sentence above it, so the module's
+word wins. It confirms first, as the Quotes screen does.
+
+**The detail payload is LAZY**, via `GET /api/review/item?kind&id`. Inline would
+have meant a signed storage URL, a Doc Watch lookup and the three-read Hubdoc
+gate multiplied by up to 25 rows, on a screen whose promise is that it appears
+the instant something needs attention — to draw a pane the owner opens once.
+
+**`?item=` is mirrored with `history.replaceState`, not `router.replace`.** The
+INITIAL value is read on the server (`searchParams`) so a deep link and a reload
+both work; the toggling afterwards is local, because pushing it through the
+router would re-run the page's two Supabase reads on every expand and collapse to
+change a string the server only reads once.
+
+**The animation moves the PANE'S TRACK, not the chain.** `.review-split` is a
+`justify-content:center` flex row; the pane's track transitions its `flex-basis`
+from 0, and re-centring the row is what carries the chain left. No measured
+width, no resize listener, no transform on the chain — and closing is the same
+rule backwards. `flex-basis` is the plan's own nominated property (§1.2); the
+pane itself fades and slides on opacity/transform. Reduced motion keeps every end
+state and drops only the interpolation, because the arrangement IS the
+information.
+
+**A document's cross-document flags are NOT re-derived in the pane.**
+`deriveFlags` needs every other document in the org — the Doc-U detail page
+already loads them, a pane opened from a chat should not. The pane shows the
+status reason, the confidence, and Doc Watch's own sentence when it has one, and
+"View in Doc-U →" is one click away for the rest.
+
+**A flagged document sent to `/api/review/approve` by a hand-built request gets
+Doc-U's own refusal**, not a special one. The UI never offers it, and inventing a
+friendlier sentence here would be a second account of what `commitDocument` did.
+
+## Gates
+
+`npx tsc --noEmit` clean · `npm test` **724 pass / 0 fail** (684 before; 40 new
+across `tests/review-actions.test.ts` and `tests/review-queue.test.ts`) ·
+`npm run build` clean, listing `/api/review/approve`, `/api/review/customer` and
+`/api/review/item` · `npx eslint .` **50 errors, 40 warnings** — byte-identical
+to the pre-change baseline.
+
+## Not verified, and flagged rather than hidden
+
+**Nothing has been run against a live database.** No approval in this wave has
+been observed committing a real document: `commitDocument` and `discardDocument`
+are unchanged and were already exercised by `/api/docu/review`, but the BATCH
+path — twenty of them in one request, serially, with a partial failure among them
+— has only been reasoned about and unit-tested at the selection/merge layer.
+
+**The split-view motion has not been watched in a browser.** The CSS is
+deterministic and the layout is described above, but "fluid" is a judgement about
+a moving thing, and the only honest report is that it has not been seen moving.
