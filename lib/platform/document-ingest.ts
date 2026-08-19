@@ -286,6 +286,48 @@ export async function commitDocument(
   supabase: SupabaseClient,
   params: { documentId: string; orgId: string; userId: string },
 ): Promise<{ ok: true; documentId: string } | { ok: false; status: number; error: string }> {
+  const { documentId } = params;
+
+  const claim = await claimDocumentForCommit(supabase, params);
+  if (claim.state !== 'claimed') return claim.result;
+
+  try {
+    await runDocumentSideEffects(supabase, claim.row);
+  } catch (err) {
+    await releaseDocumentClaim(supabase, params);
+    return { ok: false, status: 500, error: err instanceof Error ? err.message : 'Could not save the document.' };
+  }
+
+  const finalized = await finalizeDocumentCommit(supabase, params);
+  if (!finalized.ok) return finalized;
+  return { ok: true, documentId };
+}
+
+/** The row the claim hands to whatever runs the side effects. */
+export interface ClaimedDocumentRow {
+  id: string;
+  org_id: string;
+  document_type: DocumentType | null;
+  filename: string;
+  supplier_id: string | null;
+  extracted_data: ExtractedData | null;
+  created_at: string | null;
+}
+
+/**
+ * Step 1 of a commit: take the claim.
+ *
+ * Factored out of `commitDocument` UNCHANGED — same UPDATE, same predicates, same
+ * four sentences for the not-claimable cases — so the Review chat's fast path and
+ * Doc-U's full path serialize against each other on exactly one lock.
+ */
+async function claimDocumentForCommit(
+  supabase: SupabaseClient,
+  params: { documentId: string; orgId: string; userId: string },
+): Promise<
+  | { state: 'claimed'; row: ClaimedDocumentRow }
+  | { state: 'refused'; result: { ok: true; documentId: string } | { ok: false; status: number; error: string } }
+> {
   const { documentId, orgId, userId } = params;
   const nowIso = new Date().toISOString();
   const staleBefore = new Date(Date.now() - COMMIT_STALE_MS).toISOString();
@@ -302,7 +344,7 @@ export async function commitDocument(
     .select('id, org_id, document_type, filename, supplier_id, extracted_data, created_at')
     .maybeSingle();
 
-  if (claimErr) return { ok: false, status: 500, error: claimErr.message };
+  if (claimErr) return { state: 'refused', result: { ok: false, status: 500, error: claimErr.message } };
 
   if (!claimed) {
     // Not claimable. Distinguish the harmless cases from a live claim.
@@ -313,50 +355,53 @@ export async function commitDocument(
       .eq('org_id', orgId)
       .maybeSingle();
     const status = (cur as { status: string } | null)?.status;
-    if (!status) return { ok: false, status: 404, error: 'That document is not in your organisation.' };
-    if (status === 'approved') return { ok: true, documentId }; // already committed — the user's intent is met
-    if (status === 'rejected') return { ok: false, status: 409, error: 'That document was discarded.' };
-    return { ok: false, status: 409, error: 'That document is already being saved.' };
+    if (!status) {
+      return { state: 'refused', result: { ok: false, status: 404, error: 'That document is not in your organisation.' } };
+    }
+    // Already committed — the user's intent is met.
+    if (status === 'approved') return { state: 'refused', result: { ok: true, documentId } };
+    if (status === 'rejected') {
+      return { state: 'refused', result: { ok: false, status: 409, error: 'That document was discarded.' } };
+    }
+    return { state: 'refused', result: { ok: false, status: 409, error: 'That document is already being saved.' } };
   }
 
-  const row = claimed as {
-    id: string;
-    org_id: string;
-    document_type: DocumentType | null;
-    filename: string;
-    supplier_id: string | null;
-    extracted_data: ExtractedData | null;
-    created_at: string | null;
-  };
+  return { state: 'claimed', row: claimed as ClaimedDocumentRow };
+}
 
-  try {
-    await runDocumentSideEffects(supabase, row);
-  } catch (err) {
-    // Release the claim so it returns to the queue for retry. Guard on approved_by so a
-    // stale re-claimer's row is never reset by a superseded worker.
-    await supabase
-      .from('documents')
-      .update({ approved_at: null, approved_by: null })
-      .eq('id', documentId)
-      .eq('org_id', orgId)
-      .eq('approved_by', userId)
-      .in('status', ['extracted', 'pending']);
-    return { ok: false, status: 500, error: err instanceof Error ? err.message : 'Could not save the document.' };
-  }
+/** Release a claim so the document returns to the queue for retry. Guarded on
+ *  `approved_by` so a stale re-claimer's row is never reset by a superseded worker. */
+async function releaseDocumentClaim(
+  supabase: SupabaseClient,
+  params: { documentId: string; orgId: string; userId: string },
+): Promise<void> {
+  await supabase
+    .from('documents')
+    .update({ approved_at: null, approved_by: null })
+    .eq('id', params.documentId)
+    .eq('org_id', params.orgId)
+    .eq('approved_by', params.userId)
+    .in('status', ['extracted', 'pending']);
+}
 
-  // Commit: only our own live claim may finalize (guards against a Discard or a stale
-  // re-claimer that slipped in).
-  //
-  // Check the result rather than assuming it landed. The side effects have ALREADY run at
-  // this point, so a silent failure here would report success while leaving the document
-  // in the queue — the next Save would re-run the (idempotent) side effects, but the
-  // operator would have been told it was saved. Report the truth instead.
+/**
+ * Step 2 of a commit: flip the status to 'approved'.
+ *
+ * Only our own live claim may finalize (guards against a Discard or a stale
+ * re-claimer that slipped in), and the result is CHECKED rather than assumed —
+ * a silent failure here would report success while leaving the document in the
+ * queue.
+ */
+async function finalizeDocumentCommit(
+  supabase: SupabaseClient,
+  params: { documentId: string; orgId: string; userId: string },
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
   const { data: finalized, error: finalErr } = await supabase
     .from('documents')
     .update({ status: 'approved' })
-    .eq('id', documentId)
-    .eq('org_id', orgId)
-    .eq('approved_by', userId)
+    .eq('id', params.documentId)
+    .eq('org_id', params.orgId)
+    .eq('approved_by', params.userId)
     .in('status', ['extracted', 'pending'])
     .select('id')
     .maybeSingle();
@@ -373,8 +418,72 @@ export async function commitDocument(
     // idempotent, so this is not corruption — but don't claim success we can't prove.
     return { ok: false, status: 409, error: 'That document was actioned by someone else. Refresh the queue.' };
   }
+  return { ok: true };
+}
 
-  return { ok: true, documentId };
+/**
+ * The AUTHORITATIVE half of a commit, and nothing else: claim, then mark approved.
+ *
+ * WHY THIS EXISTS. `commitDocument` runs the side effects BETWEEN those two writes,
+ * and those side effects — an OrderFlow order, an invoice, ProcurePulse stock, the
+ * SupplySync rollups — are the reason a batch of twenty took Josh more than five
+ * seconds to acknowledge. The Review chat does not need them to have finished
+ * before it can say "approved": the status write is what every screen in the
+ * platform reads, including the queue this row is leaving. So the chat's route
+ * runs THIS inline and hands `commitDocumentFollowUp` to Next's `after()`.
+ *
+ * THE TRADE-OFF, STATED PLAINLY. The order of the two writes is inverted relative
+ * to `commitDocument`, so a follow-up that fails leaves a document at 'approved'
+ * with no order behind it — where Doc-U's path would have released the claim and
+ * put it back in the queue. That is Josh's explicit call (2026-08-19: "background
+ * approve, but don't commit to agents watching for them"): the failure is logged
+ * and nothing retries it. `runDocumentSideEffects` is idempotent per
+ * `source_document_id`, so a later manual re-save heals it.
+ *
+ * `commitDocument` IS NOT BUILT OUT OF THIS, deliberately. Doc-U's screen keeps
+ * the original order — side effects first, status last, claim released on failure
+ * — because that screen's Save is a person waiting for the whole thing to land.
+ * Both paths share the same claim and the same finalize; only the middle differs.
+ */
+export async function commitDocumentFast(
+  supabase: SupabaseClient,
+  params: { documentId: string; orgId: string; userId: string },
+): Promise<
+  | { ok: true; documentId: string; followUp: ClaimedDocumentRow | null }
+  | { ok: false; status: number; error: string }
+> {
+  const claim = await claimDocumentForCommit(supabase, params);
+  if (claim.state !== 'claimed') {
+    // `{ ok: true }` here is the already-approved case: nothing left to follow up.
+    return claim.result.ok ? { ...claim.result, followUp: null } : claim.result;
+  }
+
+  const finalized = await finalizeDocumentCommit(supabase, params);
+  if (!finalized.ok) {
+    // Nothing has run yet, so the claim is safe to release — this failure is
+    // identical to Doc-U's and the document stays in the queue.
+    await releaseDocumentClaim(supabase, params);
+    return finalized;
+  }
+
+  return { ok: true, documentId: params.documentId, followUp: claim.row };
+}
+
+/**
+ * The SLOW half, detached. NEVER THROWS and never touches the document's status:
+ * by the time this runs the row is already 'approved' and the owner has already
+ * been told so. A failure is logged for a human to find and is not retried —
+ * there is no watcher, by design.
+ */
+export async function commitDocumentFollowUp(
+  supabase: SupabaseClient,
+  row: ClaimedDocumentRow,
+): Promise<void> {
+  try {
+    await runDocumentSideEffects(supabase, row);
+  } catch (err) {
+    console.error(`[review] follow-up failed for document ${row.id} (already approved):`, err);
+  }
 }
 
 /**

@@ -39,7 +39,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { canSeeMoney } from './access';
 import { buildDocWatchDedupeKey } from './agents/dedupe-keys';
 import { isMissingRelation, isUniqueViolation } from './db-errors';
-import { commitDocument, discardDocument } from './document-ingest';
+import {
+  commitDocumentFast,
+  commitDocumentFollowUp,
+  discardDocument,
+  type ClaimedDocumentRow,
+} from './document-ingest';
 import { documentTypeLabel } from './documents';
 import { docTotal, findFieldValue, parseAmount } from './docu/extract';
 import { hubdocStateForDocument } from './hubdoc';
@@ -156,31 +161,43 @@ export function permitReviewAction(
  * Approve a batch, one at a time, and say what happened to each.
  *
  * SERIAL, NOT PARALLEL, and that is a correctness choice rather than a courtesy
- * to the database. Each `commitDocument` runs the document's side effects — an
- * OrderFlow order, an invoice, ProcurePulse stock and supplier prices — and two
- * of those landing at once for the same supplier is exactly the interleaving the
- * per-document claim exists to prevent WITHIN a document and cannot prevent
+ * to the database. Each approval's follow-up runs the document's side effects —
+ * an OrderFlow order, an invoice, ProcurePulse stock and supplier prices — and
+ * two of those landing at once for the same supplier is exactly the interleaving
+ * the per-document claim exists to prevent WITHIN a document and cannot prevent
  * ACROSS them. Twenty invoices from one supplier, committed in parallel, would
- * race on that supplier's price history.
+ * race on that supplier's price history. That is why `runReviewFollowUps` below
+ * awaits them in order too, even though nothing is waiting on it.
  *
  * NEVER THROWS, AND NEVER STOPS EARLY. One item failing is a result, not an
  * exception: the plan's §3 says the failed row stays with its error and the rest
  * proceed, and a batch that abandoned the remaining nineteen because the third
  * was mid-Save would be a worse tool than approving them one by one.
  *
- * IDEMPOTENT, because `commitDocument` is: a document already at 'approved'
- * returns `ok: true` from the claim's own re-read, so a double-click, a retry
- * after a dropped connection, or a second admin pressing the same button all
- * report success rather than an error the owner has to interpret.
+ * IDEMPOTENT, because the claim is: a document already at 'approved' returns
+ * `ok: true` from the claim's own re-read, so a double-click, a retry after a
+ * dropped connection, or a second admin pressing the same button all report
+ * success rather than an error the owner has to interpret.
  *
  * DUPLICATES IN THE BODY ARE COLLAPSED before anything runs. A hand-built
  * request listing the same id twice must not attempt the same commit twice.
+ *
+ * ── v2.1: WHAT THIS RETURNS NOW, AND WHY ───────────────────────────────────
+ * Only the STATUS WRITES happen here. `commitDocumentFast` claims the row and
+ * marks it approved — two indexed UPDATEs — and hands back the row its side
+ * effects still need. The caller (`/api/review/approve`) responds on that, then
+ * passes `followUps` to `runReviewFollowUps` inside Next's `after()`.
+ *
+ * Josh's ask, verbatim (2026-08-19): "background approve, but don't commit to
+ * agents watching for them or updating modules". So there is no queue, no table
+ * and no watcher: a follow-up that fails is a `console.error` and the document
+ * stays approved. See `commitDocumentFast`'s docblock for the trade-off in full.
  */
 export async function approveReviewItems(
   supabase: SupabaseClient,
   actor: ReviewActor,
   items: readonly ReviewItemRef[],
-): Promise<ReviewApprovalResult[]> {
+): Promise<{ results: ReviewApprovalResult[]; followUps: ClaimedDocumentRow[] }> {
   const seen = new Set<string>();
   const unique: ReviewItemRef[] = [];
   for (const item of items) {
@@ -192,6 +209,7 @@ export async function approveReviewItems(
   }
 
   const results: ReviewApprovalResult[] = [];
+  const followUps: ClaimedDocumentRow[] = [];
 
   for (const item of unique) {
     const permitted = permitReviewAction(actor, item.kind);
@@ -212,22 +230,44 @@ export async function approveReviewItems(
       continue;
     }
 
-    // Doc-U's own commit, with Doc-U's own claim, guards and side effects. Its
-    // error strings are passed through verbatim rather than rewritten: "That
-    // document is already being saved" is the truth, and a friendlier sentence
-    // invented here would be a second account of what happened.
-    const committed = await commitDocument(supabase, {
+    // Doc-U's own claim and Doc-U's own guards. Its error strings are passed
+    // through verbatim rather than rewritten: "That document is already being
+    // saved" is the truth, and a friendlier sentence invented here would be a
+    // second account of what happened.
+    const committed = await commitDocumentFast(supabase, {
       documentId: item.id,
       orgId: actor.orgId,
       userId: actor.userId,
     });
 
+    if (committed.ok && committed.followUp) followUps.push(committed.followUp);
     results.push(
       committed.ok ? { ...item, ok: true } : { ...item, ok: false, error: committed.error },
     );
   }
 
-  return results;
+  return { results, followUps };
+}
+
+/**
+ * The detached half of a batch: every approved document's side effects, in the
+ * order they were approved.
+ *
+ * SERIAL FOR THE REASON THE BATCH IS — two commits for one supplier racing on
+ * that supplier's price history. Nothing awaits this from the browser; the
+ * route hands it to `after()` and answers immediately.
+ *
+ * NEVER THROWS. Each follow-up swallows and logs its own failure
+ * (`commitDocumentFollowUp`), so one bad document cannot strand the nineteen
+ * behind it.
+ */
+export async function runReviewFollowUps(
+  supabase: SupabaseClient,
+  followUps: readonly ClaimedDocumentRow[],
+): Promise<void> {
+  for (const row of followUps) {
+    await commitDocumentFollowUp(supabase, row);
+  }
 }
 
 /** Reject one document — Doc-U's "Discard", unchanged. Single-item only: there

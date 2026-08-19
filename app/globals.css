@@ -593,23 +593,45 @@ html, body {
    REDUCED MOTION KEEPS THE LAYOUT AND DROPS THE TIME. Every rule below still
    applies at its end state — the pane still appears to the right, the chain is
    still off-centre — because that arrangement IS the information. Only the
-   interpolation goes. */
+   interpolation goes.
+
+   ── v2.1, AND WHAT IT FIXES ────────────────────────────────────────────────
+   Josh, on a client's 1366px monitor at 125% Windows scaling (~1093 CSS px),
+   2026-08-19: the chain "collapsed to one word per line" and the pane's Approve
+   button could not be reached. Two separate faults, both here:
+
+   1. THE CHAIN HAD NO FLOOR. It was `min-w-0 max-w-[720px] w-full`, so once the
+      pane's track took its clamp(360px,44%,560px) there was nothing to stop
+      flexbox shrinking the chain to its min-content. It now has an explicit
+      `flex: 1 1 480px; min-width: 360px`, and BELOW 1100px the split stops being
+      a split at all — the pane becomes an overlay drawer and the chain gets the
+      whole column back. 1100 is measured, not chosen: see REVIEW_SPLIT_MIN in
+      ReviewChain.tsx for the arithmetic, and keep the two numbers equal.
+
+   2. THE PANE HAD NO HEIGHT, so it could not scroll. The track carried
+      `max-height` and `overflow:hidden`; the card inside asked for `max-h-full`,
+      which resolves to `none` against a parent whose own height is auto — so the
+      card grew to its content (measured: 726px inside a 486px track) and the
+      track silently clipped 240px of it, Approve included. Its inner
+      `overflow-y-auto` never engaged, so the wheel went to the page instead.
+      `.review-pane` is now the flex column that OWNS the height, and the card is
+      a shrinkable item inside it; the scroll then belongs to the card's body,
+      which is what the wheel finds first. */
 .review-split {
   display: flex;
   justify-content: center;
   align-items: flex-start;
+  min-width: 0;
+}
+.review-chain {
+  /* 480 is the comfortable measure, 720 the cap the chain has always had, and
+     360 the floor below which the header stops fitting on one line. */
+  flex: 1 1 480px;
+  min-width: 360px;
+  max-width: 720px;
 }
 .review-pane-track {
-  flex: 0 0 0px;
-  overflow: hidden;
-  /* 320ms, the plan's figure, on the shell's own soft ease. */
-  transition: flex-basis 0.32s var(--ease-out-soft);
-}
-.review-pane-track[data-open='true'] {
-  /* Clamped rather than fixed: a 1280px laptop cannot afford 720 + 560 beside a
-     216px rail, and a pane that forces a horizontal scrollbar is worse than a
-     narrower one. The chain shrinks from its 720 max on the same squeeze. */
-  flex-basis: clamp(360px, 44%, 560px);
+  display: none;
 }
 .review-pane {
   opacity: 0;
@@ -618,23 +640,68 @@ html, body {
     opacity var(--dur-fade) var(--ease-standard),
     transform 0.32s var(--ease-out-soft);
 }
+
+/* ── The split, wide enough to be one ─────────────────────────────────────── */
+@media (min-width: 1100px) {
+  .review-split { gap: 1.5rem; }
+  .review-pane-track {
+    display: block;
+    flex: 0 0 0px;
+    overflow: hidden;
+    position: sticky;
+    top: 3rem;
+    /* 320ms, the plan's figure, on the shell's own soft ease. */
+    transition: flex-basis 0.32s var(--ease-out-soft);
+  }
+  .review-pane-track[data-open='true'] {
+    /* Clamped rather than fixed: a 1280px laptop cannot afford 720 + 560 beside
+       a 216px rail, and a pane that forces a horizontal scrollbar is worse than
+       a narrower one. The chain gives up its 720 max on the same squeeze. */
+    flex: 0 0 clamp(380px, 42vw, 560px);
+  }
+  .review-pane {
+    /* THE HEIGHT LIVES HERE. A flex column with a definite ceiling: the card
+       inside is an ordinary shrinkable item, so it is bounded by this box and
+       its own `min-h-0 flex-1 overflow-y-auto` body becomes the scroller the
+       wheel lands in. `dvh` so a browser with a retracting toolbar does not
+       re-clip it. */
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100dvh - 8rem);
+    min-width: 380px;
+  }
+}
 .review-pane-track[data-open='true'] .review-pane {
   opacity: 1;
   transform: translateX(0);
 }
-/* Below lg the pane is a bottom sheet: same content, same actions, off the
-   bottom edge instead of the right one (plan §1.7). */
-.review-sheet {
-  transform: translateY(100%);
+
+/* ── Below 1100: an overlay drawer, off the right edge ────────────────────────
+   Replaces v2's bottom sheet. Same direction of travel as the split it stands in
+   for, same 320ms, and — unlike the sheet's 85vh — a full-height column, so a
+   long document's fields and its Approve button are reachable on a 1024px laptop
+   as well as on a phone. The scrim is ReviewChain's own button, one z-index
+   below. */
+.review-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  width: min(calc(100vw - 2rem), 440px);
+  padding: 0.75rem;
+  transform: translateX(100%);
   transition: transform 0.32s var(--ease-out-soft);
 }
-.review-sheet[data-open='true'] {
-  transform: translateY(0);
+.review-drawer[data-open='true'] {
+  transform: translateX(0);
 }
 @media (prefers-reduced-motion: reduce) {
   .review-pane-track,
   .review-pane,
-  .review-sheet { transition: none; }
+  .review-drawer { transition: none; }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

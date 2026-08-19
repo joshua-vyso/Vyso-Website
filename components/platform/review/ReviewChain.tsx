@@ -63,6 +63,24 @@ import { ReviewPane, type PaneState } from './ReviewPane';
  * Anthropic. It tells the conversation underneath which item is open
  * (`setReviewFocus`) and stops there.
  */
+
+/**
+ * The viewport below which the split stops being a split.
+ *
+ * 1100, not Tailwind's `lg` (1024), and the number comes off a measurement
+ * rather than a preference. The chain needs 360px to keep its own header on one
+ * line and the pane needs 380 to be worth opening; with the rail's
+ * `--pf-sidebar-w` (216) and the page's 40px gutters, 1024 leaves 688px for a
+ * pair that wants 764. Josh's client — a 1366px monitor at 125% Windows scaling,
+ * so ~1093 CSS px — landed inside exactly that gap, which is how a chain ended
+ * up rendering one word per line.
+ *
+ * It is duplicated as a media query in `app/globals.css` (`.review-split`), and
+ * the two must agree: this decides which pane is MOUNTED, the CSS decides where
+ * it sits. There is no shared source because a Tailwind v4 theme breakpoint
+ * cannot be read from JS without shipping the config to the browser.
+ */
+const REVIEW_SPLIT_MIN = 1100;
 export function ReviewChain({
   items: initialItems,
   total,
@@ -110,9 +128,9 @@ export function ReviewChain({
   /** The last `items` array the server sent, so a re-render can tell a NEW one
    *  from the same one. See the adopt-during-render block below. */
   const [adopted, setAdopted] = useState<ReviewItem[]>(initialItems);
-  /** Null until the first client frame: the pane is a right-hand column on lg
-   *  and a bottom sheet below it, and rendering BOTH would load the document
-   *  preview twice — two signed-URL iframes for one document. */
+  /** Null until the first client frame: the pane is a right-hand column above
+   *  `REVIEW_SPLIT_MIN` and an overlay drawer below it, and rendering BOTH would
+   *  load the document preview twice — two signed-URL iframes for one document. */
   const [isDesktop, setIsDesktop] = useState<boolean | null>(null);
 
   /* ── Server truth wins ───────────────────────────────────────────────────
@@ -134,7 +152,7 @@ export function ReviewChain({
   }
 
   useEffect(() => {
-    const query = window.matchMedia('(min-width: 1024px)');
+    const query = window.matchMedia(`(min-width: ${REVIEW_SPLIT_MIN}px)`);
     const apply = () => setIsDesktop(query.matches);
     apply();
     query.addEventListener('change', apply);
@@ -262,7 +280,31 @@ export function ReviewChain({
     async (refs: ReviewItemRef[], scope: string) => {
       if (refs.length === 0 || busyScope) return;
       setBusyScope(scope);
-      setNotice(null);
+      setErrors({});
+
+      /* ── The optimistic half (v2.1) ────────────────────────────────────────
+       * The rows go NOW, before the request is even sent, and the pane closes
+       * with them. Josh, watching a client approve seventeen invoices: the click
+       * has to come back at once. The route no longer waits for a document's
+       * side effects either (see `/api/review/approve`), so the round-trip
+       * behind this is two status writes per item — but the removal is still
+       * done first, because "the list shortened" is what the press is for.
+       *
+       * `snapshot` is what makes it a preview rather than a lie: every failure
+       * path below puts the rows back exactly as they were, and the
+       * `router.refresh()` at the end lets server truth overwrite both. */
+      const snapshot = items;
+      const sending = new Set(refs.map(reviewItemKey));
+      setItems((prev) => prev.filter((i) => !sending.has(reviewItemKey(i))));
+      setNotice(
+        refs.length === 1
+          ? 'Approving in the background.'
+          : `Approving ${refs.length} in the background.`,
+      );
+      if (openKey && sending.has(openKey)) {
+        setPaneState({ phase: 'done' });
+        window.setTimeout(close, 600);
+      }
 
       let results: ReviewApprovalResult[] = [];
       try {
@@ -276,37 +318,42 @@ export function ReviewChain({
           error?: string;
         };
         if (!response.ok) {
+          setItems(snapshot);
           setNotice(body.error ?? 'Could not approve those.');
           setBusyScope(null);
           return;
         }
         results = body.results ?? [];
       } catch {
+        setItems(snapshot);
         setNotice('Could not reach the server. Nothing was approved.');
         setBusyScope(null);
         return;
       }
 
-      const merged = mergeApprovalResults(items, results);
+      // Reconcile against the SNAPSHOT, not against the list we have just
+      // shortened: a row the server refused has to come back, and it can only
+      // come back from the copy that still has it.
+      const merged = mergeApprovalResults(snapshot, results);
       setItems(merged.items);
-      setErrors((prev) => {
-        // Keep only the errors that still have a row under them, then add this
-        // batch's — a message stranded on an approved item is a message about
-        // something that is no longer on screen.
-        const alive = new Set(merged.items.map(reviewItemKey));
-        const kept = Object.fromEntries(Object.entries(prev).filter(([k]) => alive.has(k)));
-        return { ...kept, ...merged.errors };
-      });
+      setErrors(merged.errors);
 
       const failures = results.filter((r) => !r.ok).length;
       const approved = results.length - failures;
-      if (approved > 0 && failures > 0) {
-        setNotice(`Approved ${approved}. ${failures} could not be approved — see the rows below.`);
-      }
-
-      if (openKey && results.some((r) => r.ok && reviewItemKey(r) === openKey)) {
-        setPaneState({ phase: 'done' });
-        window.setTimeout(close, 600);
+      if (failures > 0) {
+        setNotice(
+          approved > 0
+            ? `Approved ${approved}. ${failures} could not be approved — see the rows below.`
+            : 'None of those could be approved — see the rows below.',
+        );
+      } else {
+        // Clean success: the "approving in the background" line has done its job
+        // and the shortened list says the rest. A status message that never
+        // leaves becomes furniture, and the next batch would have to fight it.
+        window.setTimeout(
+          () => setNotice((n) => (n && n.startsWith('Approving') ? null : n)),
+          4000,
+        );
       }
 
       setBusyScope(null);
@@ -448,14 +495,23 @@ export function ReviewChain({
   ) : null;
 
   return (
-    <div className="review-split w-full gap-0 lg:gap-6">
-      <div className="flex w-full min-w-0 max-w-[720px] flex-col">
+    <div className="review-split w-full">
+      <div className="review-chain flex flex-col">
         <section
           aria-label="Review queue"
           className="rounded-2xl border border-[var(--pf-border)] bg-white px-6 py-5 shadow-[0_1px_2px_rgba(20,24,20,0.04)]"
         >
+          {/* THE HEADER IS ONE WRAPPING ROW AND NOTHING IS POSITIONED.
+              `basis-[260px]` is what stops the title column collapsing: with
+              `min-w-0 flex-1` alone, arming the master button put a ~430px
+              confirm sentence in the row and flexbox shrank the heading to its
+              minimum — "Each / of / these / is / waiting", with the banner
+              overlapping "Review · 24 items" (Josh, 2026-08-19). A flex base
+              size plus `min-w-[240px]` means the title can never be squeezed
+              below a readable measure; the banner takes a full-width line of its
+              own instead (see ApproveAllButton's armed branch). */}
           <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
-            <div className="min-w-0 flex-1">
+            <div className="min-w-[240px] flex-1 basis-[260px]">
               <h1 className="of-display text-[17px] font-semibold leading-tight tracking-[-0.015em] text-[var(--pf-text)]">
                 {reviewHeading(items.length)}
               </h1>
@@ -526,20 +582,26 @@ export function ReviewChain({
 
       {/* The right-hand track. It is ALWAYS in the tree, at zero width when shut:
           growing an element that has just been mounted cannot be animated, and
-          this is the element whose growth moves the chain. */}
+          this is the element whose growth moves the chain. Every dimension and
+          the sticky are in `app/globals.css` now rather than in `lg:` utilities,
+          because the breakpoint this obeys (1100) is not one of Tailwind's. */}
       <div
-        className="review-pane-track hidden lg:block lg:sticky lg:top-12 lg:max-h-[calc(100vh-8rem)]"
+        className="review-pane-track"
         data-open={paneOpen ? 'true' : 'false'}
         aria-hidden={!paneOpen}
       >
-        <div className="review-pane min-w-[360px] lg:max-h-[calc(100vh-8rem)]">
-          {isDesktop ? paneNode : null}
-        </div>
+        <div className="review-pane">{isDesktop ? paneNode : null}</div>
       </div>
 
-      {/* Below lg: the same pane, as a bottom sheet. Rendered only when the
-          viewport is actually narrow, so a document's preview is never fetched
-          into an off-screen copy. */}
+      {/* Below REVIEW_SPLIT_MIN: the same pane, as an overlay drawer off the
+          right edge. Rendered only when the viewport is actually narrow, so a
+          document's preview is never fetched into an off-screen copy.
+
+          A DRAWER, NOT THE BOTTOM SHEET v2 SHIPPED. The sheet was capped at 85vh
+          of a viewport it shared with the keyboard, and at 1000px — a laptop,
+          not a phone — it covered a chain that had plenty of room beside it. The
+          drawer keeps the split's own gesture (in from the right, scrim behind,
+          same 320ms) at every width the split cannot fit. */}
       {isDesktop === false ? (
         <>
           {paneOpen ? (
@@ -547,15 +609,15 @@ export function ReviewChain({
               type="button"
               aria-label="Close detail"
               onClick={close}
-              className="vyso-fade-in fixed inset-0 z-30 bg-[var(--pf-scrim)] lg:hidden"
+              className="vyso-fade-in fixed inset-0 z-30 bg-[var(--pf-scrim)]"
             />
           ) : null}
           <div
-            className="review-sheet fixed inset-x-0 bottom-0 z-40 max-h-[85vh] px-3 pb-3 lg:hidden"
+            className="review-drawer"
             data-open={paneOpen ? 'true' : 'false'}
             aria-hidden={!paneOpen}
           >
-            <div className="max-h-[85vh]">{paneNode}</div>
+            {paneNode}
           </div>
         </>
       ) : null}

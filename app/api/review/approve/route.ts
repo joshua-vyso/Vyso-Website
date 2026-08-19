@@ -1,15 +1,40 @@
 import { NextResponse } from 'next/server';
-import { approveReviewItems, rejectReviewDocument, resolveReviewActor } from '@/lib/platform/review-actions';
+import { after } from 'next/server';
+import {
+  approveReviewItems,
+  rejectReviewDocument,
+  resolveReviewActor,
+  runReviewFollowUps,
+} from '@/lib/platform/review-actions';
 import { REVIEW_APPROVE_CAP, type ReviewItemRef } from '@/lib/platform/review-actions-shared';
 
 /**
  * Approve (or reject) items from the Review chat
  * (`.ai/plan_review_v2.md` §1.5).
  *
- * `maxDuration` matches `/api/docu/review`'s, and for the same reason: each
- * approval is a `commitDocument`, which extracts nothing but does run the
- * document's side effects. A batch is that, serially — so the ceiling is on the
- * REQUEST, and `REVIEW_APPROVE_CAP` is the ceiling on the work inside it.
+ * ── v2.1: THE RESPONSE DOES NOT WAIT FOR THE SIDE EFFECTS ──────────────────
+ * Josh, on a client's machine (2026-08-19): approving took over five seconds and
+ * he wants the click to come back at once — "background approve, but don't
+ * commit to agents watching for them or updating modules".
+ *
+ * So the request now does the AUTHORITATIVE work only — claim the row, mark it
+ * approved, two indexed UPDATEs per document — and hands the slow remainder (the
+ * OrderFlow order, the invoice, ProcurePulse stock, the SupplySync rollups) to
+ * Next's `after()`, which runs it once the response has been flushed
+ * (node_modules/next/dist/docs/01-app/03-api-reference/04-functions/after.md).
+ * Twenty status writes is a handful of round-trips, so a full batch answers in
+ * well under two seconds.
+ *
+ * WHAT THAT COSTS, SAID PLAINLY. The follow-up may land seconds after the row
+ * has left the queue, and if it fails it is logged and NOT retried — no watcher,
+ * no queue table, nothing observes it, which is what Josh asked for. The
+ * document stays approved; `runDocumentSideEffects` is idempotent, so a manual
+ * re-save in Doc-U heals it. `/api/docu/review` is untouched and still waits for
+ * everything, because that screen's Save is a person watching one document.
+ *
+ * `maxDuration` is unchanged at 120s: `after()` runs inside the same invocation
+ * budget, so the detached work still has the ceiling it had before, and
+ * `REVIEW_APPROVE_CAP` is still the ceiling on the work inside it.
  *
  * A PARTIAL SUCCESS IS A 200. The response is a list of per-item results, and
  * "three approved, one was already being saved by someone else" is a normal
@@ -78,6 +103,13 @@ export async function POST(req: Request) {
     );
   }
 
-  const results = await approveReviewItems(supabase, actor, items);
+  const { results, followUps } = await approveReviewItems(supabase, actor, items);
+
+  // The client already holds its RLS-scoped tokens, so nothing here re-reads the
+  // cookie jar after the response has gone.
+  if (followUps.length > 0) {
+    after(() => runReviewFollowUps(supabase, followUps));
+  }
+
   return NextResponse.json({ ok: results.every((r) => r.ok), results });
 }

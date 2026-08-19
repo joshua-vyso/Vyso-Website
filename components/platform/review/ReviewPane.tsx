@@ -51,7 +51,14 @@ export function ReviewPane({
   onDismiss: () => void;
 }) {
   return (
-    <div className="flex max-h-full flex-col overflow-hidden rounded-2xl border border-[var(--pf-border)] bg-white shadow-[0_1px_2px_rgba(20,24,20,0.04)]">
+    /* `min-h-0`, NOT `max-h-full` (v2.1). This card is a flex item of
+       `.review-pane` — the drawer, or the split's track — and both of those own a
+       definite maximum height. `max-height:100%` resolved to `none` against them
+       (a percentage against an auto-height parent), so the card grew past the
+       track and `overflow:hidden` above swallowed its Approve button. As a
+       shrinkable item with a zero minimum it is bounded by the column instead,
+       which is what hands the scroll to the body below. */
+    <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[var(--pf-border)] bg-white shadow-[0_1px_2px_rgba(20,24,20,0.04)]">
       <div className="flex shrink-0 items-start gap-3 border-b border-[var(--pf-border-warm)] px-5 py-4">
         <button
           type="button"

@@ -14,7 +14,28 @@ import {
 } from '@/lib/platform/docu/reconciliation';
 import type { DocumentWithSupplier } from '@/lib/platform/types';
 
-const COLS = 'min-w-[1080px] grid-cols-[100px_150px_repeat(7,108px)_72px]';
+/**
+ * The reconciliation grid's tracks, and the width they actually need.
+ *
+ * `min-w-[1080px]` WAS 38px SHORT and that is the whole "squished" bug (Josh,
+ * 2026-08-19). The tracks sum to 1078 (100 + 150 + 7×108 + 72) and the row adds
+ * `px-5`, so the real requirement is 1078 + 40 = 1118 — but `min-width` is on the
+ * border box, so the grid settled at 1080, its fixed tracks overflowed their own
+ * container by 38px, and the last two columns ("Closing", "Check") rendered on
+ * top of each other AND outside the scroll container's reach: measured
+ * scrollWidth 1098 against content ending at 1118, so no amount of scrolling
+ * revealed them.
+ *
+ * `min-w-max` rather than a second hard-coded number, so adding a column can
+ * never reintroduce this: max-content of a grid with fixed tracks IS the sum of
+ * the tracks plus the padding, computed by the browser instead of by hand.
+ *
+ * `gap-x-3` is the other half of "squished": seven right-aligned money columns
+ * with no gutter between the tracks put "PURCHASES" and "PALLET REFUNDS" flush
+ * against each other, which reads as one run-on heading. The gutter costs 96px
+ * of width the container now scrolls for anyway.
+ */
+const COLS = 'min-w-max gap-x-3 grid-cols-[100px_150px_repeat(7,108px)_72px]';
 
 type Row = ReconRow & { monthKey: string };
 

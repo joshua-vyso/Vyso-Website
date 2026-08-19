@@ -60,8 +60,15 @@ export function ApproveAllButton({
 
   if (confirmMessage && armed) {
     return (
+      // `w-full` (v2.1): the armed banner is ~430px of text, and as an ordinary
+      // `inline-flex` item in the header's wrapping row it stole the width from
+      // the heading beside it — the title collapsed to one word per line and the
+      // sentence rendered over the top of it (Josh, 2026-08-19). A full-basis
+      // item wraps to a line of its own, under the title, which is where a
+      // confirmation about the whole queue belongs anyway. Nothing is
+      // positioned; the row does it.
       <span
-        className="inline-flex flex-wrap items-center gap-2"
+        className="flex w-full flex-wrap items-center gap-2"
         // The arming listener is on `window`; without this the press that
         // confirms would also be the outside click that disarms.
         onClick={(event) => event.stopPropagation()}

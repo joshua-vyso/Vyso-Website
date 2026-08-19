@@ -25,7 +25,17 @@ export function DocuNav({ reviewCount = 0 }: { reviewCount?: number }) {
           : 'documents'; // /app/docu, /app/docu/folder/*, /app/docu/[id], awaiting/confidence/flagged
 
   return (
-    <div className="flex items-center gap-5 border-b border-[#EAEDF2]">
+    // `overflow-x-auto` + `whitespace-nowrap` (v2.1): <main> now clips sideways
+    // rather than scrolling, so a tab row that outgrows a narrow column has to
+    // carry its own scroller or its last tab becomes unreachable. Nothing wraps
+    // — a two-line tab bar reads as two rows of navigation.
+    //
+    // `overflow-y-clip` is not decoration: each tab's `-mb-px` (which lifts its
+    // underline onto the row's border) leaves the links 1px taller than the box,
+    // and a scroll container with 1px of vertical overflow is a scroll container
+    // that can grow a vertical scrollbar. Clipping that axis keeps the sideways
+    // scroller without the stray bar.
+    <div className="flex items-center gap-5 overflow-x-auto overflow-y-clip whitespace-nowrap border-b border-[#EAEDF2]">
       {TABS.map((t) => {
         const active = t.match === current;
         return (

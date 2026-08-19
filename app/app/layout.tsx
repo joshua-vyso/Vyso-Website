@@ -257,8 +257,23 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 Lenis checks it on the composed path from the event target up to
                 <html> (node_modules/lenis/dist/lenis.mjs:606-611), and <main>
                 is on that path for every scrollable thing the platform draws. */}
+            {/* `overflow-x-clip` (v2.1) — the missing half of W0. `overflow-y:
+                auto` with `overflow-x` left at `visible` does NOT stay visible:
+                CSS computes the visible axis to `auto` whenever the other one
+                scrolls, so <main> has silently been a HORIZONTAL scroll
+                container this whole time. `html, body { overflow-x: clip }`
+                below could never catch that — the sideways scroll was happening
+                inside <main>, not on the document — which is why one wide table
+                dragged Doc-U's whole page, header and all, off to the left
+                (Josh, 2026-08-19). `clip` rather than `hidden` for the same
+                reason the rule below uses it: it guarantees "never scroll
+                sideways" without adding a scrollport, so `position: sticky`
+                inside <main> (the review pane's track, every table header) keeps
+                working. Anything genuinely wider than the column now has to
+                bring its own `overflow-x-auto`, which is the correct place for
+                it — the TABLE scrolls, not the page. */}
             <main
-              className="min-h-0 min-w-0 flex-1 overflow-y-auto"
+              className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-clip"
               style={{ background: 'var(--pf-wash)' }}
               data-lenis-prevent
             >

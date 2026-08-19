@@ -3778,3 +3778,153 @@ path — twenty of them in one request, serially, with a partial failure among t
 **The split-view motion has not been watched in a browser.** The CSS is
 deterministic and the layout is described above, but "fluid" is a judgement about
 a moving thing, and the only honest report is that it has not been seen moving.
+
+# Review v2.1 — the pane owns its scroll, the page never scrolls sideways, approve returns at once (2026-08-19, branch `main`)
+
+Five faults, reported by Josh from a client's Windows PC on a 1366px Dell at
+125% OS scaling — so a viewport of roughly **1093 CSS px**, which is the number
+that explains four of them. Verbatim: the chain "collapsed to one word per
+line"; the header was "overlapped by the confirm banner"; "with the cursor over
+the pane, the chain scrolls, not the pane"; Reconciliation "forces a horizontal
+scroll of the page, squished"; and Approve "takes more than five seconds".
+
+No new table, no migration, no queue, no agent. Every fix is in the four places
+the fault actually was.
+
+## Root causes
+
+| # | Symptom | Cause | Where |
+| --- | --- | --- | --- |
+| a/e | chain one word per line; banner over the heading | the armed master button returned an ~430px `inline-flex` sibling into a wrap row whose title column was `min-w-0 flex-1` — flexbox shrank the title to min-content | `ReviewChain.tsx` header row · `ApproveAllButton.tsx` armed branch |
+| b | wheel over the pane scrolls the chain; Approve unreachable | the pane card asked for `max-h-full`, which resolves to **`none`** against a parent whose own height is `auto` (the track had `max-height` only). Measured: a 726px card inside a 486px track, with `overflow:hidden` on the track silently eating 240px. The card's `overflow-y-auto` body never engaged, so the wheel found the page | `ReviewPane.tsx` · `.review-pane-track` in `globals.css` |
+| c | Doc-U → Reconciliation scrolls the whole page sideways | **`<main>` has been a horizontal scroll container all along**: `overflow-y:auto` with `overflow-x` left `visible` computes the visible axis to `auto`. W0's `html, body { overflow-x: clip }` could never catch it — the scroll was inside `<main>`, not on the document | `app/app/layout.tsx` |
+| c | Reconciliation "squished", last column unreachable | `min-w-[1080px]` against tracks needing 1078 + 40px of `px-5` = **1118**. The fixed tracks overflowed their own grid box by 38px, so "Closing" and "Check" drew on top of each other *and* outside the scroll container's reach (scrollWidth 1098). Seven right-aligned money columns with no gutter did the rest | `ReconciliationView.tsx` |
+| d | Approve takes > 5s | the response waited for `runDocumentSideEffects` — OrderFlow order, invoice, ProcurePulse stock, SupplySync rollups — per item, serially | `/api/review/approve` → `commitDocument` |
+
+## What changed
+
+**Split layout.** `.review-split` is still a centred flex row, but the chain now
+has a floor: `flex: 1 1 480px; min-width: 360px; max-width: 720px`, and the
+pane's track opens to `flex: 0 0 clamp(380px, 42vw, 560px)`. Below **1100px** the
+split stops being a split — the pane becomes a **right-hand overlay drawer** with
+the shell's scrim and the same 320ms slide, and the chain gets the whole column
+back. 1100 is measured, not chosen: chain 360 + gap 24 + pane 380 = 764, which
+does not fit the 688px that Tailwind's `lg` (1024) leaves beside a 216px rail.
+The number lives twice — `REVIEW_SPLIT_MIN` in `ReviewChain.tsx` decides which
+pane is *mounted*, the media query in `globals.css` decides where it *sits* — and
+the two must stay equal. The header is a plain wrapping row: the title column
+carries `basis-[260px] min-w-[240px]` and the confirm banner is `w-full`, so it
+takes a line of its own under the title. Nothing is absolutely positioned.
+
+**This retires v2's bottom sheet.** The sheet was capped at 85vh and applied from
+1023px down, so a 1000px laptop got a phone control. One drawer now covers every
+width the split cannot fit.
+
+**Scroll ownership.** `.review-pane` is now the flex column that OWNS the height
+(`max-height: calc(100dvh - 8rem)`), and the card inside is an ordinary
+shrinkable item (`min-h-0`, no `max-h-full`). The scroll then belongs to the
+card's existing `min-h-0 flex-1 overflow-y-auto` body, which is what a wheel over
+the pane finds first — verified by hit-testing the pane's centre and walking to
+the nearest scrollable ancestor. `<main>` remains the page scroller; the chain
+column still scrolls with it, and `data-lenis-prevent` is untouched (Lenis
+already refuses to instantiate under `/app`).
+
+**Horizontal overflow, platform-wide.** `<main>` is now
+`overflow-y-auto overflow-x-clip` — `clip` rather than `hidden` so it adds no
+scrollport and `position:sticky` inside it (the pane's track, every table header)
+keeps working. Anything genuinely wider than the column must now bring its own
+`overflow-x-auto`, which is the correct place for it: **the table scrolls, never
+the page.** Audited every `<table>` and every `grid-cols-[…]` in
+`components/platform` and `app/app`: all eight wide tables (ServiceDen outreach
+/bounces/invoices, OrderFlow dashboard/builder/credit-note/invoices-v2,
+ShiftBoard roster) were already inside `overflow-x-auto`; every ProcurePulse
+grid and `FullBriefing`'s `BRIEFING_ROW_COLS` use `minmax(0,1fr)` and cannot
+overflow. The two that needed work were Reconciliation (`min-w-max` + `gap-x-3`,
+so the width is computed by the browser and adding a column cannot reintroduce
+the bug) and `DocuNav` (its own `overflow-x-auto overflow-y-clip`, the clip
+because each tab's `-mb-px` leaves 1px of vertical overflow that would otherwise
+grow a stray scrollbar).
+
+**Background approve.** `commitDocument` is split at the seams it already had:
+`claimDocumentForCommit` → side effects → `finalizeDocumentCommit`. Doc-U's path
+is **unchanged** — same order, same claim release on failure, because that
+screen's Save is a person watching one document. The Review chat's route calls
+`commitDocumentFast` (claim + finalize, two indexed UPDATEs, nothing else) and
+hands the remainder to `runReviewFollowUps` inside Next's **`after()`**.
+`approveReviewItems` returns `{ results, followUps }`; follow-ups still run
+serially, because two commits for one supplier race on that supplier's price
+history. The UI removes the rows on click, before the request is sent, and says
+"Approving N in the background" — reconciled against a snapshot, so a refusal
+puts the row back with its error.
+
+### The trade-off, stated rather than hidden
+
+`commitDocumentFast` **inverts the order of the two writes** relative to
+`commitDocument`. A follow-up that fails therefore leaves a document at
+`'approved'` with no order behind it, where Doc-U's path would have released the
+claim and returned it to the queue. That is Josh's explicit call ("background
+approve, but don't commit to agents watching for them or updating modules"): the
+failure is a `console.error` and **nothing retries it, nothing observes it**.
+`runDocumentSideEffects` is idempotent per `source_document_id`, so a manual
+re-save in Doc-U heals it. Follow-up work may also land seconds after the row has
+left the queue — a module screen opened immediately after a batch can show the
+document approved before its order exists.
+
+`maxDuration` stays 120s: `after()` runs inside the same invocation budget.
+
+## Files
+
+Modified: `app/globals.css` (the `.review-*` block, rewritten with the v2.1
+reasoning kept beside v2's), `components/platform/review/{ReviewChain,ReviewPane,
+ApproveAllButton}.tsx`, `app/app/layout.tsx` (`overflow-x-clip` on `<main>`),
+`components/platform/docu/{ReconciliationView,DocuNav}.tsx`,
+`lib/platform/document-ingest.ts` (claim/finalize/release factored out;
+`commitDocumentFast` + `commitDocumentFollowUp` added; `commitDocument`
+behaviourally unchanged), `lib/platform/review-actions.ts`
+(`approveReviewItems` returns follow-ups; `runReviewFollowUps` added),
+`app/api/review/approve/route.ts` (`after()`).
+
+Untouched: `/api/docu/review`, `discardDocument`, the queue, the grouping, every
+agent, and `lib/ai/finch/knowledge.ts` — Finch still cannot approve anything.
+
+## Verified, and how
+
+In a **throwaway harness** (`app/dev-review-harness/`, deleted before commit)
+that reproduced the shell's exact geometry — 216px rail, `min-w-0 flex-1`
+column, the real `<main>` — with 24 synthetic queue items and six synthetic
+statements. Screenshots before and after in `.ai/verification/review-v2-1/`.
+
+- **1280×720** — armed master button: heading intact, banner on its own line
+  (before: "Each / of / these / is / waiting", banner over "Review · 24 items").
+- **1280×720** — pane open: chain 407px, pane 538px, `trackScrollH === trackH`
+  (nothing clipped), pane body `scrollHeight 633 > clientHeight 529` and the hit
+  test at the pane's centre resolves to that body. Before: card 726px in a 486px
+  track, body overflow zero.
+- **1366×768** and **1093×614** (the client's effective viewport) — same, split
+  intact, no page-level horizontal scroll.
+- **1024×700** — the drawer: full height, scrim, Approve/Reject/View reachable.
+- **Reconciliation, 1280×720** — `main.scrollWidth === main.clientWidth` (no page
+  h-scroll); the table's own container scrolls 243px and the "Check" header is
+  fully visible at the end of it. Before: grid box 1080 against content ending
+  at 1118, unreachable.
+- **Optimistic approve** — with the route stubbed to 2500ms, 24 rows became 9
+  within one paint (262ms) and the notice read "Approving 15 in the background".
+
+## Not verified
+
+**Nothing has been run against a live database.** `commitDocumentFast` and
+`commitDocumentFollowUp` are reasoned about and typechecked, not observed
+committing a real document; the ~2s ceiling for a batch of 20 is a claim about
+two indexed UPDATEs per item, not a measurement against production latency. The
+`after()` callback has not been watched running after a real response.
+
+**The motion still has not been watched moving.** The end states are
+screenshotted at four widths; "fluid" remains a judgement about a moving thing.
+
+## Gates
+
+`npx tsc --noEmit` clean · `npm test` **724 pass / 0 fail** (no new tests: every
+change is layout, orchestration, or a route's response timing — the pure layer
+`tests/review-actions.test.ts` covers is untouched) · `npm run build` clean,
+still listing `/api/review/{approve,customer,item}` · `npx eslint .` **50 errors,
+40 warnings** — byte-identical to the pre-change baseline.
