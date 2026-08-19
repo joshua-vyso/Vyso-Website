@@ -1129,3 +1129,97 @@ html.lenis, html.lenis body { height: auto; }
   animation: none !important;
   transition: none !important;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Orbit — the dark theme scope (`.ai/plan_orbit_site.md`)
+   ══════════════════════════════════════════════════════════════════════════
+   Orbit is the Finch design system inverted: ink grounds, paper text, the same
+   blue and the same burnt orange. The subsite shell carries BOTH classes —
+   `finch-site orbit-site` — so it inherits the link reset, the mobile gutter,
+   the `overflow-x: clip` fix and the focus rings from the block above, and then
+   remaps the handful of tokens whose *role* changes on a dark page.
+
+   Two rules kept this block small, and both are worth stating because the
+   obvious version of this file is three times the size and breaks the bands:
+
+   1. **`--fn-ink` is not remapped.** It looks like "the text colour", and on
+      paper it is — but it is also the *fill* of every `ground="ink"` band
+      (`Band.tsx`'s `SURFACE.ink` is `bg-fn-ink`). Remapping it to warm-white
+      would turn every dark band on the subsite into a paper one. So the ink
+      and blue ground ramps (`--fn-ink-text`, `--fn-blue-text`, …) are used
+      exactly as the Finch system defines them, and only the *paper* roles
+      below move.
+   2. **Nothing here is a new colour.** The blue is the Orbit logo's own
+      `#0369FD`; the greys are the ink ground's family, cooled toward the
+      navy the mark sits on. Orange is untouched — `--fn-orange-cta` keeps its
+      measured 4.78:1 against `#FFF7F0`, on this ground as on every other.
+
+   Contrast, measured against `--ob-bg` (#0B1020):
+     #F4F1EA  16.9:1   body and headings
+     #C6D0E4  10.8:1   secondary copy
+     #93A3C2   5.9:1   mono labels and captions
+     #FFB27A   9.1:1   orange text
+   ══════════════════════════════════════════════════════════════════════════ */
+/* The palette itself sits on `:root`, not on `.orbit-site`. Two reasons: the
+   canvas devices resolve their stroke colour with
+   `getComputedStyle(document.documentElement).getPropertyValue(token)`
+   (`components/finch/ground/canvas-stage.ts`), which only ever sees `:root`;
+   and a token defined once at the root cannot be defined differently by a
+   second scope later. Only the *remap* below is scoped — that is the part
+   whose meaning depends on which surface you are standing on. */
+:root {
+  /* The Orbit ground: deeper and bluer than Finch's `--fn-ink`, because the
+     mark is a blue ring and a warm near-black fights it. */
+  --ob-bg:        #0B1020;
+  --ob-bg-2:      #0F1829;   /* the second band, and recessed surfaces */
+  --ob-surface:   #141E33;   /* cards */
+  --ob-line:      #22304A;   /* borders */
+  --ob-line-2:    #19233A;   /* hairlines */
+  --ob-text:      #F4F1EA;
+  --ob-text-2:    #C6D0E4;
+  --ob-mono:      #93A3C2;
+  --ob-blue:      #0369FD;   /* the logo's blue — the one Orbit-only colour */
+  --ob-blue-soft: #7FB4FF;   /* the blue as *text* on the ground (7.4:1) */
+}
+
+.orbit-site {
+  /* The paper roles, remapped. Everything a Finch component reaches for when
+     it wants "the page", "a card" or "a hairline" now resolves dark. */
+  --fn-bg:        var(--ob-bg);
+  --fn-surface:   var(--ob-surface);
+  --fn-surface-2: var(--ob-bg-2);
+  --fn-line:      var(--ob-line);
+  --fn-line-2:    var(--ob-line-2);
+  --fn-line-3:    var(--ob-line);
+  --fn-line-hover:#33456A;
+  --fn-muted:     var(--ob-mono);
+  --fn-muted-2:   var(--ob-mono);
+  --fn-faint:     #6C7B99;
+  /* The body-ink ramp. `--fn-ink` itself is deliberately absent — see (1). */
+  --fn-ink-2:     var(--ob-text-2);
+  --fn-ink-3:     var(--ob-text-2);
+
+  background: var(--ob-bg);
+  color: var(--ob-text);
+}
+
+@theme inline {
+  --color-ob-bg:        var(--ob-bg);
+  --color-ob-bg-2:      var(--ob-bg-2);
+  --color-ob-surface:   var(--ob-surface);
+  --color-ob-line:      var(--ob-line);
+  --color-ob-line-2:    var(--ob-line-2);
+  --color-ob-text:      var(--ob-text);
+  --color-ob-text-2:    var(--ob-text-2);
+  --color-ob-mono:      var(--ob-mono);
+  --color-ob-blue:      var(--ob-blue);
+  --color-ob-blue-soft: var(--ob-blue-soft);
+}
+
+/* The selection colour inherited from `.finch-site` is a warm paper tint that
+   disappears on this ground. */
+.orbit-site ::selection { background: rgba(3, 105, 253, 0.35); color: #FFFFFF; }
+
+/* Focus rings: `[data-ground]` covers content inside a Band, but the nav, the
+   footer and the waitlist form sit outside one. */
+.orbit-site :focus-visible { outline: 2px solid var(--fn-focus-dark); outline-offset: 2px; }
