@@ -6,6 +6,10 @@
       "schedule": "0 3 * * *"
     },
     {
+      "path": "/api/integrations/xero/sync",
+      "schedule": "20 3 * * *"
+    },
+    {
       "path": "/api/agents/doc-watch",
       "schedule": "40 3 * * *"
     },

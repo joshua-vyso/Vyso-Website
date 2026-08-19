@@ -581,6 +581,54 @@ async function getXeroAccessToken(
   return { accessToken: String(refreshed.access_token), connection, authorisation };
 }
 
+/** Everything a data call needs: the bearer, and the tenant to send it against. */
+export interface XeroOrgAccess {
+  accessToken: string;
+  /** The `Xero-Tenant-Id` header every Accounting API call must carry. */
+  tenantId: string;
+  /** `xero_connections.id` — the FK the sync cursors hang off. */
+  connectionId: string;
+  tenantName: string;
+  status: string;
+}
+
+/**
+ * A bearer token for ONE org, for a caller that has no user session.
+ *
+ * WHY THIS EXISTS. `getXeroAccessToken` above is the only correct way to get a
+ * token — it does the expiry check, the refresh, the compare-and-swap on
+ * `token_version` that stops two concurrent refreshes rotating each other out,
+ * and the `reauth_required` marking when Xero says the grant is gone. The nightly
+ * sync needs all of that and has none of the context the OAuth routes do: it runs
+ * from a cron with a service-role client and an org id, and there is no signed-in
+ * user for `requireXeroServerContext` to read.
+ *
+ * `userId: ''` IS SAFE HERE, AND ONLY HERE. `XeroServerContext.userId` is used by
+ * exactly three paths — starting an authorisation, consuming its state, and
+ * recording who connected — and none of them is reachable from this function.
+ * Everything below it (`readConnectionAndCredential`, the refresh, the reconnect
+ * marking) is keyed on `orgId` and the authorisation row. Passing a blank user is
+ * therefore honest about the fact that nobody is asking: it is a machine.
+ *
+ * THROWS rather than returning null, because every caller's next move is an HTTP
+ * request that cannot be made — and the message (Xero's own, for an expired
+ * grant) is what the sync records on `xero_connections.last_error`.
+ */
+export async function getXeroAccessTokenForOrg(
+  service: SupabaseClient,
+  orgId: string,
+): Promise<XeroOrgAccess> {
+  const ctx: XeroServerContext = { service, orgId, userId: '' };
+  const { accessToken, connection } = await getXeroAccessToken(ctx);
+  return {
+    accessToken,
+    tenantId: connection.xero_tenant_id,
+    connectionId: connection.id,
+    tenantName: connection.tenant_name,
+    status: connection.status,
+  };
+}
+
 async function appConnectionsAccessToken(config: XeroConfig): Promise<string> {
   const token = await xeroTokenRequest(
     new URLSearchParams({ grant_type: 'client_credentials', scope: 'app.connections' }),
