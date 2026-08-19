@@ -3507,3 +3507,121 @@ be logged as a failure. Acceptable, but untested.
 5. Press again on the same document: expect "Sent to Hubdoc" and a "Send again"
    link, and a second log row marked **Sent again** only if you press it.
 6. Leave the auto-forward toggle OFF until step 4 has been seen to work.
+
+---
+
+# Agents: all orgs — every organisation by default, plus a time-budget guard (2026-08-19, branch `main`)
+
+Josh's rule: **all agents need to be available on each org id.** Until now every
+`/api/agents/*` route read an OPT-IN allowlist (`AGENTS_ORG_IDS`, falling back to
+`PRICE_WATCH_ORG_IDS`), and an unset var meant `{ran: 0}`. That was right when
+Price Watch was one agent pointed at one org; it is wrong now that the agents ARE
+the product, because it makes a paying customer's empty Brief look identical to a
+healthy system.
+
+## What changed
+
+**`lib/platform/agents/org-allowlist.ts`** — the source of truth is now the
+`organisations` table, ordered by `created_at` (oldest first, so the time budget
+drops a predictable tail rather than a random org). `agentOrgIds(supabase, env?)`
+is async and takes the service-role client. Three vars can only ever NARROW it:
+
+- `AGENTS_ORG_EXCLUDE` — uuids to skip. The escape hatch, and the only one
+  production is ever expected to set.
+- `AGENTS_ORG_IDS` / `PRICE_WATCH_ORG_IDS` — an OPTIONAL restriction for a
+  developer or a staging deploy. **Production leaves both unset.**
+
+The restriction is INTERSECTED with the table rather than used verbatim, so an id
+that names no organisation is reported as `orgs.notFound` instead of being handed
+to an agent — which is what a typo in Vercel used to look like: `ran: 1` having
+done nothing. A missing `organisations` relation is empty and FLAGGED
+(`tableMissing`), never a throw, exactly like `agent-findings.ts` and
+`brief-schedules.ts`. `NO_ORGS_MESSAGE` is replaced by `noOrgsMessage(orgs)`,
+which names the thing an operator would have to change in each of the five cases.
+
+The decisions are pure (`selectAgentOrgs`) and separated from the read.
+
+**`lib/platform/agents/time-budget.ts`** (new) — `startTimeBudget(maxDuration)`
+with an injectable clock. A route stops STARTING orgs once elapsed crosses
+`maxDuration − 30s` and reports the rest as `orgsSkippedForTime`. It is a "may I
+start another?" question and NEVER a cancellation: cutting an org off halfway is
+how half a Brief gets written. The failure it prevents is not corruption — every
+run is idempotent — it is a killed invocation that returns no JSON at all, which
+is indistinguishable from a broken cron.
+
+**All seven routes** (`price-watch`, `debtors-watch`, `stock-cover`, `doc-watch`,
+`xero-watch`, `digest`, `brief-notify`) take the new signature, keep their
+per-org try/catch, and now also carry the budget guard and return
+`orgsSkippedForTime`, `elapsedMs` and the `orgs` selection in their JSON. The
+digest's loop gained an OUTER try/catch it never had — it was the one route where
+an unexpected throw in a single org killed the rest of the week's digests.
+
+`/api/integrations/xero/sync` is untouched: it has no allowlist by design and
+still runs for every org that has connected Xero.
+
+## Decisions
+
+**Price Watch's per-org work is unchanged.** It is the slow one — Claude matches
+for every unseen line description — and the temptation was to parallelise. Serial
+is still what the rate limit wants at this org count, so the budget guard is the
+whole change. The route now carries a comment saying that per-org fan-out (one
+invocation per org, dispatched) is the next step, and that
+`orgsSkippedForTime` going routinely non-empty is the signal to do it.
+
+**Doc Watch's skip is the expensive one, and is flagged in the route.** Its sweep
+window is 26 hours, so an org skipped for a full day has a gap tomorrow's run
+cannot see. Most documents are unaffected (the primary trigger writes their card
+at extraction time inside `after()`), but one ingested by email or WhatsApp on a
+skipped day would get no receipt.
+
+**The digest is where "all orgs" actually leaves the platform, and that is
+flagged in the route rather than quietly shipped.** Its semantics are otherwise
+unchanged — still nothing sent unless `PRICE_WATCH_DIGEST_TO` is set, still only
+for orgs with no per-user schedules, still max five non-informational findings —
+but a new org with findings now mails ITS supplier prices to Vyso's own inbox.
+That was already true of every allowlisted org; it is the first thing that must
+change when this route stops being a fallback.
+
+**Brief-notify's semantics are untouched.** It still sends only where somebody
+created a schedule and a slot is due; an org that has never opened the settings
+card costs one indexed read. Widening the org source is precisely what makes a
+NEW org's first schedule work without an env var edit.
+
+## Files
+
+- `lib/platform/agents/org-allowlist.ts` — rewritten
+- `lib/platform/agents/time-budget.ts` — new
+- `app/api/agents/{price-watch,debtors-watch,stock-cover,doc-watch,xero-watch,digest,brief-notify}/route.ts`
+- `tests/agents-org-allowlist.test.ts` — rewritten (21 tests)
+- `tests/agents-time-budget.test.ts` — new (7 tests)
+- `.env.example`, `docs/demo-runbook.md`
+
+## What Josh must do in Vercel
+
+**Delete `AGENTS_ORG_IDS` and `PRICE_WATCH_ORG_IDS`.** While either is set, the
+agents still run for only the org it names — the code is live but the old var
+keeps the old behaviour. Nothing needs to be added; `AGENTS_ORG_EXCLUDE` stays
+unset.
+
+## Gates
+
+`npx tsc --noEmit` clean · `npm test` **684 pass / 0 fail** (663 before; the 7
+old allowlist tests were replaced by 21, and 7 are new in
+`tests/agents-time-budget.test.ts`) · `npm run build` clean · `npx eslint .` **50
+errors, 40 warnings** — byte-identical to the pre-change baseline, none in a file
+this change touched.
+
+## Not verified, and flagged rather than hidden
+
+**Nothing has been run against a live database.** `agentOrgIds`'s read is I/O and
+is not unit tested by design; every decision it makes is tested in
+`selectAgentOrgs`. In particular, how many organisations are actually in
+production — and therefore whether any route comes near its time budget — has not
+been observed. The first live run's `ran` and `elapsedMs` are the numbers to look
+at.
+
+**The time budget has never fired in production.** Its boundary is pinned by
+tests against an injected clock; a real invocation being killed at `maxDuration`
+despite the 30s reserve (one org that takes longer than the reserve) remains
+possible and would look exactly like today's failure mode, for one org instead of
+the whole run.

@@ -14,9 +14,12 @@ their expected numbers), `scripts/demo-invoice-pdfs.mjs` (the paper).
 
 1. **Never show Turn 'n Slice data to a prospect.** TnS supplier prices,
    customers, invoices and stock are a real customer's commercially sensitive
-   numbers. The demo org is **Meridian Food Co.** and nothing else. If TnS's org
-   id is in `AGENTS_ORG_IDS`, TnS findings exist — they must never be on a screen
-   a prospect can see, and no prospect login may ever be pointed at that org.
+   numbers. The demo org is **Meridian Food Co.** and nothing else. The agents now
+   run for **every** organisation, so TnS findings certainly exist — they must
+   never be on a screen a prospect can see, and no prospect login may ever be
+   pointed at that org. (If you ever need TnS's agents off, that is what
+   `AGENTS_ORG_EXCLUDE` is for — but the Brief being current is not the leak; the
+   screen you share is.)
    Turn 'n Slice appears in a sale as a **story** only:
    `/case-studies/turn-n-slice` plus `docs/demo-case-study-note.md`.
 2. **Drafts only. Nothing outbound sends itself.** No demo path may send an
@@ -168,7 +171,11 @@ curl -s -H "Authorization: Bearer $CRON_SECRET" https://vyso.co.za/api/agents/di
 | Response | Meaning |
 |---|---|
 | `{"ok":true,"ran":1,…}` | worked, for one org |
-| `{"ok":true,"ran":0,…}` | the **allowlist is empty** — `AGENTS_ORG_IDS` (or the legacy `PRICE_WATCH_ORG_IDS`) is unset in Vercel. A 200 by design: the cron fired, nothing is enabled |
+| `{"ok":true,"ran":N,…}` | worked, for N orgs — **every organisation runs**, so N is the size of the `organisations` table |
+| `{"ok":true,"ran":0,"message":…}` | nothing ran, and the `message` says why: no organisations in the database, `organisations` missing, or a restriction var set that matches nothing. A 200 by design — the cron fired |
+| `orgsSkippedForTime: [uuid,…]` | the run stopped starting orgs 30s before its `maxDuration`. Those orgs are picked up by the next run. If this is routinely non-empty, fan the agent out — see the note in `app/api/agents/price-watch/route.ts` |
+| `orgs.notFound: [uuid,…]` | `AGENTS_ORG_IDS`/`PRICE_WATCH_ORG_IDS` names an id that is not an organisation. It ran nothing |
+| `orgs.excluded: [uuid,…]` | `AGENTS_ORG_EXCLUDE` deliberately skipped those |
 | `503 CRON_SECRET is not set` | the env var is missing on the deployment |
 | `401` | your bearer token does not match the deployment's `CRON_SECRET` |
 | digest `{"ok":true,"sent":0}` | no open findings for that org, so no e-mail — correct, not a failure |
@@ -265,7 +272,7 @@ page says the mirror is not set up — neither is an error.
 | sync `summaries[].invoices.fullRead: true` | no usable cursor, so the whole ledger was read. Normal on a first run |
 | sync `summaries[].invoices.partial: true` | the read stopped early (a rate limit, a bad page). The cursor was **not** advanced, so tomorrow re-reads that window |
 | sync warning `Xero rate-limited the read…` | Xero's 60/min per-tenant ceiling. Harmless; a partial sync was recorded |
-| xero-watch `{"ok":true,"ran":0,…}` | the **agent allowlist** is empty — `AGENTS_ORG_IDS`. Note the sync has no allowlist and the agent does: connecting Xero is consent to be READ, not consent to have opinions written into your Brief |
+| xero-watch `{"ok":true,"ran":0,…}` | there are no organisations to run for at all — read the `message`. Both the sync and the agent now run for every org; the sync still only *does* anything where Xero is connected, and so does the agent |
 | xero-watch `connectionStatus: null` | that org has no Xero connection row, so the agent did nothing |
 
 The sync's `POST` twin is the plugin page's **Sync now** button: signed-in
@@ -341,16 +348,26 @@ documented with their defaults in `.env.example`.
 
 | Var | Value | Consequence if missing |
 |---|---|---|
-| `AGENTS_ORG_IDS` | `01000000-7e5d-4c1a-9b3f-000000000001` | every agent no-ops (`ran: 0`) and the Brief renders its empty state |
 | `CRON_SECRET` | 32-byte hex | every agent route 503s; the crons cannot authenticate |
 | `ANTHROPIC_API_KEY` | — | Finch chat and Price Watch's observation text both fail |
 | `RESEND_API_KEY` | — | the digest cannot send |
 | `PRICE_WATCH_DIGEST_TO` | `joshua@vyso.co.za` | digest returns 503 and sends nothing |
 | `SUPABASE_SERVICE_ROLE_KEY` | — | the agent routes cannot read across the org |
 
-`PRICE_WATCH_ORG_IDS` is the legacy name for `AGENTS_ORG_IDS` and is still read
-as a **fallback** when the new var is unset or empty. Set `AGENTS_ORG_IDS` going
-forward; leaving both set is harmless, and the new one wins.
+**There is no longer an org allowlist to set.** The agents run for **every
+organisation** in the `organisations` table — that is Josh's rule, *all agents
+need to be available on each org id* — so a new customer's Brief fills in without
+anybody editing Vercel. Three vars can only ever narrow that, and **all three are
+left blank in production**:
+
+| Var | What it does |
+|---|---|
+| `AGENTS_ORG_EXCLUDE` | uuids to **skip**. The escape hatch for a churned or internal org. Normally empty |
+| `AGENTS_ORG_IDS` | run **only** these orgs. A development/staging convenience. Setting it in production silently turns the agents off for every org it does not name |
+| `PRICE_WATCH_ORG_IDS` | the legacy name for the same restriction, read only when `AGENTS_ORG_IDS` is blank |
+
+If `AGENTS_ORG_IDS` or `PRICE_WATCH_ORG_IDS` is still set in Vercel from the
+opt-in era, **delete both** — while either is set, only the org it names runs.
 
 **Model tiers — the one that can quietly cost money**
 

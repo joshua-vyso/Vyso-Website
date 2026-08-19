@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { createServiceSupabase } from '@/lib/platform/supabase-service';
 import { parseEnvList } from '@/lib/platform/price-watch/run';
-import { agentOrgIds, NO_ORGS_MESSAGE } from '@/lib/platform/agents/org-allowlist';
+import { agentOrgIds, noOrgsMessage } from '@/lib/platform/agents/org-allowlist';
+import { startTimeBudget } from '@/lib/platform/agents/time-budget';
 import { isInformationalFinding } from '@/lib/platform/agents/finding-kinds';
 import { orgHasEnabledSchedules } from '@/lib/platform/brief-notify';
 import { escapeHtml, formatRand } from '@/lib/platform/brief-email-shared';
@@ -88,10 +89,24 @@ interface DigestFinding {
  * opens. An org whose only open findings are receipts gets NO EMAIL, which is
  * the same behaviour an org with no findings at all has always had.
  *
+ * ORGS — EVERY ORGANISATION, via the shared lib/platform/agents/org-allowlist.ts.
+ * NOTHING ELSE ABOUT WHO GETS AN EMAIL CHANGED: an org still has to have open,
+ * non-informational findings AND no per-user schedules, and the whole route still
+ * refuses to send anything at all unless PRICE_WATCH_DIGEST_TO is set. Widening
+ * the org source widens the loop, not the recipient list — every email from here
+ * goes to the same operator-chosen addresses it always did.
+ *
+ * WHICH IS EXACTLY THE THING TO WATCH. This route is the one place where "all
+ * orgs" means a customer's numbers leave the platform: a new org with findings
+ * and no schedules now sends ITS supplier prices to PRICE_WATCH_DIGEST_TO —
+ * Vyso's own inbox, not theirs. That was true of every allowlisted org before and
+ * is true of every org now; it is fine while PRICE_WATCH_DIGEST_TO is Josh
+ * reading his own customers' briefs, and it is the first thing that must change
+ * when this route stops being a fallback. Per-user schedules
+ * (`/api/agents/brief-notify`) already send to the person who asked, and every
+ * org that sets one up drops out of this loop.
+ *
  * Env:
- *   AGENTS_ORG_IDS        — comma-separated org uuids (the shared allowlist every
- *                           agent route reads, falling back to
- *                           PRICE_WATCH_ORG_IDS; unset ⇒ nothing to report)
  *   PRICE_WATCH_DIGEST_TO — comma-separated recipients (D2: Josh + Roberto).
  *                           Unset ⇒ 503 and NOT A SINGLE EMAIL SENT. There is no
  *                           default recipient on purpose: a business's supplier
@@ -125,9 +140,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'RESEND_API_KEY is not configured.' }, { status: 503 });
   }
 
-  const orgIds = agentOrgIds();
-  if (orgIds.length === 0) {
-    return NextResponse.json({ ok: true, sent: 0, message: NO_ORGS_MESSAGE });
+  const orgs = await agentOrgIds(supabase);
+  if (orgs.orgIds.length === 0) {
+    return NextResponse.json({ ok: true, sent: 0, message: noOrgsMessage(orgs), orgs });
   }
 
   const results: {
@@ -139,89 +154,117 @@ export async function GET(req: Request) {
     superseded?: true;
   }[] = [];
 
-  for (const orgId of orgIds) {
-    // SCHEDULES SUPERSEDE THIS EMAIL, per org.
-    //
-    // An org where somebody has set up brief notifications is an org that has
-    // said when it wants to hear from Vyso and who by name
-    // (supabase/brief-schedules.sql, /api/agents/brief-notify). Sending the
-    // Monday digest as well would mean the same findings arriving twice on a
-    // Monday morning, once to the operator-configured PRICE_WATCH_DIGEST_TO
-    // address and once to the person who actually asked — and the second of
-    // those is the one that is right. So this route stands down rather than
-    // being deleted: it is still the fallback for every org that has NOT set a
-    // schedule up, including any org whose users are all members.
-    if (await orgHasEnabledSchedules(supabase, orgId)) {
-      results.push({ orgId, findings: 0, sent: false, superseded: true });
+  const budget = startTimeBudget(maxDuration);
+  const orgsSkippedForTime: string[] = [];
+
+  for (const orgId of orgs.orgIds) {
+    // Checked BEFORE the org starts. A skipped org simply does not get its
+    // digest this week — which is the same outcome as a Monday the cron missed,
+    // and strictly better than an invocation killed mid-send with no response.
+    if (budget.spent()) {
+      orgsSkippedForTime.push(orgId);
       continue;
     }
 
-    // Service-role client: RLS is bypassed, so org_id is filtered by hand on
-    // every read (lib/platform/supabase-service.ts's contract).
-    const { data: org } = await supabase
-      .from('organisations')
-      .select('name')
-      .eq('id', orgId)
-      .maybeSingle<{ name: string | null }>();
-    const orgName = org?.name ?? 'your business';
-
-    const { data: rows, error } = await supabase
-      .from('agent_findings')
-      .select('agent, observation, recommended_action, rand_impact, evidence_refs')
-      .eq('org_id', orgId)
-      // Every agent, not just Price Watch — but see the informational filter
-      // below, which is what keeps Doc Watch's receipts out.
-      .in('status', OPEN_STATUSES)
-      // Nulls last: a finding with no rand figure must never outrank one that
-      // carries a number the owner can act on.
-      .order('rand_impact', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: false })
-      .limit(FINDING_PROBE_LIMIT)
-      .returns<DigestFinding[]>();
-
-    if (error) {
-      console.error('digest: findings read failed', orgId, error.message);
-      results.push({ orgId, findings: 0, sent: false, error: error.message });
-      continue;
-    }
-
-    const findings = (rows ?? [])
-      .filter(
-        (f) =>
-          !isInformationalFinding({
-            agent: f.agent,
-            rand_impact: f.rand_impact == null ? null : Number(f.rand_impact),
-            recommended_action: f.recommended_action,
-          }),
-      )
-      .slice(0, MAX_FINDINGS);
-    if (findings.length === 0) {
-      // No email at all. A weekly "nothing to report" trains the recipient to
-      // archive the digest unread, which is exactly how a real finding gets
-      // missed three weeks later.
-      results.push({ orgId, findings: 0, sent: false });
-      continue;
-    }
-
-    const html = renderDigest(orgName, findings);
+    // EVERY ORG IS WRAPPED, so one org's unexpected throw — a malformed row, a
+    // Supabase client that rejects rather than returning `{error}` — cannot
+    // cancel the rest of the week's digests. The reads below already handle
+    // their own expected failures; this catch is for the ones nobody predicted.
     try {
-      await resend.emails.send({
-        from: 'Vyso <noreply@vyso.co.za>',
-        to: recipients,
-        subject: `Vyso weekly brief — ${orgName} — ${findings.length} finding${
-          findings.length === 1 ? '' : 's'
-        }`,
-        html,
-      });
-      results.push({ orgId, findings: findings.length, sent: true });
+      // SCHEDULES SUPERSEDE THIS EMAIL, per org.
+      //
+      // An org where somebody has set up brief notifications is an org that has
+      // said when it wants to hear from Vyso and who by name
+      // (supabase/brief-schedules.sql, /api/agents/brief-notify). Sending the
+      // Monday digest as well would mean the same findings arriving twice on a
+      // Monday morning, once to the operator-configured PRICE_WATCH_DIGEST_TO
+      // address and once to the person who actually asked — and the second of
+      // those is the one that is right. So this route stands down rather than
+      // being deleted: it is still the fallback for every org that has NOT set a
+      // schedule up, including any org whose users are all members.
+      if (await orgHasEnabledSchedules(supabase, orgId)) {
+        results.push({ orgId, findings: 0, sent: false, superseded: true });
+        continue;
+      }
+
+      // Service-role client: RLS is bypassed, so org_id is filtered by hand on
+      // every read (lib/platform/supabase-service.ts's contract).
+      const { data: org } = await supabase
+        .from('organisations')
+        .select('name')
+        .eq('id', orgId)
+        .maybeSingle<{ name: string | null }>();
+      const orgName = org?.name ?? 'your business';
+
+      const { data: rows, error } = await supabase
+        .from('agent_findings')
+        .select('agent, observation, recommended_action, rand_impact, evidence_refs')
+        .eq('org_id', orgId)
+        // Every agent, not just Price Watch — but see the informational filter
+        // below, which is what keeps Doc Watch's receipts out.
+        .in('status', OPEN_STATUSES)
+        // Nulls last: a finding with no rand figure must never outrank one that
+        // carries a number the owner can act on.
+        .order('rand_impact', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false })
+        .limit(FINDING_PROBE_LIMIT)
+        .returns<DigestFinding[]>();
+
+      if (error) {
+        console.error('digest: findings read failed', orgId, error.message);
+        results.push({ orgId, findings: 0, sent: false, error: error.message });
+        continue;
+      }
+
+      const findings = (rows ?? [])
+        .filter(
+          (f) =>
+            !isInformationalFinding({
+              agent: f.agent,
+              rand_impact: f.rand_impact == null ? null : Number(f.rand_impact),
+              recommended_action: f.recommended_action,
+            }),
+        )
+        .slice(0, MAX_FINDINGS);
+      if (findings.length === 0) {
+        // No email at all. A weekly "nothing to report" trains the recipient to
+        // archive the digest unread, which is exactly how a real finding gets
+        // missed three weeks later.
+        results.push({ orgId, findings: 0, sent: false });
+        continue;
+      }
+
+      const html = renderDigest(orgName, findings);
+      try {
+        await resend.emails.send({
+          from: 'Vyso <noreply@vyso.co.za>',
+          to: recipients,
+          subject: `Vyso weekly brief — ${orgName} — ${findings.length} finding${
+            findings.length === 1 ? '' : 's'
+          }`,
+          html,
+        });
+        results.push({ orgId, findings: findings.length, sent: true });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('digest: send failed', orgId, message);
+        results.push({ orgId, findings: findings.length, sent: false, error: message });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.error('digest: send failed', orgId, message);
-      results.push({ orgId, findings: findings.length, sent: false, error: message });
+      console.error('digest: org failed', orgId, message);
+      results.push({ orgId, findings: 0, sent: false, error: message });
     }
   }
 
-  return NextResponse.json({ ok: true, sent: results.filter((r) => r.sent).length, results });
+  return NextResponse.json({
+    ok: true,
+    sent: results.filter((r) => r.sent).length,
+    results,
+    orgsSkippedForTime,
+    elapsedMs: budget.elapsedMs(),
+    orgs,
+  });
 }
 
 /**

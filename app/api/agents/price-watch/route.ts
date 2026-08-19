@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createServiceSupabase } from '@/lib/platform/supabase-service';
 import { runPriceWatch, type PriceWatchSummary } from '@/lib/platform/price-watch/run';
-import { agentOrgIds, NO_ORGS_MESSAGE } from '@/lib/platform/agents/org-allowlist';
+import { agentOrgIds, noOrgsMessage } from '@/lib/platform/agents/org-allowlist';
+import { startTimeBudget } from '@/lib/platform/agents/time-budget';
 import { priceWatchMatchCall, priceWatchObservationCall } from '@/lib/ai/price-watch-model';
 
 export const maxDuration = 300;
@@ -20,12 +21,23 @@ export const maxDuration = 300;
  * idempotent (price points upsert on (document_id, line_index); findings dedupe
  * on unique(org_id, dedupe_key)), so a missed or doubled run costs nothing.
  *
- * ORG ALLOWLIST — now the SHARED one (lib/platform/agents/org-allowlist.ts):
- * AGENTS_ORG_IDS, falling back to this route's original PRICE_WATCH_ORG_IDS so
- * the var already set in Vercel keeps working unchanged. An unset or empty value
- * still means DO NOTHING and say so: an agent that defaulted to "every org"
- * would write findings into customers' Briefs off a catalogue nobody has
- * reviewed. Opt-in is the only safe default here.
+ * ORGS — EVERY ORGANISATION, via the shared lib/platform/agents/org-allowlist.ts.
+ * This route was the original opt-in one (`PRICE_WATCH_ORG_IDS`); it no longer
+ * is. See that module for why, and for the two vars that can still narrow the
+ * set in development.
+ *
+ * TIME BUDGET. This is the agent that can be slow: each org runs Claude matches
+ * for any line description it has never seen, so a first run against a large
+ * catalogue is minutes, not seconds. The loop therefore stops STARTING orgs 30s
+ * before `maxDuration` and names the rest in `orgsSkippedForTime` — they are
+ * picked up by tomorrow's run, which costs nothing because everything here is
+ * idempotent. NOTHING about the per-org model work changed.
+ *
+ * NEXT STEP IF THE ORG COUNT GROWS: fan out. One invocation per org (a dispatch
+ * route that fires `/api/agents/price-watch?org=…` per org, or a queue) removes
+ * the ceiling entirely and is the right answer well before `orgsSkippedForTime`
+ * is routinely non-empty. It was not done now because serial-within-one-function
+ * is what the rate limit below wants while the org count is small.
  *
  * Authenticated with CRON_SECRET — Vercel Cron sends it as a bearer token.
  */
@@ -43,11 +55,11 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Service role is not configured.' }, { status: 503 });
   }
 
-  const orgIds = agentOrgIds();
-  if (orgIds.length === 0) {
-    // 200, not an error: the cron fired correctly and there is simply nothing
-    // enabled. A 5xx here would page us nightly for a working system.
-    return NextResponse.json({ ok: true, ran: 0, message: NO_ORGS_MESSAGE });
+  const orgs = await agentOrgIds(supabase);
+  if (orgs.orgIds.length === 0) {
+    // 200, not an error: the cron fired correctly and there is simply nothing to
+    // run for. A 5xx here would page us nightly for a working system.
+    return NextResponse.json({ ok: true, ran: 0, message: noOrgsMessage(orgs), orgs });
   }
 
   // Serial on purpose: each org runs Claude matches for any line description it
@@ -55,7 +67,15 @@ export async function GET(req: Request) {
   // against the same rate limit inside one 300s invocation.
   type RunResult = PriceWatchSummary | { orgId: string; failed: true; error: string };
   const summaries: RunResult[] = [];
-  for (const orgId of orgIds) {
+  const budget = startTimeBudget(maxDuration);
+  const orgsSkippedForTime: string[] = [];
+  for (const orgId of orgs.orgIds) {
+    // Checked BEFORE the org starts and never during it: an org cut in half is
+    // how half a Brief gets written.
+    if (budget.spent()) {
+      orgsSkippedForTime.push(orgId);
+      continue;
+    }
     try {
       // matchCall/observeCall wire the real Anthropic transport in — without them
       // match.ts/observe.ts fall back to their `missingModelCall` default, which
@@ -81,5 +101,15 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, ran: summaries.length, summaries });
+  return NextResponse.json({
+    ok: true,
+    ran: summaries.length,
+    summaries,
+    orgsSkippedForTime,
+    elapsedMs: budget.elapsedMs(),
+    // Why THESE orgs: any restriction var in play, ids it named that don't
+    // exist, and anything AGENTS_ORG_EXCLUDE dropped. The answer to "why did
+    // only two of my five orgs run?" has to be in the response, not in a log.
+    orgs,
+  });
 }

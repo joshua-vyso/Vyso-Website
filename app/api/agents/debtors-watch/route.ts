@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createServiceSupabase } from '@/lib/platform/supabase-service';
 import { runDebtorsWatch, type DebtorsWatchSummary } from '@/lib/platform/debtors-watch/run';
-import { agentOrgIds, NO_ORGS_MESSAGE } from '@/lib/platform/agents/org-allowlist';
+import { agentOrgIds, noOrgsMessage } from '@/lib/platform/agents/org-allowlist';
+import { startTimeBudget } from '@/lib/platform/agents/time-budget';
 
 export const maxDuration = 300;
 
@@ -20,10 +21,11 @@ export const maxDuration = 300;
  * is idempotent (findings dedupe on unique(org_id, dedupe_key)), so a missed or
  * doubled run costs nothing.
  *
- * ORG ALLOWLIST — the shared one, AGENTS_ORG_IDS falling back to
- * PRICE_WATCH_ORG_IDS (lib/platform/agents/org-allowlist.ts). Unset or empty
- * means DO NOTHING and say so: an agent that defaulted to "every org" would put
- * customers' debtors books on Briefs nobody asked to have them on.
+ * ORGS — EVERY ORGANISATION, via the shared lib/platform/agents/org-allowlist.ts
+ * (`AGENTS_ORG_EXCLUDE` is the only var production is expected to set). The loop
+ * also stops STARTING orgs 30s before `maxDuration` and names the rest in
+ * `orgsSkippedForTime`; a skipped org is picked up by tomorrow's run, which costs
+ * nothing because the findings dedupe.
  *
  * Authenticated with CRON_SECRET — Vercel Cron sends it as a bearer token.
  */
@@ -41,19 +43,27 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Service role is not configured.' }, { status: 503 });
   }
 
-  const orgIds = agentOrgIds();
-  if (orgIds.length === 0) {
-    // 200, not an error: the cron fired correctly and there is simply nothing
-    // enabled. A 5xx here would page us nightly for a working system.
-    return NextResponse.json({ ok: true, ran: 0, message: NO_ORGS_MESSAGE });
+  const orgs = await agentOrgIds(supabase);
+  if (orgs.orgIds.length === 0) {
+    // 200, not an error: the cron fired correctly and there is simply nothing to
+    // run for. A 5xx here would page us nightly for a working system.
+    return NextResponse.json({ ok: true, ran: 0, message: noOrgsMessage(orgs), orgs });
   }
 
-  // Serial, like Price Watch's route: these are a handful of orgs and a handful
-  // of queries each, and running them one at a time keeps one org's failure from
-  // cancelling the others' in-flight reads.
+  // Serial, like Price Watch's route: these are a handful of queries per org, and
+  // running them one at a time keeps one org's failure from cancelling the
+  // others' in-flight reads.
   type RunResult = DebtorsWatchSummary | { orgId: string; failed: true; error: string };
   const summaries: RunResult[] = [];
-  for (const orgId of orgIds) {
+  const budget = startTimeBudget(maxDuration);
+  const orgsSkippedForTime: string[] = [];
+  for (const orgId of orgs.orgIds) {
+    // Checked BEFORE the org starts and never during it: an org cut in half is
+    // how half a Brief gets written.
+    if (budget.spent()) {
+      orgsSkippedForTime.push(orgId);
+      continue;
+    }
     try {
       summaries.push(await runDebtorsWatch(supabase, orgId, { log: (m) => console.log(m) }));
     } catch (error) {
@@ -66,5 +76,12 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, ran: summaries.length, summaries });
+  return NextResponse.json({
+    ok: true,
+    ran: summaries.length,
+    summaries,
+    orgsSkippedForTime,
+    elapsedMs: budget.elapsedMs(),
+    orgs,
+  });
 }

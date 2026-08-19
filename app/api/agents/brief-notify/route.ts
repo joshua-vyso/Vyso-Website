@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceSupabase } from '@/lib/platform/supabase-service';
-import { agentOrgIds, NO_ORGS_MESSAGE } from '@/lib/platform/agents/org-allowlist';
+import { agentOrgIds, noOrgsMessage } from '@/lib/platform/agents/org-allowlist';
+import { startTimeBudget } from '@/lib/platform/agents/time-budget';
 import { runBriefNotify, type BriefNotifySummary } from '@/lib/platform/brief-notify';
 
 /**
@@ -38,8 +39,17 @@ export const maxDuration = 60;
  * send goes through the settings card's "Send me a test now", which is
  * rate-limited, addressed to the caller alone, and writes no delivery row.
  *
- * ORG ALLOWLIST — the shared one, AGENTS_ORG_IDS falling back to
- * PRICE_WATCH_ORG_IDS. Unset or empty means DO NOTHING and say so.
+ * ORGS — EVERY ORGANISATION, via the shared lib/platform/agents/org-allowlist.ts.
+ * NOTHING ELSE CHANGED: `runBriefNotify` still sends only where a person has
+ * actually created a schedule and a slot is due, so an org that has never opened
+ * the settings card costs one indexed read of `brief_schedules` and nothing else.
+ * Widening the org source is what makes a NEW org's first schedule work without
+ * anybody editing an env var — which was the bug this replaced.
+ *
+ * The loop stops STARTING orgs 30s before `maxDuration` (60 here, so 30 seconds
+ * of work) and names the rest in `orgsSkippedForTime`. A skipped org is picked up
+ * by the next tick fifteen minutes later, well inside DUE_LOOKBACK_MINUTES — this
+ * route is the one where a skip genuinely costs nothing.
  *
  * Env: RESEND_API_KEY (send), SUPABASE_SERVICE_ROLE_KEY (the schedules and the
  * recipients' addresses live behind it), CRON_SECRET (auth).
@@ -66,9 +76,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'RESEND_API_KEY is not configured.' }, { status: 503 });
   }
 
-  const orgIds = agentOrgIds();
-  if (orgIds.length === 0) {
-    return NextResponse.json({ ok: true, sent: 0, message: NO_ORGS_MESSAGE });
+  const orgs = await agentOrgIds(supabase);
+  if (orgs.orgIds.length === 0) {
+    return NextResponse.json({ ok: true, sent: 0, message: noOrgsMessage(orgs), orgs });
   }
 
   // ONE clock for the whole tick. Reading `new Date()` per org would let two
@@ -78,7 +88,13 @@ export async function GET(req: Request) {
 
   type RunResult = BriefNotifySummary | { orgId: string; failed: true; error: string };
   const summaries: RunResult[] = [];
-  for (const orgId of orgIds) {
+  const budget = startTimeBudget(maxDuration);
+  const orgsSkippedForTime: string[] = [];
+  for (const orgId of orgs.orgIds) {
+    if (budget.spent()) {
+      orgsSkippedForTime.push(orgId);
+      continue;
+    }
     try {
       summaries.push(await runBriefNotify(supabase, orgId, now));
     } catch (error) {
@@ -89,5 +105,12 @@ export async function GET(req: Request) {
   }
 
   const sent = summaries.reduce((n, s) => n + ('sent' in s ? s.sent : 0), 0);
-  return NextResponse.json({ ok: true, sent, summaries });
+  return NextResponse.json({
+    ok: true,
+    sent,
+    summaries,
+    orgsSkippedForTime,
+    elapsedMs: budget.elapsedMs(),
+    orgs,
+  });
 }

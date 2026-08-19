@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createServiceSupabase } from '@/lib/platform/supabase-service';
 import { runDocWatchSweep, type DocWatchSummary } from '@/lib/platform/doc-watch/run';
-import { agentOrgIds, NO_ORGS_MESSAGE } from '@/lib/platform/agents/org-allowlist';
+import { agentOrgIds, noOrgsMessage } from '@/lib/platform/agents/org-allowlist';
+import { startTimeBudget } from '@/lib/platform/agents/time-budget';
 
 export const maxDuration = 300;
 
@@ -24,8 +25,18 @@ export const maxDuration = 300;
  * every write is idempotent on `doc_watch:<document_id>` against
  * unique(org_id, dedupe_key).
  *
- * ORG ALLOWLIST — the shared one, AGENTS_ORG_IDS falling back to
- * PRICE_WATCH_ORG_IDS. Unset or empty means DO NOTHING and say so.
+ * ORGS — EVERY ORGANISATION, via the shared lib/platform/agents/org-allowlist.ts
+ * (`AGENTS_ORG_EXCLUDE` is the only var production is expected to set). The loop
+ * stops STARTING orgs 30s before `maxDuration` and names the rest in
+ * `orgsSkippedForTime`.
+ *
+ * A SKIP COSTS MORE HERE THAN ELSEWHERE, and the honest version is: the window is
+ * 26 hours, so an org skipped for a whole day has a gap tomorrow's run cannot
+ * see. It is not a lost card for most documents — the PRIMARY trigger above
+ * writes them at extraction time — but a document ingested by email or WhatsApp
+ * on a skipped day would get no receipt. `orgsSkippedForTime` being non-empty on
+ * THIS route is therefore the signal to fan out (see the Price Watch route's
+ * note), not something to leave running.
  *
  * Authenticated with CRON_SECRET — Vercel Cron sends it as a bearer token.
  */
@@ -43,14 +54,20 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Service role is not configured.' }, { status: 503 });
   }
 
-  const orgIds = agentOrgIds();
-  if (orgIds.length === 0) {
-    return NextResponse.json({ ok: true, ran: 0, message: NO_ORGS_MESSAGE });
+  const orgs = await agentOrgIds(supabase);
+  if (orgs.orgIds.length === 0) {
+    return NextResponse.json({ ok: true, ran: 0, message: noOrgsMessage(orgs), orgs });
   }
 
   type RunResult = DocWatchSummary | { orgId: string; failed: true; error: string };
   const summaries: RunResult[] = [];
-  for (const orgId of orgIds) {
+  const budget = startTimeBudget(maxDuration);
+  const orgsSkippedForTime: string[] = [];
+  for (const orgId of orgs.orgIds) {
+    if (budget.spent()) {
+      orgsSkippedForTime.push(orgId);
+      continue;
+    }
     try {
       summaries.push(await runDocWatchSweep(supabase, orgId, { log: (m) => console.log(m) }));
     } catch (error) {
@@ -60,5 +77,12 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, ran: summaries.length, summaries });
+  return NextResponse.json({
+    ok: true,
+    ran: summaries.length,
+    summaries,
+    orgsSkippedForTime,
+    elapsedMs: budget.elapsedMs(),
+    orgs,
+  });
 }
