@@ -31,6 +31,13 @@ export type AnalyticsEvents = {
   resource_request: { slug: string };
   academy_interest: Record<string, never>;
   outbound_click: { href: string };
+  /* Orbit's waitlist. `trade` is a **slug from `lib/orbit/trades.ts`** (or the
+     literals `"other"` / `"unspecified"`), never the free-text fields on the
+     same form — see the rule at the top of this file. Typed `string` rather
+     than a union of the ten slugs because that union would have to be imported
+     from a data file this module otherwise has no reason to know about, and a
+     `<select>` is the only thing that can produce the value. */
+  orbit_waitlist_submit: { trade: string };
 };
 
 export type AnalyticsEvent = keyof AnalyticsEvents;

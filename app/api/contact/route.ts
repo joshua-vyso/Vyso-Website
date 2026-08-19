@@ -31,7 +31,15 @@ const CALENDLY_LINK = "https://calendly.com/joshua-vyso/new-meeting";
    it is treated as hostile input, not validated into a shape that would
    reject a legitimate "+27 82 000 0000"; `businessType` is a value from a
    fixed `<select>`, but is still capped/escaped like any other string field
-   since nothing stops a direct POST from sending something else. */
+   since nothing stops a direct POST from sending something else.
+
+   `trade` and `city` are the Orbit waitlist's own two extra fields
+   (components/orbit/WaitlistForm.tsx, `variant: "orbit"`). That variant is the
+   only one where **`email` is optional and `whatsapp` is required**, because
+   Orbit is a WhatsApp product and the promise on its button is that we WhatsApp
+   you when it opens — a tradesperson with no email address is exactly who it is
+   for. Everything else about this handler is unchanged: the Finch variants keep
+   their required set, their subject lines and their auto-reply. */
 const MAX_LEN: Record<string, number> = {
   name: 120,
   business: 160,
@@ -42,6 +50,8 @@ const MAX_LEN: Record<string, number> = {
   locations: 20,
   variant: 20,
   businessType: 60,
+  trade: 60,
+  city: 80,
 };
 const EMAIL_RE = /^[^\s@,;<>"]+@[^\s@,;<>"]+\.[^\s@,;<>"]+$/;
 
@@ -77,13 +87,21 @@ export async function POST(req: Request) {
     const locations = field("locations");
     const variant = field("variant");
     const businessType = field("businessType");
+    const trade = field("trade");
+    const city = field("city");
 
     const isAudit = variant === "audit";
     const isAcademy = variant === "academy";
+    const isOrbit = variant === "orbit";
 
     // Academy sends nothing to book — just name + email (+ businessType) — so
     // `business`/`challenge` are only required for the other two variants.
-    if (!name || !email || (!isAcademy && (!business || !challenge))) {
+    // Orbit sends name + whatsapp (+ trade/city/email), so it requires neither
+    // `business`/`challenge` nor an email address.
+    const missing = isOrbit
+      ? !name || !whatsapp
+      : !name || !email || (!isAcademy && (!business || !challenge));
+    if (missing) {
       return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
     }
     for (const [k, v] of Object.entries({
@@ -96,12 +114,17 @@ export async function POST(req: Request) {
       locations,
       variant,
       businessType,
+      trade,
+      city,
     })) {
       if (v.length > MAX_LEN[k]) {
         return NextResponse.json({ error: `${k} is too long.` }, { status: 400 });
       }
     }
-    if (!EMAIL_RE.test(email)) {
+    // `email` is required everywhere except the Orbit waitlist, so an empty
+    // string only reaches here on that variant — and an absent address is not
+    // an invalid one.
+    if (email && !EMAIL_RE.test(email)) {
       return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
     }
 
@@ -126,6 +149,8 @@ export async function POST(req: Request) {
     const businessTypeLine = businessType
       ? `<p><strong>Business type:</strong> ${escapeHtml(businessType)}</p>`
       : "";
+    const tradeLine = trade ? `<p><strong>Trade:</strong> ${escapeHtml(trade)}</p>` : "";
+    const cityLine = city ? `<p><strong>Town/city:</strong> ${escapeHtml(city)}</p>` : "";
     // The challenge field is the audit form's "where do you think it leaks?" —
     // same field, different question, so the internal email says which it was.
     // Academy never sends one, so the whole block is conditional.
@@ -137,11 +162,16 @@ export async function POST(req: Request) {
               ${eChallenge}
             </blockquote>`
       : "";
-    const kind = isAudit ? "audit request" : isAcademy ? "Academy interest" : "enquiry";
+    const kind = isAudit
+      ? "audit request"
+      : isAcademy
+        ? "Academy interest"
+        : isOrbit
+          ? "Orbit waitlist"
+          : "enquiry";
 
-    await Promise.all([
-      // Notify Joshua
-      resend.emails.send({
+    // Notify Joshua
+    const notify = resend.emails.send({
         from: "Vyso Website <noreply@vyso.co.za>",
         to: RECIPIENT,
         subject: `New ${kind} from ${sName}${sBusiness ? ` — ${sBusiness}` : ""}`.slice(0, 200),
@@ -151,19 +181,62 @@ export async function POST(req: Request) {
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;">
             <p><strong>Name:</strong> ${eName}</p>
             ${businessLine}
-            <p><strong>Email:</strong> <a href="mailto:${eEmail}">${eEmail}</a></p>
+            ${eEmail ? `<p><strong>Email:</strong> <a href="mailto:${eEmail}">${eEmail}</a></p>` : ""}
             ${whatsappLine}
             ${locationsLine}
             ${businessTypeLine}
+            ${tradeLine}
+            ${cityLine}
             ${tierLine}
             ${challengeBlock}
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
             <p style="color: #6b7280; font-size: 13px;">Sent from the Vyso contact form.</p>
           </div>
         `,
-      }),
+    });
 
-      // Auto-reply to enquirer
+    /* ── The auto-reply ──────────────────────────────────────────────────────
+       Two conditions, both introduced with the Orbit waitlist:
+
+       1. **It needs an address.** `email` is optional on the Orbit form, and
+          there is nothing to reply to without one. The internal notification
+          above still goes out — the WhatsApp number is the contact channel.
+       2. **It has to be the right reply.** The standing auto-reply offers a
+          15-minute call about Vyso's operations work, which is the wrong thing
+          to send someone who has just joined a waitlist for a product that has
+          not opened. Orbit gets a shorter one that promises exactly what the
+          form promised and nothing else — no call, no Calendly link, no
+          "within 24 hours". */
+    const orbitReply = () =>
+      resend.emails.send({
+        from: "Joshua at Vyso <joshua@vyso.co.za>",
+        to: email,
+        subject: "You're on the Orbit waitlist",
+        html: `
+          <div style="font-family: sans-serif; max-width: 600px; color: #111;">
+            <h2 style="margin-bottom: 4px;">You're on the list, ${eName}.</h2>
+            <p style="color: #374151; line-height: 1.6;">
+              Orbit is WhatsApp operations for South African tradespeople — you text what you did
+              and what you charged, and it tracks the job and drafts the invoice.
+            </p>
+            <p style="color: #374151; line-height: 1.6;">
+              It is still being built, so there is nothing to log into yet and nothing to pay.
+              We'll WhatsApp you when it opens, and founding pricing is locked for the people on
+              the list.
+            </p>
+            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
+            <p style="color: #6b7280; font-size: 13px;">
+              Joshua Moreira<br>
+              Vyso — Johannesburg<br>
+              <a href="mailto:joshua@vyso.co.za" style="color: #BE5D23;">joshua@vyso.co.za</a>
+              &nbsp;·&nbsp;
+              <a href="https://vyso.co.za/orbit" style="color: #BE5D23;">vyso.co.za/orbit</a>
+            </p>
+          </div>
+        `,
+      });
+
+    const standardReply = () =>
       resend.emails.send({
         from: "Joshua at Vyso <joshua@vyso.co.za>",
         to: email,
@@ -209,8 +282,9 @@ export async function POST(req: Request) {
             </p>
           </div>
         `,
-      }),
-    ]);
+      });
+
+    await Promise.all(email ? [notify, isOrbit ? orbitReply() : standardReply()] : [notify]);
 
     return NextResponse.json({ success: true });
   } catch (err) {
