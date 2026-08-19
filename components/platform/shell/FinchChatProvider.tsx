@@ -28,7 +28,7 @@ import { looksLikeOrderRequest } from '@/lib/ai/finch/order-intent';
 import type { ParsedOrder } from '@/lib/ai/finch/order-handoff';
 import type { AgentModule } from '@/lib/ai/finch/config';
 import type { Suggestion } from '@/lib/platform/finch-suggestions';
-import { REVIEW_CHAT_ROUTE } from '@/lib/platform/review-queue-shared';
+import { REVIEW_CHAT_ROUTE, withReviewFocus } from '@/lib/platform/review-queue-shared';
 
 /**
  * The conversation, lifted out of the pill (.ai/plan_chat_first_shell.md §4.3,
@@ -387,6 +387,20 @@ interface FinchChatValue {
   reset: () => void;
   /** The composer's input, so a tapped finding can hand over the caret. */
   inputRef: RefObject<HTMLInputElement | null>;
+  /**
+   * Name the Review item the owner currently has expanded, or null when the
+   * pane is shut (Review v2, plan §1.6).
+   *
+   * IT ONLY AFFECTS `/app/chat/review`, where the queue prelude already goes up.
+   * The chain calls this on expand and again with null on close, so "what's odd
+   * about this invoice?" is a question about something the model has been NAMED
+   * — without the owner restating which invoice, and without the chain having to
+   * reach into the composer and type for them.
+   *
+   * A SETTER RATHER THAN A PROP because the chain lives several layers below
+   * this provider, on a page the layout does not re-render.
+   */
+  setReviewFocus: (focus: string | null) => void;
 }
 
 const FinchChatContext = createContext<FinchChatValue | null>(null);
@@ -438,6 +452,9 @@ export function FinchChatProvider({
   const [cards, setCards] = useState<DockCard[]>([]);
   const [bubbleOpen, setBubbleOpenState] = useState(false);
   const [bubbleUnread, setBubbleUnread] = useState(false);
+  /** The Review item the owner has expanded, as a sentence. Null everywhere but
+   *  the review chat, and null there too until something is opened. */
+  const [reviewFocus, setReviewFocus] = useState<string | null>(null);
 
   const { org, userId } = usePlatform();
 
@@ -650,7 +667,13 @@ export function FinchChatProvider({
     // marker, so the agent route strips whichever it was back off the message
     // before storing it (`stripBriefPrelude`) and the transcript still redraws
     // the owner's own words on reload.
-    const prelude = pathname === REVIEW_CHAT_ROUTE ? reviewContext : context;
+    //
+    // v2: on the review route the queue carries ONE extra sentence naming the
+    // item currently expanded, spliced in ahead of that marker so the stripping
+    // still works. It is the difference between "what's odd about this invoice?"
+    // answering, and the model asking which invoice.
+    const prelude =
+      pathname === REVIEW_CHAT_ROUTE ? withReviewFocus(reviewContext, reviewFocus) : context;
 
     // The prelude rides on the FIRST user turn only — the findings don't change
     // mid-conversation, and repeating them every turn would just re-bill them.
@@ -872,7 +895,7 @@ export function FinchChatProvider({
       // minute for a stream that ended when the owner signed out.
       streamingRef.current = false;
     }
-  }, [input, streaming, turns, context, reviewContext, orgName, activeChatId, agentModule, pathname, router]);
+  }, [input, streaming, turns, context, reviewContext, reviewFocus, orgName, activeChatId, agentModule, pathname, router]);
 
   // The attach flow calls through this rather than closing over `send`.
   useEffect(() => {
@@ -1043,6 +1066,7 @@ export function FinchChatProvider({
       newChat,
       reset,
       inputRef,
+      setReviewFocus,
     }),
     [
       turns,

@@ -5,9 +5,13 @@ import {
   REVIEW_CAP,
   REVIEW_CHAT_MODULE,
   REVIEW_CHAT_ROUTE,
+  REVIEW_MODULES,
+  REVIEW_TASKS,
+  groupReviewQueue,
   isClaimableDocument,
   reviewChatContext,
   reviewDocumentDetail,
+  reviewDocumentTask,
   reviewDocumentTitle,
   reviewDotLabel,
   reviewHeading,
@@ -17,6 +21,7 @@ import {
   reviewQuoteWho,
   shapeReviewQueue,
   shouldReuseReviewChat,
+  withReviewFocus,
   type ReviewDocumentRow,
   type ReviewItem,
   type ReviewQuoteRequestRow,
@@ -221,6 +226,8 @@ function item(over: Partial<ReviewItem> = {}): ReviewItem {
   return {
     kind: 'document',
     id: 'i',
+    module: 'docu',
+    task: 'docu:invoices',
     title: 't',
     detail: 'd',
     href: '/app/docu/i',
@@ -260,6 +267,105 @@ test('an unparseable timestamp is shown, but never promoted', () => {
     q.items.map((i) => i.id),
     ['dated', 'broken'],
   );
+});
+
+// ---------------------------------------------------------------------------
+// Review v2 — which pile a document lands in, and how the chain groups them
+// ---------------------------------------------------------------------------
+
+test('a document carries the module and task the chain will file it under', () => {
+  const built = reviewItemForDocument(doc());
+  assert.equal(built.module, 'docu');
+  assert.equal(built.task, 'docu:invoices');
+  assert.equal(reviewItemForQuoteRequest(request()).task, 'orderflow:quotes');
+  assert.equal(reviewItemForQuoteRequest(request()).module, 'orderflow');
+});
+
+test('a statement is its own task; anything else typed is an invoice', () => {
+  assert.equal(reviewDocumentTask({ status: 'extracted', document_type: 'statement' }), 'docu:statements');
+  assert.equal(reviewDocumentTask({ status: 'extracted', document_type: 'invoice' }), 'docu:invoices');
+  assert.equal(reviewDocumentTask({ status: 'pending', document_type: null }), 'docu:invoices');
+});
+
+test('FLAGGED beats type — a statement Vyso could not read is not a statement to approve', () => {
+  // The distinction the whole approvable/non-approvable split turns on:
+  // commitDocument claims only 'extracted'/'pending', so an 'error' row has no
+  // approve path at all and must not sit under a heading offering one.
+  assert.equal(reviewDocumentTask({ status: 'error', document_type: 'statement' }), 'docu:flagged');
+  assert.equal(reviewDocumentTask({ status: 'error', document_type: 'invoice' }), 'docu:flagged');
+});
+
+test('LOW CONFIDENCE IS NOT FLAGGED — it keeps its Approve button', () => {
+  // Deliberate deviation from the plan's "Flagged / low confidence" heading: a
+  // 61%-confidence invoice is an ordinary extracted document Doc-U is perfectly
+  // willing to commit. Folding it into the non-approvable pile would have taken
+  // the button away from the documents most in need of a quick yes.
+  const low = reviewItemForDocument(doc({ confidence: 61 }));
+  assert.equal(low.task, 'docu:invoices');
+  assert.match(low.detail, /61% confidence/, 'the confidence is said on the row instead');
+});
+
+test('the chain groups module → task, in the constants’ order, dropping the empty', () => {
+  const groups = groupReviewQueue([
+    reviewItemForQuoteRequest(request()),
+    reviewItemForDocument(doc({ id: 'flagged', status: 'error' })),
+    reviewItemForDocument(doc({ id: 'inv' })),
+    reviewItemForDocument(doc({ id: 'stmt', document_type: 'statement' })),
+  ]);
+
+  assert.deepEqual(
+    groups.map((g) => g.key),
+    ['docu', 'orderflow'],
+    'Doc-U first — those are the ones with money already attached',
+  );
+  assert.deepEqual(
+    groups[0].tasks.map((t) => t.task.id),
+    ['docu:invoices', 'docu:statements', 'docu:flagged'],
+    'task order is REVIEW_TASKS, not the order the rows happened to arrive in',
+  );
+  assert.equal(groups[0].count, 3);
+  assert.equal(groups[1].tasks.length, 1);
+});
+
+test('APPROVABLE COUNTS EXCLUDE the two tasks no module can approve', () => {
+  const groups = groupReviewQueue([
+    reviewItemForDocument(doc({ id: 'a' })),
+    reviewItemForDocument(doc({ id: 'b' })),
+    reviewItemForDocument(doc({ id: 'flagged', status: 'error' })),
+    reviewItemForQuoteRequest(request()),
+  ]);
+
+  const docu = groups.find((g) => g.key === 'docu');
+  assert.equal(docu?.count, 3, 'three Doc-U rows are shown');
+  assert.equal(docu?.approvable, 2, 'but only the two extracted ones can be batched');
+
+  const orderflow = groups.find((g) => g.key === 'orderflow');
+  assert.equal(orderflow?.count, 1);
+  assert.equal(
+    orderflow?.approvable,
+    0,
+    'batching Dismiss across a lead inbox would bin real enquiries on one click',
+  );
+});
+
+test('a module with nothing waiting is absent, not a heading with a zero', () => {
+  const groups = groupReviewQueue([reviewItemForQuoteRequest(request())]);
+  assert.deepEqual(
+    groups.map((g) => g.key),
+    ['orderflow'],
+  );
+});
+
+test('an item whose task no build knows is dropped rather than given an invented heading', () => {
+  const groups = groupReviewQueue([item({ task: 'docu:something-new' as never })]);
+  assert.deepEqual(groups, []);
+});
+
+test('every task in REVIEW_TASKS belongs to a module in REVIEW_MODULES', () => {
+  // Otherwise its items would be silently unreachable: `groupReviewQueue` walks
+  // modules first, so a task under an unknown module is a pile nobody can see.
+  const known = new Set(REVIEW_MODULES.map((m) => m.key));
+  for (const task of REVIEW_TASKS) assert.ok(known.has(task.module), `${task.id} has no module`);
 });
 
 test('the count is what EXISTS, not what fitted on the card', () => {
@@ -317,6 +423,40 @@ test('a long queue is counted, not silently cut', () => {
   const text = reviewChatContext(q);
   assert.ok(text.length < 5000, 'the prelude stays inside its budget');
   assert.match(text, /further items are not listed here/);
+});
+
+// ---------------------------------------------------------------------------
+// Review v2 — the expanded item, named inside the prelude
+// ---------------------------------------------------------------------------
+
+test('the open item is spliced in BEFORE the marker the agent route strips', () => {
+  // If it went after, `stripBriefPrelude` would leave it behind and the owner
+  // would see their own question prefixed with a line they never typed.
+  const base = reviewChatContext(shapeReviewQueue([reviewItemForDocument(doc())]));
+  const withFocus = withReviewFocus(base, '[document] Umgeni Oils — Invoice — waiting');
+
+  assert.ok(withFocus.endsWith(PRELUDE_MARKER), 'the marker is still last');
+  assert.ok(withFocus.includes('open on their screen right now'), 'and the sentence is in');
+  assert.ok(
+    withFocus.indexOf('open on their screen right now') < withFocus.indexOf(PRELUDE_MARKER),
+    'ahead of the marker, not after it',
+  );
+});
+
+test('no focus, no queue, or no marker all leave the context exactly as it was', () => {
+  const base = reviewChatContext(shapeReviewQueue([reviewItemForDocument(doc())]));
+  assert.equal(withReviewFocus(base, null), base);
+  assert.equal(withReviewFocus(base, '   '), base);
+  assert.equal(withReviewFocus('', 'anything'), '', 'an empty queue still sends no prelude at all');
+  assert.equal(withReviewFocus('no marker here', 'anything'), 'no marker here');
+});
+
+test('a very long focus line is clamped rather than allowed to crowd the queue out', () => {
+  const base = reviewChatContext(shapeReviewQueue([reviewItemForDocument(doc())]));
+  const long = withReviewFocus(base, 'x'.repeat(900));
+  assert.ok(long.length < base.length + 400, 'the sentence is bounded');
+  assert.ok(long.includes('…'), 'and visibly truncated rather than silently cut');
+  assert.ok(long.endsWith(PRELUDE_MARKER));
 });
 
 // ---------------------------------------------------------------------------

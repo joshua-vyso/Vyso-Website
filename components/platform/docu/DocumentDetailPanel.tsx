@@ -6,6 +6,7 @@ import { ConfidenceText, StatusPill } from '@/components/platform/ui';
 import { ExtractionEditor } from '@/components/platform/ExtractionEditor';
 import { OrderReviewEditor, type CustomerLite, type LinkedOrder } from './OrderReviewEditor';
 import { ApprovalActions } from './ApprovalActions';
+import { DocumentPreview } from './DocumentPreview';
 import { DocumentRename } from './DocumentRename';
 import { FolderPicker } from './FolderPicker';
 import { PushToButton } from './PushToButton';
@@ -83,26 +84,9 @@ export function DocumentDetailPanel({
         <span className="truncate text-[12px] text-[#A0A49C]">{doc.filename}</span>
       </div>
       <div className="p-4">
-        {originalUrl ? (
-          isImage ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={originalUrl}
-              alt="Original document"
-              className="max-h-[calc(100vh-16rem)] w-full rounded-xl border border-[#EAEDF2] object-contain"
-            />
-          ) : (
-            <iframe
-              src={originalUrl}
-              title="Original document"
-              className="h-[calc(100vh-16rem)] min-h-[420px] w-full rounded-xl border border-[#EAEDF2]"
-            />
-          )
-        ) : (
-          <div className="flex min-h-[50vh] items-center justify-center rounded-xl border border-dashed border-[#EAEDF2] bg-[#F5F9FE]">
-            <span className="text-[13px] text-[#8A8E86]">Preview unavailable</span>
-          </div>
-        )}
+        {/* Same component the Review chat's document pane draws, at this page's
+            own size — see DocumentPreview.tsx for why it is one component. */}
+        <DocumentPreview url={originalUrl} isImage={isImage} filename={doc.filename} />
       </div>
     </div>
   );

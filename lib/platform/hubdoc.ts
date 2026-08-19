@@ -4,6 +4,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createServiceSupabase } from './supabase-service';
 import { isMissingRelation, isUniqueViolation } from './db-errors';
 import { documentNumber, type DocWatchExtracted } from './doc-watch/detect';
+import { xeroConnectionStatus } from './plugins-data';
+import { xeroStatusTone } from './plugins';
 import {
   buildHubdocEmail,
   hubdocEligibility,
@@ -13,6 +15,7 @@ import {
   type HubdocEmail,
   type HubdocForwardEntry,
 } from './hubdoc-shared';
+import type { HubdocDocumentState } from '@/components/platform/docu/SendToHubdoc';
 
 /**
  * Hubdoc cross-upload — the half that touches the world. Reads the org's intake
@@ -230,6 +233,65 @@ export async function hubdocSentDocumentIds(
     .returns<{ document_id: string }[]>();
   if (error) return new Set();
   return new Set((data ?? []).map((r) => r.document_id));
+}
+
+/**
+ * Resolve the "Send to Hubdoc" control's state for one document, or null to draw
+ * nothing at all.
+ *
+ * LIFTED VERBATIM out of `app/app/docu/[id]/page.tsx`, where it began life as a
+ * private helper, because Review v2's document pane must offer this button on
+ * exactly the same terms — the plan's words are "only when X2's button would
+ * render". A route file may not export a helper (Next only permits the names the
+ * framework knows), so the choice was between moving it here and writing a
+ * second copy of the gates; a second copy is how a control ends up appearing on
+ * one screen and not the other for the same document.
+ *
+ * THREE GATES BEFORE ANY READ HAPPENS, cheapest first: the caller's role, then
+ * the org's Xero connection, then its Hubdoc address. Each short-circuits, so a
+ * member pays for nothing and an org that has never heard of Hubdoc pays for one
+ * small select.
+ *
+ * A DEGRADED XERO CONNECTION STILL COUNTS AS CONNECTED, deliberately.
+ * `xeroStatusTone` folds `error`/`reauth_required` into "needs attention" — the
+ * ledger cannot be read, but Hubdoc is a different system on a different
+ * transport, and hiding the way to file a bill because a token expired would
+ * punish the owner for the outage rather than help them through it. Only "not
+ * connected at all" removes the control, because Hubdoc without Xero is a
+ * cross-upload to nowhere the plugin can see.
+ *
+ * SOFT ON EVERYTHING. Every read below already degrades to "not set up".
+ */
+export async function hubdocStateForDocument(
+  supabase: SupabaseClient,
+  orgId: string,
+  documentId: string,
+  facts: {
+    documentType: string | null;
+    status: string | null;
+    supplierId: string | null;
+    storagePath: string | null;
+    canSend: boolean;
+  },
+): Promise<HubdocDocumentState | null> {
+  if (!facts.canSend) return null;
+
+  const tone = xeroStatusTone(await xeroConnectionStatus(orgId));
+  if (tone === 'idle') return null;
+
+  const settings = await loadHubdocSettings(supabase, orgId);
+  if (!settings.intakeEmail) return null;
+
+  const eligibility = hubdocEligibility({
+    documentType: facts.documentType,
+    status: facts.status,
+    supplierId: facts.supplierId,
+    storagePath: facts.storagePath,
+  });
+  if (!eligibility.ok) return { alreadySent: false, reason: eligibility.reason };
+
+  const sent = await hubdocSentDocumentIds(supabase, orgId, [documentId]);
+  return { alreadySent: sent.has(documentId), reason: null };
 }
 
 // ---------------------------------------------------------------------------

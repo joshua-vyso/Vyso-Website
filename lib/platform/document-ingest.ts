@@ -377,6 +377,45 @@ export async function commitDocument(
   return { ok: true, documentId };
 }
 
+/**
+ * Discard a document from the review queue: mark it rejected, leaving it in the
+ * table for audit. Nothing was ever committed, so there is nothing to reverse.
+ *
+ * LIFTED OUT OF `app/api/docu/review/route.ts` UNCHANGED — same patch, same
+ * three predicates, same 404 sentence — because Review v2's pane offers the same
+ * decision and a second copy of this UPDATE would be a second opinion about what
+ * "discard" means. The route now calls this; so does `approveReviewItems`'s
+ * sibling. One write path, one set of guards.
+ *
+ * THE CLAIM GUARD IS WHY THE `.or()` IS HERE. A Discard that could win a race
+ * against an in-flight Save would leave the document 'rejected' while its stock
+ * and invoice side effects had already run — the one outcome neither screen may
+ * produce. `commitDocument` takes the same predicate for the same reason.
+ */
+export async function discardDocument(
+  supabase: SupabaseClient,
+  params: { documentId: string; orgId: string; userId: string },
+): Promise<{ ok: true; documentId: string } | { ok: false; status: number; error: string }> {
+  const { documentId, orgId, userId } = params;
+  const staleBefore = new Date(Date.now() - COMMIT_STALE_MS).toISOString();
+
+  const { data: updated, error } = await supabase
+    .from('documents')
+    .update({ status: 'rejected', reviewed_by: userId, reviewed_at: new Date().toISOString() })
+    .eq('id', documentId)
+    .eq('org_id', orgId)
+    .in('status', ['extracted', 'pending'])
+    .or(reviewClaimableOr(staleBefore))
+    .select('id')
+    .maybeSingle();
+
+  if (error) return { ok: false, status: 500, error: error.message };
+  if (!updated) {
+    return { ok: false, status: 404, error: 'That document is not in your queue, or is being saved.' };
+  }
+  return { ok: true, documentId };
+}
+
 export type IngestDocumentResult =
   | {
       ok: true;

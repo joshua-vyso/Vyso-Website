@@ -572,6 +572,71 @@ html, body {
   .vyso-pulse { animation: none; }
 }
 
+/* ── Review v2: the chain moves aside (.ai/plan_review_v2.md §1.2) ─────────
+   Josh's ask, verbatim: "review chain centred on open, moves left and the
+   expanded view appears on the right; close returns it to centre in a fluid
+   animation".
+
+   NOTHING HERE MOVES THE CHAIN. That is the trick, and it is why this is four
+   rules rather than a pile of magic offsets: the chain is a centred column in a
+   `justify-content:center` flex row, and the PANE'S TRACK grows from zero beside
+   it. Re-centring the row is what carries the chain left, so the two halves can
+   never disagree about where the middle is, and the chain needs no transform,
+   no measured width and no resize listener. Closing runs the same rule
+   backwards. `flex-basis` is the one non-compositor property in this block and
+   it is the one the plan names.
+
+   The PANE ITSELF fades and slides in on transform/opacity, a beat behind the
+   track, so the detail arrives as the space for it finishes opening rather than
+   sliding along an edge that is still moving.
+
+   REDUCED MOTION KEEPS THE LAYOUT AND DROPS THE TIME. Every rule below still
+   applies at its end state — the pane still appears to the right, the chain is
+   still off-centre — because that arrangement IS the information. Only the
+   interpolation goes. */
+.review-split {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+.review-pane-track {
+  flex: 0 0 0px;
+  overflow: hidden;
+  /* 320ms, the plan's figure, on the shell's own soft ease. */
+  transition: flex-basis 0.32s var(--ease-out-soft);
+}
+.review-pane-track[data-open='true'] {
+  /* Clamped rather than fixed: a 1280px laptop cannot afford 720 + 560 beside a
+     216px rail, and a pane that forces a horizontal scrollbar is worse than a
+     narrower one. The chain shrinks from its 720 max on the same squeeze. */
+  flex-basis: clamp(360px, 44%, 560px);
+}
+.review-pane {
+  opacity: 0;
+  transform: translateX(16px);
+  transition:
+    opacity var(--dur-fade) var(--ease-standard),
+    transform 0.32s var(--ease-out-soft);
+}
+.review-pane-track[data-open='true'] .review-pane {
+  opacity: 1;
+  transform: translateX(0);
+}
+/* Below lg the pane is a bottom sheet: same content, same actions, off the
+   bottom edge instead of the right one (plan §1.7). */
+.review-sheet {
+  transform: translateY(100%);
+  transition: transform 0.32s var(--ease-out-soft);
+}
+.review-sheet[data-open='true'] {
+  transform: translateY(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .review-pane-track,
+  .review-pane,
+  .review-sheet { transition: none; }
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    PLATFORM (in-app) DESIGN TOKENS — "Brief" reskin, Wave 1
    ══════════════════════════════════════════════════════════════════════════

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { resolveUser } from '@/lib/ai/auth';
-import { commitDocument, COMMIT_STALE_MS, reviewClaimableOr } from '@/lib/platform/document-ingest';
+import { commitDocument, discardDocument } from '@/lib/platform/document-ingest';
 
 export const maxDuration = 120;
 
@@ -43,22 +43,12 @@ export async function POST(req: Request) {
   }
 
   if (action === 'discard') {
-    // Soft reject — scoped to the caller's org, and only from a state that is free to
-    // act on. The same claimable predicate the Save uses means a Discard can never win a
-    // race against an in-flight Save (approved_at freshly stamped): it would leave the
-    // document 'rejected' while its stock/invoice side effects had already run.
-    const staleBefore = new Date(Date.now() - COMMIT_STALE_MS).toISOString();
-    const { data: updated } = await auth.supabase
-      .from('documents')
-      .update({ status: 'rejected', reviewed_by: auth.userId, reviewed_at: new Date().toISOString() })
-      .eq('id', id)
-      .eq('org_id', orgId)
-      .in('status', ['extracted', 'pending'])
-      .or(reviewClaimableOr(staleBefore))
-      .select('id')
-      .maybeSingle();
-    if (!updated) {
-      return NextResponse.json({ error: 'That document is not in your queue, or is being saved.' }, { status: 404 });
+    // Soft reject — the write itself, its org scoping and its claim guard now live in
+    // `discardDocument` (document-ingest.ts), so the Review chat's pane and this route
+    // cannot drift into two opinions about what a discard does.
+    const discarded = await discardDocument(auth.supabase, { documentId: id, orgId, userId: auth.userId });
+    if (!discarded.ok) {
+      return NextResponse.json({ error: discarded.error }, { status: discarded.status });
     }
     return NextResponse.json({ ok: true, id, action });
   }

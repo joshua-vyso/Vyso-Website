@@ -48,15 +48,74 @@ export const REVIEW_CAP = 25;
 export const REVIEW_OVERFLOW_HREF = '/app/docu/review';
 
 /** What kind of thing needs a decision. Extensible: a new source adds a kind
- *  here, a `load()` in REVIEW_SOURCES, and a group label below. */
+ *  here, a `load()` in REVIEW_SOURCES, and a task below. */
 export type ReviewKind = 'document' | 'quote_request';
 
-/** The order the opening card draws its groups in, and their headings.
- *  Documents first: they are the ones with money already attached. */
-export const REVIEW_GROUPS: readonly { kind: ReviewKind; label: string }[] = [
-  { kind: 'document', label: 'Documents' },
-  { kind: 'quote_request', label: 'Quote requests' },
+/* ── Modules and tasks (Review v2) ──────────────────────────────────────────
+ *
+ * The chain groups by MODULE, then by TASK, because that is how the owner
+ * thinks about the work: "the Doc-U pile" and, inside it, "the invoices" as
+ * distinct from "the ones it could not read". v1 grouped by KIND, which happened
+ * to look the same while there were exactly two kinds and one task each.
+ *
+ * `approvable` IS THE LOAD-BEARING FIELD, and it is a fact about the module, not
+ * a preference. A task is approvable only when the module it belongs to has a
+ * function that approves one of its items in one call. Two tasks do not:
+ *
+ *   - `docu:flagged` — a flagged document is `status='error'`, and `commitDocument`
+ *     claims only `status in ('extracted','pending')`. Doc-U has no "approve a
+ *     document it could not read" action, because there is nothing extracted to
+ *     commit; the person has to open it and say what it is. So: no Approve
+ *     button, no "Approve all", and the pane offers "View in Doc-U" alone.
+ *   - `orderflow:quotes` — the Quotes screen's actions are "Draft a quote"
+ *     (a human writing a priced document) and "Dismiss". Neither is an approval,
+ *     and batching Dismiss across a task header would bin real leads on one
+ *     click. Quote requests are therefore never part of any batch.
+ *
+ * This is why the master button says "Approve all you can (N)" whenever N is
+ * short of the queue total — see `approveAllLabel` in `review-actions-shared.ts`.
+ */
+export type ReviewModuleKey = 'docu' | 'orderflow';
+
+export type ReviewTaskId = 'docu:invoices' | 'docu:statements' | 'docu:flagged' | 'orderflow:quotes';
+
+export interface ReviewTask {
+  id: ReviewTaskId;
+  module: ReviewModuleKey;
+  label: string;
+  /** True when the module owns a one-call approve for every item in this task. */
+  approvable: boolean;
+}
+
+/** The order the chain draws modules in. Doc-U first: those are the ones with
+ *  money already attached. */
+export const REVIEW_MODULES: readonly { key: ReviewModuleKey; label: string }[] = [
+  { key: 'docu', label: 'Doc-U' },
+  { key: 'orderflow', label: 'OrderFlow' },
 ];
+
+/**
+ * The order the chain draws tasks in, within their module.
+ *
+ * THERE IS NO "NEW ORDERS" TASK. The plan asked for one "only if the existing
+ * data model has an unconfirmed-order concept; otherwise omit the sub-group,
+ * don't invent". `of_orders.status` does have a 'draft', but nothing reads it as
+ * a decision queue — there is no screen listing drafts awaiting confirmation and
+ * no source for them in `REVIEW_SOURCES` — so inventing the group here would
+ * have meant inventing the queue behind it. Omitted, and recorded.
+ */
+export const REVIEW_TASKS: readonly ReviewTask[] = [
+  { id: 'docu:invoices', module: 'docu', label: 'Invoices to approve', approvable: true },
+  { id: 'docu:statements', module: 'docu', label: 'Statements', approvable: true },
+  { id: 'docu:flagged', module: 'docu', label: 'Flagged — Vyso could not read these', approvable: false },
+  { id: 'orderflow:quotes', module: 'orderflow', label: 'Quote requests', approvable: false },
+];
+
+/** Look a task up by id. Returns undefined for an id no build knows, which the
+ *  grouping treats as "drop the item" rather than inventing a heading. */
+export function reviewTask(id: ReviewTaskId): ReviewTask | undefined {
+  return REVIEW_TASKS.find((t) => t.id === id);
+}
 
 export interface ReviewAction {
   label: string;
@@ -69,6 +128,11 @@ export interface ReviewAction {
 export interface ReviewItem {
   kind: ReviewKind;
   id: string;
+  /** Which module's screen finishes this item, and which pile inside it. Both
+   *  are set by the `reviewItemFor*` builders so the grouping is a fact about
+   *  the row, not a re-derivation the chain has to keep in step. */
+  module: ReviewModuleKey;
+  task: ReviewTaskId;
   title: string;
   /** One line saying WHY it is here. Never empty — an item with no reason is
    *  an item the owner has to open to understand. */
@@ -155,11 +219,37 @@ export function reviewDocumentDetail(row: ReviewDocumentRow): string {
   return `Extracted, waiting for your approval.${low}`;
 }
 
+/**
+ * Which Doc-U pile this document belongs in.
+ *
+ * FLAGGED IS DECIDED BY STATUS ALONE, not by confidence, and that is the whole
+ * reason this function exists rather than a ternary at the call site. The plan
+ * called the third task "Flagged / low confidence", but the two are not the same
+ * kind of thing: a flagged document is `status='error'` and CANNOT be committed
+ * (`commitDocument` claims only 'extracted'/'pending'), whereas a low-confidence
+ * one is a perfectly ordinary extracted document that simply deserves a longer
+ * look. Folding low confidence into a non-approvable task would have taken the
+ * Approve button away from documents Doc-U is entirely willing to approve. So a
+ * low-confidence document stays in its type's task, and its confidence is said
+ * on the row (`reviewDocumentDetail`) and again in the pane.
+ *
+ * The raw `document_type` column decides invoice-vs-statement, not
+ * `documentTypeLabel` — a user-set `custom_type` renames what is on screen, but
+ * the pile a document is filed in should not move because someone typed
+ * "Market sheet" over it.
+ */
+export function reviewDocumentTask(row: Pick<ReviewDocumentRow, 'status' | 'document_type'>): ReviewTaskId {
+  if (row.status === 'error') return 'docu:flagged';
+  return row.document_type === 'statement' ? 'docu:statements' : 'docu:invoices';
+}
+
 export function reviewItemForDocument(row: ReviewDocumentRow): ReviewItem {
   const href = `/app/docu/${row.id}`;
   return {
     kind: 'document',
     id: row.id,
+    module: 'docu',
+    task: reviewDocumentTask(row),
     title: reviewDocumentTitle(row),
     detail: reviewDocumentDetail(row),
     href,
@@ -214,6 +304,8 @@ export function reviewItemForQuoteRequest(row: ReviewQuoteRequestRow): ReviewIte
   return {
     kind: 'quote_request',
     id: row.id,
+    module: 'orderflow',
+    task: 'orderflow:quotes',
     title: reviewQuoteWho(row),
     detail: reviewQuoteDetail(row),
     href,
@@ -253,6 +345,69 @@ export function shapeReviewQueue(items: readonly ReviewItem[]): ReviewQueue {
     total: withTime.length,
     truncated: withTime.length > REVIEW_CAP,
   };
+}
+
+/* ── Grouping (Review v2) ───────────────────────────────────────────────── */
+
+export interface ReviewTaskGroup {
+  task: ReviewTask;
+  items: ReviewItem[];
+  /** How many of `items` a batch approve would actually send. `items.length`
+   *  for an approvable task, 0 otherwise — never a partial count, because
+   *  approvability is a property of the task, not of the row. */
+  approvable: number;
+}
+
+export interface ReviewModuleGroup {
+  key: ReviewModuleKey;
+  label: string;
+  tasks: ReviewTaskGroup[];
+  count: number;
+  approvable: number;
+}
+
+/**
+ * The queue, arranged as the chain draws it: module → task → items.
+ *
+ * ORDER IS FIXED BY THE CONSTANTS, NOT BY THE DATA. Modules follow
+ * `REVIEW_MODULES` and tasks follow `REVIEW_TASKS`, so the chain does not
+ * reshuffle itself as items are approved — a heading that moves under the
+ * cursor between one click and the next is how a batch approve becomes the
+ * wrong batch approve. Items keep the order `shapeReviewQueue` gave them
+ * (newest first) inside their task.
+ *
+ * EMPTY GROUPS ARE DROPPED, at both levels: a module with nothing waiting is
+ * absent, not a heading with a zero beside it. An item whose task id no build
+ * recognises is dropped too — silently listing it under a heading invented on
+ * the spot would be worse than the item being one refresh late.
+ */
+export function groupReviewQueue(items: readonly ReviewItem[]): ReviewModuleGroup[] {
+  const groups: ReviewModuleGroup[] = [];
+
+  // `owner`, not `module`: `@next/next/no-assign-module-variable` forbids binding
+  // that name even in a `for…of`, because in a CommonJS chunk it shadows the
+  // real `module` object.
+  for (const owner of REVIEW_MODULES) {
+    const tasks: ReviewTaskGroup[] = [];
+
+    for (const task of REVIEW_TASKS) {
+      if (task.module !== owner.key) continue;
+      const inTask = items.filter((i) => i.task === task.id);
+      if (inTask.length === 0) continue;
+      tasks.push({ task, items: inTask, approvable: task.approvable ? inTask.length : 0 });
+    }
+
+    if (tasks.length === 0) continue;
+    groups.push({
+      key: owner.key,
+      label: owner.label,
+      tasks,
+      count: tasks.reduce((n, t) => n + t.items.length, 0),
+      approvable: tasks.reduce((n, t) => n + t.approvable, 0),
+    });
+  }
+
+  return groups;
 }
 
 /** The card's heading. "Review · 3 items" — a count, because the whole promise
@@ -314,6 +469,41 @@ export function reviewChatContext(queue: ReviewQueue): string {
     ...lines,
     `${more}${PRELUDE_END}`,
   ].join('\n');
+}
+
+/** Ceiling on the "currently open" sentence. Generous enough for a supplier, a
+ *  type and a reason; short enough that it cannot crowd out the queue it is
+ *  appended to. */
+const MAX_REVIEW_FOCUS_CHARS = 300;
+
+/**
+ * Name the item the owner has open, inside the queue prelude
+ * (`.ai/plan_review_v2.md` §1.6).
+ *
+ * SPLICED IN BEFORE THE MARKER, NOT APPENDED AFTER IT. `PRELUDE_END` is what
+ * `/api/ai/agent` searches for to strip the whole envelope back off the message
+ * before storing it (`stripBriefPrelude`); a sentence added after it would be
+ * left behind in the transcript, and the owner would see their own question
+ * prefixed with a line they never typed. So the marker stays last, always.
+ *
+ * A CONTEXT WITH NO MARKER IS RETURNED UNTOUCHED rather than repaired. That
+ * combination cannot happen today — `reviewChatContext` either returns '' or
+ * ends with the marker — and if it ever does, the failure that matters is the
+ * missing marker, not the missing sentence.
+ *
+ * Still framed as DATA. It says what is on screen; it does not ask for anything.
+ */
+export function withReviewFocus(context: string, focus: string | null | undefined): string {
+  const line = focus?.trim().replace(/\s+/g, ' ');
+  if (!context || !line) return context;
+
+  const at = context.lastIndexOf(PRELUDE_END);
+  if (at < 0) return context;
+
+  const clamped =
+    line.length > MAX_REVIEW_FOCUS_CHARS ? `${line.slice(0, MAX_REVIEW_FOCUS_CHARS - 1)}…` : line;
+
+  return `${context.slice(0, at)}\n(The user has this one open on their screen right now: ${clamped})${context.slice(at)}`;
 }
 
 /* ── Which review chat ──────────────────────────────────────────────────── */
