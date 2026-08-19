@@ -4056,3 +4056,190 @@ registry's shape is covered by `tsc` and by the route, not by a test.
 `npx tsc --noEmit` clean · `npm test` **736 pass / 0 fail** (724 + 12) ·
 `npm run build` clean · `npx eslint .` **50 errors, 40 warnings** — byte-identical
 to the pre-change baseline; none of the touched files contribute.
+
+# Orbit subsite — WhatsApp operations for tradespeople, at `/orbit` (2026-08-19, branch `main`)
+
+Plan: `.ai/plan_orbit_site.md` (approved by Josh 2026-08-19). Built in full: 24
+indexable routes, a hand-built WhatsApp chat component, a scroll-driven
+sequence, a dark theme scope over the existing Finch design system, and the SEO
+surface (metadata, JSON-LD, sitemap, `/llms.txt`) that the plan asks for.
+
+## Routes
+
+Nine standing pages plus three generated sets:
+
+`/orbit` · `/orbit/how-it-works` · `/orbit/pricing` · `/orbit/faq` ·
+`/orbit/waitlist` · `/orbit/for` · `/orbit/for/[trade]` (×10) ·
+`/orbit/compare/[slug]` (×2) · `/orbit/learn` · `/orbit/learn/[slug]` (×3).
+
+All 24 prerender at build time; `generateStaticParams` on each dynamic segment
+returns a closed list, so the build output *is* the route list.
+
+## Decisions the plan left open
+
+**Two routes the plan did not name.** `/orbit/for` and `/orbit/learn` exist as
+hubs. The plan lists `/orbit/for/[trade]` and a "For trades ▾" nav item but no
+parent, and lists three articles under `/orbit/learn/*` but no index — a nav
+item whose parent path 404s is a hole, and ten (or three) leaf pages with no
+shared parent are orphans in the internal link graph. Both hubs are one screen,
+carry `CollectionPage` + `ItemList`, and are in the sitemap.
+
+**`.orbit-site` remaps the paper roles only, and `--fn-ink` is deliberately not
+one of them.** `--fn-ink` looks like "the text colour" and on the Finch surface
+it is — but it is also the *fill* of every `ground="ink"` band (`Band.tsx`'s
+`SURFACE.ink` is `bg-fn-ink`). Remapping it to warm-white would have turned
+every dark band on the subsite into a paper one. So the ink and blue ground
+ramps are used exactly as the Finch system defines them, and only `--fn-bg`,
+`--fn-surface(-2)`, `--fn-line*`, `--fn-muted*`, `--fn-faint` and `--fn-ink-2/-3`
+move. The `--ob-*` palette itself sits on `:root`, not on the scope, because
+the canvas devices resolve their stroke colour against `document.documentElement`
+(`ground/canvas-stage.ts`) and would never see a scoped value.
+
+**No `underNav` on any Orbit hero.** `Band`'s `underNav` pulls a dark hero up by
+`FinchNav`'s measured height (76/92px). `OrbitNav` is 62/78px tall, so that pull
+clipped 14px off the top of the hero. It is not needed: `.orbit-site` paints
+`--ob-bg` on the shell, so the nav already stands on the hero band's own colour.
+
+**`OrbitNav` is labelled `aria-label="Orbit"`, not `"Primary"`.** `globals.css`
+inverts `nav[aria-label="Primary"]` over dark bands, including
+`filter: invert(1)` on any `<img>` inside it — a rule written because the Vyso
+wordmark is dark artwork. Orbit's wordmark is *already* the light variant, so
+that filter would have inverted it back to near-black. Labelling the landmark
+`Orbit` opts the whole nav out of a paper-first rule and states its colours once.
+
+**"Adjacent bands never share a ground" is honoured by fill, not by name.**
+The design system has two dark grounds and Orbit has no paper one, so
+consecutive `ground="ink"` bands alternate between `--ob-bg` and `--ob-bg-2`.
+`ground` stays accurate for `NavGround`'s sake even where `className` sets the
+fill.
+
+**The hairline is once per page, at the close.** §2 rules the orange→blue
+`SeamHairline` to one per page; it lives in `WaitlistBand`, which every page
+ends on, and nowhere else.
+
+**Pricing: no offer was invented.** The plan asked whether waitlist members get
+a first month free. Absent a decision, the site says the true thing — joining
+the waitlist locks founding pricing — and `/orbit/pricing` states explicitly
+that there is no free month, discount or trial *because none has been decided*.
+VAT is quoted as `ORBIT.price.vatNote`: "VAT-inclusive pricing confirmed at
+launch."
+
+**The email field is optional; WhatsApp is required.** The plan asks for an
+optional email, and `/api/contact` required one. Rather than add a second
+mail-sending endpoint, that handler gained an `isOrbit` branch: name +
+`whatsapp` are the required set, `email` is validated only when present, the
+auto-reply is skipped when there is no address, and Orbit gets its own short
+auto-reply instead of the standing "book a 15-minute call" one — which is the
+wrong thing to send someone who joined a waitlist for an unreleased product.
+Two new capped/escaped fields, `trade` and `city`. Finch's three variants are
+byte-for-byte unchanged in their required set, subject lines and reply.
+
+**The OG lockup is drawn, not loaded.** `public/orbit/orbit-primary-dark.svg` is
+a 4.5KB vector trace; getting it into satori means either reading `public/` at
+render time or pasting thousands of path coordinates into a source file.
+`lib/og/orbit.tsx` rebuilds the mark from an arc and a dot and sets "rbit" in
+STIX beside it — which is what the logo does, the mark replacing the O. It is a
+reconstruction of the lockup, not a copy of the artwork.
+
+**Two extra files beyond the plan's list.** `lib/analytics.ts` gains
+`orbit_waitlist_submit` (carrying the trade **slug** only — never a typed
+field). `components/finch/FinchFooter.tsx` gains one "Orbit" link beside the nav
+link the plan asks for, so the subsite is reachable from the bottom of every
+marketing page as well as the top.
+
+## The WhatsApp phone
+
+`components/orbit/WhatsAppPhone.tsx`, hand-built in HTML/CSS: status bar,
+header with avatar and "online", an abstract doodle wallpaper as a CSS
+background tile (ours — not a trace of Meta's artwork), outgoing green bubbles
+with read ticks, incoming white bubbles with structured label/value rows,
+in-bubble timestamps, an inert compose bar and a home indicator, inside a frame
+with a dynamic island. No screenshots of any real client anywhere on the
+subsite; `ORBIT.trademark` is rendered in the footer of every page.
+
+The module carries **no `"use client"` directive** on purpose: `OrbitSequence`
+(a client component) and eight server pages import the same `Bubble`,
+`ChatHeader` and `PhoneFrame`, so the two renders cannot drift. The frame is
+`role="img"` with each script's own `alt` — a screen reader gets one sentence
+describing the conversation rather than a stream of bubbles and tick glyphs,
+while the text stays in the DOM for crawlers.
+
+Every conversation comes from `lib/orbit/sequences.ts` or a trade's own `chat`;
+no chat copy is written inline anywhere. Times are strings, never `new Date()`.
+
+## The sequence
+
+`components/orbit/OrbitSequence.tsx`: a 320vh wrapper with a sticky stage, the
+phone on the left playing the flagship exchange as `scrollYProgress` advances,
+and the job record + draft invoice assembling on the right. Same mechanism as
+`ScrollSequence` (`useScroll` + `useTransform`), with three differences, all
+documented in the file: it is shorter, it is direction-agnostic (a conversation
+reads one way), and the stage is a flex layout rather than a fixed 1160×710
+canvas scaled to fit — the chat text *is* the content and must not render at
+0.7×.
+
+**The first message and the record column's heading are not beats.** The first
+version revealed all four messages, which meant the pinned stage opened on an
+empty phone next to an empty column. The tradesperson's message is the premise;
+Orbit's answers are what is worth revealing.
+
+Storyboard fallback on the server render, below `lg`, under reduced motion, and
+on viewports under 760px tall (where a sticky 100vh stage would clip the phone).
+
+## Verification
+
+`.ai/verification/orbit/` — 57 screenshots plus two text reports. Captured by
+driving headless Chrome over CDP with Node 22's built-in `WebSocket` (no new
+dependency): every one of the 22 crawlable routes at 1440×900 and 390×844, four
+scrubbed frames of the sequence (t=0.25/0.50/0.75/1.0), the reduced-motion
+storyboard at both widths, and seven OG images at 1200×630. Desktop shots are
+downscaled to 1152 and everything is JPEG, to keep the folder at 5.2MB.
+
+`crawl-and-jsonld.txt` — 32 URLs reached by following every internal link out of
+the nine Orbit seeds, **all 200**; a head-tag table (every title ≤ 59 characters
+rendered, every description ≤ 155, exactly one `<h1>`, canonical + OG + Twitter
+on all 22, `robots: index, follow` everywhere); every `application/ld+json`
+block parsed; and a check that **every Orbit offer node is `PreOrder`** — the
+site-wide Finch/audit offers stay `InStock`, correctly, since those are things
+you can buy today. 22 Orbit URLs in the sitemap, all resolving; `## Orbit`
+sections present in both `/llms.txt` and `/llms-full.txt`.
+
+The crawl is what caught four trade titles over the 60-character budget once the
+root layout's " | Vyso" suffix was added; `Trade.metaTitle` now documents the
+53-character ceiling.
+
+**The waitlist form was not submitted.** `/api/contact` sends real mail through
+Resend, so only client-side validation was exercised: the empty form is invalid,
+`name`/`trade`/`whatsapp` are the required set, an empty email is valid and a
+malformed one is not, every input has a matching `<label for>`, and clicking
+submit on an incomplete form fires **no** network request (verified by wrapping
+`window.fetch` and observing zero calls).
+
+`lighthouse.txt` — against `npm run start` on a local production build.
+
+## Not verified
+
+**No email has been sent and nothing has been posted to `/api/contact`.** The
+`isOrbit` branch in that route is typechecked and reasoned about, not observed:
+no test covers it (the handler reaches Resend and the rate limiter, so
+`node --test` cannot import it) and submitting the form would have mailed a real
+person.
+
+**The mobile Lighthouse score is 79, against §9's ≥ 90 target.** The Finch
+homepage measures 78 on the same server, and the FCP (1.2s), LCP (5.6s) and CLS
+(0) are identical across `/`, `/orbit` and `/orbit/pricing` — so this is the
+shared font/JS payload and the absence of a CDN in front of localhost, not
+something Orbit added. It is not a regression, and it is not a pass either;
+the target is a production-environment measurement that has not been taken.
+
+**The OG images were rendered and looked at, never fetched by a real crawler.**
+`lib/og/fonts.ts` fetches from Google on first render and falls back silently;
+that fallback path was not exercised.
+
+## Gates
+
+`npx tsc --noEmit` clean · `npm test` **736 pass / 0 fail** (unchanged — no test
+covers marketing pages) · `npm run build` clean, all 24 Orbit routes prerendered
+· `npm run lint` **50 errors, 40 warnings**, byte-identical to the pre-change
+baseline; `npx eslint app/orbit components/orbit lib/orbit lib/og/orbit.tsx`
+reports **zero** problems.

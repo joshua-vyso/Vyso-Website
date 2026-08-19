@@ -1,0 +1,108 @@
+
+=== CRAWL: 32 URLs reached from the Orbit pages ===
+all 200
+
+=== HEAD TAGS (orbit routes) ===
+title_len | desc_len | h1 | canonical | route | title
+       43 |      145 | 1  | y         | /orbit
+       49 |      134 | 1  | y         | /orbit/compare/orbit-vs-job-management-apps
+       45 |      134 | 1  | y         | /orbit/compare/orbit-vs-spreadsheets
+       48 |      141 | 1  | y         | /orbit/faq
+       48 |      139 | 1  | y         | /orbit/for
+       51 |      138 | 1  | y         | /orbit/for/builders
+       55 |      132 | 1  | y         | /orbit/for/carpenters
+       49 |      147 | 1  | y         | /orbit/for/electricians
+       57 |      146 | 1  | y         | /orbit/for/handymen
+       56 |      135 | 1  | y         | /orbit/for/landscapers
+       58 |      137 | 1  | y         | /orbit/for/painters
+       49 |      148 | 1  | y         | /orbit/for/plumbers
+       53 |      143 | 1  | y         | /orbit/for/roofers
+       53 |      132 | 1  | y         | /orbit/for/solar-installers
+       59 |      139 | 1  | y         | /orbit/for/tilers
+       50 |      145 | 1  | y         | /orbit/how-it-works
+       44 |      153 | 1  | y         | /orbit/learn
+       53 |      142 | 1  | y         | /orbit/learn/how-to-track-jobs-on-whatsapp
+       48 |      142 | 1  | y         | /orbit/learn/invoice-from-whatsapp-south-african-invoice-requirements
+       54 |      155 | 1  | y         | /orbit/learn/why-tradespeople-lose-money-between-the-job-and-the-bank
+       36 |      154 | 1  | y         | /orbit/pricing
+       30 |      139 | 1  | y         | /orbit/waitlist
+
+robots values: index, follow
+
+=== JSON-LD ===
+/orbit
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, SoftwareApplication, WebPage, BreadcrumbList, FAQPage
+/orbit/compare/orbit-vs-job-management-apps
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, WebPage, BreadcrumbList
+/orbit/compare/orbit-vs-spreadsheets
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, WebPage, BreadcrumbList
+/orbit/faq
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, WebPage, BreadcrumbList, FAQPage
+/orbit/for
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, CollectionPage, BreadcrumbList
+/orbit/for/builders
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, WebPage, BreadcrumbList, FAQPage
+/orbit/for/carpenters
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, WebPage, BreadcrumbList, FAQPage
+/orbit/for/electricians
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, WebPage, BreadcrumbList, FAQPage
+/orbit/for/handymen
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, WebPage, BreadcrumbList, FAQPage
+/orbit/for/landscapers
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, WebPage, BreadcrumbList, FAQPage
+/orbit/for/painters
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, WebPage, BreadcrumbList, FAQPage
+/orbit/for/plumbers
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, WebPage, BreadcrumbList, FAQPage
+/orbit/for/roofers
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, WebPage, BreadcrumbList, FAQPage
+/orbit/for/solar-installers
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, WebPage, BreadcrumbList, FAQPage
+/orbit/for/tilers
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, WebPage, BreadcrumbList, FAQPage
+/orbit/how-it-works
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, WebPage, HowTo, BreadcrumbList
+/orbit/learn
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, CollectionPage, BreadcrumbList
+/orbit/learn/how-to-track-jobs-on-whatsapp
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, Article, BreadcrumbList
+/orbit/learn/invoice-from-whatsapp-south-african-invoice-requirements
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, Article, BreadcrumbList
+/orbit/learn/why-tradespeople-lose-money-between-the-job-and-the-bank
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, Article, BreadcrumbList
+/orbit/pricing
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, SoftwareApplication, Product, WebPage, BreadcrumbList, FAQPage
+/orbit/waitlist
+    2 block(s): Organization, WebSite, SoftwareApplication, Service, WebPage, BreadcrumbList
+
+All JSON-LD blocks parsed.
+All 3 Orbit offer nodes are PreOrder (the site-wide Finch/audit offers stay InStock, correctly).
+
+=== SITEMAP: 22 Orbit URLs ===
+  https://vyso.co.za/orbit
+  https://vyso.co.za/orbit/how-it-works
+  https://vyso.co.za/orbit/pricing
+  https://vyso.co.za/orbit/faq
+  https://vyso.co.za/orbit/waitlist
+  https://vyso.co.za/orbit/for
+  https://vyso.co.za/orbit/compare/orbit-vs-job-management-apps
+  https://vyso.co.za/orbit/compare/orbit-vs-spreadsheets
+  https://vyso.co.za/orbit/learn
+  https://vyso.co.za/orbit/for/plumbers
+  https://vyso.co.za/orbit/for/electricians
+  https://vyso.co.za/orbit/for/tilers
+  https://vyso.co.za/orbit/for/painters
+  https://vyso.co.za/orbit/for/builders
+  https://vyso.co.za/orbit/for/handymen
+  https://vyso.co.za/orbit/for/carpenters
+  https://vyso.co.za/orbit/for/roofers
+  https://vyso.co.za/orbit/for/solar-installers
+  https://vyso.co.za/orbit/for/landscapers
+  https://vyso.co.za/orbit/learn/how-to-track-jobs-on-whatsapp
+  https://vyso.co.za/orbit/learn/invoice-from-whatsapp-south-african-invoice-requirements
+  https://vyso.co.za/orbit/learn/why-tradespeople-lose-money-between-the-job-and-the-bank
+
+=== llms.txt: 25 Orbit mentions, "## Orbit" section: true
+=== llms-full.txt: 43 Orbit mentions, "## Orbit" section: true
+
+Every Orbit sitemap URL returns 200.

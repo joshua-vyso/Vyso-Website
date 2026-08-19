@@ -23,6 +23,11 @@ const COLUMNS: { title: string; links: [string, string][] }[] = [
     title: "Vyso",
     links: [
       ["About",            "/about"],
+      // Orbit is a Vyso product, not a Finch feature — it belongs in this
+      // column rather than the one above it. Added with the nav link so the
+      // subsite is reachable from the bottom of every marketing page as well
+      // as the top, which is what makes ten trade pages crawlable.
+      ["Orbit",            "/orbit"],
       ["Operations Audit", "/operations-audit"],
       ["Founding client",  "/founding-client"],
       // Academy has no page yet; the pricing page carries the honest

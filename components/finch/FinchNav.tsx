@@ -5,7 +5,7 @@ import { MobileMenu } from "./MobileMenu";
 import { TrackedLink } from "./TrackedLink";
 
 /** Which nav item the current page is, so it can carry the active ink colour. */
-export type FinchNavSection = "industries" | "pricing" | "learn" | "none";
+export type FinchNavSection = "industries" | "pricing" | "learn" | "orbit" | "none";
 
 export type FinchNavLink = { section: FinchNavSection; href: string; label: string };
 
@@ -20,6 +20,13 @@ export const FINCH_NAV_LINKS: FinchNavLink[] = [
   { section: "industries", href: "/industries", label: "Industries" },
   { section: "pricing",    href: "/pricing",    label: "Pricing"    },
   { section: "learn",      href: "/learn",      label: "Learn"      },
+  /* Orbit — the second product surface (`.ai/plan_orbit_site.md`). One link,
+     no mega-menu: this nav has none, and Orbit's own subsite carries the
+     trades menu. Deliberately last in the row, and deliberately *not* the CTA:
+     the CTA sells the audit, which is a thing that exists today, and Orbit is
+     a waitlist. `/orbit` swaps to `OrbitNav` entirely, so no page ever shows
+     both navs. */
+  { section: "orbit",      href: "/orbit",      label: "Orbit"      },
 ];
 
 export const FINCH_NAV_CTA = { href: "/operations-audit", label: "Book your audit" };

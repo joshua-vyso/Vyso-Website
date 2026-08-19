@@ -42,6 +42,12 @@ import {
   TITLE as FOUNDING_TITLE,
   DESCRIPTION as FOUNDING_DESCRIPTION,
 } from "./founding";
+import { ORBIT_ARTICLES } from "@/lib/orbit/articles";
+import { ORBIT_COMPARISONS } from "@/lib/orbit/compare";
+import { ORBIT_FAQ_GROUPS } from "@/lib/orbit/faq";
+import { ORBIT_PLAN } from "@/lib/orbit/pricing";
+import { ORBIT, ORBIT_STATIC_ROUTES } from "@/lib/orbit/site";
+import { TRADES } from "@/lib/orbit/trades";
 
 const BASE_URL = SITE.url;
 const url = (path: string) => `${BASE_URL}${path}`;
@@ -106,6 +112,21 @@ function buildPageIndex(): PageEntry[] {
     { label: "Resources", url: url("/resources") },
     { label: FOUNDING_TITLE, url: FOUNDING_URL },
     { label: "Contact", url: url("/contact") },
+
+    /* Orbit — the second product surface, at `/orbit`. Generated from the same
+       registries `app/sitemap.ts` reads. Listed here rather than in a section
+       of its own so an engine reading only the page index still finds it; the
+       facts about Orbit have their own section below, and `/llms-full.txt`
+       carries the depth. */
+    ...ORBIT_STATIC_ROUTES.map((route) => ({ label: route.label, url: url(route.path) })),
+    ...TRADES.map((trade) => ({
+      label: `Orbit for ${trade.name.toLowerCase()}`,
+      url: url(`/orbit/for/${trade.slug}`),
+    })),
+    ...ORBIT_ARTICLES.map((article) => ({
+      label: article.title,
+      url: url(`/orbit/learn/${article.slug}`),
+    })),
   ];
 }
 
@@ -139,6 +160,16 @@ ${formatPages(pages)}
 - ${CAN_WE_CANCEL}
 - Expanded mandates (multi-entity groups, custom integrations) are priced on scope.
 - Vyso is based in ${SITE.address.addressLocality}, ${SITE.address.addressCountry === "ZA" ? "South Africa" : SITE.address.addressCountry}. It serves South African food and produce SMEs. Locale: ${SITE.locale}.
+
+## Orbit (second product — in development)
+- What Orbit is: ${ORBIT.description}
+- Status: ${ORBIT.status} Nothing about Orbit describes a shipped product; the site marks every unreleased capability as roadmap.
+- Price: ${ORBIT_PLAN.directAnswer}
+- Who it is for: one- and two-person South African trade businesses — ${TRADES.map((t) => t.name.toLowerCase()).join(", ")}.
+- How it works: ${ORBIT.promise}
+- Rule: ${ORBIT.draftsOnly} Orbit never sends anything to a customer on the user's behalf.
+- Built on: ${ORBIT.builtOn}
+- Waitlist: ${url("/orbit/waitlist")}
 
 ## Contact
 - Email: ${SITE.email}
@@ -214,6 +245,67 @@ function buildResourcesSection(): string {
   ).join("\n\n");
 }
 
+/* ── Orbit, in full ──────────────────────────────────────────────────────────
+   Same discipline as every builder above: read out of `lib/orbit/*`, never
+   retyped. The one thing this section adds that the others do not is an
+   explicit status line per subsection — an engine summarising Vyso should not
+   be able to come away describing Orbit as something a person can buy. */
+
+function buildOrbitSection(): string {
+  const trades = TRADES.map(
+    (trade) => `### Orbit for ${trade.name.toLowerCase()}\n${trade.lead}\n${url(`/orbit/for/${trade.slug}`)}`,
+  ).join("\n\n");
+
+  const faqs = ORBIT_FAQ_GROUPS.map((group) => {
+    const questions = group.questions.map((q) => `#### ${q.question}\n${q.answer}`).join("\n\n");
+    return `### ${group.title}\n\n${questions}`;
+  }).join("\n\n");
+
+  const comparisons = ORBIT_COMPARISONS.map(
+    (c) => `### ${c.h1.replace(/\.$/, "")}\n${c.answer}\n${url(`/orbit/compare/${c.slug}`)}`,
+  ).join("\n\n");
+
+  const articles = ORBIT_ARTICLES.map(
+    (a) => `### ${a.title}\n${a.standfirst}\n${url(`/orbit/learn/${a.slug}`)}`,
+  ).join("\n\n");
+
+  return `## Orbit
+
+${ORBIT.description}
+
+**Status: ${ORBIT.status}**
+
+${ORBIT.promise}
+
+${ORBIT.builtOn}
+
+${ORBIT.draftsOnly}
+
+### Pricing
+${ORBIT_PLAN.directAnswer}
+${ORBIT.price.vatNote}
+Included: ${ORBIT_PLAN.included.join("; ")}.
+Not in the first release (roadmap): ${ORBIT_PLAN.notIncluded.join("; ")}.
+${url("/orbit/pricing")}
+
+### Trades
+
+${trades}
+
+### Orbit FAQ
+
+${faqs}
+
+### Orbit comparisons
+
+${comparisons}
+
+### Orbit guides
+
+${articles}
+`;
+}
+
 export function buildLlmsFullTxt(): string {
   return `${buildLlmsTxt()}
 ---
@@ -260,5 +352,7 @@ ${buildResourcesSection()}
 
 ${FOUNDING_DESCRIPTION}
 ${FOUNDING_URL}
+
+${buildOrbitSection()}
 `;
 }

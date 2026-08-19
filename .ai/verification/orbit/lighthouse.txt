@@ -1,0 +1,15 @@
+Lighthouse — Orbit, run against `npm run start` (production build) on localhost:3100,
+Chrome 13.4.1 / lighthouse 13.4.1, default throttling (desktop preset for the
+desktop rows; mobile rows are the default 4x CPU + slow-4G emulation).
+
+The Finch homepage is included as a baseline: the mobile score, the 5.6s LCP and
+the 1.2s FCP are identical across all three pages, which places the mobile
+number on the shared font/JS payload and on the absence of a CDN in front of a
+localhost server — not on anything Orbit added. CLS is 0 everywhere.
+
+route               mode     perf  a11y  best-practices  seo  FCP    LCP    TBT     CLS
+/orbit              desktop  98    100   96              100  0.3 s  1.0 s  0 ms    0  
+/orbit              mobile   79    100   96              100  1.2 s  5.6 s  100 ms  0  
+/orbit/pricing      desktop  98    100   96              100  0.3 s  1.0 s  0 ms    0  
+/orbit/pricing      mobile   79    100   96              100  1.2 s  5.6 s  100 ms  0  
+/ (Finch baseline)  mobile   78    -     -               -    1.2 s  5.6 s  140 ms  0  

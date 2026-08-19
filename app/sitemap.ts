@@ -1,6 +1,9 @@
 import type { MetadataRoute } from "next";
 
 import { GLOSSARY_SLUGS } from "@/lib/marketing/glossary";
+import { ORBIT_ARTICLES } from "@/lib/orbit/articles";
+import { ORBIT_PUBLISHED, ORBIT_STATIC_ROUTES } from "@/lib/orbit/site";
+import { TRADES } from "@/lib/orbit/trades";
 import { LEARN_ARTICLES } from "@/lib/marketing/learn-articles";
 import { MARKETING_MODULE_SLUGS } from "@/lib/marketing/modules";
 
@@ -393,5 +396,39 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "monthly",
       priority: 0.6,
     },
+
+    /* ── Orbit ────────────────────────────────────────────────────────────
+       The `/orbit` subsite (`.ai/plan_orbit_site.md`). Generated from the same
+       three registries the pages themselves read — `ORBIT_STATIC_ROUTES`,
+       `TRADES` and `ORBIT_ARTICLES` — so a page added there appears here, and
+       in `/llms.txt`, and in the footer, without anyone remembering to.
+
+       All of them share `ORBIT_PUBLISHED`: the subsite was written in one
+       sitting and every page's real `lastmod` is that date. Same reasoning as
+       `CONTENT_LAST_MODIFIED` above, with a constant of its own because these
+       pages will move on a different clock to the Finch ones.
+
+       Priorities are below the Finch money pages deliberately. Orbit is a
+       waitlist for an unreleased product; `/pricing` and `/founding-client`
+       sell something that exists today, and the sitemap should not suggest
+       otherwise. */
+    ...ORBIT_STATIC_ROUTES.map((route) => ({
+      url: `${BASE_URL}${route.path}`,
+      lastModified: new Date(ORBIT_PUBLISHED),
+      changeFrequency: route.changeFrequency,
+      priority: route.priority,
+    })),
+    ...TRADES.map((trade) => ({
+      url: `${BASE_URL}/orbit/for/${trade.slug}`,
+      lastModified: new Date(ORBIT_PUBLISHED),
+      changeFrequency: "monthly" as const,
+      priority: 0.6,
+    })),
+    ...ORBIT_ARTICLES.map((article) => ({
+      url: `${BASE_URL}/orbit/learn/${article.slug}`,
+      lastModified: new Date(article.dateModified),
+      changeFrequency: "yearly" as const,
+      priority: 0.5,
+    })),
   ];
 }
