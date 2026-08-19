@@ -31,6 +31,8 @@ export const DEBTORS_WATCH_AGENT = 'debtors_watch';
 export const STOCK_COVER_AGENT = 'stock_cover';
 /** Agent slug for Doc Watch (C3). */
 export const DOC_WATCH_AGENT = 'doc_watch';
+/** Agent slug for Xero Watch (Plugins X1). */
+export const XERO_WATCH_AGENT = 'xero_watch';
 
 // ---------------------------------------------------------------------------
 // Debtors Watch — debtors_watch:<customer_id>:<oldest_overdue_invoice_id>
@@ -111,4 +113,62 @@ export function parseDocWatchDedupeKey(key: string): { documentId: string } | nu
   if (parts.length !== 2 || parts[0] !== DOC_WATCH_AGENT) return null;
   if (!parts[1]) return null;
   return { documentId: parts[1] };
+}
+
+// ---------------------------------------------------------------------------
+// Xero Watch — xero_watch:<rule>:<subject>:<qualifier>
+// ---------------------------------------------------------------------------
+
+/**
+ * Which of Xero Watch's five rules raised a finding.
+ *
+ * ONE SHAPE FOR ALL FIVE — `<agent>:<rule>:<subject>:<qualifier>` — rather than
+ * five bespoke formats. The Brief's evidence resolver has to read a Xero key on
+ * the render path to know WHICH invoices a card is about (`evidence_refs` is a
+ * bare uuid array and says nothing about what kind of row it points at), and a
+ * resolver that had to try five parsers in turn would fail open on the first
+ * ambiguity. A fixed arity means one parse or none.
+ *
+ * WHAT THE TWO FREE SLOTS HOLD, per rule:
+ *   health  — subject: org id,        qualifier: ISO week
+ *   missing — subject: org id,        qualifier: ISO week
+ *   ar      — subject: Xero contact,  qualifier: the oldest cited mirror invoice
+ *   ap      — subject: org id,        qualifier: ISO week
+ *   dup     — subject: Xero contact,  qualifier: the normalised invoice number
+ *
+ * WEEK-KEYED WHERE THE FACT IS A STANDING ONE (health, missing, ap): a
+ * connection that has been down since Tuesday is still down on Wednesday and the
+ * owner does not need telling twice, but a week later it is news again. Keyed on
+ * the ROW where the fact is about one specific thing (ar, dup): while the same
+ * invoice is a contact's oldest unpaid one, or the same number is duplicated,
+ * every nightly run writes the same key and the Brief keeps one card — the
+ * reasoning Debtors Watch's key already follows.
+ */
+export type XeroWatchRule = 'health' | 'missing' | 'ar' | 'ap' | 'dup';
+
+export const XERO_WATCH_RULES: readonly XeroWatchRule[] = [
+  'health',
+  'missing',
+  'ar',
+  'ap',
+  'dup',
+];
+
+export function buildXeroWatchDedupeKey(
+  rule: XeroWatchRule,
+  subject: string,
+  qualifier: string,
+): string {
+  return `${XERO_WATCH_AGENT}:${rule}:${subject}:${qualifier}`;
+}
+
+export function parseXeroWatchDedupeKey(
+  key: string,
+): { rule: XeroWatchRule; subject: string; qualifier: string } | null {
+  const parts = key.split(':');
+  if (parts.length !== 4 || parts[0] !== XERO_WATCH_AGENT) return null;
+  const [, rule, subject, qualifier] = parts;
+  if (!subject || !qualifier) return null;
+  if (!(XERO_WATCH_RULES as readonly string[]).includes(rule)) return null;
+  return { rule: rule as XeroWatchRule, subject, qualifier };
 }

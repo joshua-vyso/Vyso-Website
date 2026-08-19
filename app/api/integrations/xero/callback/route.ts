@@ -11,7 +11,11 @@ export async function GET(request: Request) {
   if (!ctx) return NextResponse.redirect(new URL('/login', request.url));
 
   const requestUrl = new URL(request.url);
-  const destination = new URL('/app/settings', request.url);
+  // Back to the PLUGIN page, not settings (Plugins X1). The connect/disconnect
+  // card moved there and `/app/settings` now carries only a link, so returning
+  // from Xero's consent screen onto settings would look like a failed
+  // connection — the `?xero_connected` notice would have nothing to render on.
+  const destination = new URL('/app/plugins/xero', request.url);
   const providerError = requestUrl.searchParams.get('error');
   const providerDescription = requestUrl.searchParams.get('error_description');
   const code = requestUrl.searchParams.get('code');

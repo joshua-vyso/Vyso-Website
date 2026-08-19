@@ -13,7 +13,8 @@ export async function GET(request: Request) {
   try {
     return NextResponse.redirect(await createXeroAuthorizationUrl(ctx));
   } catch (error) {
-    const destination = new URL('/app/settings', request.url);
+    // The plugin page, matching the callback's own destination (Plugins X1).
+    const destination = new URL('/app/plugins/xero', request.url);
     destination.searchParams.set(
       'xero_error',
       (error instanceof Error ? error.message : 'Could not connect Xero.').slice(0, 300),

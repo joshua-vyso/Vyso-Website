@@ -1,5 +1,7 @@
 import { Suspense } from 'react';
 import { VysoMark } from '@/components/platform/VysoMark';
+import type { PluginRailRow } from '@/lib/platform/plugins';
+import { Plugins } from './Plugins';
 import { RailNav } from './RailNav';
 import type { RailChat } from './RailChats';
 import { UnderTheHood } from './UnderTheHood';
@@ -31,6 +33,7 @@ export function AppRail({
   chats,
   canSeeBrief,
   modules,
+  plugins,
 }: {
   openCount: number;
   historyCount: number;
@@ -41,6 +44,10 @@ export function AppRail({
    *  chats are this person's own and every money tool below is already gated. */
   canSeeBrief: boolean;
   modules: RailModule[];
+  /** The Plugins section's rows, resolved by the layout. EMPTY for a member —
+   *  plugins are finance-grade (`canSeeMoney`), so the layout withholds the rows
+   *  rather than this component learning a second access rule (Plugins X1). */
+  plugins: PluginRailRow[];
 }) {
   return (
     <nav
@@ -88,6 +95,11 @@ export function AppRail({
       </div>
 
       <div className="flex flex-col">
+        {/* ABOVE "Under the hood", per Josh's ask (2026-08-18). Both sections
+            grow upward from their own toggle, so stacking them in DOM order
+            puts Plugins' rows above Under the hood's eyebrow when both are
+            open and leaves the two eyebrows adjacent when neither is. */}
+        <Plugins plugins={plugins} />
         <UnderTheHood modules={modules} />
         <UserChipMenu />
       </div>

@@ -8,40 +8,30 @@ import {
   type IngestEvent,
   type IngestSender,
 } from '@/components/platform/settings/EmailIngestCard';
-import {
-  XeroIntegrationCard,
-  type XeroConnectionSummary,
-} from '@/components/platform/settings/XeroIntegrationCard';
 import { BriefNotifications } from '@/components/platform/settings/BriefNotifications';
-import { canSeeBrief } from '@/lib/platform/access';
+import { canSeeBrief, canSeeMoney } from '@/lib/platform/access';
 import { listSchedules } from '@/lib/platform/brief-schedules';
 import { INGEST_DOMAIN, addressFor } from '@/lib/platform/email-ingest-policy';
-import { serviceRoleConfigured } from '@/lib/platform/supabase-service';
-import { xeroOAuthConfigured } from '@/lib/platform/xero';
 
 /**
  * Workspace settings — organisation-wide preferences reached from the profile
  * chip. Owns the organisation's units of measurement (used by Doc-U review +
  * ProcurePulse) and its email-ingestion address, plus a link to the team hub.
  */
-export default async function WorkspaceSettings({
-  searchParams,
-}: {
-  searchParams: Promise<{ xero_connected?: string; xero_error?: string }>;
-}) {
+export default async function WorkspaceSettings() {
   const session = await getPlatformSession();
   if (!session) redirect('/login');
   const orgId = session.org?.id ?? '';
 
   const db = await createServerSupabase();
-  const [settings, query] = await Promise.all([fetchSettings(db, orgId), searchParams]);
+  const settings = await fetchSettings(db, orgId);
 
   // Email ingestion. RLS scopes all three reads to the caller's org.
   //
   // Two addresses, two independent secrets: 'documents' goes to your suppliers,
   // 'quotes' goes into your website's contact form. Rows written before the purpose
   // column existed default to 'documents', which is the stricter lane.
-  const [addressRows, senderRows, eventRows, xeroConnectionRow] = await Promise.all([
+  const [addressRows, senderRows, eventRows] = await Promise.all([
     db
       .from('email_ingest_addresses')
       .select('local_part, purpose')
@@ -54,11 +44,6 @@ export default async function WorkspaceSettings({
       .eq('org_id', orgId)
       .order('created_at', { ascending: false })
       .limit(8),
-    db
-      .from('xero_connections')
-      .select('id, tenant_name, status, last_synced_at')
-      .eq('org_id', orgId)
-      .maybeSingle(),
   ]);
 
   const addresses = (addressRows.data ?? []) as { local_part: string; purpose: string | null }[];
@@ -106,13 +91,27 @@ export default async function WorkspaceSettings({
           events={(eventRows.data ?? []) as IngestEvent[]}
         />
 
-        <XeroIntegrationCard
-          configured={xeroOAuthConfigured && serviceRoleConfigured}
-          canManage={canManage}
-          connection={(xeroConnectionRow.data as XeroConnectionSummary | null) ?? null}
-          notice={query.xero_connected ? `Connected ${query.xero_connected}` : null}
-          initialError={query.xero_error ?? null}
-        />
+        {/* Xero moved to Plugins (X1). This page keeps a POINTER rather than a
+            second copy of the card, because two screens that can both connect an
+            accounting system are two screens that can disagree about whether it
+            is connected — and the OAuth round-trip now returns to the plugin
+            page, so a card here would also be the wrong place to land. Shown
+            only to owners/admins: the plugin routes are gated on `canSeeMoney`
+            and a link a member cannot follow is worse than no link. */}
+        {canSeeMoney(role) ? (
+          <Link
+            href="/app/plugins/xero"
+            className="flex items-center justify-between gap-4 rounded-2xl border border-[#EAEDF2] bg-white p-5 shadow-[0_1px_2px_rgba(20,24,20,0.03)] transition-colors hover:border-[#C9DEF7] hover:bg-[#FBFCFE]"
+          >
+            <div className="min-w-0">
+              <div className="of-display text-[16px] font-semibold text-[#171A17]">Xero accounting</div>
+              <p className="mt-1 text-[13px] text-[#6B6F68]">Manage in Plugins → Xero</p>
+            </div>
+            <span className="shrink-0 text-[18px] text-[#A0A49C]" aria-hidden>
+              ›
+            </span>
+          </Link>
+        ) : null}
 
         <Link
           href="/app/organisation"

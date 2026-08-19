@@ -4,6 +4,7 @@ import { getPlatformSession } from '@/lib/platform/supabase-server';
 import { PlatformProvider } from '@/lib/platform/session';
 import { canSeeBrief, canSeeMoney } from '@/lib/platform/access';
 import { fetchFindings } from '@/lib/platform/agent-findings';
+import { pluginRailRows } from '@/lib/platform/plugins-data';
 import { chatTimeLabel, listChats } from '@/lib/platform/finch-chats';
 import { suggestionsForOrg } from '@/lib/platform/finch-suggestions-data';
 import { ModuleLockGuard } from '@/components/platform/ModuleLockGuard';
@@ -66,9 +67,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // findings, which the whole org shares — and it degrades to an empty flagged
   // list before the finch-chats migration is applied, exactly as
   // `fetchFindings` does for `agent_findings`.
-  const [feed, chatList] = await Promise.all([
+  //
+  // Plugins X1 adds a third read: the connection status behind the rail's
+  // Plugins rows. ONE read for both surfaces (desktop rail and mobile drawer),
+  // for the same reason the findings read serves both the badges and the chat
+  // prelude — two queries that could disagree about whether Xero is connected
+  // is one query too many. It is SKIPPED ENTIRELY for a member: plugins are
+  // finance-grade (`canSeeMoney`), the section is not rendered for them, and a
+  // read whose result is thrown away is a read not worth making. The predicate
+  // is called here as well as below because it is pure and free, and inlining
+  // it keeps this third read inside the same Promise.all rather than costing a
+  // second round-trip after the access block.
+  const [feed, chatList, pluginRows] = await Promise.all([
     fetchFindings(session.org.id),
     listChats(session.org.id, session.userId),
+    canSeeMoney(session.profile?.role) ? pluginRailRows(session.org.id) : Promise.resolve([]),
   ]);
 
   // ONE clock for the rail, resolved on the server. See RailChats: a client
@@ -167,6 +180,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             chats={railChats}
             canSeeBrief={briefAccess}
             modules={railModules(session.features)}
+            plugins={pluginRows}
           />
 
           {/* `relative` for the dock below: it is the containing block the chat
@@ -189,6 +203,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               chats={railChats}
               canSeeBrief={briefAccess}
               modules={railModules(session.features)}
+              plugins={pluginRows}
             />
 
             {/* The cool wash every module sits on. It lives here rather than in each

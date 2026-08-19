@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePlatform } from '@/lib/platform/session';
 import { VysoMark } from '@/components/platform/VysoMark';
+import type { PluginRailRow } from '@/lib/platform/plugins';
 import { MobileDrawer } from './MobileDrawer';
 import type { RailChat } from './RailChats';
 import { trialPillLabel, type RailModule } from './shell-data';
@@ -28,6 +29,7 @@ export function MobileTopBar({
   chats,
   canSeeBrief,
   modules,
+  plugins,
 }: {
   openCount: number;
   historyCount: number;
@@ -38,6 +40,10 @@ export function MobileTopBar({
    *  so it mirrors their gate too (v2b). */
   canSeeBrief: boolean;
   modules: RailModule[];
+  /** Straight through to the drawer, which mirrors the desktop rail's Plugins
+   *  section — and mirrors its gate too: the layout hands over an empty list for
+   *  a member (Plugins X1). */
+  plugins: PluginRailRow[];
 }) {
   const { trial } = usePlatform();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -85,6 +91,7 @@ export function MobileTopBar({
         chats={chats}
         canSeeBrief={canSeeBrief}
         modules={modules}
+        plugins={plugins}
       />
     </>
   );

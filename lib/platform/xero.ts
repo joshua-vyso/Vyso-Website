@@ -392,7 +392,10 @@ export async function createXeroAuthorizationUrl(ctx: XeroServerContext): Promis
     state_hash: hashXeroState(state),
     org_id: ctx.orgId,
     user_id: ctx.userId,
-    return_path: '/app/settings',
+    // Where the owner started, for a callback that ever learns to honour it.
+    // Repointed at the plugin page in Plugins X1, alongside the two routes that
+    // actually hardcode the destination today.
+    return_path: '/app/plugins/xero',
     expires_at: expiryFromNow(OAUTH_STATE_TTL_MS),
   });
   if (error) throw new Error(`Could not begin the Xero connection: ${error.message}`);

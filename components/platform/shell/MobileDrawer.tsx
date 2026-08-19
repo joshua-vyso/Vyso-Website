@@ -5,6 +5,12 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { usePlatform } from '@/lib/platform/session';
 import { createClient } from '@/lib/platform/supabase-browser';
+import {
+  isPluginPath,
+  pluginToneDot,
+  pluginToneLabel,
+  type PluginRailRow,
+} from '@/lib/platform/plugins';
 import { clearParsedOrder } from '@/lib/ai/finch/order-handoff';
 import { firstName, initials } from '@/components/platform/brief/brief-display';
 import { FeedbackModal } from '@/components/platform/FeedbackModal';
@@ -60,6 +66,7 @@ export function MobileDrawer({
   chats,
   canSeeBrief,
   modules,
+  plugins,
 }: {
   open: boolean;
   onClose: () => void;
@@ -73,6 +80,10 @@ export function MobileDrawer({
    *  two surfaces cannot drift. */
   canSeeBrief: boolean;
   modules: RailModule[];
+  /** The Plugins section, mirroring the desktop rail. EMPTY for a member — the
+   *  layout withholds the rows, exactly as it withholds the Brief's (Plugins
+   *  X1); this sheet does not carry an access rule of its own. */
+  plugins: PluginRailRow[];
 }) {
   const { org, email, profile, trial, lockedModules } = usePlatform();
   const pathname = usePathname() ?? '';
@@ -156,6 +167,41 @@ export function MobileDrawer({
           chats={chats}
           canSeeBrief={canSeeBrief}
         />
+
+        {/* Plugins, above Under the hood — the desktop rail's order. NO collapse
+            ceremony here either, for the reason the docblock gives about the
+            modules list: this sheet is a re-flow of the rail's content, not a
+            second design, and a one-row section behind a toggle is a tap that
+            buys nothing. */}
+        {plugins.length > 0 ? (
+          <div className="mt-4 flex flex-col gap-0.5">
+            <div className="px-2.5 pb-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[var(--pf-text-faint)]">
+              Plugins
+            </div>
+            {plugins.map((p) => {
+              const active = isPluginPath(pathname, p.href);
+              return (
+                <Link
+                  key={p.href}
+                  href={p.href}
+                  aria-current={active ? 'page' : undefined}
+                  className={`${ROW} ${active ? ROW_ACTIVE : ROW_IDLE}`}
+                  style={{ transitionDuration: 'var(--dur-hover)' }}
+                >
+                  <span
+                    aria-hidden
+                    className="h-[6px] w-[6px] shrink-0 rounded-full"
+                    style={{ backgroundColor: pluginToneDot(p.tone) }}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{p.label}</span>
+                  <span className="shrink-0 text-[11px] text-[var(--pf-text-faint)]">
+                    {pluginToneLabel(p.tone)}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        ) : null}
 
         <div className="mt-4 flex flex-col gap-0.5">
           <div className="px-2.5 pb-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[var(--pf-text-faint)]">
