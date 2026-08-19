@@ -30,6 +30,7 @@ export function MobileTopBar({
   canSeeBrief,
   modules,
   plugins,
+  reviewCount,
 }: {
   openCount: number;
   historyCount: number;
@@ -44,6 +45,9 @@ export function MobileTopBar({
    *  section — and mirrors its gate too: the layout hands over an empty list for
    *  a member (Plugins X1). */
   plugins: PluginRailRow[];
+  /** Straight through as well: the drawer pins the same Review row the desktop
+   *  rail does, from the same component (Review chat wave). */
+  reviewCount: number;
 }) {
   const { trial } = usePlatform();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -92,6 +96,7 @@ export function MobileTopBar({
         canSeeBrief={canSeeBrief}
         modules={modules}
         plugins={plugins}
+        reviewCount={reviewCount}
       />
     </>
   );

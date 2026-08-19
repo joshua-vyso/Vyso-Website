@@ -535,6 +535,31 @@ html, body {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.55; }
 }
+/* The Review row's ebbing border (.ai/plan_review_chat.md, "Rail behaviour").
+   BORDER + BOX-SHADOW ONLY — no gradient FILL. `.finch-gradient` is rationed to
+   the surfaces that are Finch itself (the pill, the bubble); a rail row that
+   painted itself in it would be claiming to be the agent rather than a list of
+   the owner's own outstanding decisions. The two low-alpha stops are the AI
+   gradient's mid blue (#3E8FE0, the same one `.finch-gradient` runs through),
+   and the period matches `.vyso-pulse`'s 2.4s so the two continuous loops in
+   the rail breathe together instead of beating against each other.
+   Reduced motion holds it at the midpoint: the border stays, visibly, because
+   it is the thing that says "this row is not like the others" — the red dot and
+   its aria-label carry the rest (plan §5 "Continuous loops"). */
+@keyframes vyso-ebb {
+  0%, 100% {
+    border-color: rgba(62, 143, 224, 0.35);
+    box-shadow: 0 0 0 0 rgba(62, 143, 224, 0);
+  }
+  50% {
+    border-color: rgba(62, 143, 224, 0.85);
+    box-shadow: 0 0 0 3px rgba(62, 143, 224, 0.1);
+  }
+}
+.vyso-ebb {
+  border: 1px solid rgba(62, 143, 224, 0.55);
+  animation: vyso-ebb 2.4s ease-in-out infinite;
+}
 .vyso-fade-in   { animation: vyso-fade-in 0.18s ease; }
 .vyso-pop-in    { animation: vyso-pop-in var(--dur-pop) var(--ease-pop); }
 .vyso-pop-in-up { animation: vyso-pop-in-up var(--dur-pop) var(--ease-pop); transform-origin: bottom left; }
@@ -543,6 +568,7 @@ html, body {
   .vyso-fade-in,
   .vyso-pop-in,
   .vyso-pop-in-up,
+  .vyso-ebb,
   .vyso-pulse { animation: none; }
 }
 

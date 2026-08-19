@@ -47,6 +47,26 @@ const RECENT_WINDOW_MS = RECENT_WINDOW_DAYS * 24 * 60 * 60 * 1000;
  *  visible second or two — so this string is on screen often enough to matter. */
 export const CHAT_TITLE_FALLBACK = 'New chat';
 
+/**
+ * `finch_chats.module` for the Review conversation (Review chat wave).
+ *
+ * NOT an `AgentModule` — the review chat talks to the cross-module 'brief'
+ * agent like every other `/app/chat/*` screen. This value does two things and
+ * only two: it labels the row, and it is what `splitChats` filters on to keep
+ * the review chat out of the rail's recent list. Declared here rather than in
+ * `review-queue-shared.ts` because that module imports THIS one (for
+ * `PRELUDE_END`), and a value both files need belongs at the bottom of the
+ * dependency, not in a cycle.
+ */
+export const REVIEW_CHAT_MODULE = 'review';
+
+/** What the Review conversation is called in History. Set at creation rather
+ *  than left to the agent route's auto-titler, which names a chat after its
+ *  first question — "Is the Umgeni invoice right?" is a fine title for a chat
+ *  and a poor name for a standing queue. `setChatTitle` is a no-op on a row
+ *  that already has a title, so this sticks. */
+export const REVIEW_CHAT_TITLE = 'Review';
+
 /** The stored title, or the fallback. Whitespace-only counts as untitled: a
  *  title generated from a one-word question can come back as `" "`, and a
  *  blank line in the rail reads as a broken list rather than a new chat. */
@@ -71,6 +91,14 @@ export function chatTitle(raw: string | null | undefined): string {
  *
  * `now` is a parameter rather than a `Date.now()` call so the boundary is
  * testable and so a server render and its client hydration can agree on it.
+ *
+ * THE REVIEW CHAT IS IN NEITHER LIST WHILE IT IS CURRENT. It has its own pinned
+ * row at the top of the rail (RailReview), drawn only while the queue is
+ * non-empty, so listing it a second time among "3h · Umgeni invoice" would be
+ * two rows for one conversation — and the second one would still be there on
+ * the morning the queue is empty and the first has correctly disappeared. Once
+ * it falls out of the recent window it is an ordinary old conversation again
+ * and DOES appear in History, under its own title, exactly like any other.
  */
 export function splitChats(
   rows: readonly ChatSummaryRow[],
@@ -89,7 +117,9 @@ export function splitChats(
   const recent: ChatSummary[] = [];
   const archived: ChatSummary[] = [];
   for (const { row, ms } of withTime) {
-    (ms == null || ms >= cutoff ? recent : archived).push({
+    const isRecent = ms == null || ms >= cutoff;
+    if (isRecent && row.module === REVIEW_CHAT_MODULE) continue;
+    (isRecent ? recent : archived).push({
       id: row.id,
       title: chatTitle(row.title),
       module: row.module,
@@ -161,13 +191,20 @@ export function chatTimeLabel(updatedAt: string, now: Date | number = Date.now()
  * marker in brief-chat.ts ever changes, the only cost is that a prelude gets
  * stored verbatim once, which is why the fallback below is "return the text
  * unchanged" rather than anything cleverer.
+ *
+ * EXPORTED from the Review wave on, and now the only copy any NEW prelude
+ * writes: `review-queue-shared.ts` ends its queue prelude with this same string
+ * so the agent route strips it back off before storing the message, without the
+ * route learning a second marker. brief-chat.ts still carries its own literal
+ * (it is the one this was extracted from, and it is a component-side module);
+ * the two are pinned against each other by tests/finch-chats-archive.test.ts.
  */
-const BRIEF_PRELUDE_END = '[End of findings. The question below is from the user.]';
+export const PRELUDE_END = '[End of findings. The question below is from the user.]';
 
 export function stripBriefPrelude(text: string): string {
-  const at = text.lastIndexOf(BRIEF_PRELUDE_END);
+  const at = text.lastIndexOf(PRELUDE_END);
   if (at === -1) return text.trim();
-  const tail = text.slice(at + BRIEF_PRELUDE_END.length).trim();
+  const tail = text.slice(at + PRELUDE_END.length).trim();
   // A prelude with nothing after it isn't a prelude — keep what we were given
   // rather than storing an empty user turn.
   return tail || text.trim();

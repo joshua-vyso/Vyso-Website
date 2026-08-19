@@ -6,6 +6,7 @@ import { canSeeBrief, canSeeMoney } from '@/lib/platform/access';
 import { fetchFindings } from '@/lib/platform/agent-findings';
 import { pluginRailRows } from '@/lib/platform/plugins-data';
 import { chatTimeLabel, listChats } from '@/lib/platform/finch-chats';
+import { loadReviewQueue, reviewChatContext } from '@/lib/platform/review-queue';
 import { suggestionsForOrg } from '@/lib/platform/finch-suggestions-data';
 import { ModuleLockGuard } from '@/components/platform/ModuleLockGuard';
 import { TrialGate } from '@/components/platform/TrialGate';
@@ -78,10 +79,26 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // is called here as well as below because it is pure and free, and inlining
   // it keeps this third read inside the same Promise.all rather than costing a
   // second round-trip after the access block.
-  const [feed, chatList, pluginRows] = await Promise.all([
+  // The Review wave adds a fourth read: what is waiting on a human decision.
+  // In the SAME Promise.all for the reason the others are — the rail's pinned
+  // "Review" row, the red dot's count and the review chat's own prelude are one
+  // fact, and two reads of it could disagree about whether the queue is empty.
+  // It is one small indexed query per enabled module (documents, quote
+  // requests) and NONE at all for an org with neither, and it is deliberately
+  // NOT behind `canSeeMoney`: filing an invoice and answering an enquiry are
+  // operational work, so the gate is module access, which `loadReviewQueue`
+  // applies from `features`/`lockedModules` itself (lib/platform/review-queue.ts).
+  // Same staleness contract as the badges: it refreshes on a hard load and on
+  // `router.refresh()`, which the chat provider now fires after every turn taken
+  // on the review route so the opening card cannot outlive its own queue.
+  const [feed, chatList, pluginRows, reviewQueue] = await Promise.all([
     fetchFindings(session.org.id),
     listChats(session.org.id, session.userId),
     canSeeMoney(session.profile?.role) ? pluginRailRows(session.org.id) : Promise.resolve([]),
+    loadReviewQueue(session.org.id, {
+      features: session.features,
+      lockedModules: session.lockedModules,
+    }),
   ]);
 
   // ONE clock for the rail, resolved on the server. See RailChats: a client
@@ -145,6 +162,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // what the redirect just refused them at the door.
   const chatContext = briefAccess ? briefChatContext(feed.open, feed.evidence) : '';
 
+  // The same trick, for the Review chat: the queue as a prelude on that route's
+  // first turn, so "what's in the flagged invoice?" is a question about
+  // something the model has been named rather than something it has to go
+  // hunting for. Built from `reviewQueue` above — no second read — and NOT
+  // gated on `briefAccess`, for the reason the queue itself isn't. Empty string
+  // when there is nothing to review, which is also when the route says so.
+  const reviewContext = reviewChatContext(reviewQueue);
+
   return (
     <PlatformProvider value={session}>
       {/* The conversation lives ABOVE the whole shell, not inside <main>: it
@@ -152,7 +177,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           on one), and both sign-out call sites — UserChipMenu in the rail and
           MobileDrawer under the mobile header — must be able to reach its
           reset() (plan §8 E7). Wrapping here is what puts them inside it. */}
-      <FinchChatProvider context={chatContext} orgName={session.org.name} suggestions={suggestions}>
+      <FinchChatProvider
+        context={chatContext}
+        reviewContext={reviewContext}
+        orgName={session.org.name}
+        suggestions={suggestions}
+      >
         <div
           // Globals set --radius: 0 (sharp shadcn default), which zeroes the
           // rounded-sm/md/lg/xl scale and leaves buttons/inputs square. Give the
@@ -181,6 +211,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             canSeeBrief={briefAccess}
             modules={railModules(session.features)}
             plugins={pluginRows}
+            reviewCount={reviewQueue.total}
           />
 
           {/* `relative` for the dock below: it is the containing block the chat
@@ -204,6 +235,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               canSeeBrief={briefAccess}
               modules={railModules(session.features)}
               plugins={pluginRows}
+              reviewCount={reviewQueue.total}
             />
 
             {/* The cool wash every module sits on. It lives here rather than in each

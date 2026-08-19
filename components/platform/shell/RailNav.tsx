@@ -41,6 +41,7 @@ export function RailNav({
   historyCount,
   chats,
   canSeeBrief,
+  reviewCount = 0,
 }: {
   openCount: number;
   historyCount: number;
@@ -52,6 +53,11 @@ export function RailNav({
   /** Owner/admin. False drops the two Brief rows and leaves the chat block
    *  (v2b — see the docblock above). */
   canSeeBrief: boolean;
+  /** How many things are waiting on a decision. Passed straight through to
+   *  RailChats, which pins the "Review" row above "New chat" when it is
+   *  non-zero. NOT gated on `canSeeBrief`: documents and quote requests are
+   *  operational work, not money figures (lib/platform/review-queue.ts). */
+  reviewCount?: number;
 }) {
   const pathname = usePathname() ?? '';
   const searchParams = useSearchParams();
@@ -86,7 +92,7 @@ export function RailNav({
           the brief rather than a peer of it. Without brief access it becomes the
           FIRST thing in the rail, which is correct: the chat is then the only
           thing above "Under the hood" this person has. */}
-      <RailChats chats={chats} />
+      <RailChats chats={chats} reviewCount={reviewCount} />
 
       {canSeeBrief ? (
         <Link href="/app?view=history" className={`${ITEM} ${isHistory ? ITEM_ACTIVE : ITEM_IDLE}`}>

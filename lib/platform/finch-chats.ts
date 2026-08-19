@@ -41,7 +41,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createServerSupabase } from './supabase-server';
 import { isMissingRelation } from './db-errors';
-import { splitChats, type ChatSummary, type ChatSummaryRow } from './finch-chats-shared';
+import {
+  RECENT_WINDOW_DAYS,
+  REVIEW_CHAT_MODULE,
+  REVIEW_CHAT_TITLE,
+  splitChats,
+  type ChatSummary,
+  type ChatSummaryRow,
+} from './finch-chats-shared';
+import { shouldReuseReviewChat } from './review-queue-shared';
 
 export * from './finch-chats-shared';
 
@@ -351,6 +359,75 @@ export async function setChatTitle(
     return false;
   }
   return true;
+}
+
+/**
+ * The one open Review conversation for this user, created on first visit.
+ *
+ * NOT `createChat` + a lookup at the call site, and not a route: `/app/chat/review`
+ * is a screen the owner ARRIVES at from the rail, so the row has to exist by the
+ * time the page renders its transcript. `/api/finch/chats` cannot make it —
+ * that endpoint stores an unknown `module` as null (see its docblock), and
+ * 'review' is deliberately not an `AgentModule`, so a chat created through it
+ * would come back unlabelled and reappear in the rail's recent list.
+ *
+ * ONE PER USER, NOT PER ORG. Two colleagues both clearing the queue are having
+ * two different conversations about it, and `finch_chats` is private to its
+ * author everywhere else in this platform — the rail, `getChat`, RLS. A shared
+ * review chat would be the one place a user could read a colleague's words.
+ *
+ * REUSE, THEN REPLACE. `shouldReuseReviewChat` is the whole rule: a review chat
+ * spoken to within the rail's own recent window is continued; an older one is
+ * left where it is (History has it, under its title) and a fresh row is made.
+ * The alternatives were one immortal row — which becomes a year of unrelated
+ * decisions in one scroll — and a row per visit, which is litter.
+ *
+ * Returns null when the table isn't there yet or the insert failed. The page
+ * then draws the opening card alone: the queue is computed from OTHER tables
+ * and does not need this one, so the useful half of the screen survives a
+ * missing migration exactly as W1 promised.
+ */
+export async function getOrCreateReviewChat(
+  orgId: string,
+  userId: string,
+  now: Date | number = Date.now(),
+  supplied?: ChatsClient,
+): Promise<{ chat: ChatRecord; messages: ChatMessage[] } | null> {
+  const supabase = await client(supplied);
+
+  const { data: existing, error } = await supabase
+    .from('finch_chats')
+    .select(CHAT_COLS)
+    .eq('org_id', orgId)
+    .eq('user_id', userId)
+    .eq('module', REVIEW_CHAT_MODULE)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .returns<ChatRecord[]>();
+
+  if (error) {
+    if (isMissingRelation(error)) return null;
+    logFailure('getOrCreateReviewChat (read)', error);
+    return null;
+  }
+
+  const previous = existing?.[0];
+  if (previous && shouldReuseReviewChat(previous.updated_at, now, RECENT_WINDOW_DAYS)) {
+    // `getChat` re-reads the row it was just handed, which is one round-trip
+    // more than strictly needed — and is worth it: it is the ONE function that
+    // knows how to read and narrow a transcript, and a second copy of that
+    // parsing here is how the two would drift.
+    return getChat(orgId, userId, previous.id, supabase);
+  }
+
+  const id = await createChat(
+    orgId,
+    userId,
+    { module: REVIEW_CHAT_MODULE, title: REVIEW_CHAT_TITLE },
+    supabase,
+  );
+  if (!id) return null;
+  return getChat(orgId, userId, id, supabase);
 }
 
 /**

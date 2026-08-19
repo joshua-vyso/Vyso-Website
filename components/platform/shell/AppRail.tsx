@@ -34,6 +34,7 @@ export function AppRail({
   canSeeBrief,
   modules,
   plugins,
+  reviewCount,
 }: {
   openCount: number;
   historyCount: number;
@@ -48,6 +49,10 @@ export function AppRail({
    *  plugins are finance-grade (`canSeeMoney`), so the layout withholds the rows
    *  rather than this component learning a second access rule (Plugins X1). */
   plugins: PluginRailRow[];
+  /** How many items are waiting on a decision, resolved by the layout in the
+   *  same Promise.all as the findings and chats. 0 hides the Review row
+   *  entirely (Review chat wave). */
+  reviewCount: number;
 }) {
   return (
     <nav
@@ -90,6 +95,7 @@ export function AppRail({
             historyCount={historyCount}
             chats={chats}
             canSeeBrief={canSeeBrief}
+            reviewCount={reviewCount}
           />
         </Suspense>
       </div>

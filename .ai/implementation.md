@@ -3029,3 +3029,218 @@ They are the long-standing `AccountsReceivable/View.aspx?InvoiceID=` and
 `AccountsPayable/View.aspx?InvoiceID=` routes. They are stored per row at sync
 time, so if Xero has moved them the fix is one function
 (`xeroInvoiceUrl`) plus a resync, and old cards keep whatever was recorded.
+
+# Review chat — an auto-opening system chat for items needing a decision (2026-08-19, branch `main`)
+
+Implements `.ai/plan_review_chat.md` in full.
+
+Josh's ask, verbatim (2026-08-18): "a new chat open beneath today's brief if any
+items need attention. e.g. if the system picks up a new quote request, a new chat
+automatically opens called 'Review', where user can take immediate action. if any
+documents are uploaded, review opens with direct link to check and approve that
+doc. once all review items are done, the review chat goes away. it'll come back
+when new items are ready for review. have the button itself subtly emit light
+ebbing borders, as well as a small red dot similar to how notifications are
+universally".
+
+The queue is **computed** — no new table, no migration, no cron. Nothing in
+`lib/platform/price-watch/*`, `lib/platform/debtors-watch/*`,
+`lib/platform/stock-cover/*`, `components/finch/*`, the agents, the plugins
+(X1/X2) files or the marketing site was touched.
+
+## Files
+
+Created:
+`lib/platform/review-queue-shared.ts` (pure),
+`lib/platform/review-queue.ts`,
+`tests/review-queue.test.ts` (32 tests),
+`app/app/chat/review/page.tsx`,
+`components/platform/chat/ReviewOpening.tsx`,
+`components/platform/shell/RailReview.tsx`.
+
+Modified:
+`app/app/layout.tsx` (fourth read in the same `Promise.all`; `reviewCount` to
+both rail surfaces; `reviewContext` to the provider),
+`components/platform/shell/{AppRail,MobileTopBar,MobileDrawer,RailNav,RailChats}.tsx`
+(`reviewCount` threaded; RailChats pins the row),
+`components/platform/shell/FinchChatProvider.tsx` (review prelude + per-turn
+refresh on the review route),
+`lib/platform/finch-chats.ts` (`getOrCreateReviewChat`),
+`lib/platform/finch-chats-shared.ts` (`PRELUDE_END` exported;
+`REVIEW_CHAT_MODULE`/`REVIEW_CHAT_TITLE`; `splitChats` keeps the review chat out
+of the rail's recent list),
+`lib/ai/finch/knowledge.ts` (a "Review" section in `BRIEF_KNOWLEDGE`),
+`app/globals.css` (`@keyframes vyso-ebb` + `.vyso-ebb`, one commented block).
+
+## The exact predicates for "needs review"
+
+**1. Documents** — one query, `documents`, org-scoped:
+
+```
+.eq('org_id', orgId)
+.in('status', ['extracted', 'pending', 'error'])
+.order('created_at', { ascending: false }).limit(200)
+```
+
+then, in memory: keep a row iff `status === 'error'` **or**
+`isClaimableDocument(approved_at, Date.now() - COMMIT_STALE_MS)` — i.e.
+`approved_at is null`, or older than the 5-minute commit-claim window.
+
+That is `/app/docu/awaiting`'s predicate (`status in ('extracted','pending')`)
+∪ `/app/docu/flagged`'s (`status = 'error'`), with `/app/docu/review`'s **claim
+guard** (`reviewClaimableOr`) carried across. Three deliberate calls:
+
+- **`email_ingest_id is not null` is dropped.** That column is what keeps
+  chat/manual uploads off `/app/docu/review` (they commit inline), but they do
+  legitimately sit at `extracted`/`pending` when the commit has not happened,
+  `/app/docu/awaiting` does list them, and a document dropped into Finch that
+  ends up needing a decision is exactly the case the plan asks this queue to
+  catch (W5 synergy). So: the broader screen's predicate.
+- **The claim guard is kept.** A document someone is mid-Save on is not awaiting
+  a decision; it is having one made. Applied in memory rather than as `.or()` on
+  the select because the select asks for three statuses and the guard applies to
+  only two — an `.or()` over the whole query would have quietly dropped any
+  flagged row that happened to carry a stamp.
+- **"Low confidence" is NOT a fourth predicate.** `/app/docu/confidence` *sorts*
+  by confidence; it does not filter, so there is no queue there to reuse. A
+  low-confidence document that needs a decision is already in by status, and its
+  confidence is said in the item's detail line (`< DOC_LOW_CONFIDENCE_THRESHOLD`,
+  80) instead.
+
+One query, so a document that is both uploaded-by-chat and awaiting review
+appears exactly once.
+
+**2. Quote requests** — `of_quote_requests`, org-scoped:
+
+```
+.eq('org_id', orgId).eq('status', 'new').eq('flagged_spam', false)
+.order('received_at', { ascending: false }).limit(200)
+```
+
+That is the **OrderFlow dashboard's** predicate ("real leads awaiting a quote",
+`orderflow-data.ts`), not the Quotes page's, which also lists the AI-flagged
+likely-spam. The Review queue's whole promise is that it empties: a bounce
+message nobody will ever quote from would sit in it forever, wearing out the red
+dot. Those rows are not hidden — they are still on `/app/orderflow/quotes`, which
+is where a human confirms them.
+
+**3. Price Watch is deliberately absent.** `pw_item_matches` has a
+`status='review'` of its own, but there is no screen on which a human can make
+that decision (a known gap). A queue row whose "Open" link goes nowhere is worse
+than no row.
+
+**Who sees it:** module access, not `canSeeMoney`. Filing an invoice and
+answering an enquiry are operational work. A source is read only when
+`features[key] && !lockedModules.includes(key)`; an org with neither module
+makes no query at all.
+
+## Decisions the plan left open
+
+1. **The agent, and its tools.** The plan asks for "`brief` set + `docu` set".
+   `TOOLS_BY_MODULE.brief` **already is** `DOCU_TOOLS + DEBTORS + PRICE_WATCH +
+   PROCUREPULSE + MARGIN + XERO`, so `/app/chat/review` talks to the ordinary
+   `'brief'` agent (`agentModuleForPathname` already returns it for every
+   `/app/chat/*` route) and gets exactly what the plan asked for with **no route
+   change, no new `AgentModule`, and no new tool**. There is no OrderFlow
+   quote-lookup read tool, so none is wired; no write tools were added.
+2. **`module='review'` is a `finch_chats` label, not an `AgentModule`.** It lives
+   in `finch-chats-shared.ts` (which `review-queue-shared.ts` imports, not the
+   other way round — that would be a cycle). It does two things: labels the row,
+   and is what `splitChats` filters on.
+3. **The row is created server-side, by the page.** `/api/finch/chats` stores an
+   unknown `module` as `null` by design, so a review chat created through it
+   would come back unlabelled and reappear in the rail's recent list.
+   `getOrCreateReviewChat` calls `createChat` directly.
+4. **Reuse window = `RECENT_WINDOW_DAYS` (14).** The plan asked for "reuse if
+   active in the last 14 d, else create a new one" and for it to be recorded:
+   `shouldReuseReviewChat` is that rule, taking the window as a parameter so the
+   rail's constant is the single source. An unparseable `updated_at` is *reused* —
+   a second row every visit is the worse failure.
+5. **The row is titled `Review` at creation**, not left to the agent route's
+   auto-titler (which names a chat after its first question — a fine title for a
+   chat and a poor name for a standing queue). `setChatTitle` is a no-op on a row
+   that already has one, so it sticks, and History shows "Review". The plan's
+   "(closed)" suffix was **not** implemented: nothing else in History is
+   suffixed, and a stored title cannot know whether the queue is empty right now.
+6. **The review chat is in neither rail list while it is current.** It has its
+   own pinned row; listing it again among the recent chats would be two rows for
+   one conversation, and the second would survive the morning the first correctly
+   disappears. Once past 14 days it is an ordinary old conversation and *does*
+   appear in History.
+7. **One prelude per screen, never both.** `reviewContext` replaces (not
+   supplements) the Brief's findings on `/app/chat/review` — the owner is asking
+   about the list in front of them, and shipping both would spend the turn's
+   whole character budget on preamble. Capped at 4,000 chars, framed as data,
+   and it ends with the **same** marker the Brief's prelude does, which is now
+   exported as `PRELUDE_END` — so `stripBriefPrelude` strips it back off before
+   the message is stored, with no change to `/api/ai/agent`.
+8. **The page re-reads the queue** even though the layout just did. Layouts do
+   not re-render on client-side navigation, so the layout's copy can be minutes
+   old by the time someone walks back from Doc-U — and a card listing a document
+   they have just approved is the one thing this screen must never do.
+9. **`router.refresh()` on EVERY turn taken on the review route** (elsewhere it
+   still fires once per chat). The opening card is the live queue; without this
+   it would keep offering an item dealt with in another tab.
+10. **The opening card is drawn above the transcript, not stored as a first
+    assistant turn.** A stored turn would say "3 items" forever.
+11. **Red dot count lives in `aria-label`, not on screen.** A numeral in a 216px
+    row beside the Brief's open count and History's would read as a third badge
+    of the same kind; this one is not the same kind.
+12. **Cap 25**, overflow link to `/app/docu/review`. Counts are taken *before*
+    the cap — a dot stuck on "25" is a dot the owner learns to ignore.
+
+## The ebbing border
+
+`@keyframes vyso-ebb` in `app/globals.css`: `border-color` between
+`rgba(62,143,224,0.35)` and `0.85`, plus a `box-shadow` spread from `0` to `3px`
+at `0.10` alpha. **Border + box-shadow only — no gradient fill.**
+`.finch-gradient` is rationed to the surfaces that *are* Finch; a rail row
+painted in it would be claiming to be the agent rather than a list of the
+owner's own outstanding decisions. 2.4s, matching `.vyso-pulse` so the rail's two
+continuous loops breathe together. Under `prefers-reduced-motion: reduce` the
+animation is off and `.vyso-ebb`'s static `1px solid rgba(62,143,224,0.55)`
+border remains, as does the red dot — the information survives, only the motion
+goes.
+
+## Edge cases (plan §"Edge cases")
+
+- Queue changes while open → the card is server-rendered per visit, and the
+  provider refreshes after every turn on this route.
+- Approve on Doc-U and come back → the count drops; at zero the rail row is gone
+  and the route draws "Nothing to review — all clear" (a screen, not a redirect:
+  the only ways to arrive are a bookmark, a second tab, or Back).
+- Two users → one review chat each (`user_id` filter, as everywhere else in
+  `finch_chats`).
+- A doc both uploaded-by-chat and awaiting review → one query, so once.
+- Queue > 25 → "and N more →" to `/app/docu/review`.
+- No Doc-U / no OrderFlow (or locked) → that source is skipped entirely.
+- `finch_chats` migration missing → `getOrCreateReviewChat` returns null, the
+  opening card still renders and the shell's composer still works (starting an
+  ordinary chat), exactly the W1 degrade.
+- Every source failure is independent: a broken `of_quote_requests` costs the
+  documents half of nothing.
+
+## Gates
+
+- `npx tsc --noEmit` — clean. (Two transient errors appeared mid-run from the
+  concurrent Hubdoc X2 work in `app/app/docu/[id]/page.tsx` and
+  `app/app/plugins/xero/page.tsx`; retried after 30 s and the tree was clean.
+  Neither was in a Review file.)
+- `npm test` — **633 pass, 0 fail** (601 before, 32 new in
+  `tests/review-queue.test.ts`).
+- `npm run build` — succeeds; the route manifest lists `ƒ /app/chat/review`.
+- `npm run lint` — 50 errors / 40 warnings, at the ≤50 ceiling. **None** of them
+  are in a file this wave created or modified.
+
+## Not verified, and flagged rather than hidden
+
+**Nothing has been run against a live database.** `loadReviewQueue` and
+`getOrCreateReviewChat` are I/O and are not unit tested by design; every decision
+they make is, in `review-queue-shared.ts`. The W6 click list below has not been
+walked on a real org.
+
+**The `supplier:suppliers(name)` embed** on the documents select follows the same
+shape the three Doc-U pages already use (`supplier:suppliers(id,name,initials)`).
+If PostgREST returns it as an array on some deployment, `reviewDocumentTitle`
+falls through to the filename rather than throwing — the failure mode is a
+duller title, not a broken card.

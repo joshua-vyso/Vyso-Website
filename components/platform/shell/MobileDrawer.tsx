@@ -67,6 +67,7 @@ export function MobileDrawer({
   canSeeBrief,
   modules,
   plugins,
+  reviewCount,
 }: {
   open: boolean;
   onClose: () => void;
@@ -84,6 +85,10 @@ export function MobileDrawer({
    *  layout withholds the rows, exactly as it withholds the Brief's (Plugins
    *  X1); this sheet does not carry an access rule of its own. */
   plugins: PluginRailRow[];
+  /** The Review row mirrors the desktop rail too — same RailNav, same
+   *  RailChats, same RailReview, so the two surfaces cannot disagree about
+   *  whether something is waiting (Review chat wave). */
+  reviewCount: number;
 }) {
   const { org, email, profile, trial, lockedModules } = usePlatform();
   const pathname = usePathname() ?? '';
@@ -166,6 +171,7 @@ export function MobileDrawer({
           historyCount={historyCount}
           chats={chats}
           canSeeBrief={canSeeBrief}
+          reviewCount={reviewCount}
         />
 
         {/* Plugins, above Under the hood — the desktop rail's order. NO collapse

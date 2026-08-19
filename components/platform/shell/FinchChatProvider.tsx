@@ -28,6 +28,7 @@ import { looksLikeOrderRequest } from '@/lib/ai/finch/order-intent';
 import type { ParsedOrder } from '@/lib/ai/finch/order-handoff';
 import type { AgentModule } from '@/lib/ai/finch/config';
 import type { Suggestion } from '@/lib/platform/finch-suggestions';
+import { REVIEW_CHAT_ROUTE } from '@/lib/platform/review-queue-shared';
 
 /**
  * The conversation, lifted out of the pill (.ai/plan_chat_first_shell.md §4.3,
@@ -400,6 +401,7 @@ export function useFinchChat(): FinchChatValue {
 
 export function FinchChatProvider({
   context,
+  reviewContext = '',
   orgName,
   suggestions,
   children,
@@ -408,6 +410,13 @@ export function FinchChatProvider({
    *  already does for the rail badges (plan §4.1 — one fetch, two consumers).
    *  Prefixed to the first user turn only; see brief-chat.ts. */
   context: string;
+  /** The review queue, serialised by the same layout from the same read the
+   *  rail's Review row counts. It REPLACES `context` on `/app/chat/review` and
+   *  is unused everywhere else: on that screen the owner is asking about the
+   *  list in front of them, so shipping the Brief's findings instead would be
+   *  answering a question they did not ask — and shipping both would spend the
+   *  turn's whole character budget on preamble. */
+  reviewContext?: string;
   orgName: string | null;
   /** Chips for an empty conversation, built by the layout from this org's real
    *  findings/debtors/uploads (lib/platform/finch-suggestions*.ts). Carried
@@ -636,6 +645,13 @@ export function FinchChatProvider({
     setStreamInterim([]);
     setStreamTools([]);
 
+    // WHICH PRELUDE. One per screen, never both: the Review chat gets the
+    // queue, everything else gets the Brief's findings. Both end with the same
+    // marker, so the agent route strips whichever it was back off the message
+    // before storing it (`stripBriefPrelude`) and the transcript still redraws
+    // the owner's own words on reload.
+    const prelude = pathname === REVIEW_CHAT_ROUTE ? reviewContext : context;
+
     // The prelude rides on the FIRST user turn only — the findings don't change
     // mid-conversation, and repeating them every turn would just re-bill them.
     // Only role + content cross the wire: `tools` and `attachments` are the
@@ -644,7 +660,7 @@ export function FinchChatProvider({
     // cannot be re-announced on every later turn of the conversation.
     const outbound = nextTurns.map((m, i) => ({
       role: m.role,
-      content: i === 0 && context ? `${context}\n\n${m.content}` : m.content,
+      content: i === 0 && prelude ? `${prelude}\n\n${m.content}` : m.content,
     }));
 
     // Stay in the order workflow for the whole exchange (W4, from FinchModal):
@@ -825,7 +841,15 @@ export function FinchChatProvider({
       // now named it. ONCE per chat — every later turn changes only
       // `updated_at`, and re-running the whole platform layout's server reads
       // for that would be an expensive way to reorder a list of one.
-      if (createdNow) router.refresh();
+      //
+      // THE REVIEW CHAT IS THE EXCEPTION, and it refreshes on EVERY turn. Its
+      // opening card is the live queue, rendered server-side; the owner asks
+      // about an item, approves it in another tab, comes back and asks
+      // something else — and without this the card would still be offering the
+      // document they already dealt with. `pathnameRef` rather than the
+      // closure's `pathname` because this line runs however many seconds after
+      // the turn started, by which time they may have walked away.
+      if (createdNow || pathnameRef.current === REVIEW_CHAT_ROUTE) router.refresh();
     } catch (err) {
       if (!ctrl.signal.aborted) {
         setError(err instanceof Error ? err.message : 'Something went wrong.');
@@ -848,7 +872,7 @@ export function FinchChatProvider({
       // minute for a stream that ended when the owner signed out.
       streamingRef.current = false;
     }
-  }, [input, streaming, turns, context, orgName, activeChatId, agentModule, pathname, router]);
+  }, [input, streaming, turns, context, reviewContext, orgName, activeChatId, agentModule, pathname, router]);
 
   // The attach flow calls through this rather than closing over `send`.
   useEffect(() => {
