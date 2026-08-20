@@ -4789,3 +4789,179 @@ entering a password, which this agent does not do. Verified instead by the pure 
 (`tests/docu-document-direction.test.ts` reproduces the TnS strings verbatim) plus
 `tests/doc-watch-detect.test.ts` for the card, and by reading the flag/review/feed
 consumers back to the jsonb key they read.
+
+---
+
+# Doc-U batch upload — 20 files or a folder, with a staging tray (2026-08-20, branch `main`)
+
+Josh, on desktop: Doc-U "takes the one image and immediately starts extraction".
+He wants to add up to twenty documents at once, or point it at a folder, with a
+step in between where he can look at what he picked.
+
+## The survey — what each surface actually did
+
+**`app/app/docu/upload/page.tsx` was genuinely single-file.** `handleFile` read
+`e.target.files?.[0]`, uploaded that one, fired extraction and navigated away.
+The input had no `multiple`, so selecting five files uploaded one and discarded
+four without a word. This is the file Josh was describing.
+
+**`components/platform/docu/UploadBubble.tsx` was NOT single-file** — worth
+stating plainly, because the brief allowed for either. Its input already carried
+`multiple`, it walked the whole `FileList`, and it uploaded each file in turn,
+counting completions ("Uploading… (3)"). What it lacked was the same thing the
+page lacked: the *pause*. `handleFiles` ran straight off the change/drop event,
+so choosing was committing. It also carried a **fork of `validateUploadFile`** —
+its own extension regex and its own `MAX_MB = 20` — and that 20 was wrong: the
+extract route refuses anything over 15 MB, so a 17 MB scan uploaded, failed
+extraction, and sat on `pending` forever. The W5 note in `upload-client.ts`
+recorded that divergence rather than fixing it; this wave closed it.
+
+**`lib/platform/docu/upload-client.ts` (W5) was already the right shape** —
+`validateUploadFile` / `uploadDocument` / `startExtraction`, no runtime imports,
+tested from `node --test`. Nothing about it needed rewriting; the batch logic was
+added alongside it.
+
+**The chat's `ChatDropZone`** does no uploading at all — it is a drag-detector
+that hands the files to `FinchChatProvider.attach()`, which loops sequentially and
+**awaits** each extraction so it can say "Reading invoice.pdf…" and then talk
+about what was read. Deliberately different from Doc-U's fire-and-forget, and
+left exactly as it was.
+
+**`desktop/` is an Electron shell, and a thin one.** `desktop/main.js` opens one
+`BrowserWindow` at `https://vyso.co.za/app` with `contextIsolation: true`,
+`nodeIntegration: false`, `sandbox: true`, plus `setWindowOpenHandler` /
+`will-navigate` guards that push non-`vyso.co.za` URLs to the system browser.
+There is **no preload script, no IPC channel and no `fs` access** — the "desktop
+app" is the website in a frame. So "Vyso desktop" cannot today reach the file
+system any way the web build cannot, and everything below works identically in
+both.
+
+## Built
+
+**`lib/platform/docu/upload-client.ts`** — `MAX_BATCH_FILES = 20`;
+`isReadableDocument()` split out of `validateUploadFile` (same rule, needed on its
+own for folders); and `selectBatch()`, the pure decision-maker: it stages
+candidates, attaches each one's validation sentence, counts what it left out and
+returns one notice about it. The cap counts **the whole tray**, not the current
+selection, so ten files dropped twice is twenty and a third drop is refused.
+De-duplication is by name + size, which is what stops the same folder dragged
+twice from doubling the list.
+
+**`lib/platform/docu/folder-drop.ts`** (new) — `filesFromDrop()` walks a dropped
+directory via `webkitGetAsEntry()`. Two traps are handled and commented, because
+both produce a feature that demos fine and fails in use: `dataTransfer.items` is
+emptied the moment the handler awaits (so every `webkitGetAsEntry()` call happens
+synchronously first), and `readEntries` returns ~100 entries at a time and must be
+called until it answers empty (so a folder of 300 invoices is not silently 100).
+Dot-files are dropped by name — `._invoice.pdf` passes an extension check.
+Scanning stops at 500 files / 8 levels, and the whole thing falls back to the flat
+`dataTransfer.files` where the entry API is missing.
+
+**`components/platform/docu/UploadStagingTray.tsx`** (new) — `useUploadBatch()`
+holds the tray and runs the batch; `UploadStagingTray` draws the rows (name, size,
+type, inline validation reason, ✕ remove) with **Upload N documents** / **Clear**.
+Per-file states while it runs: **Waiting → Uploading… → Queued for reading**, or
+**Failed** with the reason inline; the loop continues past a failure, so one bad
+file never costs the other nineteen. Uploads are sequential, not `Promise.all` —
+twenty parallel PUTs from a shop's wifi is twenty timeouts, and a serial loop is
+what lets the tray say which file it is on.
+
+**`app/app/docu/upload/page.tsx`** — rewritten around the tray: **Choose files**
+(`multiple`), **Upload a folder** (`webkitdirectory`), and a drop zone that takes
+files, folders, or both.
+
+**`components/platform/docu/UploadBubble.tsx`** — same tray at `dense`, same two
+buttons, same drop handling; its 20 MB fork and its private regex are gone.
+
+## "Queued for reading", not "Reading" — and where the batch lands
+
+The wording follows the mechanism rather than dressing it up. `startExtraction`
+fires with `keepalive` and nobody awaits it, so at the moment the tray says a file
+is done, what is true is that it is *stored and queued*. Awaiting twenty
+extractions would hold the owner on the upload screen for minutes to tell them
+something the inbox tells them anyway.
+
+**The destination changed, and this is the one behavioural change beyond the
+feature.** The old page pushed to `/app/docu` — which is the folder **hub**
+(`FolderGridView`): folder tiles and KPI cards, **no document rows**, and neither
+a realtime subscription nor a pending-poll. Twenty documents uploaded to a screen
+that shows none of them, and would not update if it did, is not a destination. The
+page now pushes to **`/app/docu/recent`**, which renders `InboxView` — and that
+component both calls `useRealtimeRefresh('documents')` **and** polls
+`router.refresh()` every 6 s (capped at ~20 polls) while any row is `pending`. So
+the batch appears as pending rows that fill in by themselves. **No manual refresh
+affordance is needed on that route.** (Had it stayed on `/app/docu`, one would
+have been.) The bubble does not navigate: it lives inside `InboxView` /
+`FolderGridView`, so it calls `router.refresh()` and closes.
+
+## Three caps, deliberately unequal
+
+Documented at `MAX_BATCH_FILES` in `upload-client.ts`, because the temptation to
+"unify" them is the bug:
+
+- **20** — Doc-U batch. Bounded by patience and Storage; nothing reads all twenty
+  at once.
+- **10** — `MAX_ATTACHMENTS`, `app/api/ai/agent/route.ts`. A **model context**
+  limit: those documents are cited into a Haiku turn. It stays 10. (Note the chat
+  has no *client* cap; the server slices the citation list.)
+- **8** — `MAX_ORDER_FILES`, `lib/platform/docu/order-ingest-client.ts`. Each of
+  those files creates customers, orders and invoices — a write-amplification
+  limit.
+
+The Doc-U inbox itself has no limit; the cap is on one batch, not on the account.
+
+## Follow-up, NOT built: a folder Doc-U keeps watching
+
+`webkitdirectory` and the drop traversal read a folder **once**, at the moment it
+is chosen. A folder that stays connected — new scans appear, Doc-U ingests them —
+is a different feature and needs one of two things:
+
+1. **File System Access API** — `showDirectoryPicker()` plus a persisted
+   `FileSystemDirectoryHandle` in IndexedDB and `queryPermission`/
+   `requestPermission` on each visit. Chromium only (no Firefox, no Safari), and
+   the browser still requires a user gesture to re-grant after a restart, so
+   "watching" means "re-scans when the tab is open and the owner clicks once" —
+   it cannot ingest while the browser is closed. Polling `getFile()` mtimes is
+   the only change detection available.
+2. **The Electron shell** — the honest one, and the reason the desktop survey
+   matters. It would need a **preload script and an IPC channel**, neither of
+   which `desktop/main.js` has today (`sandbox: true`, no `preload`), plus
+   `chokidar` or `fs.watch` in the main process, a stored folder path, and an
+   upload path that talks to Supabase from the main process or hands bytes to the
+   renderer. That is a real piece of work — call it two to three days including
+   the auth question (the shell currently holds no session of its own; it just
+   loads the web app) — and it changes `desktop/` from "the website in a frame"
+   into an application with its own privileges. Not this wave, and not to be
+   started without deciding whether the desktop shell is a product or a shortcut.
+
+## Not verified by clicking
+
+No W6 walkthrough: it needs a signed-in org, and signing in means entering a
+password, which this agent does not do. What Josh should click:
+`/app/docu/upload` → **Choose files**, select 3–4 PDFs → tray lists them with
+sizes → ✕ one → **Upload N documents** → rows go Waiting → Uploading… → Queued
+for reading → lands on **Recent** with pending rows that fill in without a
+refresh. Then **Upload a folder** on a folder containing a `.txt` and a
+`.DS_Store` → only the PDFs/images stage, with "Skipped N files that aren't PDFs
+or images." Then drag that same folder onto the drop zone (the traversal path,
+which the folder *picker* does not exercise) → same result. Then the inbox's
+upload bubble → same tray in the popover. A >15 MB file should now be refused **in
+the tray** on both surfaces rather than uploading and stranding on `pending`.
+
+Static verification instead: `selectBatch` is covered by 14 tests
+(`tests/docu-upload-batch.test.ts`) over the cap, the tray-aware cap, folder
+filtering, de-duplication and the combined notices; the upload path itself is the
+unchanged W5 `uploadDocument`/`startExtraction`, called in a loop.
+
+## Gates
+
+`npx tsc --noEmit` — **clean**. (It was not, mid-wave: three errors from another
+agent's concurrent, uncommitted work — `app/app/docu/[id]/page.tsx` missing
+`products`/`printContext` on `DocumentDetailPanel`, and two literal-type errors in
+its new `tests/docu-invoice-from-extraction.test.ts`. Those files were not touched
+here, per the brief; they were clean by the time this landed.)
+`npm test` — **823 pass / 0 fail** (14 new). `npm run build` — clean.
+`npx eslint .` — **50 errors, 40 warnings**, exactly the baseline; the new tray
+initially added a 51st (React Compiler refusing to memoize `run` because
+`org?.id` in the dep list infers as a dependency on `org`), fixed by hoisting
+`orgId` to a primitive.

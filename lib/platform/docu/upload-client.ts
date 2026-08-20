@@ -33,15 +33,37 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  * can act on, instead of being uploaded, stored, charged for and then rejected
  * by an extract call that already has the bytes in memory.
  *
- * NOTE it is LOWER than the 20 MB the two Doc-U upload surfaces advertise and
- * enforce. Their number is wrong — a 17 MB scan uploads, then fails extraction
- * with "That file is too large to process" and sits on `pending` — but this
- * wave was scoped to leave those two callers behaving exactly as they did, so
- * this constant governs the chat's drop zone only and the divergence is
- * recorded here rather than silently fixed under a refactor.
+ * W5 left this governing the chat's drop zone only, while the two Doc-U upload
+ * surfaces advertised and enforced 20 MB — a number that was simply wrong, since
+ * a 17 MB scan uploaded, failed extraction with "That file is too large to
+ * process", and sat on `pending` forever. The batch wave routed both surfaces
+ * through `validateUploadFile`, so 15 MB is now the one ceiling everywhere and
+ * that divergence is closed.
  */
 export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 const MAX_UPLOAD_MB = MAX_UPLOAD_BYTES / (1024 * 1024);
+
+/**
+ * How many documents Doc-U will stage and upload in one go.
+ *
+ * WHY 20, AND WHY IT IS NOT THE CHAT'S NUMBER. Three different ceilings live in
+ * this codebase and they are three different constraints, not an inconsistency
+ * anyone should "tidy up":
+ *
+ *  - **20 here** — a Doc-U batch is bounded only by patience and by Storage.
+ *    Nothing reads all twenty at once; each file gets its own extraction and its
+ *    own inbox row, so the cap exists to keep one dropped folder from turning
+ *    into a hundred sequential uploads behind a button the owner cannot cancel.
+ *  - **10 in the chat** (`MAX_ATTACHMENTS`, `app/api/ai/agent/route.ts`) — that
+ *    one is a *model context* limit: those documents are cited into a Haiku turn.
+ *    Raising it to match this would quietly change what the chat can think about.
+ *  - **8 for OrderFlow ingest** (`MAX_ORDER_FILES`, `docu/order-ingest-client`) —
+ *    each of those files creates customers, orders and invoices, so its ceiling
+ *    is about write amplification.
+ *
+ * They are deliberately unequal. Change one and you have changed one product.
+ */
+export const MAX_BATCH_FILES = 20;
 
 /** The `accept` string for every file input that feeds this module. */
 export const UPLOAD_ACCEPT = 'application/pdf,image/*';
@@ -60,6 +82,22 @@ export interface UploadCandidate {
 }
 
 /**
+ * Could Doc-U read this at all — is it a PDF or a picture?
+ *
+ * SPLIT OUT OF `validateUploadFile` FOR THE FOLDER CASE. A folder dropped on the
+ * uploader arrives with everything in it: `.DS_Store`, a `notes.txt`, last
+ * year's spreadsheet. Those are not *errors the owner made* — they are the
+ * ordinary contents of a folder — so the batch drops them quietly and counts
+ * them, while a file the owner picked by hand still earns the full sentence from
+ * `validateUploadFile`. Same rule, two volumes.
+ */
+export function isReadableDocument(file: UploadCandidate): boolean {
+  return (
+    file.type === 'application/pdf' || file.type.startsWith('image/') || FILENAME_RE.test(file.name ?? '')
+  );
+}
+
+/**
  * Why this file cannot be uploaded, as a sentence to put in front of the owner
  * — or null when it can.
  *
@@ -73,9 +111,7 @@ export function validateUploadFile(file: UploadCandidate): string | null {
 
   if (!file.size) return `${name} is empty.`;
 
-  const looksReadable =
-    file.type === 'application/pdf' || file.type.startsWith('image/') || FILENAME_RE.test(file.name ?? '');
-  if (!looksReadable) return `${name} isn’t a PDF or an image — Doc-U reads PDFs, photos and scans.`;
+  if (!isReadableDocument(file)) return `${name} isn’t a PDF or an image — Doc-U reads PDFs, photos and scans.`;
 
   if (file.size > MAX_UPLOAD_BYTES) {
     const mb = Math.round((file.size / (1024 * 1024)) * 10) / 10;
@@ -83,6 +119,97 @@ export function validateUploadFile(file: UploadCandidate): string | null {
   }
 
   return null;
+}
+
+/** One staged row in the tray: the file, and why it will not upload (or null). */
+export interface StagedCandidate<T extends UploadCandidate> {
+  file: T;
+  problem: string | null;
+}
+
+export interface BatchSelection<T extends UploadCandidate> {
+  /** What belongs in the tray after this selection, in the order it arrived. */
+  staged: StagedCandidate<T>[];
+  /** What happened to the files that never reached the tray — or null when
+   *  every one of them did. Shown above the tray, once. */
+  notice: string | null;
+}
+
+/**
+ * Turn a pile of picked/dropped/traversed files into the rows of the staging
+ * tray, and a sentence about the ones that did not make it.
+ *
+ * PURE, AND THEREFORE TESTED. Everything that can be got wrong about a batch is
+ * in here — the cap arithmetic, whether the cap counts what is *already* staged,
+ * de-duplication when the owner picks the same folder twice — and none of it
+ * needs a browser to check. The React around it only renders what this returns.
+ *
+ * A FILE WITH A PROBLEM IS STILL STAGED. It is shown in the tray with its reason
+ * next to it and a ✕, rather than vanishing: the owner chose that file, and a
+ * batch that silently loses two of twelve is how a supplier invoice goes missing
+ * for a month. `dropUnreadable` is the one exception, for folders — see
+ * `isReadableDocument`.
+ *
+ * THE CAP COUNTS THE WHOLE TRAY, not this selection: dropping ten files twice is
+ * twenty, and a third drop is refused with the same sentence as one drop of
+ * thirty.
+ */
+export function selectBatch<T extends UploadCandidate>(
+  candidates: readonly T[],
+  opts: {
+    /** What the tray already holds. Counts against the cap, and against dupes. */
+    existing?: readonly UploadCandidate[];
+    /** Folder mode: quietly leave out anything that isn't a PDF or an image. */
+    dropUnreadable?: boolean;
+  } = {},
+): BatchSelection<T> {
+  const existing = opts.existing ?? [];
+  // Name + size is the strongest identity a File offers cheaply, and it is the
+  // one that matters: the same folder dragged twice, or the picker reopened.
+  // (size first so a colon inside a filename cannot shift the boundary)
+  const identity = (f: UploadCandidate) => `${f.size}:${f.name}`;
+  const seen = new Set(existing.map(identity));
+  const room = Math.max(0, MAX_BATCH_FILES - existing.length);
+
+  const staged: StagedCandidate<T>[] = [];
+  let unreadable = 0;
+  let duplicates = 0;
+  let overflow = 0;
+
+  for (const candidate of candidates) {
+    if (opts.dropUnreadable && !isReadableDocument(candidate)) {
+      unreadable += 1;
+      continue;
+    }
+    const key = identity(candidate);
+    if (seen.has(key)) {
+      duplicates += 1;
+      continue;
+    }
+    seen.add(key);
+    if (staged.length >= room) {
+      overflow += 1;
+      continue;
+    }
+    staged.push({ file: candidate, problem: validateUploadFile(candidate) });
+  }
+
+  const parts: string[] = [];
+  if (overflow > 0) {
+    const kept = existing.length + staged.length;
+    const total = kept + overflow;
+    parts.push(
+      `Only the first ${kept} of ${total} files were added — Doc-U takes ${MAX_BATCH_FILES} documents at a time, so the rest were skipped.`,
+    );
+  }
+  if (unreadable > 0) {
+    parts.push(`Skipped ${unreadable} file${unreadable === 1 ? '' : 's'} that ${unreadable === 1 ? 'isn’t a PDF or an image' : 'aren’t PDFs or images'}.`);
+  }
+  if (duplicates > 0) {
+    parts.push(`Skipped ${duplicates} file${duplicates === 1 ? '' : 's'} already in the list.`);
+  }
+
+  return { staged, notice: parts.length ? parts.join(' ') : null };
 }
 
 /**

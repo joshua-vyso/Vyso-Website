@@ -2,87 +2,58 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/platform/supabase-browser';
-import { usePlatform } from '@/lib/platform/session';
-import { startExtraction, uploadDocument, UPLOAD_ACCEPT } from '@/lib/platform/docu/upload-client';
-
-const ACCEPT = UPLOAD_ACCEPT;
-const MAX_MB = 20;
+import { MAX_BATCH_FILES, UPLOAD_ACCEPT } from '@/lib/platform/docu/upload-client';
+import { FOLDER_INPUT_PROPS, UploadStagingTray, useUploadBatch } from './UploadStagingTray';
 
 /**
- * In-place upload popover (no page navigation). Drag a file onto the field or
- * click to browse; each file is stored, a `pending` document row is inserted,
- * and AI extraction is kicked off. The inbox then polls until extraction
- * completes (see InboxView). Anchored by the caller; renders its own backdrop.
+ * In-place upload popover (no page navigation), anchored by the caller.
+ *
+ * WHAT IT DID BEFORE, HONESTLY. This bubble was never single-file — its input
+ * carried `multiple`, it walked a `FileList`, and it uploaded each file in turn.
+ * What it lacked was the *pause*: `handleFiles` ran off the change/drop event, so
+ * choosing files WAS committing them, with no list to check and nothing to take
+ * back out. It also enforced its own 20 MB ceiling and its own extension regex —
+ * both a fork of `validateUploadFile`, and the 20 MB was wrong (extraction
+ * refuses anything over 15 MB, so a 17 MB scan uploaded and then sat on
+ * `pending` forever). Both are gone: the bubble now stages into the same tray as
+ * the full-page uploader and validates through the same shared function.
+ *
+ * Folders work here too — dropped (traversed) or picked — because the owner who
+ * has a folder of scans is more likely to be standing in the inbox than on the
+ * upload page.
  */
 export function UploadBubble({ onClose }: { onClose: () => void }) {
   const router = useRouter();
-  const { org, userId } = usePlatform();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const batch = useUploadBatch();
+  const filesRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(0);
+  const [summary, setSummary] = useState<string | null>(null);
 
   // Escape closes the bubble (unless an upload is in flight).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !busy) onClose();
+      if (e.key === 'Escape' && !batch.busy) onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [busy, onClose]);
+  }, [batch.busy, onClose]);
 
-  // Storage object → `pending` documents row → extraction, all of it now in
-  // lib/platform/docu/upload-client.ts so the chat's drop zone (W5) lands a
-  // dropped invoice in exactly the same place as this bubble does. The body
-  // below is what used to be inline here, line for line.
-  async function uploadOne(file: File): Promise<void> {
-    const { documentId } = await uploadDocument(file, {
-      orgId: org?.id,
-      userId,
-      supabase: createClient(),
-    });
-    startExtraction(documentId);
-  }
-
-  async function handleFiles(files: FileList | File[]) {
-    // Validate the whole batch up front, then upload each file independently
-    // so one bad/failed file doesn't silently drop the rest.
-    const valid: File[] = [];
-    const skipped: string[] = [];
-    for (const f of Array.from(files)) {
-      const okType =
-        f.type === 'application/pdf' ||
-        f.type.startsWith('image/') ||
-        /\.(pdf|png|jpe?g|webp|gif|heic|bmp)$/i.test(f.name);
-      const okSize = f.size <= MAX_MB * 1024 * 1024;
-      if (okType && okSize) valid.push(f);
-      else skipped.push(`${f.name} (${!okSize ? `over ${MAX_MB}MB` : 'unsupported'})`);
-    }
-    if (valid.length === 0) {
-      setError(skipped.length ? `Skipped ${skipped.join(', ')}` : 'Only PDF, JPG or PNG files are supported.');
+  async function upload() {
+    setSummary(null);
+    const { uploaded, failed } = await batch.run();
+    // The inbox around this bubble subscribes to `documents` and polls while any
+    // row is pending, so a refresh here just gets the new rows on screen sooner.
+    router.refresh();
+    if (uploaded > 0 && failed === 0) {
+      onClose();
       return;
     }
-
-    setBusy(true);
-    setError(null);
-    setDone(0);
-    const failed: string[] = [];
-    for (const file of valid) {
-      try {
-        await uploadOne(file);
-        setDone((n) => n + 1);
-      } catch {
-        failed.push(file.name);
-      }
-    }
-    router.refresh();
-    setBusy(false);
-
-    const problems = [...skipped, ...failed.map((n) => `${n} (failed)`)];
-    if (problems.length) setError(`Couldn’t upload ${problems.join(', ')}`);
-    else onClose();
+    setSummary(
+      uploaded === 0
+        ? 'Nothing was uploaded — see the reasons above.'
+        : `${uploaded} uploaded, ${failed} failed. The failures are listed above.`,
+    );
   }
 
   return (
@@ -91,22 +62,22 @@ export function UploadBubble({ onClose }: { onClose: () => void }) {
       <button
         type="button"
         aria-label="Close upload"
-        disabled={busy}
-        onClick={() => (busy ? null : onClose())}
-        className={`fixed inset-0 z-40 bg-black/5 ${busy ? 'cursor-not-allowed' : 'cursor-default'}`}
+        disabled={batch.busy}
+        onClick={() => (batch.busy ? null : onClose())}
+        className={`fixed inset-0 z-40 bg-black/5 ${batch.busy ? 'cursor-not-allowed' : 'cursor-default'}`}
       />
       {/* Bubble */}
       <div
         role="dialog"
-        aria-label="Upload document"
-        className="absolute right-0 top-full z-50 mt-2 w-[340px] rounded-2xl border border-[#EAEDF2] bg-white p-4 shadow-[0_12px_40px_-12px_rgba(26,28,30,0.25)]"
+        aria-label="Upload documents"
+        className="absolute right-0 top-full z-50 mt-2 w-[360px] rounded-2xl border border-[#EAEDF2] bg-white p-4 shadow-[0_12px_40px_-12px_rgba(26,28,30,0.25)]"
       >
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="of-display text-[16px] font-semibold text-[#171A17]">Upload document</h3>
+          <h3 className="of-display text-[16px] font-semibold text-[#171A17]">Upload documents</h3>
           <button
             type="button"
-            onClick={() => (busy ? null : onClose())}
-            disabled={busy}
+            onClick={() => (batch.busy ? null : onClose())}
+            disabled={batch.busy}
             aria-label="Close"
             className="text-[#A0A49C] transition-colors hover:text-[#171A17] disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -117,7 +88,7 @@ export function UploadBubble({ onClose }: { onClose: () => void }) {
         <div
           onDragOver={(e) => {
             e.preventDefault();
-            if (!busy) setDragging(true);
+            if (!batch.busy) setDragging(true);
           }}
           onDragLeave={(e) => {
             e.preventDefault();
@@ -126,37 +97,66 @@ export function UploadBubble({ onClose }: { onClose: () => void }) {
           onDrop={(e) => {
             e.preventDefault();
             setDragging(false);
-            if (!busy && e.dataTransfer.files.length) void handleFiles(e.dataTransfer.files);
+            if (!batch.busy) void batch.addFromDrop(e.dataTransfer);
           }}
-          onClick={() => (busy ? null : inputRef.current?.click())}
-          className={`flex cursor-pointer flex-col items-center justify-center rounded-[14px] border-2 border-dashed px-5 py-9 text-center transition-colors ${
-            dragging
-              ? 'border-[#3E7BC4] bg-[#E7EEF8]'
-              : 'border-[#E2E6EC] bg-[#FBFCFE] hover:border-[#3E7BC4]/40 hover:bg-[#F5F9FE]'
+          className={`flex flex-col items-center justify-center rounded-[14px] border-2 border-dashed px-5 py-6 text-center transition-colors ${
+            dragging ? 'border-[#3E7BC4] bg-[#E7EEF8]' : 'border-[#E2E6EC] bg-[#FBFCFE]'
           }`}
         >
           <span className="text-[13px] font-semibold text-[#171A17]">
-            {busy ? `Uploading… (${done})` : dragging ? 'Drop to upload' : 'Drag a file here'}
+            {dragging ? 'Drop to add' : 'Drag files or a folder here'}
           </span>
           <span className="mt-1 text-[12px] text-[#A0A49C]">
-            {busy ? 'Doc-U is ingesting your file' : `or click to browse · PDF, JPG, PNG · up to ${MAX_MB}MB`}
+            PDF, JPG, PNG · up to {MAX_BATCH_FILES} files, 15 MB each
           </span>
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => filesRef.current?.click()}
+              disabled={batch.busy}
+              className="rounded-[10px] border border-[#E2E6EC] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#171A17] transition-colors hover:border-[#3E7BC4]/40 hover:text-[#174C87] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Choose files
+            </button>
+            <button
+              type="button"
+              onClick={() => folderRef.current?.click()}
+              disabled={batch.busy}
+              className="rounded-[10px] border border-[#E2E6EC] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#171A17] transition-colors hover:border-[#3E7BC4]/40 hover:text-[#174C87] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Choose a folder
+            </button>
+          </div>
           <input
-            ref={inputRef}
+            ref={filesRef}
             type="file"
-            accept={ACCEPT}
+            accept={UPLOAD_ACCEPT}
             multiple
             className="hidden"
-            disabled={busy}
+            disabled={batch.busy}
             onChange={(e) => {
-              if (e.target.files?.length) void handleFiles(e.target.files);
+              batch.addFiles(e.target.files);
               e.target.value = '';
             }}
           />
+          <input
+            ref={folderRef}
+            type="file"
+            multiple
+            className="hidden"
+            disabled={batch.busy}
+            onChange={(e) => {
+              batch.addFromFolderInput(e.target.files);
+              e.target.value = '';
+            }}
+            {...FOLDER_INPUT_PROPS}
+          />
         </div>
 
-        {error ? (
-          <p className="mt-3 rounded-[10px] bg-[#FCEBEB] px-3 py-2 text-[12px] font-medium text-[#A32D2D]">{error}</p>
+        <UploadStagingTray batch={batch} dense onUpload={() => void upload()} />
+
+        {summary ? (
+          <p className="mt-3 rounded-[10px] bg-[#FCEBEB] px-3 py-2 text-[12px] font-medium text-[#A32D2D]">{summary}</p>
         ) : null}
       </div>
     </>
