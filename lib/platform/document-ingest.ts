@@ -12,6 +12,14 @@ import {
   orgHasSupplySync,
 } from '@/lib/platform/supplysync-feed';
 import { isUniqueViolation } from '@/lib/platform/db-errors';
+import {
+  buildDirectionRecord,
+  matchCounterparty,
+  resolveDocumentDirection,
+  type CounterpartyCandidate,
+  type DocumentDirectionRecord,
+  type OrgIdentity,
+} from '@/lib/platform/docu/document-direction';
 import type { DocumentType, ExtractedData } from '@/lib/platform/types';
 
 /**
@@ -132,6 +140,104 @@ export async function resolveSupplierProfile(
     }
   }
   return supplierId;
+}
+
+/**
+ * Who the org is, for the outgoing-document check.
+ *
+ * `organisations.name` is always there; the trading name and VAT number live in
+ * Core Data's company profile (`cd_company_profile`), which most orgs complete
+ * during onboarding. NOT `of_settings` — that table carries invoice numbering
+ * and the default VAT RATE, not the business's identity.
+ *
+ * Best-effort by design: a missing profile simply means the org is recognised
+ * by its registered name alone, and a failed read means the direction check
+ * returns 'unknown' and nothing changes. Identity is used to REFUSE work
+ * (don't file this as a purchase), so degrading it can only ever restore the
+ * previous behaviour.
+ */
+export async function loadOrgIdentity(supabase: SupabaseClient, orgId: string): Promise<OrgIdentity> {
+  const [orgRes, profileRes] = await Promise.all([
+    supabase.from('organisations').select('name').eq('id', orgId).maybeSingle<{ name: string | null }>(),
+    supabase
+      .from('cd_company_profile')
+      .select('company_name, vat_number')
+      .eq('org_id', orgId)
+      .maybeSingle<{ company_name: string | null; vat_number: string | null }>(),
+  ]);
+  return {
+    legalName: orgRes.data?.name ?? null,
+    tradingName: profileRes.data?.company_name ?? null,
+    vatNumber: profileRes.data?.vat_number ?? null,
+  };
+}
+
+/** What the caller should write onto the document after the direction check. */
+export interface DocumentPartiesVerdict {
+  direction: 'incoming' | 'outgoing' | 'unknown';
+  /**
+   * The supplier name to keep in `extracted_data.supplier`. NULL on an outgoing
+   * document — the issuer there is the org itself, and leaving its own name in
+   * the supplier slot is what made it show up as a vendor in the first place.
+   */
+  supplierName: string | null;
+  /** `documents.customer_id`, set only when exactly one customer clearly matched. */
+  customerId: string | null;
+  /** Stored at `extracted_data.direction`. Null unless the document is outgoing. */
+  record: DocumentDirectionRecord | null;
+}
+
+/**
+ * Decide which way an extracted document points, and — when the org issued it —
+ * find the customer.
+ *
+ * THE FAILURE THIS CLOSES. A photographed Turn 'n Slice invoice ("Invoice To:
+ * Investec Bank Limited") was filed as a supplier invoice with "Turn n Slice HQ
+ * (Pty) Ltd" created as the supplier. `resolveSupplierProfile` refuses the org's
+ * own name, but only on EXACT normalised equality, and the letterhead carried one
+ * extra token. The decision itself is pure and tested — see
+ * `lib/platform/docu/document-direction.ts`; this function is only the two reads
+ * around it.
+ *
+ * The customer list is loaded ONLY for an outgoing document, so the ordinary
+ * supplier-invoice path pays for one identity read and nothing else.
+ *
+ * NEVER CREATES A CUSTOMER. `syncOrderFromDocument` is allowed to create one
+ * from an uploaded order because the person who uploaded it is standing there
+ * naming their own customer. Here the name comes off a photographed page with
+ * nobody watching, so an unmatched counterparty stays blank and the review
+ * screen says so.
+ */
+export async function classifyDocumentParties(
+  supabase: SupabaseClient,
+  orgId: string,
+  extracted: { supplier: string | null; supplierVat?: string | null; billTo: string | null },
+): Promise<DocumentPartiesVerdict> {
+  const identity = await loadOrgIdentity(supabase, orgId);
+  const input = {
+    issuer: extracted.supplier,
+    issuerVatNumber: extracted.supplierVat ?? null,
+    billTo: extracted.billTo,
+    identity,
+  };
+  const verdict = resolveDocumentDirection(input);
+  if (verdict.direction !== 'outgoing') {
+    return { direction: verdict.direction, supplierName: extracted.supplier, customerId: null, record: null };
+  }
+
+  const { data: customerRows } = await supabase
+    .from('of_customers')
+    .select('id, name')
+    .eq('org_id', orgId)
+    .returns<CounterpartyCandidate[]>();
+  const match = matchCounterparty(extracted.billTo, customerRows ?? []);
+
+  return {
+    direction: 'outgoing',
+    supplierName: null,
+    customerId: match.customerId,
+    record: buildDirectionRecord(verdict, input, match),
+  };
 }
 
 /**
@@ -662,32 +768,66 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
     };
   }
 
-  // 4b. NON-ORDER → store the extracted fields, resolve the supplier (alias
-  //     ruling → suppliers row → SupplySync profile; null for the org's own
-  //     name), feed ProcurePulse. Reuses the classification result.
+  // 4b. NON-ORDER → decide which way the document points, store the extracted
+  //     fields, resolve the supplier (alias ruling → suppliers row → SupplySync
+  //     profile; null for the org's own name), feed ProcurePulse. Reuses the
+  //     classification result.
+
+  // WHICH WAY DOES IT POINT? An invoice on the ORG'S OWN letterhead is one the
+  // org issued, and nothing below it should treat the issuer as a vendor. Runs
+  // AFTER the line audit and BEFORE supplier resolution, because its whole job
+  // is to stop that resolution happening on a document that has no supplier.
+  // Best-effort: a failed identity read leaves `direction` unknown, which is
+  // exactly the behaviour that shipped before this existed.
+  let parties: DocumentPartiesVerdict = {
+    direction: 'unknown',
+    supplierName: cls.supplier,
+    customerId: null,
+    record: null,
+  };
+  try {
+    parties = await classifyDocumentParties(supabase, orgId, {
+      supplier: cls.supplier,
+      supplierVat: cls.supplier_vat,
+      billTo: cls.bill_to,
+    });
+  } catch {
+    /* unknown direction — carry on exactly as before */
+  }
+
   let supplierId: string | null = null;
-  if (cls.supplier) {
+  if (parties.supplierName) {
     try {
-      supplierId = await resolveSupplierProfile(supabase, orgId, cls.supplier);
+      supplierId = await resolveSupplierProfile(supabase, orgId, parties.supplierName);
     } catch {
       /* keep it unlinked */
     }
   }
+  const extractedData = {
+    fields: cls.fields,
+    line_items: cls.line_items,
+    summary: cls.summary,
+    // NULL on an outgoing document. Doc-U's detail panel and flags both fall
+    // back to this string when there is no linked supplier row, so leaving the
+    // org's own name here would keep showing it as the counterparty.
+    supplier: parties.supplierName,
+    bill_to: cls.bill_to,
+    // Arithmetic audit of the lines (null when they add up) — lib/platform/docu/line-audit.ts.
+    line_audit: cls.line_audit,
+    // Only set when the org issued it — lib/platform/docu/document-direction.ts.
+    direction: parties.record,
+  };
   await supabase
     .from('documents')
     .update({
       status: 'extracted',
       confidence: cls.overall_confidence,
       document_type: documentType,
-      extracted_data: {
-        fields: cls.fields,
-        line_items: cls.line_items,
-        summary: cls.summary,
-        supplier: cls.supplier,
-        // Arithmetic audit of the lines (null when they add up) — lib/platform/docu/line-audit.ts.
-        line_audit: cls.line_audit,
-      },
+      extracted_data: extractedData,
       ...(supplierId ? { supplier_id: supplierId } : {}),
+      // Written even when null: an outgoing document whose customer we could not
+      // recognise must CLEAR any stale linkage, not inherit one.
+      ...(parties.direction === 'outgoing' ? { customer_id: parties.customerId } : {}),
     })
     .eq('id', documentId);
 
@@ -701,7 +841,9 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
         document_type: documentType,
         filename,
         supplier_id: supplierId,
-        extracted_data: { fields: cls.fields, line_items: cls.line_items, supplier: cls.supplier },
+        // `direction` rides along so the ProcurePulse feed can refuse an
+        // outgoing document's lines — see feedDocumentToProcurePulse.
+        extracted_data: extractedData,
       });
     } catch {
       /* best-effort — filing already succeeded */
@@ -712,7 +854,7 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
     ok: true,
     documentId,
     documentType,
-    supplier: cls.supplier ?? null,
+    supplier: parties.supplierName ?? null,
     itemCount: cls.line_items.length,
   };
 }

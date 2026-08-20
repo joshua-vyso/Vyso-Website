@@ -8,6 +8,7 @@ import type { DocuExtractedData, DocumentFlag, FlagKind, FlagSeverity } from './
 import { docTotal, findFieldValue } from './extract';
 
 export const FLAG_META: Record<FlagKind, { label: string; severity: FlagSeverity }> = {
+  outgoing_invoice: { label: 'Outgoing invoice', severity: 'info' },
   line_realigned: { label: 'Columns re-aligned', severity: 'warning' },
   line_math: { label: 'Line totals do not add up', severity: 'critical' },
   duplicate_invoice: { label: 'Duplicate invoice', severity: 'critical' },
@@ -50,8 +51,16 @@ export function deriveFlags(
     add(audit.diagnosis === 'row_shift' ? 'line_realigned' : 'line_math', audit.note, 'derived');
   }
 
-  // REAL — unknown supplier
-  if (!doc.supplier_id && !doc.supplier) {
+  // REAL — the org issued this one (lib/platform/docu/document-direction.ts).
+  // It REPLACES the "unknown supplier" flag rather than joining it: an outgoing
+  // invoice has no supplier by definition, and telling the owner one is missing
+  // is how a document like this ended up with the org as its own vendor. The
+  // note already says whether the customer was recognised.
+  const direction = (doc.extracted_data as DocuExtractedData | null)?.direction ?? null;
+  if (direction?.direction === 'outgoing') {
+    add('outgoing_invoice', `${direction.note}.`, 'derived');
+  } else if (!doc.supplier_id && !doc.supplier) {
+    // REAL — unknown supplier
     add('unknown_supplier', 'No supplier is matched to this document yet.', 'derived');
   }
 

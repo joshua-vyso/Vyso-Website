@@ -27,6 +27,8 @@ import { documentTypeLabel } from './documents.ts';
 import { DOC_LOW_CONFIDENCE_THRESHOLD } from './tokens.ts';
 import { PRELUDE_END, REVIEW_CHAT_MODULE } from './finch-chats-shared.ts';
 import type { Document } from './types.ts';
+import type { DocuExtractedData } from './docu/types.ts';
+import type { DocumentDirectionRecord } from './docu/document-direction.ts';
 
 // Re-exported so the Review wave's own files have one import site, while the
 // value itself lives where `splitChats` can reach it without a cycle.
@@ -203,20 +205,40 @@ export function isClaimableDocument(approvedAt: string | null, staleBeforeMs: nu
  *  yet (which is most of the queue: the supplier is resolved during the commit
  *  this item is waiting for). */
 export function reviewDocumentTitle(row: ReviewDocumentRow): string {
-  const supplier = row.supplier?.name?.trim();
   const type = documentTypeLabel(row);
-  const who = supplier || row.filename.trim() || 'Untitled document';
+  // A document the ORG issued has no supplier and must never be titled as
+  // though it did. Name the customer when one was matched, and say plainly that
+  // it is ours when none was — the filename alone reads like an unattributed
+  // supplier invoice, which is the confusion this whole feature exists to end.
+  const direction = outgoingDirection(row);
+  const who = direction
+    ? direction.customer_name?.trim() || 'Outgoing invoice'
+    : row.supplier?.name?.trim() || row.filename.trim() || 'Untitled document';
   return type === '—' ? who : `${who} — ${type}`;
 }
 
 /** Why this document is in the queue, in one line. */
 export function reviewDocumentDetail(row: ReviewDocumentRow): string {
   if (row.status === 'error') return 'Flagged — Vyso could not read this one.';
+  // The direction note is the most important thing about an outgoing document,
+  // so it leads. "Outgoing invoice — customer not recognised" tells the owner
+  // both what happened and what is left to do; the confidence clause still
+  // follows, because an outgoing document is read no more reliably than any other.
+  const direction = outgoingDirection(row);
   const low =
     typeof row.confidence === 'number' && row.confidence < DOC_LOW_CONFIDENCE_THRESHOLD
       ? ` Read at ${Math.round(row.confidence)}% confidence, so it is worth a look.`
       : '';
+  if (direction) return `${direction.note}. Waiting for your approval.${low}`;
   return `Extracted, waiting for your approval.${low}`;
+}
+
+/** This row's outgoing-document record, or null. Reads the same jsonb the
+ *  extraction pipeline writes (lib/platform/docu/document-direction.ts) via the
+ *  web-only view over `extracted_data`. */
+function outgoingDirection(row: ReviewDocumentRow): DocumentDirectionRecord | null {
+  const record = (row.extracted_data as DocuExtractedData | null)?.direction ?? null;
+  return record?.direction === 'outgoing' ? record : null;
 }
 
 /**

@@ -71,6 +71,12 @@ export interface ExtractionResult {
   document_type: ExtractedDocType;
   /** The selling/issuing party (the counterparty the document is FROM), or null. */
   supplier: string | null;
+  /** The VAT registration number printed against the ISSUER, or null. Used to
+   *  recognise the org's own letterhead — see lib/platform/docu/document-direction.ts. */
+  supplier_vat: string | null;
+  /** The party billed — "Invoice To" / "Bill To" / "Sold To" / the statement's
+   *  account holder — or null. On an OUTGOING document this is the customer. */
+  bill_to: string | null;
   fields: ExtractedField[];
   line_items: ExtractedLineItem[];
   summary: StatementSummary | null;
@@ -94,6 +100,8 @@ Respond with ONLY a JSON object (no prose, no markdown code fences) of exactly t
 {
   "document_type": "invoice" | "statement" | "delivery_note" | "price_list" | "order",
   "supplier": string | null,
+  "supplier_vat": string | null,
+  "bill_to": string | null,
   "line_items": [
     {
       "description": string,
@@ -125,6 +133,8 @@ Respond with ONLY a JSON object (no prose, no markdown code fences) of exactly t
 }
 Rules:
 - "supplier" (top level): the SELLING / ISSUING party — the business this document is FROM and that is owed the money. Read it dynamically from anywhere on the page; do not assume a fixed position. It is the letterhead / logo entity, typically the one printed with a VAT registration number and/or its own banking details. It is NOT the recipient: never return the party under "Bill To", "Ship To", "Sold To", "Customer", "Account", "Deliver To", or the account holder named in a statement header — that is the buyer. Return the cleaned trading name in Title Case, keeping a legal suffix if shown (e.g. "Bacca Valley (Pty) Ltd", "Country Mushrooms (Pty) Ltd"). For a fresh-produce MARKET statement, the document-level supplier is the MARKET named in the page header (e.g. "Johannesburg Fresh Produce Market"). Use null only if no issuing party appears anywhere.
+- "supplier_vat": the VAT / tax registration number printed against that SAME issuing party (usually directly under its name or in its footer), exactly as shown. Do NOT return a VAT number that belongs to the recipient, and do not return one you are unsure the issuer owns — null is the right answer when the page does not make ownership obvious.
+- "bill_to": the party being BILLED — the name under "Invoice To", "Bill To", "Sold To", "Customer", "Deliver To", or the account holder named in a statement header. It is the mirror image of "supplier": one is who the document is FROM, the other is who it is TO, and they are never the same business. Return the name only (no address lines, no account code), cleaned to Title Case with any legal suffix kept. Use null if the document names no recipient.
 - "summary": if the document has a TRANSACTION SUMMARY / account-totals block (opening balance, closing/system balance, total purchases, VAT, pallet refunds/usage, payments, audit error), extract those figures as plain NUMBERS — strip currency symbols and thousands separators, keep the sign as printed (money out may be negative). Map: opening_balance, payments (or "net financial transactions" if no explicit payments line → put it in net_financial_transactions), total_purchases, total_pallet_refunds (pallet refunds/deposits), total_pallet_usage (pallet usage fee), vat ("VAT included in above transactions"), total_charges, closing_balance ("system closing balance"), audit_error. statement_date = the date printed next to the closing balance / "as at" date, exactly as shown (e.g. "23/MAY/2026"). If there is NO totals block, set "summary" to null.
 - Include EVERY product row across ALL pages and ALL "PURCHASES ON CARD ID" sections. Do not skip or summarise rows.
 - The commodity cell is often a messy comma-separated string like "BABY BUTTERNUT,300G PUNNE,*,0,*,12,*" or "ORANGES,6KG POCKET,NAVEL,2,M,*". From it derive:
@@ -209,6 +219,8 @@ export async function extractDocument(params: {
     document_type: parsed.document_type ?? null,
     supplier:
       typeof parsed.supplier === 'string' && parsed.supplier.trim() ? parsed.supplier.trim() : null,
+    supplier_vat: cleanString(parsed.supplier_vat),
+    bill_to: cleanString(parsed.bill_to),
     fields,
     line_items: audit.repaired ?? lines,
     summary,
@@ -216,6 +228,11 @@ export async function extractDocument(params: {
       audit.confidenceCap != null ? Math.min(confidence, audit.confidenceCap) : confidence,
     line_audit: summariseAudit(audit),
   };
+}
+
+/** A trimmed string, or null — for the model's optional free-text fields. */
+function cleanString(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() ? v.trim() : null;
 }
 
 /** The document's own total, for the audit's line-sum cross-check: an extracted

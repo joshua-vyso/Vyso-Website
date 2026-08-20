@@ -259,3 +259,43 @@ test('detectDocWatchFinding: a line with no amount is priced from quantity × un
   );
   assert.equal(f?.observation, `Invoice INV-1 from Winelands Protein Co. read this morning. Biggest lines: Tomatoes ${zar(2_350)}.`);
 });
+
+// ---------------------------------------------------------------------------
+// Outgoing invoices — the org issued it, so the card must not say "from".
+// ---------------------------------------------------------------------------
+
+test('an outgoing invoice names the matched customer, never a supplier', () => {
+  const base = input();
+  const finding = detectDocWatchFinding({
+    ...base,
+    // supplier_id is null on an outgoing document, so run.ts hands over no name.
+    supplierName: null,
+    extracted: {
+      ...base.extracted,
+      direction: { direction: 'outgoing', customer_name: 'Investec Bank Limited' },
+    },
+  });
+  assert.ok(finding);
+  assert.match(finding.observation, /^Invoice INV-9268 you issued to Investec Bank Limited, read /);
+  assert.doesNotMatch(finding.observation, / from /);
+});
+
+test('an outgoing invoice with no matched customer says so rather than guessing', () => {
+  const base = input();
+  const finding = detectDocWatchFinding({
+    ...base,
+    supplierName: null,
+    // The name on the paper is deliberately NOT carried here — only a matched
+    // of_customers row's name is ever printed.
+    extracted: { ...base.extracted, direction: { direction: 'outgoing', customer_name: null } },
+  });
+  assert.ok(finding);
+  assert.match(finding.observation, /^Invoice INV-9268 you issued, read /);
+  assert.match(finding.observation, /The customer was not recognised\.$/);
+});
+
+test('an incoming invoice keeps its original sentence', () => {
+  const finding = detectDocWatchFinding(input());
+  assert.ok(finding);
+  assert.match(finding.observation, /^Invoice INV-9268 from Winelands Protein Co\. read /);
+});

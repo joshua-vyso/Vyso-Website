@@ -8,7 +8,8 @@ import { syncOrderFromDocument } from '@/lib/platform/orderflow-from-doc';
 // Shared with the chat + inbound-email ingest so supplier resolution behaves
 // identically everywhere: alias ruling → suppliers row (race-safe) → SupplySync
 // profile, with the org's own name never becoming a supplier.
-import { resolveSupplierProfile } from '@/lib/platform/document-ingest';
+import { classifyDocumentParties, resolveSupplierProfile } from '@/lib/platform/document-ingest';
+import type { DocumentPartiesVerdict } from '@/lib/platform/document-ingest';
 import { autoForwardDocumentToHubdoc } from '@/lib/platform/hubdoc';
 import type { Document } from '@/lib/platform/types';
 
@@ -143,34 +144,70 @@ export async function POST(req: Request) {
 
   const documentType = doc.document_type ?? result.document_type;
 
+  // WHICH WAY DOES THIS DOCUMENT POINT? An invoice on the ORG'S OWN letterhead
+  // is one the org ISSUED — "Invoice To: Investec Bank Limited" on Turn 'n Slice
+  // paper — and it has no supplier at all. Deciding this BEFORE supplier
+  // resolution is the point: it is what stops the org being created as its own
+  // vendor. Best-effort; a failure leaves the direction unknown and everything
+  // below behaves exactly as it did before. See lib/platform/docu/document-direction.ts.
+  let parties: DocumentPartiesVerdict = {
+    direction: 'unknown',
+    supplierName: result.supplier,
+    customerId: null,
+    record: null,
+  };
+  try {
+    parties = await classifyDocumentParties(supabase, doc.org_id, {
+      supplier: result.supplier,
+      supplierVat: result.supplier_vat,
+      billTo: result.bill_to,
+    });
+  } catch {
+    /* unknown direction — carry on exactly as before */
+  }
+
   // Resolve (or create) the extracted supplier into a suppliers row and link the
   // document, so the inbox, supplier intel and the ProcurePulse feed all see a
   // real counterparty. Best-effort — never block extraction on this.
   let supplierId = doc.supplier_id;
-  if (result.supplier) {
+  if (parties.supplierName) {
     try {
-      supplierId = (await resolveSupplierProfile(supabase, doc.org_id, result.supplier)) ?? doc.supplier_id;
+      supplierId = (await resolveSupplierProfile(supabase, doc.org_id, parties.supplierName)) ?? doc.supplier_id;
     } catch {
       /* keep the existing supplier_id */
     }
+  } else if (parties.direction === 'outgoing') {
+    // The org issued it: drop any supplier this document was previously (wrongly)
+    // linked to. Leaving a stale link is how a re-extraction would keep the bug.
+    supplierId = null;
   }
+
+  const extractedData = {
+    fields: result.fields,
+    line_items: result.line_items,
+    summary: result.summary,
+    // NULL on an outgoing document — the issuer is the org, and the detail panel
+    // falls back to this string whenever there is no linked supplier row.
+    supplier: parties.supplierName,
+    bill_to: result.bill_to,
+    // Arithmetic audit of the lines (null when they add up). Drives the
+    // review-queue warning and the Doc-U flags — see lib/platform/docu/line-audit.ts.
+    line_audit: result.line_audit,
+    // Only set when the org issued it — lib/platform/docu/document-direction.ts.
+    direction: parties.record,
+  };
 
   const { error: updateErr } = await supabase
     .from('documents')
     .update({
       status: 'extracted',
       confidence: result.overall_confidence,
-      extracted_data: {
-        fields: result.fields,
-        line_items: result.line_items,
-        summary: result.summary,
-        supplier: result.supplier,
-        // Arithmetic audit of the lines (null when they add up). Drives the
-        // review-queue warning and the Doc-U flags — see lib/platform/docu/line-audit.ts.
-        line_audit: result.line_audit,
-      },
+      extracted_data: extractedData,
       document_type: documentType,
-      ...(supplierId && supplierId !== doc.supplier_id ? { supplier_id: supplierId } : {}),
+      ...(supplierId !== doc.supplier_id ? { supplier_id: supplierId } : {}),
+      // Written even when null: an outgoing document whose customer we could not
+      // recognise must CLEAR any stale linkage, not inherit one.
+      ...(parties.direction === 'outgoing' ? { customer_id: parties.customerId } : {}),
     })
     .eq('id', doc.id);
   if (updateErr) {
@@ -188,11 +225,9 @@ export async function POST(req: Request) {
         filename: doc.filename,
         document_type: documentType,
         supplier_id: supplierId,
-        extracted_data: {
-          fields: result.fields,
-          line_items: result.line_items,
-          supplier: result.supplier,
-        },
+        // `direction` rides along so the feed can refuse an outgoing document's
+        // lines — they are goods that LEFT the business, not stock received.
+        extracted_data: extractedData,
       });
     }
   } catch {
@@ -210,7 +245,7 @@ export async function POST(req: Request) {
         document_type: documentType,
         filename: doc.filename,
         supplier_id: supplierId,
-        extracted_data: { fields: result.fields, line_items: result.line_items, supplier: result.supplier },
+        extracted_data: extractedData,
         created_at: doc.created_at,
       });
     }

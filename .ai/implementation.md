@@ -4598,3 +4598,194 @@ agent does not do. Static verification instead: the save path writes
 `DocumentDetailPanel` reads `doc.extracted_data.line_items` back into the editor's
 initial state — so a saved row reappears. The print dialog's content is whatever
 `#of-doc-print` contains, which is the unchanged `InvoiceSheetClassic`.
+
+---
+
+# Outgoing-invoice direction detection (Doc-U)
+
+## The failure
+
+A photographed A4 on **Turn 'n Slice letterhead** — TnS logo, TnS banking details,
+`Invoice To: Investec Bank Limited` — was filed as a **supplier invoice**, and
+`Turn n Slice HQ (Pty) Ltd` was created as a row in `suppliers`. The org became its
+own vendor: its selling prices entered supplier price history, its own sales counted
+as spend, and the customer it had actually invoiced appeared nowhere on the document.
+
+## Why the org-name guard missed
+
+`resolveSupplierProfile` (`lib/platform/document-ingest.ts`) already refuses to make a
+supplier out of the org itself — but only on **exact normalised equality**:
+
+```ts
+const orgNorm  = normalizeSupplierName(org.name);   // "turn n slice"
+const nameNorm = normalizeSupplierName(trimmed);    // "turn n slice hq"
+if (orgNorm && nameNorm && orgNorm === nameNorm) return null;
+```
+
+The org is registered as `Turn 'n Slice`; the letterhead reads `Turn n Slice HQ (Pty)
+Ltd`. `normalizeSupplierName` strips the apostrophe and `(Pty) Ltd` but not `HQ`, so
+the two strings sit **one token apart** and the guard stayed silent. The exactness is
+not a bug — its own comment records why containment was removed (org `Fresh Valley
+Produce` was swallowing supplier `Valley Produce`, filing real invoices permanently
+unlinked). Exact equality is the right rule for *"is this string literally us"* and
+the wrong rule for *"is this letterhead ours"*. Both call sites
+(`app/api/ai/extract/route.ts` and the chat/email ingest path) share that one guard,
+so both were wrong the same way — this was never a one-path problem.
+
+A second, quieter half: even had the guard fired, the outcome was only
+`supplier_id = null`. Nothing read the counterparty, so the document would still have
+looked like an unattributed *purchase*.
+
+## Built
+
+**`lib/platform/docu/document-direction.ts`** — pure, no I/O, tested. Identity comes
+in as values, a verdict comes out.
+
+- `normaliseParty` mirrors `normalizeSupplierName` (written locally, not imported,
+  because that module uses the `@/` alias the `node --test` runner cannot resolve —
+  the header says so and says to change both).
+- `matchesOrgIdentity` — exact VAT match first (two businesses cannot share one), then
+  token-set Dice ≥ **0.85** against `organisations.name` and
+  `cd_company_profile.company_name`. 0.85 is *one extra token on a three-token name*
+  (`turn n slice` vs `turn n slice hq` = 0.857) and deliberately does not reach the
+  regression the old comment warns about (`Fresh Valley Produce` vs `Valley Produce` =
+  0.80 → still a supplier; there is a test).
+- `resolveDocumentDirection` → `'incoming' | 'outgoing' | 'unknown'`. Ordered so the
+  common path is cheap and every uncertainty lands on `'unknown'`, which means
+  "behave exactly as before": no identity on file → unknown; issuer ≠ org → incoming;
+  no issuer read → unknown; **both** sides look like the org → unknown; issuer = org →
+  outgoing.
+- `matchCounterparty` — strict. Exact normalised name, or a single Dice ≥ **0.75**
+  winner that beats the runner-up by more than 0.01; anything else is a miss with a
+  reason (`no_name` / `no_customers` / `below_threshold` / `ambiguous`). Explicitly
+  **not** `matchCustomer` from `orderflow-from-doc.ts`: that one is allowed to be
+  generous because its failure branch *creates the customer*. Here a miss must stay a
+  blank.
+- `buildDirectionRecord` → what is persisted at `extracted_data.direction` (jsonb, no
+  migration — same place `line_audit`, `summary` and `custom_type` already live). Only
+  outgoing documents carry a record, so an **absent** `direction` still means exactly
+  what it always meant.
+
+**`lib/ai/anthropic.ts`** — two fields added to the extraction contract (after the
+row-shift agent's prompt edit landed, `28c1da2`): `bill_to` (the "Invoice To" / "Bill
+To" / "Sold To" party, described as the mirror image of `supplier`) and `supplier_vat`
+(the VAT number printed against the **issuer**, with an explicit instruction not to
+return the recipient's and to prefer `null` over a guess).
+
+**`lib/platform/document-ingest.ts`** — `loadOrgIdentity` (org name + Core Data
+company profile; *not* `of_settings`, which carries numbering and VAT **rates**, not
+identity) and `classifyDocumentParties`, which runs the pure decision and, only for an
+outgoing document, loads `of_customers`. The ordinary supplier-invoice path pays for
+one identity read and nothing else.
+
+**Wiring** — both extraction paths, direction check **before** supplier resolution
+(that ordering is the fix). Outgoing ⇒ `supplier_id = null` (cleared, so a
+re-extraction cannot inherit a stale wrong link), `extracted_data.supplier = null`
+(the detail panel and the flags engine both fall back to that string when there is no
+supplier row), `customer_id` written **even when null**, and the record stored.
+
+## What an outgoing document looks like in review
+
+| Surface | Before | Now |
+|---|---|---|
+| Review queue title | `Turn n Slice HQ (Pty) Ltd — Invoice` | `Investec Bank Limited — Invoice`, or `Outgoing invoice — Invoice` when unmatched |
+| Review queue detail | `Extracted, waiting for your approval.` | `Outgoing invoice — customer not recognised. Waiting for your approval.` |
+| Doc-U flag | `Unknown supplier · warning` | `Outgoing invoice · info` — it **replaces** the unknown-supplier flag, which is otherwise the exact prompt that invites someone to type the org back in |
+| Detail panel supplier | `Turn n Slice HQ (Pty) Ltd` | nothing (no row, no extracted string) |
+| Doc Watch card | `Invoice INV-… from Turn n Slice HQ read this morning` | `Invoice INV-… you issued to {customer}, read this morning` — or `…you issued, read this morning — R X. The customer was not recognised.` |
+
+No component files were edited. Every one of those lines comes from a pure module the
+components already call (`review-queue-shared.ts`, `docu/flags.ts`,
+`doc-watch/detect.ts`), so the Doc-U and OrderFlow components stayed untouched.
+
+Doc Watch prints the customer **only when it was matched to an `of_customers` row**.
+The alternative is the unverified string on the paper, and a Brief card is not the
+place to assert one of those.
+
+## Downstream exclusion
+
+- **Price Watch** — excluded, twice over. `run.ts` selects
+  `.in('document_type', PRICED_DOC_TYPES)` and then skips any document with no
+  supplier: *"pw_price_points.supplier_id is NOT NULL: a line we cannot attribute to a
+  vendor cannot join a price series, and inventing an attribution is the one thing
+  this agent must never do."* An outgoing document has `supplier_id = null`, so it is
+  counted as `documentsSkipped.no_supplier` and never reaches `pw_price_points`. No
+  change was needed there, and none was made.
+- **ProcurePulse** — this one *did* need a guard. `feedDocumentToProcurePulse` never
+  required a supplier, so an outgoing invoice's lines would have been booked in as
+  **stock received**. One early return on `extracted_data.direction`, placed in the
+  feed rather than at the call sites so all three paths are covered — including the
+  review-queue Save, which re-reads the stored row.
+- **SupplySync** — already gated on `supplierId &&`, so a null supplier skips it.
+- **Debtors Watch** reads `of_invoices`, not `documents`; an outgoing Doc-U scan
+  creates no invoice, so it is untouched. *Follow-up, not done here:* an outgoing scan
+  that matches a customer is arguably an `of_invoices` row waiting to be created —
+  that is a Doc-U → OrderFlow feature, not a bug fix, and it must not be automatic.
+
+## Backfill triage — SQL for Josh (read-only, changes nothing)
+
+Finds documents already filed with the org's own identity as the supplier. Match rule
+is deliberately looser than the code's (token-prefix either way, no Dice in SQL), so it
+over-reports slightly — this is a list to eyeball, not a script to run.
+
+```sql
+-- Turn 'n Slice: a24f858b-b40b-4824-bc29-8818f034d44b
+-- Drop the org_id filter to sweep every org.
+with doc as (
+  select d.id, d.org_id, d.filename, d.document_type, d.status,
+         d.supplier_id, d.customer_id, d.created_at,
+         coalesce(d.extracted_data->>'supplier', s.name) as supplier_as_read
+  from documents d
+  left join suppliers s on s.id = d.supplier_id
+  where d.org_id = 'a24f858b-b40b-4824-bc29-8818f034d44b'
+    and d.document_type in ('invoice', 'statement', 'delivery_note')
+    and d.extracted_data->'direction' is null          -- not already re-classified
+    and coalesce(d.extracted_data->>'supplier', s.name) is not null
+),
+org_names as (
+  select o.id as org_id, n.name
+  from organisations o
+  left join cd_company_profile p on p.org_id = o.id
+  cross join lateral (values (o.name), (p.company_name)) as n(name)
+  where n.name is not null
+),
+squashed as (
+  select doc.*, org_names.name as org_name,
+         btrim(regexp_replace(regexp_replace(regexp_replace(regexp_replace(
+           lower(doc.supplier_as_read),
+           '\(.*?\)', ' ', 'g'), '[^a-z0-9 ]', ' ', 'g'),
+           '\y(pty|ltd|limited|proprietary|cc|inc|bpk|edms|npc)\y', ' ', 'g'),
+           ' +', ' ', 'g')) as doc_norm,
+         btrim(regexp_replace(regexp_replace(regexp_replace(regexp_replace(
+           lower(org_names.name),
+           '\(.*?\)', ' ', 'g'), '[^a-z0-9 ]', ' ', 'g'),
+           '\y(pty|ltd|limited|proprietary|cc|inc|bpk|edms|npc)\y', ' ', 'g'),
+           ' +', ' ', 'g')) as org_norm
+  from doc
+  join org_names on org_names.org_id = doc.org_id
+)
+select distinct on (id)
+       id, created_at, filename, document_type, status,
+       supplier_as_read, org_name, supplier_id, customer_id
+from squashed
+where length(org_norm) >= 3
+  and (doc_norm = org_norm
+       or doc_norm like org_norm || ' %'
+       or org_norm like doc_norm || ' %')
+order by id, created_at desc;
+```
+
+Then, per document, either re-run extraction from the Doc-U inbox (which now
+classifies it correctly) or fix it by hand. **Nothing here writes.** The suppliers rows
+those documents created (`Turn n Slice HQ (Pty) Ltd` and friends) also want deleting,
+but only after their documents are re-pointed — `documents.supplier_id` is
+`on delete set null`, so deleting first silently unlinks anything genuinely attached.
+
+## Not verified by clicking
+
+The end-to-end walkthrough (upload the TnS photo → review screen reads "Outgoing
+invoice — customer not recognised") needs a signed-in org, and signing in means
+entering a password, which this agent does not do. Verified instead by the pure tests
+(`tests/docu-document-direction.test.ts` reproduces the TnS strings verbatim) plus
+`tests/doc-watch-detect.test.ts` for the card, and by reading the flag/review/feed
+consumers back to the jsonb key they read.

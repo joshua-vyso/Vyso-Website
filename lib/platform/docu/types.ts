@@ -8,6 +8,7 @@
  */
 import type { DocumentStatus, DocumentType, ExtractedData, FeatureKey } from '@/lib/platform/types';
 import type { LineAuditSummary } from './line-audit';
+import type { DocumentDirectionRecord } from './document-direction';
 
 // ---------------------------------------------------------------------------
 // Statement totals (TRANSACTION SUMMARY) — parsed from a statement's footer and
@@ -39,12 +40,20 @@ export interface DocuExtractedData extends ExtractedData {
   /** Arithmetic audit of the line items, written at extraction time. Null/absent
    *  means the lines add up (or there was nothing to check). */
   line_audit?: LineAuditSummary | null;
+  /** Set ONLY on documents the org itself issued — see
+   *  lib/platform/docu/document-direction.ts. Absent/null means the document is
+   *  incoming (or undecidable), which is the behaviour that has always applied. */
+  direction?: DocumentDirectionRecord | null;
+  /** The party billed, as the extractor read it. Free document text: displayed
+   *  and matched against of_customers, never trusted as an identity. */
+  bill_to?: string | null;
 }
 
 // ---------------------------------------------------------------------------
 // Flags (feature 4)
 // ---------------------------------------------------------------------------
 export type FlagKind =
+  | 'outgoing_invoice'
   | 'line_realigned'
   | 'line_math'
   | 'duplicate_invoice'

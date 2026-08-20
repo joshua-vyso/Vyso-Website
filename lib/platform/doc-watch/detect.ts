@@ -70,6 +70,16 @@ export interface DocWatchLine {
 export interface DocWatchExtracted {
   fields?: DocWatchField[] | null;
   line_items?: DocWatchLine[] | null;
+  /** Set only on documents the ORG issued (lib/platform/docu/document-direction.ts).
+   *  Structurally narrowed to what the card needs, so this module keeps its
+   *  no-imports-from-the-app property. */
+  direction?: {
+    direction?: string | null;
+    /** The MATCHED customer's own name. Null when no customer was recognised —
+     *  and then no name is printed, because the only other candidate is the
+     *  unverified string on the paper. */
+    customer_name?: string | null;
+  } | null;
 }
 
 export interface DocWatchInput {
@@ -268,10 +278,21 @@ export function detectDocWatchFinding(input: DocWatchInput): DocWatchFinding | n
   if (input.documentType === 'invoice') {
     // Nothing priced and no total ⇒ nothing worth a card.
     if (priced.length === 0 && total == null) return null;
-    const head = `Invoice${number ? ` ${number}` : ''}${supplier ? ` from ${supplier}` : ''} read ${when}`;
+    // AN OUTGOING INVOICE IS NOT AN INVOICE "FROM" ANYONE. The org issued it, so
+    // it has no supplier to name and the sentence would otherwise read as though
+    // money were owed rather than owing. Say what actually happened instead. The
+    // customer is named only when it was MATCHED to an of_customers row: the
+    // alternative is the unverified name printed on the paper, and a Brief card
+    // is not the place to assert one of those.
+    const outgoing = input.extracted?.direction?.direction === 'outgoing';
+    const customer = outgoing ? (input.extracted?.direction?.customer_name ?? '').trim() : '';
+    const head = outgoing
+      ? `Invoice${number ? ` ${number}` : ''} you issued${customer ? ` to ${customer}` : ''}, read ${when}`
+      : `Invoice${number ? ` ${number}` : ''}${supplier ? ` from ${supplier}` : ''} read ${when}`;
     const totalClause = total != null ? ` — ${rand(total)}` : '';
     const linesClause = priced.length > 0 ? ` Biggest lines: ${topLinesPhrase(priced)}.` : '';
-    observation = `${head}${totalClause}.${linesClause}`;
+    const unknownClause = outgoing && !customer ? ' The customer was not recognised.' : '';
+    observation = `${head}${totalClause}.${linesClause}${unknownClause}`;
   } else if (input.documentType === 'statement') {
     if (priced.length === 0) return null;
     const head = `Market sheet${number ? ` ${number}` : ''}${supplier ? ` from ${supplier}` : ''} scanned ${when}`;

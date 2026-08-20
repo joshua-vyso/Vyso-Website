@@ -1,6 +1,8 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Document, ExtractedLineItem } from './types';
+import { isOutgoingDocument } from './docu/document-direction';
+import type { DocuExtractedData } from './docu/types';
 
 /**
  * Doc-U → ProcurePulse feed.
@@ -248,6 +250,15 @@ export async function feedDocumentToProcurePulse(
 
   if (!doc.document_type || !FEED_TYPES.has(doc.document_type)) {
     return { ...base, reason: 'type-not-routed-to-stock' };
+  }
+  // A document the ORG issued lists goods that LEFT the business. Feeding its
+  // lines here would book the org's own sales in as stock received and its own
+  // selling prices in as what it pays — the same inversion that made Turn 'n
+  // Slice its own supplier. Checked here rather than at each call site so every
+  // path (extract route, chat/email ingest, and the review-queue Save, which
+  // re-reads the stored row) is covered by the one guard.
+  if (isOutgoingDocument(doc.extracted_data as DocuExtractedData | null)) {
+    return { ...base, reason: 'outgoing-document' };
   }
   const lineItems: ExtractedLineItem[] = doc.extracted_data?.line_items ?? [];
   if (lineItems.length === 0) {
