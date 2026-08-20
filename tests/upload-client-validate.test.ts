@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   MAX_UPLOAD_BYTES,
   attachmentMessage,
+  attachmentStrandedNote,
   validateUploadFile,
   type UploadCandidate,
 } from '../lib/platform/docu/upload-client.ts';
@@ -104,4 +105,35 @@ test('no names at all still produces a sendable sentence', () => {
   // `send()` refuses empty text, so an empty list must not become an empty
   // message — that would swallow the upload silently.
   assert.equal(attachmentMessage([]), 'I’ve uploaded a document.');
+});
+
+/* ── attachmentStrandedNote ─────────────────────────────────────── */
+
+// The sentence that exists so the drop path can never end in silence. Every
+// branch must (a) name the files, (b) say they ARE in Doc-U, and (c) say what to
+// do next — an owner who is told only "that didn't work" drops the file again.
+
+test('a stranded upload names the file and says where it is', () => {
+  const note = attachmentStrandedNote(['buyer_statement (28).pdf']);
+  assert.match(note, /buyer_statement \(28\)\.pdf/);
+  assert.match(note, /Doc-U/);
+  assert.match(note, /new message/);
+});
+
+test('several stranded uploads are all named, in plural', () => {
+  const note = attachmentStrandedNote(['a.pdf', 'b.pdf']);
+  assert.match(note, /a\.pdf, b\.pdf are in Doc-U/);
+  assert.match(note, /ask about them/);
+});
+
+test('blank names are dropped, as they are in the message itself', () => {
+  assert.equal(attachmentStrandedNote(['  ', 'real.pdf']), attachmentStrandedNote(['real.pdf']));
+});
+
+test('no names at all still produces a sentence, never an empty error', () => {
+  // An empty string here would render an empty red box — visually identical to
+  // the silence this whole note exists to replace.
+  const note = attachmentStrandedNote([]);
+  assert.ok(note.trim().length > 0);
+  assert.match(note, /Doc-U/);
 });

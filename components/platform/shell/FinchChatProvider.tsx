@@ -15,7 +15,12 @@ import { usePathname, useRouter } from 'next/navigation';
 import { onBriefAsk } from '@/components/platform/brief/brief-chat';
 import { usePlatform } from '@/lib/platform/session';
 import { createClient } from '@/lib/platform/supabase-browser';
-import { attachmentMessage, uploadDocument, validateUploadFile } from '@/lib/platform/docu/upload-client';
+import {
+  attachmentMessage,
+  attachmentStrandedNote,
+  uploadDocument,
+  validateUploadFile,
+} from '@/lib/platform/docu/upload-client';
 import {
   MAX_ORDER_FILES,
   ingestOrderDocument,
@@ -1136,6 +1141,22 @@ export function FinchChatProvider({
         return;
       }
       sendRef.current(attachmentMessage(attached.map((a) => a.filename)), { attachments: attached });
+
+      // AND CHECK THAT IT ACTUALLY WENT. `send()` returns without a word when it
+      // decides not to send — today that is a turn it believes is still in
+      // flight, read from a closure that `waitUntilIdle` (which polls the REF)
+      // can outrun by a tick. Whatever the reason, a refusal here is the only
+      // way this whole flow can finish having said nothing: the file uploaded,
+      // the document is filed, and the conversation is unchanged. That is
+      // indistinguishable from a drop target that never fired, which is how a
+      // silent bug in any of the steps above survives a user report.
+      //
+      // `send()` raises `streamingRef` SYNCHRONOUSLY when it dispatches (before
+      // its first await), so the flag is a reliable receipt at this point: still
+      // down means still unsent.
+      if (!streamingRef.current) {
+        setAttachError(attachmentStrandedNote(attached.map((a) => a.filename)));
+      }
     },
     [org?.id, userId, agentModule, attachAsOrders],
   );

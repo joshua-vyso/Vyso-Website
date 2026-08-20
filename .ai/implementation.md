@@ -5129,3 +5129,89 @@ file touched here. One was briefly added and removed: the usual `mounted`/
 `react-hooks/set-state-in-effect`, and it was unnecessary anyway — `open` starts
 false and can only be flipped by a click, so the portal is never reached during
 SSR or hydration.
+
+# Chat attachments — the silent-failure hunt (2026-08-20)
+
+## The report, and what the evidence says
+
+"Dropping a document into the Finch chat (or the paperclip) does nothing — no
+overlay, no progress, no card, no message", against `ad4b49c`, last known good
+`72bc07c`.
+
+**No regression was reproduced, and the commit range contains no candidate for
+one.** `git log 72bc07c..ad4b49c` over the whole chat attachment chain —
+`ChatDropZone`, `ChatComposer`, `FinchChatProvider`, `ChatView`,
+`AttachmentCard`, `ChatTranscript`, `lib/ai/finch/attachments.ts` — returns
+**one** file: `lib/platform/docu/upload-client.ts`, and only from `72d2961`
+(the batch wave). That commit's edit to it is additive for every chat consumer:
+`MAX_BATCH_FILES` and `selectBatch` are new and unreferenced by the chat, and
+`validateUploadFile`'s predicate is byte-identical — the readability test was
+lifted out into `isReadableDocument` and called, nothing more. `UPLOAD_ACCEPT`,
+`attachmentMessage` and `uploadDocument` are untouched.
+
+(The brief expected `ChatComposer.tsx` in `72d2961`'s diffstat. It is not in it;
+that commit touches the two **Doc-U** upload surfaces, `folder-drop.ts`,
+`UploadStagingTray.tsx` and `upload-client.ts`.)
+
+## Reproduced instead: the path working
+
+A throwaway harness (`app/dev-chat-harness/page.tsx`, since deleted) mounted the
+real `ChatDropZone` + `ChatComposer` + `FinchChatProvider` under a stub
+`PlatformProvider`, with `window.fetch` intercepted so Storage, the `documents`
+insert, `/api/ai/extract` and `/api/ai/agent` answered without auth and without
+touching a real project. Driven with a synthetic `DragEvent` carrying a
+`DataTransfer` holding `buyer_statement (28).pdf`:
+
+- `dragenter` → the dashed overlay renders (`border-[#3E8FE0]` present in the DOM)
+- `drop` → `attach()` runs to completion → `turnCount: 2`, `attachError: null`
+
+`canAttach` was true and the paperclip's file input was present throughout. The
+client path is intact at `ad4b49c`.
+
+## What was actually wrong: `attach()` could end in silence
+
+The hunt did find the shape of failure the report describes, as a latent hole
+rather than a new one. `attach()` narrates every step — a rejected file names
+its reason, a failed upload names the file, a failed extraction downgrades the
+card, a queue that times out behind a running turn says so — **except the last
+one**. `sendRef.current(...)` is a `send()` that returns without a word when it
+believes a turn is in flight, and it reads that from the `streaming` STATE while
+`waitUntilIdle` polls the `streamingRef` — a ref the stream's `finally` lowers in
+the same task that schedules the re-render. A poll landing inside that window
+calls a `sendRef` whose closure still says `streaming: true`, and the whole flow
+ends having uploaded, filed and extracted a document while the conversation shows
+nothing at all. Indistinguishable, on screen, from a drop target that never
+fired — which is precisely why a silent bug anywhere in this flow survives a
+user report.
+
+So `attach()` now checks that its send took, and says so when it did not.
+`send()` raises `streamingRef` synchronously, before its first await, so the flag
+is a reliable receipt at the call site: still down means still unsent. The
+sentence is `attachmentStrandedNote`, next to `attachmentMessage` in
+`upload-client.ts` and pure for the same reason — it names the files, says they
+ARE in Doc-U (the half of the outcome a silent failure throws away) and says what
+to do next.
+
+Verified both directions in the harness: the happy path is unchanged and shows no
+spurious error, and with the `sendRef` call neutralised the previously-blank
+outcome renders `buyer_statement (28).pdf is in Doc-U, but it couldn't be added to
+this conversation — ask about it in a new message.`
+
+## Left alone, deliberately
+
+The stale-`streaming` race in `send()` itself is now loud but not closed —
+switching its guard to `streamingRef.current` would fix it at the root, and it is
+a one-word change, but with no reproduction in hand it is a behaviour change to
+the send path made on a hunch. Flagged rather than made.
+
+Two other dead drop zones found while looking, neither a regression and neither
+touched: on `/app` with nothing said yet `GlobalChatDock` renders no
+`ChatDropZone` at all (`showPanel` is false), so a drop there really does nothing
+— the paperclip still works, because `attaching` opens the panel; and on the
+bubble routes the drop zone is inside a collapsed `FinchBubble`.
+
+## Gates
+
+`npx tsc --noEmit` — clean. `npm test` — **829 pass / 0 fail** (4 new, over
+`attachmentStrandedNote`). `npm run build` — clean. `npx eslint .` — 50 errors,
+40 warnings, exactly the baseline; zero in either file touched here.

@@ -228,6 +228,33 @@ export function attachmentMessage(filenames: readonly string[]): string {
   return `I’ve uploaded ${names.length} documents: ${names.join(', ')}.`;
 }
 
+/**
+ * What to say when the files got in but the message did not.
+ *
+ * THE ONE OUTCOME THE DROP PATH COULD END ON IN SILENCE. Every other way an
+ * attachment can fail already speaks: a rejected file names its reason, a failed
+ * upload names the file, a failed extraction downgrades the card. But the last
+ * step — turning the uploaded documents into a message — is a `send()` that
+ * refuses without a word when a turn is already in flight, and a refusal there
+ * leaves the owner looking at an unchanged screen having watched a file upload.
+ * "Nothing happened" is the single worst thing this feature can say, because it
+ * is also what a broken drop target says, so the two become indistinguishable
+ * and the owner drops the file again.
+ *
+ * IT NAMES DOC-U ON PURPOSE. The documents ARE filed — that is the half of the
+ * outcome worth knowing, and it is the half a silent failure throws away.
+ */
+export function attachmentStrandedNote(filenames: readonly string[]): string {
+  const names = filenames.map((n) => n.trim()).filter(Boolean);
+  if (names.length === 0) {
+    return 'Your document is in Doc-U, but it couldn’t be added to this conversation — ask about it in a new message.';
+  }
+  if (names.length === 1) {
+    return `${names[0]} is in Doc-U, but it couldn’t be added to this conversation — ask about it in a new message.`;
+  }
+  return `${names.join(', ')} are in Doc-U, but they couldn’t be added to this conversation — ask about them in a new message.`;
+}
+
 export interface UploadedDocument {
   documentId: string;
   storagePath: string;
