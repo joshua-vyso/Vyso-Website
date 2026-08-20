@@ -4,6 +4,8 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/platform/supabase-browser';
 import { FIELD_REVIEW_THRESHOLD } from '@/lib/platform/tokens';
+import { ProductSuggestInput } from '@/components/platform/docu/ProductSuggestInput';
+import type { ProductOption } from '@/lib/platform/docu/product-suggest';
 import type { DocumentStatus, ExtractedField, ExtractedLineItem } from '@/lib/platform/types';
 import type { DocuExtractedData } from '@/lib/platform/docu/types';
 
@@ -34,6 +36,7 @@ export function ExtractionEditor({
   lineItems,
   extractedData,
   orgUnits = [],
+  products = [],
 }: {
   id: string;
   status: DocumentStatus;
@@ -44,6 +47,10 @@ export function ExtractionEditor({
   /** The organisation's measurement units — the unit column is a dropdown of these
    *  (managed in Workspace settings), not free text. */
   orgUnits?: string[];
+  /** The org's catalogue (pp_stock_items + confirmed aliases), fetched once by
+   *  the page. Feeds the description typeahead; empty is fine — the cell is
+   *  then a plain text input, because free text was always allowed here. */
+  products?: ProductOption[];
 }) {
   const router = useRouter();
 
@@ -80,6 +87,18 @@ export function ExtractionEditor({
     setDraft((prev) => prev.map((f, i) => (i === index ? { ...f, value } : f)));
   const updateLine = (index: number, key: keyof ExtractedLineItem, value: string) =>
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, [key]: value } : l)));
+  const patchLine = (index: number, patch: Partial<ExtractedLineItem>) =>
+    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+  /** Taking a suggestion fills the catalogue's name and — only when the line has
+   *  no unit of its own — its unit. A unit read off the document is never
+   *  overwritten: the paper knows what was delivered better than the catalogue. */
+  const pickProduct = (index: number, option: ProductOption) => {
+    const current = (lines[index]?.unit ?? '').trim();
+    patchLine(index, {
+      description: option.name,
+      ...(option.unit && !current ? { unit: option.unit } : {}),
+    });
+  };
   const removeLine = (index: number) => setLines((prev) => prev.filter((_, i) => i !== index));
   /** Append a blank row for a line the extraction missed (or the reviewer wants to add).
    *  confidence: 100 — a human typed it, so it must never read as a low-confidence guess. */
@@ -229,12 +248,15 @@ export function ExtractionEditor({
               <div className="mt-2 space-y-2">
                 {lines.map((l, i) => (
                   <div key={i} className={COLS}>
-                    <input
+                    <ProductSuggestInput
                       id={`line-desc-${i}`}
-                      aria-label="Description"
+                      ariaLabel="Description"
                       className={cellCls}
+                      options={products}
+                      placeholder={products.length > 0 ? 'Start typing a product…' : undefined}
                       value={l.description ?? ''}
-                      onChange={(e) => updateLine(i, 'description', e.target.value)}
+                      onChange={(v) => updateLine(i, 'description', v)}
+                      onPick={(option) => pickProduct(i, option)}
                     />
                     <input className={`${cellCls} of-num`} value={l.weight ?? ''} onChange={(e) => updateLine(i, 'weight', e.target.value)} />
                     <input className={`${cellCls} of-num text-right`} value={l.quantity ?? ''} onChange={(e) => updateLine(i, 'quantity', e.target.value)} />

@@ -18,7 +18,7 @@
  * never inset:0) so "Save as PDF" produces a clean, paginated document.
  */
 
-import { docTotals, vatCodeFor, type OfCustomer, type VatTreatment } from '@/lib/platform/orderflow';
+import { docTotals, vatCodeFor, type VatTreatment } from '@/lib/platform/orderflow';
 import type { CdCompanyProfile } from '@/lib/platform/coredata';
 
 const PRINT_CSS = `
@@ -36,6 +36,23 @@ export interface ClassicInvoiceLine {
   qty: number;
   unit: string | null;
   unit_price: number;
+}
+
+/**
+ * The billed party, as printed in the "Invoice To" box.
+ *
+ * A structural subset of `OfCustomer` rather than the row itself: Doc-U prints
+ * this same sheet from a SCANNED invoice, where the billed party may be a name
+ * read off the page (or the org itself, on a copy of a supplier invoice) and
+ * there is no customer row to hand. `OfCustomer` satisfies it unchanged, so
+ * OrderFlow's own call site passes its row exactly as before.
+ */
+export interface ClassicInvoiceParty {
+  name: string;
+  trading_name?: string | null;
+  vat_number?: string | null;
+  billing_address?: string | null;
+  account_code?: string | null;
 }
 
 export interface ClassicInvoiceMeta {
@@ -73,9 +90,12 @@ export function InvoiceSheetClassic({
   discount = 0,
   rebatePct = 0,
 }: {
+  /** The SELLER's identity block (name, contact, address, bank, logo). Doc-U
+   *  passes a supplier's details here when reprinting an incoming invoice. */
   companyProfile: CdCompanyProfile | null;
+  /** Fallback seller name when the profile carries none. */
   orgName: string | null;
-  customer: OfCustomer | null;
+  customer: ClassicInvoiceParty | null;
   invoice: ClassicInvoiceMeta;
   lines: ClassicInvoiceLine[];
   vatTreatment: VatTreatment;

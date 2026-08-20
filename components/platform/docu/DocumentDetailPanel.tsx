@@ -11,6 +11,7 @@ import { DocumentRename } from './DocumentRename';
 import { FolderPicker } from './FolderPicker';
 import { PushToButton } from './PushToButton';
 import { SendToHubdoc, type HubdocDocumentState } from './SendToHubdoc';
+import { PrintTaxInvoice, type TaxInvoicePrintContext } from './PrintTaxInvoice';
 import { TypePicker } from './TypePicker';
 import { StatementTotalsCard } from './StatementTotalsCard';
 import { FlagsList } from './FlagsList';
@@ -26,6 +27,7 @@ import { deriveFlags } from '@/lib/platform/docu/flags';
 import { deriveSupplierIntelligence } from '@/lib/platform/docu/supplier-intel';
 import { getMissingDocs } from '@/lib/platform/docu/missing-docs';
 import { inferSupplierFromDoc } from '@/lib/platform/docu/supplier-match';
+import type { ProductOption } from '@/lib/platform/docu/product-suggest';
 import type { AiSummary, DocuExtractedData } from '@/lib/platform/docu/types';
 import type { DocumentFolder, DocumentWithSupplier, FeatureKey } from '@/lib/platform/types';
 
@@ -42,11 +44,13 @@ export function DocumentDetailPanel({
   features,
   fedItemCount,
   orgUnits,
+  products,
   customers,
   linkedOrder,
   originalUrl,
   isImage,
   hubdoc,
+  printContext,
 }: {
   doc: DocumentWithSupplier;
   orgDocs: DocumentWithSupplier[];
@@ -54,10 +58,14 @@ export function DocumentDetailPanel({
   features: Record<FeatureKey, boolean>;
   fedItemCount: number;
   orgUnits: string[];
+  /** The org's catalogue, for the line-description typeahead. */
+  products: ProductOption[];
   customers: CustomerLite[];
   linkedOrder: LinkedOrder | null;
   originalUrl: string | null;
   isImage: boolean;
+  /** Seller identity + VAT rate for the regenerated tax invoice. */
+  printContext: TaxInvoicePrintContext;
   /** Hubdoc cross-upload state, or null to draw nothing at all (Plugins X2).
    *  Resolved by the page — the gates are role, Xero connection and intake
    *  address, and none of them are this component's business. */
@@ -84,21 +92,22 @@ export function DocumentDetailPanel({
         <h2 className="of-display text-[16px] font-semibold text-[#171A17]">Original document</h2>
         <div className="flex min-w-0 items-center gap-3">
           <span className="truncate text-[12px] text-[#A0A49C]">{doc.filename}</span>
-          {/* Print the supplier's own document. Opens the signed file in a new tab
-              rather than printing the iframe: the browser's native PDF/image viewer
-              prints the real file at full fidelity, where printing this page's
-              embedded frame would print the app around it. The tab is where the
-              reader presses ⌘P — same dialog, so the same nearby/AirPrint printers
-              and the same "Save as PDF". */}
+          {/* Print the scan ITSELF — the secondary of the two print paths now that
+              the header offers a regenerated tax invoice, hence "Print original".
+              Opens the signed file in a new tab rather than printing the iframe:
+              the browser's native PDF/image viewer prints the real file at full
+              fidelity, where printing this page's embedded frame would print the
+              app around it. The tab is where the reader presses ⌘P — same dialog,
+              so the same nearby/AirPrint printers and the same "Save as PDF". */}
           {originalUrl ? (
             <a
               href={originalUrl}
               target="_blank"
               rel="noopener noreferrer"
-              title="Opens the file in a new tab — print it or save it as PDF from there"
+              title="Opens the scanned file in a new tab — print it or save it as PDF from there"
               className="inline-flex h-8 shrink-0 items-center rounded-[10px] border border-[#E2E6EC] bg-white px-3 text-[12px] font-medium text-[#3E4A57] transition-all hover:border-[#C9DEF7] hover:bg-[#EAF2FC] hover:text-[#174C87]"
             >
-              Print
+              Print original
             </a>
           ) : null}
         </div>
@@ -139,10 +148,19 @@ export function DocumentDetailPanel({
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-          {/* First in the action row because it is the one action here that
-              leaves Vyso — "Push to…" moves a document between this product's
-              own modules, and grouping an outbound send in among them would let
-              it read as one more internal routing choice. */}
+          {/* The primary action on an invoice: the org's OWN tax invoice, built
+              from the extracted data. Draws nothing at all for a document that
+              is not a priced invoice — see PrintTaxInvoice. */}
+          <PrintTaxInvoice
+            documentType={doc.document_type}
+            extracted={extracted}
+            supplierName={doc.supplier?.name ?? extracted?.supplier ?? null}
+            context={printContext}
+          />
+          {/* Kept clear of the routing controls because it is the one action here
+              that leaves Vyso — "Push to…" moves a document between this
+              product's own modules, and grouping an outbound send in among them
+              would let it read as one more internal routing choice. */}
           {hubdoc ? (
             <SendToHubdoc
               documentId={doc.id}
@@ -183,6 +201,7 @@ export function DocumentDetailPanel({
             lineItems={lineItems}
             extractedData={extracted}
             orgUnits={orgUnits}
+            products={products}
           />
         )}
         <div className="lg:self-stretch">

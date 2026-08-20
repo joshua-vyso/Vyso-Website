@@ -4965,3 +4965,167 @@ here, per the brief; they were clean by the time this landed.)
 initially added a 51st (React Compiler refusing to memoize `run` because
 `org?.id` in the dep list infers as a dependency on `org`), fixed by hoisting
 `orgId` to a primitive.
+
+# Doc-U: product typeahead in the line editor; Print rebuilds the org's tax invoice (2026-08-20, branch `main`)
+
+Two asks from Josh, both from Turn 'n Slice reviewing supplier **and** outgoing
+invoices in Doc-U.
+
+## 1. Product typeahead — the survey, and which source won
+
+| Source | What it is | Verdict |
+|---|---|---|
+| **`pp_stock_items`** | THE product master. `core-data.sql` maps "Products & services → pp_stock_items"; OrderFlow's builder calls the same rows `CdProduct` and points people at *Doc-U → Databases → Products* to edit them. | **Chosen** — name, unit, category |
+| **`pp_name_aliases`** (`status = 'confirmed'`) | Per-org rulings: raw name a human has already resolved → the product it means. | **Chosen** — folded in as alternate names to MATCH on |
+| `pw_items` | Price Watch's derived buy-side catalogue, built *from these same document lines*. | **Rejected** — it is downstream of the mess this feature exists to prevent, so it would offer the misspellings back, and duplicate every `pp_stock_items` name while doing it |
+| "PricePilot products" | There is no such table. PricePilot is `pl_price_lists` / `pl_overrides` — price lists **over** `pp_stock_items`. | **N/A** — the outgoing case is already served by the master |
+
+So there is one catalogue for both directions, which is the answer to "and for
+OUTGOING invoices arguably PricePilot products": buying and selling already
+share it.
+
+### Reuse: what fitted, what did not
+
+- **`orderflow/builder.tsx`'s `LineItemsEditor` picker** — a *separate search box
+  that appends whole rows*, welded to `CdProduct`, `resolvePrice`, price lists and
+  `BuilderLine`. Not an in-cell typeahead, and no keyboard navigation. Its
+  keyboard-Enter-takes-first-match idea was worth copying; its component was not.
+- **`docu/OrderReviewEditor.tsx`'s customer combobox** — the right *shape*
+  (input + absolute list + `onMouseDown`-to-pick), also no ↓/↑ and bound to
+  customers. Its markup is what `ProductSuggestInput` is modelled on.
+- **`procurepulse/matching.ts`** — reused outright. `normalizeName` +
+  `diceCoefficient` are what make "tomatos roma" find "Tomatoes, Roma"; writing a
+  second fuzzy matcher next to the one ProcurePulse already matches names with
+  would have been the actual duplication.
+
+### Built
+
+**`lib/platform/docu/product-suggest.ts`** (pure). `scoreProductName` is
+**tiered**: exact 1 → normalised-equal 0.98 → prefix 0.95 → word-prefix 0.90 →
+substring 0.85 → fuzzy `dice × 0.8` above a 0.34 floor. The `× 0.8` is the point
+— it keeps the entire fuzzy band strictly beneath every literal one, so someone
+who typed `app` never gets a Dice-similar surprise above `Apples`.
+`scoreOption` takes the best of a product's canonical name and its aliases;
+`suggestProducts` dedupes by name (merging the loser's aliases so collapsing a
+duplicate row never costs a way of finding it) and caps at 8.
+
+**`components/platform/docu/ProductSuggestInput.tsx`** — combobox roles, ↓↑ Enter
+Esc, `onMouseDown` + `preventDefault` so a click beats the input's own blur, and
+an outside-mousedown close. **No debounce**: the whole list is fetched once per
+mount and filtered locally, so there is no request to debounce and a keystroke
+never waits.
+
+**`ExtractionEditor`** — one component, so every instance gets it. Picking fills
+the description and, *only when the line has no unit of its own*, the unit: a
+unit read off the paper outranks the catalogue's, because the paper knows what
+was actually delivered. Free text stays legal — nothing validates, rewrites or
+rejects a typed value on blur.
+
+Aliases are matched against but **never inserted**. Typing what a supplier prints
+is exactly how you find the tidy name the org books it under; writing the mess
+back would defeat the alias.
+
+## 2. Print — the org's own Tax Invoice, not the photograph
+
+### The sheet was NOT forked, and did not need splitting
+
+`InvoiceSheetClassic` turned out to be already presentational — `companyProfile`,
+`orgName`, `customer`, `invoice`, `lines`, `vatTreatment`, `vatRate`. Not one
+`of_invoices` field in its props. The single change it needed was widening
+`customer: OfCustomer` to a new **`ClassicInvoiceParty`** (name, trading name,
+VAT, billing address, account code) — a structural subset, so `InvoiceDetailV2`
+passes its row unchanged and OrderFlow's call site is byte-identical apart from
+the import.
+
+### Who is the seller depends on which way the document points
+
+Getting this backwards would be a forgery in either direction:
+
+| | Seller (letterhead, bank, logo) | Invoice To |
+|---|---|---|
+| **Outgoing** (`extracted_data.direction.direction === 'outgoing'`) | the org — `cd_company_profile` + org name | the matched `of_customers` row, or the name read off the page when nothing matched |
+| **Incoming** (a supplier's invoice) | the **supplier**: a minimal profile carrying their name and, if the scan printed one, their VAT reg — **no bank block, no org logo** | the org |
+
+An incoming reprint carrying the org's banking details would invite payment into
+the org's own account on somebody else's invoice. `EMPTY_COMPANY_PROFILE` spread
+with two fields is what guarantees it cannot: every other field stays null, so
+the bank block and the logo simply do not render.
+
+Identity comes from **`cd_company_profile`**, not `of_settings` — `of_settings`
+carries numbering and VAT *rates*, not identity (the same distinction
+`loadOrgIdentity` makes). `of_settings.default_vat_rate` is read, but only as the
+fallback below.
+
+### The mapping (`lib/platform/docu/invoice-from-extraction.ts`, pure)
+
+- **The amount column is the authority.** Where a line's qty × unit price
+  disagrees with its printed amount, the amount wins and the rate is back-derived
+  (`unit_price = amount / qty`), so the reprint totals what the original
+  totalled. A line with no quantity prints as one of whatever it is. Money parses
+  with *exactly* the editor's rule (`replace(/[^0-9.-]/g, '')`), so the sheet and
+  the editor's running total cannot disagree.
+- **VAT is recovered from the document, not assumed.** An explicit rate field, or
+  the printed VAT amount over the line subtotal. A zero-rated fresh-produce
+  invoice therefore stays zero-rated even when the org default is 15%. A derived
+  rate within 0.6 of the default snaps to it (14.97% is a rounding artefact, not
+  a rate anyone charges); an implausible one (>30%, or a "VAT Number" mistaken
+  for an amount) falls back to the default and the preview *says* it did.
+- **No arithmetic was forked.** Subtotal / VAT / Total are `docTotals`, the same
+  function OrderFlow's sheet, `balanceDue` and payment tracking all use.
+- **Header labels are discriminated, not pattern-guessed**: "Invoice Date" never
+  becomes the number, "VAT Reg No" never becomes an amount. What is genuinely
+  absent is reported as absent — a Tax Invoice with an invented number is worse
+  than one with a blank.
+
+### Placement and guards
+
+`components/platform/docu/PrintTaxInvoice.tsx` — primary "Print invoice" in the
+detail header, **both directions** (a legible copy of an unreadable supplier
+invoice is the same win). The existing action is now the secondary "Print
+original", still opening the signed file in a new tab.
+
+- **Hidden entirely** unless `document_type === 'invoice'` **and** at least one
+  line carries a price. A delivery note of unpriced quantities is not a tax
+  invoice and must not offer to print as one.
+- **Missing `cd_company_profile` never blocks.** The sheet renders with whatever
+  exists and the preview adds a quiet line pointing at
+  `/app/docu/databases/company`.
+- **Preview before print, always** — this sheet is a *reconstruction*, not a
+  scan, so the reviewer sees exactly what will come out before the dialog opens.
+  `window.print()` then prints the sheet alone via the existing `#of-doc-print` +
+  `@media print` scoping.
+- **Portalled to `<body>`.** The detail page scrolls inside its own
+  `overflow-y-auto` container, and an absolutely-positioned print sheet nested in
+  a scroll container clips to one viewport height when it paginates. The overlay
+  also un-fixes itself for print (`position: static`) and hides its own chrome.
+
+### Data
+
+All four new reads join the page's existing `Promise.all`, RLS-scoped, no new API
+route: `pp_stock_items` (600), confirmed `pp_name_aliases` (600),
+`cd_company_profile`, `of_settings.default_vat_rate`. The matched customer row is
+fetched **only** when `extracted_data.direction.customer_id` is set — an
+unmatched outgoing document prints the name read off the page instead.
+
+## Not verified by clicking
+
+Same wall as the previous two waves: the Doc-U detail page is behind the platform
+shell, and reaching it means signing in, which means entering a password — which
+this agent does not do. `/app/docu` on the dev server redirected to `/login`, and
+that is where it stopped.
+
+Verified instead by 39 pure tests over the two new modules — including the one
+that matters most, `docTotals` over the mapped lines reproducing a document total
+whose own line arithmetic was deliberately inconsistent — plus `npx tsc --noEmit`
+and a clean production build over every changed component.
+
+## Gates
+
+`npx tsc --noEmit` — clean. `npm test` — **825 pass / 0 fail** (39 new: 16 for the
+typeahead filter, 23 for the extracted→sheet mapping). `npm run build` — clean.
+`npx eslint .` — **50 errors, 40 warnings**, exactly the baseline; **zero** in any
+file touched here. One was briefly added and removed: the usual `mounted`/
+`useEffect(() => setMounted(true))` portal guard trips
+`react-hooks/set-state-in-effect`, and it was unnecessary anyway — `open` starts
+false and can only be flipped by a click, so the portal is never reached during
+SSR or hydration.
