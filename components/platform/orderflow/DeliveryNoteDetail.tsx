@@ -303,7 +303,7 @@ export function DeliveryNoteDetail({
               Mark delivered
             </PrimaryBtn>
           ) : null}
-          <PrintButton label="Download PDF" />
+          <PrintButton />
         </div>
       </div>
 

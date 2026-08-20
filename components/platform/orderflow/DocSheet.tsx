@@ -15,7 +15,7 @@ const PRINT_CSS = `
   body * { visibility: hidden !important; }
   #of-doc-print, #of-doc-print * { visibility: visible !important; }
   #of-doc-print { position: absolute; top: 0; left: 0; width: 100%; margin: 0; border: none !important; box-shadow: none !important; }
-  @page { margin: 16mm; }
+  @page { size: A4; margin: 16mm; }
 }
 `;
 
@@ -246,15 +246,22 @@ export function DocSheet({
   );
 }
 
-/** Accent "Download PDF" button — triggers the browser print dialog. Callers place it in their own toolbar. */
+/**
+ * Accent print button — opens the browser's print dialog on the document sheet.
+ * Labelled "Print / PDF", not "Download PDF": that one dialog is BOTH asks — it
+ * lists the nearby/AirPrint printers AND offers "Save as PDF" as a destination —
+ * and a label that named only the file made the printer half undiscoverable.
+ * Callers place it in their own toolbar.
+ */
 export function PrintButton({ label }: { label?: string }) {
   return (
     <button
       type="button"
       onClick={() => window.print()}
+      title="Opens your print dialog — choose a printer, or Save as PDF"
       className="inline-flex h-9 items-center rounded-lg bg-[#1F5FA8] px-4 text-[13px] font-medium text-white transition-colors hover:bg-[#174C87]"
     >
-      {label ?? 'Download PDF'}
+      {label ?? 'Print / PDF'}
     </button>
   );
 }

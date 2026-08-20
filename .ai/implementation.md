@@ -4502,3 +4502,99 @@ flow through with no edit.
 `npx tsc --noEmit` clean · `npm test` **758 pass / 0 fail** (736 + 22 new) ·
 `npm run build` clean · `npx eslint .` **50 errors, 40 warnings** — the baseline,
 unchanged; none of the touched files contributes one.
+
+---
+
+# Add a line in Doc-U review · printable tax invoice (Josh, TnS supplier invoice)
+
+Two asks off a Turn 'n Slice supplier invoice: **(1)** an "Add item" control when
+reviewing/correcting extracted data, and **(2)** printing an invoice as a PDF that
+also reaches a nearby printer. The survey changed the shape of the second one.
+
+## What was already there
+
+**The extraction editor** is `components/platform/ExtractionEditor.tsx`, drawn by
+`components/platform/docu/DocumentDetailPanel.tsx` on `/app/docu/[id]` — the same
+screen for a fresh review and for re-editing an already-saved document (the button
+reads "Save & confirm" or "Save changes" off `status`). `/app/docu/review` is the
+queue: read-only rows with an expandable summary table and an "Open full document →"
+link into `[id]`. So there is exactly ONE place lines are edited, and the add
+button belongs there.
+
+Order-type documents take a different editor — `docu/OrderReviewEditor.tsx` — and
+that one has had **"+ Add item"** all along. The gap was invoices/statements/
+delivery notes/price lists, i.e. precisely the document Josh was reviewing.
+
+**OrderFlow invoices** are line-editable only while `draft`, via
+`/app/orderflow/invoices/new?edit=<id>` → `InvoiceBuilder` → the shared
+`LineItemsEditor` (`orderflow/builder.tsx`), which already adds lines through a
+product picker plus a "+ Add <typed name>" quick-create. A sent invoice is
+deliberately immutable — the affordances there are Credit note / Cancel / Duplicate,
+which is the correct accounting behaviour. **No add-row work was done here, by
+design.**
+
+**Print already existed, and works.** `InvoiceSheetClassic.tsx` renders the classic
+SA **Tax Invoice** (seller block + VAT/reg, bank details, bordered
+Qty | Item | Rate | VAT | Amount table, VAT-total block, SIGNED / PRINT NAME footer)
+inside the invoice detail; `DocSheet.tsx` does the same job for quotes, credit notes
+and delivery notes. Both carry a `@media print` block that hides `body *` and reveals
+`#of-doc-print` at `top/left` only (never `inset: 0`, which would pin the height and
+truncate a long document), and `PrintButton` fires `window.print()`. The list view
+deep-links `?print=1`, which auto-opens the dialog once. There is no PDF library in
+`package.json` and none was added.
+
+## Decision: no `invoices/[id]/print` route
+
+The plan called for a dedicated print route rendering a second A4 sheet. Building it
+would have forked the tax-invoice document: two renderers that must agree forever on
+discount → rebate → VAT → total (all of which come from the shared `docTotals`), on
+the VAT code, and on which seller fields may be invented (none). The existing sheet
+is already chrome-free in print and already paginates. So the print work became
+*polish on the real one* rather than a second copy:
+
+- `@page { size: A4; margin: … }` in both sheets — the margins were exact, the paper
+  size was whatever the dialog defaulted to.
+- `PrintButton`'s default label "Download PDF" → **"Print / PDF"**, with a title
+  attribute saying the dialog offers a printer *or* Save as PDF. The old label named
+  only the file, which is why the printer half was undiscoverable — Josh's actual
+  complaint. `DeliveryNoteDetail`'s explicit "Download PDF" and the invoice list's
+  row action were brought onto the same wording.
+- A small caption under the button on the invoice detail: **"Print or save as PDF"**.
+
+*If a true file-download PDF is ever wanted* (emailing a PDF without a human at a
+dialog), the options are: `@react-pdf/renderer` or `pdfkit` in a route handler
+re-implementing the sheet server-side (~a day, plus the fork risk above), or
+headless-Chrome `page.pdf()` against this very print view (reuses the sheet, needs a
+browser in the deploy target). Neither is worth a dependency for "print this".
+
+## Built
+
+**`components/platform/ExtractionEditor.tsx`** — `+ Add line` beside the running
+total. It appends a blank `ExtractedLineItem` (`confidence: 100` — a human typed it,
+so it must never read back as a low-confidence guess), the row uses the same inputs
+and the same `✕` delete as every other row, and it saves through the untouched path
+(`extracted_data.line_items` merged over the existing `extracted_data`, so the
+statement summary, custom type and supplier all survive). The running total is
+derived from `lines` state, so a new row counts the moment an amount is typed.
+The line-items section is now drawn **unconditionally** — previously it rendered only
+when `lines.length > 0`, so a document the extraction read no lines from had nowhere
+to add one, which is the case where the button matters most; the empty state points
+at it. Keyboard: it is a real `<button>` in tab order, and adding focuses the new
+row's description input, so tab → Enter → type works without touching the mouse.
+
+**`components/platform/docu/DocumentDetailPanel.tsx`** — a small **Print** control in
+the "Original document" header. It opens the signed file in a new tab rather than
+printing the embedded frame: the browser's native PDF/image viewer prints the real
+supplier document at full fidelity, whereas printing the iframe prints the app around
+it. ⌘P in that tab is the same dialog, hence the same nearby/AirPrint printers and
+the same Save-as-PDF. Hidden when there is no `storage_path` (no URL to open).
+
+## Not verified by clicking
+
+The W6 walkthrough (add a line → save → reopen; invoice → Print → A4 sheet in the
+dialog) needs a signed-in org, and signing in means entering a password, which this
+agent does not do. Static verification instead: the save path writes
+`extracted_data.line_items` from the same `lines` state the new row lands in, and
+`DocumentDetailPanel` reads `doc.extracted_data.line_items` back into the editor's
+initial state — so a saved row reappears. The print dialog's content is whatever
+`#of-doc-print` contains, which is the unchanged `InvoiceSheetClassic`.

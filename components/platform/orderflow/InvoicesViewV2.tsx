@@ -267,7 +267,7 @@ export function InvoicesViewV2({ data }: { data: InvoicesData }) {
       actions.push({ label: 'Edit draft', onClick: () => router.push(`/app/orderflow/invoices/new?edit=${r.inv.id}`) });
       actions.push({ label: 'Send', onClick: () => void send(r) });
     }
-    actions.push({ label: 'Download PDF', onClick: () => router.push(`${href}?print=1`) });
+    actions.push({ label: 'Print / PDF', onClick: () => router.push(`${href}?print=1`) });
     actions.push({ label: 'Duplicate', onClick: () => router.push(`/app/orderflow/invoices/new?duplicate=${r.inv.id}`) });
     if (isAdmin && !settled && r.balance > 0) actions.push({ label: 'Record payment', onClick: () => setPayRow(r) });
     if (isAdmin && !settled) actions.push({ label: 'Create credit note', onClick: () => router.push(`/app/orderflow/credit-notes/new?invoice=${r.inv.id}`) });

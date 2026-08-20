@@ -252,7 +252,14 @@ export function InvoiceDetailV2({ data, orgName }: { data: InvoiceDetailData; or
           <button type="button" onClick={() => toast('Send via email · soon')} className={toolbarBtn}>
             Email
           </button>
-          <PrintButton />
+          {/* The customer-facing print path: the sheet below is the A4 tax invoice,
+              and this opens the browser's print dialog on it — which is both the
+              nearby/AirPrint printer list and the "Save as PDF" destination, so no
+              PDF library is involved. Caption because the dialog is doing two jobs. */}
+          <div className="flex flex-col items-end gap-0.5">
+            <PrintButton />
+            <span className="text-[11px] text-[#8A8E86]">Print or save as PDF</span>
+          </div>
         </div>
       </div>
 

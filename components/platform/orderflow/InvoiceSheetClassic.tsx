@@ -26,7 +26,7 @@ const PRINT_CSS = `
   body * { visibility: hidden !important; }
   #of-doc-print, #of-doc-print * { visibility: visible !important; }
   #of-doc-print { position: absolute; top: 0; left: 0; width: 100%; margin: 0; box-shadow: none !important; }
-  @page { margin: 14mm; }
+  @page { size: A4; margin: 14mm; }
 }
 `;
 

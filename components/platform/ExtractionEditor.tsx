@@ -81,6 +81,18 @@ export function ExtractionEditor({
   const updateLine = (index: number, key: keyof ExtractedLineItem, value: string) =>
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, [key]: value } : l)));
   const removeLine = (index: number) => setLines((prev) => prev.filter((_, i) => i !== index));
+  /** Append a blank row for a line the extraction missed (or the reviewer wants to add).
+   *  confidence: 100 — a human typed it, so it must never read as a low-confidence guess. */
+  const addLine = () => {
+    const nextIndex = lines.length;
+    setLines((prev) => [
+      ...prev,
+      { description: '', weight: '', quantity: '', unit: '', units_per_box: '', unit_price: '', amount: '', confidence: 100 },
+    ]);
+    // Land the caret in the new row's description, so adding a line by keyboard
+    // (tab to the button, Enter) continues straight into typing it.
+    requestAnimationFrame(() => document.getElementById(`line-desc-${nextIndex}`)?.focus());
+  };
 
   const persist = async (nextStatus: Extract<DocumentStatus, 'reviewed' | 'error'>) => {
     if (busy) return;
@@ -178,65 +190,88 @@ export function ExtractionEditor({
           </div>
         )}
 
-        {/* Line items */}
-        {lines.length > 0 ? (
-          <div className="mt-7">
-            <div className="mb-2 flex items-baseline justify-between">
-              <h3 className="of-display text-[16px] font-semibold text-[#171A17]">
-                Line items (<span className="of-num">{lines.length}</span>)
-              </h3>
+        {/* Line items. Always drawn — a document the extraction read no lines from
+            still needs somewhere to add the ones it missed, which is exactly the
+            case where "+ Add line" matters most. */}
+        <div className="mt-7">
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
+            <h3 className="of-display text-[16px] font-semibold text-[#171A17]">
+              Line items (<span className="of-num">{lines.length}</span>)
+            </h3>
+            <div className="flex items-center gap-3">
               <span className="text-[13px] text-[#6B6F68]">
                 Total{' '}
                 <span className="of-num font-semibold text-[#171A17]">
                   {lineTotal.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}
                 </span>
               </span>
-            </div>
-            <div className={`${COLS} border-b border-[#EEF1F5] px-1 pb-2 text-[11px] uppercase tracking-[0.06em] text-[#A0A49C]`}>
-              <span>Description</span>
-              <span>Weight (kg)</span>
-              <span>Qty</span>
-              <span>Unit</span>
-              <span>Units/box</span>
-              <span>Unit price</span>
-              <span>Amount</span>
-              <span />
-            </div>
-            <div className="mt-2 space-y-2">
-              {lines.map((l, i) => (
-                <div key={i} className={COLS}>
-                  <input className={cellCls} value={l.description ?? ''} onChange={(e) => updateLine(i, 'description', e.target.value)} />
-                  <input className={`${cellCls} of-num`} value={l.weight ?? ''} onChange={(e) => updateLine(i, 'weight', e.target.value)} />
-                  <input className={`${cellCls} of-num text-right`} value={l.quantity ?? ''} onChange={(e) => updateLine(i, 'quantity', e.target.value)} />
-                  <select
-                    className={`${cellCls} cursor-pointer pr-1`}
-                    value={l.unit ?? ''}
-                    onChange={(e) => updateLine(i, 'unit', e.target.value)}
-                    aria-label="Unit"
-                  >
-                    <option value="">unit</option>
-                    {unitOptions(l.unit).map((u) => (
-                      <option key={u} value={u}>
-                        {u}
-                      </option>
-                    ))}
-                  </select>
-                  <input className={`${cellCls} of-num text-right`} value={l.units_per_box ?? ''} onChange={(e) => updateLine(i, 'units_per_box', e.target.value)} />
-                  <input className={`${cellCls} of-num text-right`} value={l.unit_price ?? ''} onChange={(e) => updateLine(i, 'unit_price', e.target.value)} />
-                  <input className={`${cellCls} of-num text-right`} value={l.amount ?? ''} onChange={(e) => updateLine(i, 'amount', e.target.value)} />
-                  <button
-                    type="button"
-                    onClick={() => removeLine(i)}
-                    aria-label="Remove line"
-                    className="flex h-9 w-7 items-center justify-center rounded-[10px] text-[#A0A49C] transition-colors hover:bg-[#FCEBEB] hover:text-[#A32D2D]"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
+              <button
+                type="button"
+                onClick={addLine}
+                className="inline-flex h-9 items-center rounded-[10px] border border-[#E2E6EC] bg-white px-3.5 text-[13px] font-medium text-[#3E4A57] transition-all hover:border-[#C9DEF7] hover:bg-[#EAF2FC] hover:text-[#174C87]"
+              >
+                + Add line
+              </button>
             </div>
           </div>
-        ) : null}
+          {lines.length > 0 ? (
+            <>
+              <div className={`${COLS} border-b border-[#EEF1F5] px-1 pb-2 text-[11px] uppercase tracking-[0.06em] text-[#A0A49C]`}>
+                <span>Description</span>
+                <span>Weight (kg)</span>
+                <span>Qty</span>
+                <span>Unit</span>
+                <span>Units/box</span>
+                <span>Unit price</span>
+                <span>Amount</span>
+                <span />
+              </div>
+              <div className="mt-2 space-y-2">
+                {lines.map((l, i) => (
+                  <div key={i} className={COLS}>
+                    <input
+                      id={`line-desc-${i}`}
+                      aria-label="Description"
+                      className={cellCls}
+                      value={l.description ?? ''}
+                      onChange={(e) => updateLine(i, 'description', e.target.value)}
+                    />
+                    <input className={`${cellCls} of-num`} value={l.weight ?? ''} onChange={(e) => updateLine(i, 'weight', e.target.value)} />
+                    <input className={`${cellCls} of-num text-right`} value={l.quantity ?? ''} onChange={(e) => updateLine(i, 'quantity', e.target.value)} />
+                    <select
+                      className={`${cellCls} cursor-pointer pr-1`}
+                      value={l.unit ?? ''}
+                      onChange={(e) => updateLine(i, 'unit', e.target.value)}
+                      aria-label="Unit"
+                    >
+                      <option value="">unit</option>
+                      {unitOptions(l.unit).map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                    </select>
+                    <input className={`${cellCls} of-num text-right`} value={l.units_per_box ?? ''} onChange={(e) => updateLine(i, 'units_per_box', e.target.value)} />
+                    <input className={`${cellCls} of-num text-right`} value={l.unit_price ?? ''} onChange={(e) => updateLine(i, 'unit_price', e.target.value)} />
+                    <input className={`${cellCls} of-num text-right`} value={l.amount ?? ''} onChange={(e) => updateLine(i, 'amount', e.target.value)} />
+                    <button
+                      type="button"
+                      onClick={() => removeLine(i)}
+                      aria-label="Remove line"
+                      className="flex h-9 w-7 items-center justify-center rounded-[10px] text-[#A0A49C] transition-colors hover:bg-[#FCEBEB] hover:text-[#A32D2D]"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="rounded-[12px] border border-dashed border-[#E2E6EC] bg-[#FBFCFE] px-4 py-6 text-center text-[13px] text-[#8A8E86]">
+              No line items were read from this document — use “+ Add line” to enter them.
+            </p>
+          )}
+        </div>
 
         <div className="mt-6 flex items-center gap-2 text-[13px]">
           <span
