@@ -165,6 +165,9 @@ export async function POST(req: Request) {
         line_items: result.line_items,
         summary: result.summary,
         supplier: result.supplier,
+        // Arithmetic audit of the lines (null when they add up). Drives the
+        // review-queue warning and the Doc-U flags — see lib/platform/docu/line-audit.ts.
+        line_audit: result.line_audit,
       },
       document_type: documentType,
       ...(supplierId && supplierId !== doc.supplier_id ? { supplier_id: supplierId } : {}),

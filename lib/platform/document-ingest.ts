@@ -679,7 +679,14 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
       status: 'extracted',
       confidence: cls.overall_confidence,
       document_type: documentType,
-      extracted_data: { fields: cls.fields, line_items: cls.line_items, summary: cls.summary, supplier: cls.supplier },
+      extracted_data: {
+        fields: cls.fields,
+        line_items: cls.line_items,
+        summary: cls.summary,
+        supplier: cls.supplier,
+        // Arithmetic audit of the lines (null when they add up) — lib/platform/docu/line-audit.ts.
+        line_audit: cls.line_audit,
+      },
       ...(supplierId ? { supplier_id: supplierId } : {}),
     })
     .eq('id', documentId);

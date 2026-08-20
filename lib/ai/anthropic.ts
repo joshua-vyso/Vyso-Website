@@ -1,6 +1,7 @@
 import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
 import type { AiSummary, StatementSummary } from '@/lib/platform/docu/types';
+import { auditLines, summariseAudit, type LineAuditSummary } from '@/lib/platform/docu/line-audit';
 
 /**
  * Server-only Anthropic integration. The API key is read from a non-public env
@@ -74,6 +75,9 @@ export interface ExtractionResult {
   line_items: ExtractedLineItem[];
   summary: StatementSummary | null;
   overall_confidence: number;
+  /** Arithmetic audit of the lines — null when they add up (or there was nothing
+   *  to check). Persisted into `extracted_data.line_audit` by the callers. */
+  line_audit: LineAuditSummary | null;
 }
 
 function textOf(message: Anthropic.Message): string {
@@ -131,6 +135,8 @@ Rules:
 - unit = the COUNTING unit that quantity is measured in, as a short lowercase plural noun, read from the pack/commodity descriptor: "PUNNE"/"PUNNET" -> "punnets", "BOX" -> "boxes", "POCKET" -> "pockets", "BAG" -> "bags", "BUNCH" -> "bunches", "CRATE" -> "crates", "TRAY" -> "trays", "PKT"/"PACKET" -> "packets". If the row is priced/counted by weight, use "kg". Default to "boxes" only when there is genuinely no packaging cue.
 - "supplier" (per line): set ONLY when the line table has a per-row seller column — most often a market statement's "AGENT" column, where each commodity row is supplied by a different market agent/vendor (e.g. "WENPRO MARKET A", "C L DE VILLIERS", "R S A MARKET AG", "DAPPER AGENCIES", "BOTHA ROODT"). Copy that agent/vendor name into the line's "supplier", cleaned to Title Case and de-truncated to the full trading name where obvious (e.g. "Wenpro Market Agents", "R S A Market Agents", "Botha Roodt"). Leave it "" on ordinary single-supplier invoices/delivery notes where every line shares the one top-level supplier.
 - quantity, unit_price and amount come from the QTY, UNIT PRICE and TOTAL columns of that row — NOT from the commodity string.
+- CHECK THE COLUMN ALIGNMENT BEFORE YOU ANSWER. Every line's amount must equal its quantity × its unit_price (or total_kg × unit_price where the row is priced by weight). A photographed or skewed table makes it easy to read a rate or a total off the row above or below, so walk the table again row by row and confirm each price and amount sits on the SAME line as its product. If a row does not multiply out, you have taken its numbers from a neighbouring row — fix the pairing; never adjust the figures to make them agree.
+- Never borrow a value from an adjacent row to fill a gap. If a row's unit_price or amount is missing, blank or unreadable, return "" for that field.
 - Ignore non-product rows: pallets, deposits, card fees, charges, balances, subtotals, grand totals, banking details.
 - Output numbers as plain strings (keep decimals; omit currency symbols). All confidence values 0-100.`;
 
@@ -176,16 +182,54 @@ export async function extractDocument(params: {
     .trim();
 
   const parsed = JSON.parse(raw) as Partial<ExtractionResult>;
+  const fields = Array.isArray(parsed.fields) ? parsed.fields : [];
+  const lines = Array.isArray(parsed.line_items) ? parsed.line_items : [];
+  const summary = coerceSummary(parsed.summary);
+  const confidence =
+    typeof parsed.overall_confidence === 'number' ? parsed.overall_confidence : 0;
+
+  // ARITHMETIC AUDIT (lib/platform/docu/line-audit.ts). A photographed, skewed
+  // table tempts the model into pairing each product with the NEIGHBOURING row's
+  // rate and amount — a systematic, silent, whole-document error that a human
+  // only catches by re-reading the paper. It is also trivially detectable: on a
+  // misaligned table `quantity × unit price` stops equalling `amount` on nearly
+  // every line. So we check, every time.
+  //
+  // If the columns slid, the audit hands back the realigned lines and we store
+  // THOSE — the alternative is filing eleven wrong prices into stock and supplier
+  // history. If the numbers are merely wrong with no clean explanation, nothing is
+  // touched: a wrong repair is worse than a flagged document.
+  //
+  // Either way the confidence is capped under DOC_LOW_CONFIDENCE_THRESHOLD (80),
+  // so an audited document lands in the review queue instead of sailing through
+  // any auto-approval path.
+  const audit = auditLines({ lines, total: documentTotal(fields, summary) });
+
   return {
     document_type: parsed.document_type ?? null,
     supplier:
       typeof parsed.supplier === 'string' && parsed.supplier.trim() ? parsed.supplier.trim() : null,
-    fields: Array.isArray(parsed.fields) ? parsed.fields : [],
-    line_items: Array.isArray(parsed.line_items) ? parsed.line_items : [],
-    summary: coerceSummary(parsed.summary),
+    fields,
+    line_items: audit.repaired ?? lines,
+    summary,
     overall_confidence:
-      typeof parsed.overall_confidence === 'number' ? parsed.overall_confidence : 0,
+      audit.confidenceCap != null ? Math.min(confidence, audit.confidenceCap) : confidence,
+    line_audit: summariseAudit(audit),
   };
+}
+
+/** The document's own total, for the audit's line-sum cross-check: an extracted
+ *  "total"/"amount due" field when the reader picked one up, else a statement's
+ *  total purchases. VAT-only and pallet lines are not it. */
+function documentTotal(fields: ExtractedField[], summary: StatementSummary | null): number | null {
+  for (const f of fields) {
+    const label = (f.label ?? '').toLowerCase();
+    const isTotal = label.includes('total') || label.includes('amount due');
+    if (!isTotal || /vat|tax|pallet|balance/.test(label)) continue;
+    const n = Number(String(f.value ?? '').replace(/[^0-9.\-]/g, ''));
+    if (Number.isFinite(n) && n !== 0) return n;
+  }
+  return summary?.total_purchases ?? null;
 }
 
 /** Coerce a parsed summary block into a StatementSummary, or null. */

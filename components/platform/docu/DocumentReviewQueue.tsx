@@ -16,6 +16,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRealtimeRefresh } from '@/lib/platform/useRealtimeRefresh';
+import { LineAuditNotice } from './LineAuditNotice';
+import type { DocuExtractedData } from '@/lib/platform/docu/types';
 import type { DocumentWithSupplier, ExtractedLineItem } from '@/lib/platform/types';
 
 const TYPE_LABEL: Record<string, string> = {
@@ -94,6 +96,11 @@ export function DocumentReviewQueue({ docs, canReview }: { docs: DocumentWithSup
         const isOpen = expanded === d.id;
         const data = d.extracted_data;
         const items = (data?.line_items ?? []) as ExtractedLineItem[];
+        // Extraction-time arithmetic audit — a re-aligned or non-adding document
+        // says so here, before the reviewer decides whether to Save it.
+        const audit = (data as DocuExtractedData | null)?.line_audit ?? null;
+        const failingRows = new Set(audit?.failing_rows ?? []);
+        const unresolvedRows = new Set(audit?.unresolved_rows ?? []);
         const who = d.supplier?.name || data?.supplier || data?.customer_name || null;
         const typeLabel = d.document_type ? TYPE_LABEL[d.document_type] ?? d.document_type : 'Document';
 
@@ -143,6 +150,8 @@ export function DocumentReviewQueue({ docs, canReview }: { docs: DocumentWithSup
               )}
             </div>
 
+            <LineAuditNotice audit={audit} className="mt-3" />
+
             {isOpen ? (
               <div className="mt-3 space-y-3 border-t border-[#F3F3EF] pt-3">
                 {items.length > 0 ? (
@@ -156,13 +165,23 @@ export function DocumentReviewQueue({ docs, canReview }: { docs: DocumentWithSup
                         </tr>
                       </thead>
                       <tbody>
-                        {items.slice(0, 100).map((it, i) => (
-                          <tr key={i} className="border-t border-[#F4F5F7]">
-                            <td className="py-1.5 pr-3 text-[#171A17]">{lineLabel(it)}</td>
-                            <td className="of-num py-1.5 pr-3 text-[#6B6F68]">{it.unit_price || '—'}</td>
-                            <td className="of-num py-1.5 text-[#6B6F68]">{it.amount || '—'}</td>
-                          </tr>
-                        ))}
+                        {items.slice(0, 100).map((it, i) => {
+                          const flagged = failingRows.has(i + 1) || unresolvedRows.has(i + 1);
+                          return (
+                            <tr
+                              key={i}
+                              className={`border-t border-[#F4F5F7] ${flagged ? 'bg-[#FCF4E8]' : ''}`}
+                              title={flagged ? 'This line does not multiply out — check it against the paper document.' : undefined}
+                            >
+                              <td className="py-1.5 pr-3 text-[#171A17]">
+                                {flagged ? <span aria-hidden className="mr-1 text-[#854F0B]">!</span> : null}
+                                {lineLabel(it)}
+                              </td>
+                              <td className="of-num py-1.5 pr-3 text-[#6B6F68]">{it.unit_price || '—'}</td>
+                              <td className="of-num py-1.5 text-[#6B6F68]">{it.amount || '—'}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

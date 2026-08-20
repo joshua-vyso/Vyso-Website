@@ -4,10 +4,12 @@
  */
 import { DOC_LOW_CONFIDENCE_THRESHOLD } from '@/lib/platform/tokens';
 import type { DocumentWithSupplier } from '@/lib/platform/types';
-import type { DocumentFlag, FlagKind, FlagSeverity } from './types';
+import type { DocuExtractedData, DocumentFlag, FlagKind, FlagSeverity } from './types';
 import { docTotal, findFieldValue } from './extract';
 
 export const FLAG_META: Record<FlagKind, { label: string; severity: FlagSeverity }> = {
+  line_realigned: { label: 'Columns re-aligned', severity: 'warning' },
+  line_math: { label: 'Line totals do not add up', severity: 'critical' },
   duplicate_invoice: { label: 'Duplicate invoice', severity: 'critical' },
   price_spike: { label: 'Price spike', severity: 'warning' },
   missing_delivery_note: { label: 'Missing delivery note', severity: 'warning' },
@@ -37,6 +39,15 @@ export function deriveFlags(
   // REAL — low extraction confidence
   if (typeof doc.confidence === 'number' && doc.confidence < DOC_LOW_CONFIDENCE_THRESHOLD) {
     add('low_confidence', `Overall confidence ${Math.round(doc.confidence)}% — manual review recommended.`, 'derived');
+  }
+
+  // REAL — the extraction-time arithmetic audit (lib/platform/docu/line-audit.ts).
+  // `line_realigned` means we moved the price/amount columns back onto their own
+  // rows and the document now adds up — a genuine repair, but one a human should
+  // glance at. `line_math` means the numbers are wrong and we did NOT guess.
+  const audit = (doc.extracted_data as DocuExtractedData | null)?.line_audit ?? null;
+  if (audit?.note) {
+    add(audit.diagnosis === 'row_shift' ? 'line_realigned' : 'line_math', audit.note, 'derived');
   }
 
   // REAL — unknown supplier

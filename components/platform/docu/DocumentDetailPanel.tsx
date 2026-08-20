@@ -14,6 +14,7 @@ import { SendToHubdoc, type HubdocDocumentState } from './SendToHubdoc';
 import { TypePicker } from './TypePicker';
 import { StatementTotalsCard } from './StatementTotalsCard';
 import { FlagsList } from './FlagsList';
+import { LineAuditNotice } from './LineAuditNotice';
 import { AiSummaryCard } from './AiSummaryCard';
 import { ConfidenceBreakdown } from './ConfidenceBreakdown';
 import { DocumentRelationshipFlow } from './DocumentRelationshipFlow';
@@ -81,7 +82,26 @@ export function DocumentDetailPanel({
     <div className="flex flex-col rounded-2xl border border-[#EAEDF2] bg-white shadow-[0_1px_2px_rgba(20,24,20,0.03)]">
       <div className="flex items-center justify-between gap-3 border-b border-[#EEF1F5] px-6 py-5">
         <h2 className="of-display text-[16px] font-semibold text-[#171A17]">Original document</h2>
-        <span className="truncate text-[12px] text-[#A0A49C]">{doc.filename}</span>
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="truncate text-[12px] text-[#A0A49C]">{doc.filename}</span>
+          {/* Print the supplier's own document. Opens the signed file in a new tab
+              rather than printing the iframe: the browser's native PDF/image viewer
+              prints the real file at full fidelity, where printing this page's
+              embedded frame would print the app around it. The tab is where the
+              reader presses ⌘P — same dialog, so the same nearby/AirPrint printers
+              and the same "Save as PDF". */}
+          {originalUrl ? (
+            <a
+              href={originalUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Opens the file in a new tab — print it or save it as PDF from there"
+              className="inline-flex h-8 shrink-0 items-center rounded-[10px] border border-[#E2E6EC] bg-white px-3 text-[12px] font-medium text-[#3E4A57] transition-all hover:border-[#C9DEF7] hover:bg-[#EAF2FC] hover:text-[#174C87]"
+            >
+              Print
+            </a>
+          ) : null}
+        </div>
       </div>
       <div className="p-4">
         {/* Same component the Review chat's document pane draws, at this page's
@@ -136,6 +156,12 @@ export function DocumentDetailPanel({
           <StatusPill status={doc.status} />
         </div>
       </div>
+
+      {/* The arithmetic audit sits ABOVE the editor, not inside the collapsed
+          "Additional information" tile: a document whose lines were re-aligned —
+          or whose lines do not add up — is the one thing the reviewer must read
+          before they trust anything below it. */}
+      <LineAuditNotice audit={extracted?.line_audit} className="mt-5" />
 
       {/* Two main blocks — extracted data (left) + original preview (right).
           The preview cell stretches to the row height and holds a sticky child,

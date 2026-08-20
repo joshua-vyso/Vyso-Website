@@ -7,6 +7,7 @@
  * value comes from real document data or is illustrative until a backend lands.
  */
 import type { DocumentStatus, DocumentType, ExtractedData, FeatureKey } from '@/lib/platform/types';
+import type { LineAuditSummary } from './line-audit';
 
 // ---------------------------------------------------------------------------
 // Statement totals (TRANSACTION SUMMARY) — parsed from a statement's footer and
@@ -35,12 +36,17 @@ export interface StatementSummary {
 export interface DocuExtractedData extends ExtractedData {
   custom_type?: string;
   summary?: StatementSummary | null;
+  /** Arithmetic audit of the line items, written at extraction time. Null/absent
+   *  means the lines add up (or there was nothing to check). */
+  line_audit?: LineAuditSummary | null;
 }
 
 // ---------------------------------------------------------------------------
 // Flags (feature 4)
 // ---------------------------------------------------------------------------
 export type FlagKind =
+  | 'line_realigned'
+  | 'line_math'
   | 'duplicate_invoice'
   | 'price_spike'
   | 'missing_delivery_note'

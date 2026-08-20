@@ -4405,3 +4405,100 @@ lockup change including `/pricing`'s dark hero where the wordmark inverts.
 `npx tsc --noEmit` clean · `npm test` **736 pass / 0 fail** · `npm run build`
 clean · `npx eslint .` **50 errors, 40 warnings** — unchanged from the baseline;
 none of the touched files contributes one.
+
+---
+
+# Doc-U — row-shifted line extraction: detect, repair, flag
+
+*2026-08-20*
+
+## What went wrong in the real world
+
+Turn 'n Slice photographed a supplier invoice — skewed, 11 product lines — and
+the extraction paired every product with the **neighbouring row's** numbers. Not
+one bad line: the whole price side of the table slid. Read off the review screen
+against the paper:
+
+| Row | Product | Paper | Extracted |
+|---|---|---|---|
+| 1 | Carrots-Grated | 25.50 / 127.50 | *(no price, no amount)* |
+| 2 | Onion-Sliced | 29.90 / 119.60 | 25.50 *(Carrots' rate)* / — |
+| 3 | Onion-Red Sliced | 32.50 / 97.50 | 29.90 *(row 2's rate)* / 127.50 *(row 1's amount)* |
+| … | | | |
+| 11 | Broccoli-Florets | 75.50 / 377.50 | 89.90 / 60.85 |
+
+The exact shape, once the four known rows are lined up: **unit price one row
+late, amount two rows late**. A human caught it in review — "All fields
+confirmed" was reached only after manual correction.
+
+The important part is that this is **machine-detectable without the paper**:
+`5 × 89.90 ≠ 60.85`, and the same is true on nearly every line. A correctly-read
+table multiplies out; a slid one does not. That asymmetry is the whole detector.
+
+## What was built
+
+**1. `lib/platform/docu/line-audit.ts` — a pure validator.** No I/O, no model.
+Per line it checks `quantity × unit_price ≈ amount` (within a cent *or* 0.5%,
+whichever is kinder), trying `total_kg` and per-pack `weight` as the multiplier
+for weight-priced rows before calling a line wrong. Document-level it returns a
+diagnosis:
+
+- **`row_shift`** — ≥ 60% of checkable lines fail, *but* sliding the price and
+  amount columns makes ≥ 80% of all lines pass. Columns are searched
+  **independently** by up to ±2 rows, because the real failure did not move them
+  together; gentler and symmetric shifts win ties. The audit returns the
+  **repaired lines**: descriptions and quantities exactly as extracted, price and
+  amount reassigned. Holes the slide leaves are closed only where arithmetic
+  forces the answer (a line with a quantity and one of price/amount implies the
+  other), and one still-missing amount is reconstructed as the residual against
+  the document total. Pairs the slide consumed from nowhere come back as
+  `orphans`.
+- **`line_math`** — the numbers are wrong and no slide explains it. Nothing is
+  changed. A single odd line among good ones lands here too, by design: one bad
+  row is not a reason to move the whole table.
+- **`clean` / `not_enough_data`** — nothing to say.
+
+Plus a VAT-aware cross-check of `sum(amounts)` against the extracted total
+(`match`, `match_incl_vat`, `mismatch`).
+
+**On this invoice** the audit diagnoses `row_shift { unit_price: +1, amount: +2 }`
+and repairs all 11 lines back to the paper values — the last row's price and
+amount, which were never in the model's output at all, are recovered as the
+residual against the R 2 373.35 total (377.50 ÷ 5 = 75.50). Without a total it
+still recovers rows 1–10 and reports row 11 as unresolved rather than inventing
+it. `tests/docu-line-audit.test.ts` holds the fixture and both outcomes.
+
+**2. Wired into `extractDocument`** (`lib/ai/anthropic.ts`), not into one route —
+the ingest path (`lib/platform/document-ingest.ts`, forwarded email) and
+`/api/ai/extract` both call it, and an audit that only ran on one of them would be
+a bug waiting. A repair replaces `line_items` before anything is written, so
+ProcurePulse stock, SupplySync spend and Doc Watch's "biggest lines" all see the
+corrected numbers. Confidence is capped at **75** for a repair and **70** for an
+unexplained failure — both under `DOC_LOW_CONFIDENCE_THRESHOLD` (80), so an
+audited document cannot auto-approve anywhere. The compact verdict is stored as
+`extracted_data.line_audit` (typed on the web-only `DocuExtractedData`, so the
+mirrored canonical `types.ts` is untouched).
+
+**3. Prompt hardening** — two bullets, no bloat: amount must equal
+quantity × unit price (or total_kg × unit price), skewed photographs invite
+reading a rate off the row above or below so re-walk the table before answering,
+and *never borrow from an adjacent row* — return `""` for a field you cannot read.
+
+**4. Review UI** — `LineAuditNotice` draws the verdict where the reviewer already
+is: above the extraction editor on the document page (not buried in the collapsed
+"Additional information" tile), and on each review-queue card *before* the Save
+button. A repair reads "Columns re-aligned — worth an eye"; a `line_math` failure
+names the rows ("Check rows 1, 3, 4, 5") and highlights them in the queue's line
+table. Both also surface as Doc-U flags (`line_realigned` warning,
+`line_math` critical).
+
+**5. Doc Watch — verified, unchanged.** `lib/platform/doc-watch/detect.ts`
+reads `extracted_data.line_items[].amount` via `pricedLines()`, and
+`run.ts` selects `extracted_data` straight off the document row. Repaired lines
+flow through with no edit.
+
+## Gates
+
+`npx tsc --noEmit` clean · `npm test` **758 pass / 0 fail** (736 + 22 new) ·
+`npm run build` clean · `npx eslint .` **50 errors, 40 warnings** — the baseline,
+unchanged; none of the touched files contributes one.
