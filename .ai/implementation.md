@@ -5220,3 +5220,120 @@ The first of those two dead drop zones is now closed: `GlobalChatDock` listens
 on `window` for a files-only drag while `/app` has no active conversation, and
 shows a full-viewport "Drop to send to Finch" overlay that calls the same
 `attach()` the paperclip does.
+
+# Order line matching — honesty over coverage (2026-08-20, branch `main`)
+
+A three-page NebulaPOS **Purchase Order** from **Bakubung Bush Lodge** to Turn 'n
+Slice produced an order that invoiced at **R25,958.95** against a paper total of
+**R13,457.60**. Josh's read of it was exactly right and worth repeating, because
+it is what pointed at the real bug: *every wrong line is internally consistent*.
+Qty × price = amount on all of them. Nothing was misread.
+
+## Two different problems, wearing one costume
+
+The report reads as one failure — "the numbers are wrong" — and it is two, which
+is why it looked unfixable.
+
+**The prices are not a bug.** `syncOrderFromDocument` re-prices every line from
+the org's own price list when the customer's `invoice_price_basis` is
+`'price_list'`, ignoring whatever figure the customer's PO carries. That is
+correct and must stay: a supplier bills at its own prices, not at the price a
+customer typed into their own purchase order. "1 box @ 569.90 → 1 box @ 23.80" is
+Turn 'n Slice's list price for the product the line was matched to, arrived at
+honestly. The arithmetic is consistent because it is *computed downstream from
+the product*, not because anything fabricated it.
+
+**The products are the bug.** Every figure Josh flagged is the right price for the
+*wrong product*:
+
+| Paper said | Matched to | Why |
+| --- | --- | --- |
+| `FF - GRAPES WHITE BOX` | **Avocado** (a second Avocado line) | nothing; the reader guessed |
+| `VEG - MIX VEGETABLES 2 PKT` | **Cabbage** | nothing |
+| `VEG - PATTY PAN YELLOW` | **Tomato-Yellow Cocktail** (a second one) | shared colour word |
+| `VEG - SWEET CORN` | **Baby Sweet Corn** | token overlap 0.8 — R46.40 vs R375 |
+
+So the report separates into: *pricing provenance is by design but was invisible*,
+and *product matching was dishonest*. Both are fixed, differently.
+
+## The prompt did not leak
+
+`28c1da2`'s arithmetic-consistency hardening and `d0899f0`'s additions were
+checked line by line against the order path. **Neither touched it.** Both edit
+`EXTRACTION_PROMPT` — the invoice/statement reader — and `ORDER_PROMPT` is a
+separate constant they never mention; `auditLines`/`summariseAudit` are wired into
+`extractDocument` alone and never run over an order. The consistent-looking
+numbers were never the model's doing: they are computed after the fact from
+`qty × list price`, which is arithmetic that cannot help being consistent.
+
+The prompt was hardened anyway, because the *rule* is right even where the leak
+wasn't: **"NEVER COMPUTE OR INFER A VALUE… A blank we can ask about is worth more
+than a number that is merely consistent."**
+
+## What actually let it through
+
+`matchStockItem` in `orderflow-from-doc.ts` was a three-stage ladder ending in
+token overlap at **`score >= 0.5`** — a half-overlap. Two-token produce names
+share one token constantly, so that floor accepted "Sweet Corn" → "Baby Sweet
+Corn" and made the three peppers on this very document candidates for one
+another. Worse, it ran **per line**: nothing in the system could see that the
+Avocado product had just been handed out twice.
+
+`lib/platform/docu/order-line-match.ts` (new, pure, no I/O) replaces it with four
+rules:
+
+1. **Match the raw paper text, never the reader's rewrite.** A rewrite is a
+   suggestion; it is not evidence. `raw_description` is now extracted separately,
+   typed on `ExtractedLineItem`, and survives the review editor's save.
+2. **Auto-assign only at effective identity** — `AUTO_MATCH_FLOOR = 0.9`. Every
+   failure on this document sat in the 0.5–0.8 band the old ladder accepted.
+3. **A disagreed qualifier means a different product**, whatever the string
+   similarity says — colour, size, cut, variety. White grapes are not black
+   grapes and baby corn is not corn. Scores those pairs to 0 outright.
+4. **Two paper lines may never land on one product.** A document-wide second
+   pass; when they collide **both** go to review, because we cannot know which
+   row was the real one and keeping the first silently loses a line the customer
+   ordered.
+
+Everything refused keeps the paper's own words, gets **no price at all**, and
+carries what it nearly matched as a one-click `suggestion`. An unmatched line
+also blocks auto-invoicing outright — `ai_allow_unpriced` is a decision about
+*prices* and deliberately does not extend to unidentified *products*.
+
+## Saying so on screen
+
+`documents.extracted_data.order_lines` (jsonb, no migration, beside `line_audit`
+and `direction`) now carries one `OrderLineRecord` per line: the paper's words,
+what it was matched to, the reason it wasn't, and where the price came from.
+`OrderReviewEditor` renders it — `Paper said "FF - GRAPES WHITE BOX" → Grapes
+White`, the refusal reason with a clickable closest match, and
+`Priced from your price list (Lodge Rates) · paper shows R569.90`. The
+price-provenance line is the fix for the half of the report that was never a bug:
+pricing from our list is right, but it is only *honest* when the screen names the
+origin and shows the customer's figure beside it.
+
+## Model
+
+Order extraction moves to **`claude-sonnet-4-6`** via `ANTHROPIC_ORDER_EXTRACT_MODEL`
+(documented in `.env.example`). Scoped deliberately: an order is read *against the
+catalogue*, so on top of transcribing a dense multi-page PO the model decides per
+line which product each row **is** versus merely resembles. Haiku read well and
+decided badly. Invoices and statements — one supplier, no catalogue reasoning —
+stay on `ANTHROPIC_EXTRACT_MODEL`'s Haiku tier, and chat is untouched.
+
+`suggestProductMatches` (match-from-shortlist) was examined and **left on Haiku**:
+its output is suggestions a human confirms, it never auto-links, and it is not in
+the path that invoiced this order.
+
+Cost: orders are a low-volume lane — dozens a day, not thousands — so the tier
+change is small in absolute rands, against an error that costs a wrong customer
+invoice. The deterministic gate in `order-line-match.ts` is what makes the
+failures *visible*; Sonnet is what stops most of them being made. The gate is the
+guarantee, not the model.
+
+## Gates
+
+`npx tsc --noEmit` — clean. `npm test` — **847 pass / 0 fail** (829 + 18 new, the
+whole Bakubung document run through the pure matcher as a fixture). `npm run
+build` — clean. `npx eslint .` — 50 errors / 40 warnings, exactly the baseline,
+**zero in any file touched here**.

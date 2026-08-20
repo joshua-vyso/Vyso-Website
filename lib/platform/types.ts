@@ -107,6 +107,12 @@ export interface ExtractedField {
 export interface ExtractedLineItem {
   reference?: string;
   description: string;
+  /** For uploaded customer ORDERS: the product text EXACTLY as printed on the
+   *  paper, before any catalogue resolution. Product matching runs on THIS, and
+   *  review shows it beside whatever it was matched to — a rewritten name is a
+   *  suggestion, never the only surviving record of what the customer wrote.
+   *  See lib/platform/docu/order-line-match.ts. */
+  raw_description?: string;
   weight?: string;
   quantity?: string;
   units_per_box?: string;

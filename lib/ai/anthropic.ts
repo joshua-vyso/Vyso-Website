@@ -20,6 +20,19 @@ const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 // every product, weight and amount at ~1/5 the cost and lower latency. Override
 // with ANTHROPIC_EXTRACT_MODEL if a future document type needs more muscle.
 const EXTRACT_MODEL = process.env.ANTHROPIC_EXTRACT_MODEL || 'claude-haiku-4-5';
+// ORDER extraction is a harder job than the invoice/statement read above, and is
+// scoped to its own tier for that reason. An order is read against the org's
+// CATALOGUE — several hundred product names — so on top of transcribing a dense
+// multi-page purchase order the model has to decide, per line, which catalogue
+// product each row is and which it merely resembles. Haiku 4.5 did the reading
+// well and the deciding badly: on a three-page Bakubung Bush Lodge PO it filed
+// "GRAPES WHITE" as a second Avocado, "Mix Vegetables" as Cabbage and "Sweet
+// Corn" as Baby Sweet Corn, and the order invoiced at R25,958.95 against a paper
+// total of R13,457.60. The gate in lib/platform/docu/order-line-match.ts is what
+// makes those failures visible; Sonnet is what stops most of them being made.
+// Invoices and statements — a single supplier, no catalogue reasoning — stay on
+// EXTRACT_MODEL's Haiku tier, where they measured equal to Opus.
+const ORDER_EXTRACT_MODEL = process.env.ANTHROPIC_ORDER_EXTRACT_MODEL || 'claude-sonnet-4-6';
 // The operational summary is a short (≤500 char) briefing, not deep reasoning,
 // so it runs on the fast/cheap Haiku tier. Override with ANTHROPIC_SUMMARY_MODEL.
 const SUMMARY_MODEL = process.env.ANTHROPIC_SUMMARY_MODEL || 'claude-haiku-4-5';
@@ -320,7 +333,7 @@ Respond with ONLY a JSON object (no prose, no markdown code fences) of exactly t
   "customer_name": string | null,
   "customer_confidence": number,
   "line_items": [
-    { "description": string, "quantity": string, "unit": string, "unit_price": string, "confidence": number }
+    { "raw_description": string, "description": string, "quantity": string, "unit": string, "unit_price": string, "confidence": number }
   ],
   "overall_confidence": number
 }
@@ -331,13 +344,15 @@ Rules:
     - Handwritten / typed note: a name by "from", "customer", "client", a shop name, or the sign-off.
   Return the cleaned name in Title Case. Use null only if there is genuinely no name anywhere.
 - "customer_confidence" (0-100): how sure you are the name is right. A clear WhatsApp contact header or email sender display name is high (85-100); a name guessed from a phone number or an ambiguous scrawl is low (<60).
-- "line_items" = every product the customer is asking for. For each:
+- "line_items" = every product the customer is asking for, ONE ENTRY PER ROW ON THE PAPER, in the order they appear. Never merge two rows and never invent one. For each:
+    - raw_description = the product text EXACTLY as it is printed or written, VERBATIM: same words, same order, same abbreviations, same category codes, same colour and size words ("FF - GRAPES WHITE BOX", "PATTY PAN YELLOW", "Mix Vegetables 2 pkt 20 kg"). Do NOT tidy it, translate it, expand it or resolve it to anything. This is the record of what the customer wrote and it must survive.
     - description = the produce/product, cleaned and Title Case (e.g. "Strawberries", "Mixed Veg", "Baby Marrow").
     - quantity = how many, digits only as a string ("5" from "5 boxes", "10" from "10x").
     - unit = the counting unit as a short lowercase plural noun read from the text: "boxes","punnets","bags","kg","crates","trays","bunches","packets","pockets". "" if none is stated.
     - unit_price = the price PER UNIT only if the customer actually wrote one, else "" (orders usually have no prices).
     - confidence = 0-100 for that line.
 - Parse messy, conversational text: "hi can I get 5 strawberries and 2 boxes blueberries pls 🙏" -> two line items. Ignore greetings, small talk, delivery addresses, dates and totals.
+- NEVER COMPUTE OR INFER A VALUE. If a quantity, unit or price is missing, blank, smudged or unreadable, return "" for that field and lower that line's confidence. Do not derive it from a line total, from the document total, from a neighbouring row, or from what would make the arithmetic work. A blank we can ask about is worth more than a number that is merely consistent.
 - Output all numbers as plain strings (no currency symbols); all confidence values 0-100.`;
 
 /** Parse an uploaded customer order (WhatsApp / email / handwritten / typed). When
@@ -352,7 +367,9 @@ export async function extractOrderDocument(params: {
 }): Promise<OrderExtractionResult> {
   const catalogue =
     params.products && params.products.length
-      ? `\n\nMATCH TO CATALOGUE: when an ordered item clearly corresponds to one of the business's products below, set "description" to that EXACT product name — resolve abbreviations, plurals and varieties (e.g. "broc" -> "Broccoli", "toms" -> "Tomatoes", "green apple"/"granny smith" -> whichever apple in the list it is). If an item doesn't clearly match any product, keep the customer's own wording. PRODUCTS: ${params.products.slice(0, 400).join(', ')}.`
+      ? `\n\nMATCH TO CATALOGUE: when an ordered item is UNMISTAKABLY one of the business's products below, set "description" to that EXACT product name — resolve abbreviations and plurals ("broc" -> "Broccoli", "toms" -> "Tomatoes"). "raw_description" still holds the customer's own words, untouched, either way.
+Be conservative. A different colour, size, cut, grade or variety is a DIFFERENT product and must NOT be matched: "Grapes White" is not "Grapes Black", "Sweet Corn" is not "Baby Sweet Corn", "Patty Pan Yellow" is not any tomato, "Mix Vegetables" is not "Cabbage". Two different rows on the paper must NEVER be given the same catalogue product — if you find yourself writing one product name twice for two different raw lines, at least one of them is wrong, so leave both as the customer's own wording.
+When an item does not clearly match any product, keep the customer's own wording in "description" and lower that line's confidence. An unmatched line is expected and useful; a wrongly matched line is invoiced at the wrong product's price. PRODUCTS: ${params.products.slice(0, 400).join(', ')}.`
       : '';
 
   // An optional note the user typed alongside the file (e.g. "this is for
@@ -364,8 +381,8 @@ export async function extractOrderDocument(params: {
       : '';
 
   const message = await client().messages.create({
-    model: EXTRACT_MODEL,
-    max_tokens: 4000,
+    model: ORDER_EXTRACT_MODEL,
+    max_tokens: 8000,
     messages: [
       {
         role: 'user',
@@ -394,8 +411,14 @@ export async function extractOrderDocument(params: {
         .map((l) => {
           const r = (l ?? {}) as unknown as Record<string, unknown>;
           const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+          // The paper's own words are what everything downstream matches on, so a
+          // reader that skipped the field must not leave the line with only its
+          // own rewrite — fall back to it, but keep raw_description populated so
+          // `resolveOrderLines` always has a raw name to work from.
+          const raw = str(r.raw_description) || str(r.description);
           return {
-            description: str(r.description),
+            raw_description: raw,
+            description: str(r.description) || raw,
             quantity: str(r.quantity),
             unit: str(r.unit),
             unit_price: str(r.unit_price),

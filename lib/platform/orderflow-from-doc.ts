@@ -42,6 +42,14 @@ import { invoiceNumber, vatRateForTreatment } from './orderflow';
 import type { OfCustomer } from './orderflow';
 import type { CdCustomerItemAlias, CdPriceList, CdPriceOverride } from './coredata';
 import { customerPriceList, resolvePrice } from './coredata';
+import {
+  AUTO_MATCH_FLOOR,
+  bestCatalogueCandidate,
+  stripCategoryPrefix,
+  resolveOrderLines,
+  type OrderLineRecord,
+  type OrderPriceSource,
+} from './docu/order-line-match';
 
 export interface CustomerLite {
   id: string;
@@ -101,37 +109,23 @@ export interface StockLite {
 
 /**
  * Match a free-text order line ("Broc", "toms", "green apple") to a catalogue
- * product. Tries exact → length-guarded containment → token overlap with prefix
- * matching (so "broc" hits "Broccoli"). Returns null when nothing is close — a
- * genuinely unknown product shouldn't be force-matched to the wrong item.
+ * product, or null when nothing in the catalogue IS that product.
+ *
+ * The rule lives in `lib/platform/docu/order-line-match.ts` — this is the
+ * single-line convenience over it. It used to be a bespoke ladder (exact →
+ * length-guarded containment → token overlap with prefix matching) whose token
+ * stage accepted a half-overlap, which is how "Sweet Corn" reached "Baby Sweet
+ * Corn" and how three different peppers became candidates for one another. The
+ * shared rule refuses anything short of effective identity and refuses outright
+ * a candidate that disagrees about colour, size, cut or variety.
+ *
+ * NOTE the document-wide decision — the one that catches two lines landing on
+ * one product — is `resolveOrderLines`, not this. A per-line matcher cannot see
+ * that it has just handed out the same product twice.
  */
 export function matchStockItem(name: string, items: StockLite[]): StockLite | null {
-  const n = normName(name);
-  if (!n) return null;
-  for (const it of items) if (normName(it.name) === n) return it;
-
-  let containBest: { it: StockLite; ratio: number } | null = null;
-  for (const it of items) {
-    const inm = normName(it.name);
-    if (!inm || !(inm.includes(n) || n.includes(inm))) continue;
-    const ratio = Math.min(n.length, inm.length) / Math.max(n.length, inm.length);
-    if (ratio >= 0.55 && (!containBest || ratio > containBest.ratio)) containBest = { it, ratio };
-  }
-  if (containBest) return containBest.it;
-
-  const tokens = n.split(' ').filter(Boolean);
-  let tokenBest: { it: StockLite; score: number } | null = null;
-  for (const it of items) {
-    const itTokens = normName(it.name).split(' ').filter(Boolean);
-    if (!itTokens.length) continue;
-    let overlap = 0;
-    for (const t of tokens) {
-      if (t.length >= 3 && itTokens.some((x) => x === t || x.startsWith(t) || t.startsWith(x))) overlap += 1;
-    }
-    const score = overlap / Math.max(tokens.length, itTokens.length);
-    if (overlap > 0 && score >= 0.5 && (!tokenBest || score > tokenBest.score)) tokenBest = { it, score };
-  }
-  return tokenBest?.it ?? null;
+  const best = bestCatalogueCandidate(name, items);
+  return best && best.score >= AUTO_MATCH_FLOOR ? best.item : null;
 }
 
 export interface SyncResult {
@@ -145,6 +139,8 @@ export interface SyncResult {
   needsCustomerReview?: boolean;
   /** Lines with no document price and no resolvable price-list/base price. */
   unpricedLines?: number;
+  /** Lines whose product could not be identified — held for review, never priced. */
+  unmatchedLines?: number;
   itemCount?: number;
   reason?: string;
 }
@@ -338,53 +334,80 @@ export async function syncOrderFromDocument(
   const stockItems = (stockRows ?? []) as StockLite[];
 
   const items: { stock_item_id: string | null; name: string; qty: number; unit: string | null; unit_price: number }[] = [];
+  // The audit trail written back to the document — what the paper said, what we
+  // matched it to, and where its price came from. See OrderLineRecord.
+  const records: OrderLineRecord[] = [];
   let unpricedLines = 0;
+  let unmatchedLines = 0;
+
+  // ---------------------------------------------------------------------------
+  // PRODUCT RESOLUTION — one document-wide pass, before anything is priced.
+  //
+  // It has to be document-wide. A per-line matcher assigned "FF - GRAPES WHITE
+  // BOX" to the Avocado the document's own avocado line had already taken, and
+  // could not know it, because nothing was looking at the document as a whole.
+  // `resolveOrderLines` refuses anything short of effective identity, refuses a
+  // candidate that disagrees about colour/size/cut/variety, and sends BOTH lines
+  // to review when two of them land on one product. Everything it refuses keeps
+  // the paper's own words and gets no price at all.
+  // ---------------------------------------------------------------------------
+  const rawNames = lines.map((li) => ((li.raw_description ?? '').trim() || (li.description ?? '').trim()).trim());
+  // A customer's confirmed alias is a human ruling on this exact raw name, so it
+  // pins the product outright — but still goes through the duplicate check.
+  const pins = new Map<number, StockLite>();
+  const aliasByIndex = new Map<number, CdCustomerItemAlias>();
+  lines.forEach((li, i) => {
+    const alias = aliasByRaw.get(rawNames[i].toLowerCase()) ?? aliasByRaw.get((li.description ?? '').trim().toLowerCase());
+    if (!alias) return;
+    aliasByIndex.set(i, alias);
+    const pinned = alias.stock_item_id ? stockItems.find((it) => it.id === alias.stock_item_id) ?? null : null;
+    if (pinned) pins.set(i, pinned);
+  });
+  const resolutions = resolveOrderLines(
+    lines.map((li, i) => ({ raw_description: rawNames[i], description: li.description ?? '' })),
+    stockItems,
+    { pins, stripPrefix: stripPrefixes },
+  );
+
   // CREATE-ON-UPLOAD dedupe: normalised line name → the pp_stock_items row we
   // created earlier IN THIS SAME RUN, so two identical unmatched lines link to one
   // new product instead of inserting it twice. Loaded catalogue dedupe is handled
-  // by matchStockItem re-finding a row a prior sync already created.
+  // by the resolution pass re-finding a row a prior sync already created.
   const createdStock = new Map<string, StockLite>();
-  for (const li of lines) {
-    const rawName = (li.description ?? '').trim();
+  for (let i = 0; i < lines.length; i += 1) {
+    const li = lines[i];
+    const res = resolutions[i];
+    const rawName = res.rawName;
     if (!rawName) continue;
     const qty = num(li.quantity) ?? 0;
     const docUnit = (li.unit ?? '').trim() || null;
+    const alias = aliasByIndex.get(i) ?? null;
 
-    // 1. Alias-first product match: an exact customer mapping (raw_name) pins the
-    //    stock item, the printed invoice name and the billing unit — skip fuzzy.
-    const alias = aliasByRaw.get(rawName.toLowerCase());
-    let s: StockLite | null = null;
-    let name = rawName;
+    let s: StockLite | null = res.item;
+    // The billed name: the catalogue product when the gate matched it, otherwise
+    // the paper's own words. A name we merely suspected never reaches an invoice.
+    let name = res.name;
     let unit = docUnit;
-    // The name a NEW catalogue product is created under — must equal what the next
-    // sync's matchStockItem query uses, so a re-sync re-finds it (never duplicates).
-    let createName = rawName;
     if (alias) {
-      s = alias.stock_item_id ? stockItems.find((it) => it.id === alias.stock_item_id) ?? null : null;
       name = (alias.invoice_name ?? '').trim() || s?.name || rawName;
       if ((alias.unit ?? '').trim()) unit = (alias.unit as string).trim();
       else if (!unit) unit = s?.unit ?? null;
-    } else {
-      // 2. Prefix strip: drop a leading category code ("FF - ", "VEG - ", "PSAL - ")
-      //    before fuzzy matching, so "FF - NAARTJIES Box" hits "Naartjies".
-      const forMatch = stripPrefixes ? rawName.replace(/^[A-Z]{2,5}\s*-\s*/, '').trim() || rawName : rawName;
-      createName = forMatch; // next sync queries matchStockItem(forMatch) → create under it
-      s = matchStockItem(forMatch, stockItems);
-      // Known customer → rectify to the clean catalogue name; when nothing matches
-      // keep the FULL raw description (in case the leading token wasn't a category).
-      // Unknown customer → raw as before.
-      name = applyParams ? s?.name ?? rawName : rawName;
-      if (!unit) unit = s?.unit ?? null;
+    } else if (!unit) {
+      unit = s?.unit ?? null;
     }
 
-    // CREATE-ON-UPLOAD: an order line that matched no catalogue item (and had no
-    // alias mapping) → create a pp_stock_items row so Core Data grows with the
-    // upload and the line links to a real product. Dedupe: first within this run
-    // (createdStock, keyed by normalised name) so repeated identical lines share
-    // one new row; the loaded-catalogue case is covered because a prior sync's row
-    // is re-found by matchStockItem above. Best-effort — a failed insert leaves
-    // stock_item_id null (prior behaviour). New product prices via avg_unit_price.
-    if (!alias && !s) {
+    // CREATE-ON-UPLOAD: a line the catalogue has NOTHING for is a product the org
+    // may genuinely not carry yet → create a pp_stock_items row so Core Data grows
+    // with the upload. Deliberately NOT done for 'low_confidence',
+    // 'variant_conflict' or 'duplicate': there, something close already exists and
+    // a human has to say which — minting a near-duplicate product would bury the
+    // question under a second catalogue row. Dedupe within this run by normalised
+    // name; a prior sync's row is re-found by the resolution pass. Best-effort — a
+    // failed insert leaves stock_item_id null.
+    if (!alias && !s && res.reason === 'no_candidate') {
+      // The name a NEW product is created under — the same text the next sync's
+      // resolution pass will score, so a re-sync re-finds it (never duplicates).
+      const createName = stripPrefixes ? stripCategoryPrefix(rawName) : rawName;
       // Key on the NORMALISED create-name: skips punctuation-only junk (normalises
       // to "" → no create/re-create), and dedups identical lines within this run.
       const key = normName(createName);
@@ -418,31 +441,76 @@ export async function syncOrderFromDocument(
       }
     }
 
-    // 3. Price basis: 'price_list' re-prices every line from OUR list (ignoring the
-    //    document's own price); otherwise the doc price wins, then the list, then 0.
-    let unitPrice = priceFromList ? null : num(li.unit_price);
-    let priced = unitPrice != null; // a real price came off the document
-    if (unitPrice == null) {
-      const resolved = s ? resolvePrice(s, priceList, overrides) : null;
-      if (resolved && resolved.source !== 'none') {
+    // PRICING. `invoice_price_basis: 'price_list'` re-prices every line from OUR
+    // list and ignores the document's own figure — that is deliberate and correct
+    // (a supplier bills at its own prices, not at whatever the customer's purchase
+    // order happens to carry), and the review screen now SAYS so and shows the
+    // paper's figure beside ours. Otherwise the doc price wins, then the list.
+    //
+    // An UNMATCHED line is never priced. We do not know what product it is, so any
+    // number here would be a guess dressed as a price — which is exactly how a
+    // R13,457.60 order was invoiced at R25,958.95.
+    const documentPrice = num(li.unit_price);
+    let unitPrice: number | null = priceFromList ? null : documentPrice;
+    let priceSource: OrderPriceSource = unitPrice != null ? 'document' : 'none';
+    let priceListName: string | null = null;
+    if (unitPrice == null && s) {
+      const resolved = resolvePrice(s, priceList, overrides);
+      // A resolvable price is a price ABOVE ZERO. `resolvePrice` returns
+      // list_margin(0) for a product with no cost on file whenever any list
+      // exists, which used to count as "priced" and let a R0.00 line auto-invoice.
+      if (resolved.source !== 'none' && resolved.price > 0) {
         unitPrice = resolved.price;
-        priced = true;
-      } else {
-        unitPrice = 0; // no price on the doc, no resolvable stock/list price — unresolved
+        priceSource = resolved.source === 'custom' ? 'custom' : resolved.source === 'base' ? 'base' : 'price_list';
+        priceListName = resolved.listName;
       }
     }
-    if (!priced) unpricedLines += 1;
-    items.push({ stock_item_id: s?.id ?? null, name, qty, unit, unit_price: unitPrice });
+    if (unitPrice == null) unpricedLines += 1;
+    if (!res.matched && !s) unmatchedLines += 1;
+
+    items.push({ stock_item_id: s?.id ?? null, name, qty, unit, unit_price: unitPrice ?? 0 });
+    records.push({
+      raw_description: rawName,
+      name,
+      stock_item_id: s?.id ?? null,
+      matched: !!s,
+      match_confidence: alias ? 100 : res.confidence,
+      match_reason: s ? 'matched' : res.reason,
+      suggestion: res.suggestion,
+      unit_price: unitPrice,
+      price_source: priceSource,
+      price_list_name: priceListName,
+      document_price: documentPrice,
+    });
   }
 
-  // Auto-invoice only when the customer is known AND every line has a real price —
-  // unless the customer opts into invoicing with unpriced lines (ai_allow_unpriced).
-  // An explicit "Confirm & invoice" (params.finalize) always wins — the human has
-  // seen and can edit the prices. Anything else holds as a draft for review.
+  // Write the audit trail back onto the document (jsonb — no migration, same
+  // place `line_audit` and `direction` live), so the review screen can show the
+  // paper's words beside the product we matched and name the price's origin.
+  // Best-effort: the order stands whether or not this lands.
+  await db
+    .from('documents')
+    .update({ extracted_data: { ...ed, order_lines: records } })
+    .eq('id', documentId)
+    .eq('org_id', orgId);
+
+  // Auto-invoice only when the customer is known, every line has a real price,
+  // and every line is on a product we actually identified.
+  //
+  // `ai_allow_unpriced` lets a customer opt into invoicing with unpriced lines —
+  // it is a decision about PRICES and does not extend to unidentified PRODUCTS.
+  // An unmatched line means we do not know what is being sold, and no per-customer
+  // setting should let that reach a customer's invoice unseen; it holds as a draft
+  // and the review screen shows the paper's words and what they nearly matched.
+  //
+  // An explicit "Confirm & invoice" (params.finalize) still wins — that is a human
+  // who has seen the lines on screen and can edit them.
   const finalize =
     params.finalize === true
       ? true
-      : customerKnown && (unpricedLines === 0 || applyParams?.ai_allow_unpriced === true);
+      : customerKnown &&
+        unmatchedLines === 0 &&
+        (unpricedLines === 0 || applyParams?.ai_allow_unpriced === true);
 
   // Upsert one order per source document. The existence probe + migration guard
   // ran at the TOP (before any Core Data was created), so `existingOrder` is ready.
@@ -590,6 +658,7 @@ export async function syncOrderFromDocument(
     // caller routes the user into Doc-U review to confirm/price before invoicing.
     needsCustomerReview: !finalize,
     unpricedLines,
+    unmatchedLines,
     itemCount: items.length,
   };
 }

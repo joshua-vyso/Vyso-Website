@@ -7,6 +7,11 @@ import { createClient } from '@/lib/platform/supabase-browser';
 import { usePlatform } from '@/lib/platform/session';
 import { zar } from '@/lib/platform/orderflow';
 import type { DocuExtractedData } from '@/lib/platform/docu/types';
+import {
+  matchReasonLabel,
+  priceSourceLabel,
+  type OrderLineRecord,
+} from '@/lib/platform/docu/order-line-match';
 
 export interface CustomerLite {
   id: string;
@@ -24,6 +29,13 @@ interface Line {
   quantity: string;
   unit: string;
   unit_price: string;
+  /** The paper's own words, carried through edit and re-save untouched. The
+   *  reviewer may rewrite `description` to whatever they like; the record of
+   *  what the customer actually wrote must not be a casualty of that. */
+  raw: string;
+  /** This line's match + price provenance, when the order has been synced once.
+   *  Null on a document synced before provenance existed, or a hand-added line. */
+  record: OrderLineRecord | null;
 }
 
 let seq = 0;
@@ -73,15 +85,32 @@ export function OrderReviewEditor({
   const [customerId, setCustomerId] = useState<string | null>(initialCustomer?.id ?? null);
   const [query, setQuery] = useState(initialCustomer?.name ?? extractedName);
   const [openList, setOpenList] = useState(false);
-  const [lines, setLines] = useState<Line[]>(() =>
-    (extractedData?.line_items ?? []).map((l) => ({
-      key: newKey(),
-      description: l.description ?? '',
-      quantity: l.quantity ?? '',
-      unit: l.unit ?? '',
-      unit_price: l.unit_price ?? '',
-    })),
-  );
+  const [lines, setLines] = useState<Line[]>(() => {
+    // Pair each extracted line with its provenance record. Keyed by the paper's
+    // words rather than by position, because `syncOrderFromDocument` skips lines
+    // whose raw text is empty and so its array can be shorter than this one; a
+    // per-key queue keeps two rows with identical paper text in order.
+    const queues = new Map<string, OrderLineRecord[]>();
+    for (const r of extractedData?.order_lines ?? []) {
+      const k = r.raw_description.trim().toLowerCase();
+      const q = queues.get(k) ?? [];
+      q.push(r);
+      queues.set(k, q);
+    }
+    return (extractedData?.line_items ?? []).map((l) => {
+      const raw = ((l.raw_description ?? '').trim() || (l.description ?? '').trim()).trim();
+      const record = queues.get(raw.toLowerCase())?.shift() ?? null;
+      return {
+        key: newKey(),
+        description: l.description ?? '',
+        quantity: l.quantity ?? '',
+        unit: l.unit ?? '',
+        unit_price: l.unit_price ?? '',
+        raw,
+        record,
+      };
+    });
+  });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [doneInvoice, setDoneInvoice] = useState<string | null>(
@@ -100,6 +129,10 @@ export function OrderReviewEditor({
 
   const subtotal = lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unit_price) || 0), 0);
 
+  // Lines the matcher refused to claim it identified. Counted for the banner so
+  // the reviewer knows before scrolling that this order is not ready to invoice.
+  const unmatched = lines.filter((l) => l.record && !l.record.matched).length;
+
   function updateLine(i: number, patch: Partial<Line>) {
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
   }
@@ -107,7 +140,13 @@ export function OrderReviewEditor({
     setLines((prev) => prev.filter((_, idx) => idx !== i));
   }
   function addLine() {
-    setLines((prev) => [...prev, { key: newKey(), description: '', quantity: '', unit: '', unit_price: '' }]);
+    // A hand-added line has no paper behind it, so `raw` stays empty until save,
+    // where it takes the typed description — a human typing a product IS the
+    // record for that line, and the resolver needs some raw name to score.
+    setLines((prev) => [
+      ...prev,
+      { key: newKey(), description: '', quantity: '', unit: '', unit_price: '', raw: '', record: null },
+    ]);
   }
 
   async function confirm() {
@@ -145,9 +184,14 @@ export function OrderReviewEditor({
 
       // Persist the (possibly edited) lines + confirmed customer name onto the doc,
       // so the order sync re-reads the corrected data.
+      // `raw_description` survives the round-trip. The reviewer edits the billed
+      // name; the paper's own words are not theirs to overwrite, and the next
+      // sync's resolution pass matches on them, so losing them here would put the
+      // whole document back to matching against a rewrite.
       const cleanLines = lines
         .filter((l) => l.description.trim())
         .map((l) => ({
+          raw_description: l.raw.trim() || l.description.trim(),
           description: l.description.trim(),
           quantity: l.quantity.trim(),
           unit: l.unit.trim(),
@@ -257,6 +301,23 @@ export function OrderReviewEditor({
           )}
         </div>
 
+        {/* Products we would not claim to have identified. Deliberately loud and
+            above the table: this is the state that invoiced a R13,457.60 order at
+            R25,958.95, and it used to be invisible because a near-miss match was
+            rendered exactly like a certain one. */}
+        {unmatched > 0 ? (
+          <div className="mb-4 rounded-[12px] border border-[#F3E2C4] bg-[#FFF9EF] px-4 py-3">
+            <p className="text-[13px] font-medium text-[#854F0B]">
+              <span className="of-num">{unmatched}</span> {unmatched === 1 ? 'line' : 'lines'} could not be matched to a
+              product with confidence
+            </p>
+            <p className="mt-0.5 text-[12px] text-[#8A6A38]">
+              They are highlighted below with the paper’s own wording and are left unpriced. Pick the right product (or
+              accept the closest) before invoicing — a wrong product is billed at the wrong price.
+            </p>
+          </div>
+        ) : null}
+
         {/* Lines */}
         <div className="mb-2 flex items-center justify-between">
           <h3 className="of-display text-[16px] font-semibold text-[#171A17]">Items (<span className="of-num">{lines.length}</span>)</h3>
@@ -279,34 +340,85 @@ export function OrderReviewEditor({
           <p className="py-6 text-center text-[13px] text-[#8A8E86]">No items read — add what the customer ordered.</p>
         ) : (
           <div className="space-y-2">
-            {lines.map((l, i) => (
-              <div key={l.key} className="grid grid-cols-[1fr_64px_72px_84px_24px] items-center gap-2">
-                <input className={cell} value={l.description} onChange={(e) => updateLine(i, { description: e.target.value })} />
-                <input className={`${cell} of-num text-right`} inputMode="numeric" value={l.quantity} onChange={(e) => updateLine(i, { quantity: e.target.value.replace(/[^0-9.]/g, '') })} />
-                <select
-                  className={`${cell} cursor-pointer pr-1`}
-                  value={l.unit}
-                  onChange={(e) => updateLine(i, { unit: e.target.value })}
-                  aria-label="Unit"
-                >
-                  <option value="">unit</option>
-                  {unitOptions(l.unit).map((u) => (
-                    <option key={u} value={u}>
-                      {u}
-                    </option>
-                  ))}
-                </select>
-                <input className={`${cell} of-num text-right`} inputMode="decimal" placeholder="from list" value={l.unit_price} onChange={(e) => updateLine(i, { unit_price: sanitizeDecimal(e.target.value) })} />
-                <button
-                  type="button"
-                  onClick={() => removeLine(i)}
-                  aria-label="Remove item"
-                  className="flex h-10 w-6 items-center justify-center rounded-[10px] text-[#A0A49C] transition-colors hover:bg-[#FCEBEB] hover:text-[#A32D2D]"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
+            {lines.map((l, i) => {
+              const r = l.record;
+              // Show the paper's words whenever the billed name is not simply
+              // them. A line we matched correctly still gets the "→" so the
+              // reviewer can check the rewrite rather than trust it.
+              const showPaper = !!r && r.raw_description.trim().toLowerCase() !== l.description.trim().toLowerCase();
+              return (
+                <div key={l.key} className={r && !r.matched ? 'rounded-[12px] bg-[#FFF9EF] p-2 ring-1 ring-[#F3E2C4]' : ''}>
+                  <div className="grid grid-cols-[1fr_64px_72px_84px_24px] items-center gap-2">
+                    <input className={cell} value={l.description} onChange={(e) => updateLine(i, { description: e.target.value })} />
+                    <input className={`${cell} of-num text-right`} inputMode="numeric" value={l.quantity} onChange={(e) => updateLine(i, { quantity: e.target.value.replace(/[^0-9.]/g, '') })} />
+                    <select
+                      className={`${cell} cursor-pointer pr-1`}
+                      value={l.unit}
+                      onChange={(e) => updateLine(i, { unit: e.target.value })}
+                      aria-label="Unit"
+                    >
+                      <option value="">unit</option>
+                      {unitOptions(l.unit).map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                    </select>
+                    <input className={`${cell} of-num text-right`} inputMode="decimal" placeholder="from list" value={l.unit_price} onChange={(e) => updateLine(i, { unit_price: sanitizeDecimal(e.target.value) })} />
+                    <button
+                      type="button"
+                      onClick={() => removeLine(i)}
+                      aria-label="Remove item"
+                      className="flex h-10 w-6 items-center justify-center rounded-[10px] text-[#A0A49C] transition-colors hover:bg-[#FCEBEB] hover:text-[#A32D2D]"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {r ? (
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 px-1 text-[11.5px] leading-[1.5]">
+                      {showPaper ? (
+                        <span className="text-[#A0A49C]">
+                          Paper said <span className="font-medium text-[#6B6F68]">“{r.raw_description}”</span>
+                          <span className="mx-1">→</span>
+                          {r.matched ? (
+                            <span className="text-[#6B6F68]">{r.name}</span>
+                          ) : (
+                            <span className="font-medium text-[#854F0B]">not matched</span>
+                          )}
+                        </span>
+                      ) : null}
+                      {!r.matched ? (
+                        <span className="text-[#854F0B]">
+                          {matchReasonLabel(r.match_reason)}
+                          {r.suggestion ? (
+                            <>
+                              {' · closest: '}
+                              <button
+                                type="button"
+                                onClick={() => updateLine(i, { description: r.suggestion!.name })}
+                                className="font-medium text-[#1F5FA8] underline-offset-2 hover:underline"
+                              >
+                                {r.suggestion.name}
+                              </button>
+                              <span className="of-num"> ({r.suggestion.confidence}%)</span>
+                            </>
+                          ) : null}
+                        </span>
+                      ) : null}
+                      <span className="text-[#A0A49C]">
+                        {priceSourceLabel(r.price_source, r.price_list_name)}
+                        {/* The paper's own figure, always, whether or not we used
+                            it — an order priced from our list is right, but the
+                            reviewer must be able to see the gap they're signing off. */}
+                        {r.document_price != null && r.price_source !== 'document'
+                          ? ` · paper shows ${zar(r.document_price)}`
+                          : ''}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         )}
 

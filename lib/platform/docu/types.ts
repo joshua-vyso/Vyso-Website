@@ -9,6 +9,7 @@
 import type { DocumentStatus, DocumentType, ExtractedData, FeatureKey } from '@/lib/platform/types';
 import type { LineAuditSummary } from './line-audit';
 import type { DocumentDirectionRecord } from './document-direction';
+import type { OrderLineRecord } from './order-line-match';
 
 // ---------------------------------------------------------------------------
 // Statement totals (TRANSACTION SUMMARY) — parsed from a statement's footer and
@@ -47,6 +48,12 @@ export interface DocuExtractedData extends ExtractedData {
   /** The party billed, as the extractor read it. Free document text: displayed
    *  and matched against of_customers, never trusted as an identity. */
   bill_to?: string | null;
+  /** Set on uploaded customer ORDERS by `syncOrderFromDocument`: one record per
+   *  line saying what the paper said, what it was matched to (or why it wasn't),
+   *  and where the billed price came from. The review editor renders it so a
+   *  human can see "GRAPES WHITE → Avocado" instead of just "Avocado". Absent on
+   *  documents synced before this existed — the editor degrades to the old view. */
+  order_lines?: OrderLineRecord[] | null;
 }
 
 // ---------------------------------------------------------------------------
