@@ -5215,3 +5215,8 @@ bubble routes the drop zone is inside a collapsed `FinchBubble`.
 `npx tsc --noEmit` — clean. `npm test` — **829 pass / 0 fail** (4 new, over
 `attachmentStrandedNote`). `npm run build` — clean. `npx eslint .` — 50 errors,
 40 warnings, exactly the baseline; zero in either file touched here.
+
+The first of those two dead drop zones is now closed: `GlobalChatDock` listens
+on `window` for a files-only drag while `/app` has no active conversation, and
+shows a full-viewport "Drop to send to Finch" overlay that calls the same
+`attach()` the paperclip does.
