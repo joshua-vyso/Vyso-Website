@@ -5337,3 +5337,139 @@ guarantee, not the model.
 whole Bakubung document run through the pure matcher as a fixture). `npm run
 build` — clean. `npx eslint .` — 50 errors / 40 warnings, exactly the baseline,
 **zero in any file touched here**.
+
+# The order editor learns to check its own arithmetic (2026-08-21, branch `main`)
+
+The same three-page Bakubung Bush Lodge purchase order, re-uploaded after
+`129456b`. The honesty pass held: 22 items, every raw description preserved, not
+one forced match. What came back instead were two **character-level** misreads,
+which no amount of matching honesty could have caught because neither is a
+matching decision:
+
+| The paper prints | What came back |
+| --- | --- |
+| `569.90` | `560.90` |
+| `FF - GRAPES BLACK` / `GRAPES WHITE` | `Graphis Black` / `Graphis White` |
+
+One transposed digit and one word replaced by a word that does not exist. Both
+sailed through review, and the reason is worth stating plainly: **a price column
+on its own cannot be checked.** R560.90 is a perfectly plausible price for a box
+of apples. Nothing on the screen disagreed with it.
+
+## First: which model read it?
+
+`129456b` moved order extraction to Sonnet via `ANTHROPIC_ORDER_EXTRACT_MODEL`
+and was pushed minutes before the re-upload, so "did this run on the old deploy"
+was a live question — and it turned out to be **unanswerable from the
+artefacts**, which is the more interesting finding. Nothing on the document, in
+the response or in the row recorded which model had read it. The evidence had to
+be inferred from the shape of the mistakes.
+
+What the evidence does say: Josh saw raw descriptions preserved and no forced
+matches, and **both of those are `129456b` server code** — `order_lines`
+provenance, the `AUTO_MATCH_FLOOR = 0.9` gate and the document-wide duplicate
+pass. An extraction served by the previous deploy would have written no
+`order_lines` at all, so the review screen would have shown neither the paper's
+words nor an unmatched highlight. So the *sync* certainly ran new code, and on
+the same deploy the extraction did too: **Sonnet**.
+
+One residual doubt, and it is a real one. If the upload landed mid-build (old
+code, Haiku, `raw_description` absent) and a later re-sync on new code wrote the
+provenance, `raw_description` would have fallen back to `description` — the
+model's own rewrite, wearing the paper's clothes. There is a discriminator Josh
+can apply to the existing document without re-uploading anything:
+
+> **Look at what follows "Paper said".** `129456b`'s prompt demands the category
+> code — `FF - GRAPES BLACK`. If the raw text carries the `FF - ` prefix, it is a
+> genuine verbatim transcription and the read was Sonnet. If it reads exactly
+> like the tidied product name with no prefix, it is the fallback, the read was
+> Haiku, and the misreads are the old tier's.
+
+And so that this is never again a matter of inference: **`extracted_data.extraction_model`**
+now records the model id at extraction time (both write sites — the API route and
+`document-ingest`), and the review editor prints `Read by claude-sonnet-4-6`
+under the customer field. One string. Not having it cost an afternoon.
+
+## The cross-check that was always available
+
+The purchase order prints its own amount column. Every failure of this kind is
+therefore arithmetic, and always was:
+
+    1 × 560.90 = 560.90, and the paper says 569.90.
+
+So `ORDER_EXTRACT_INSTRUCTION` now captures `raw_amount` per line — the row's
+own printed total, copied digit for digit, **never computed** — beside
+`raw_description`, and for the same reason: it is the only independent witness
+to the figures on that row. It rides on `ExtractedLineItem` and survives the
+review editor's re-save exactly as `raw_description` does, because a re-save that
+dropped it would silently disarm the check on every later open.
+
+The prompt also gained a `TRANSCRIBE, DO NOT INTERPRET` clause above the rules —
+same letters, same digits, no normalising, no spell-correcting, and specifically
+**never replace a word on the page with the word you expected to see there**,
+which is precisely what `GRAPES → Graphis` is. Where a character is genuinely
+unclear the model is told to settle it against the amount column rather than pick
+the likelier glyph, and to report a disagreement it cannot settle rather than
+tidy it away. No second model pass: one reader, better instructed, checking
+itself against the document's own arithmetic.
+
+## Saying it on the row
+
+`lib/platform/docu/order-line-totals.ts` (new, pure) holds the maths, and holds
+none of its own: the tolerance is `moneyMatches` from `line-audit.ts` — a cent,
+or half a percent, whichever is kinder — because a warning that disagreed with
+the invoice audit about "close enough" would be worse than no warning.
+
+The editor grows an **Amount** column, computed live from quantity × unit price
+and deliberately not editable: it is a read-out of the two figures beside it, and
+an input here would only invite a third number that disagrees with both. Where
+`raw_amount` exists and the row does not reconcile, the row turns red and says:
+
+> Doesn't add up — paper shows **R 569.90** for this line, this row comes to
+> **R 560.90**. Check the qty, the price or the amount against the document.
+
+Both figures, no correction. We cannot know which of the three was misread, and
+picking for the reviewer is how a wrong number becomes a confident one.
+
+**What it stays quiet about matters as much.** An order line with a blank price
+is the NORMAL state before `syncOrderFromDocument` prices it from the org's list;
+warning "R 0.00 ≠ R 569.90" on all 22 rows would put a red mark on a good order
+and teach the reviewer to ignore the colour. So the check returns nothing unless
+a quantity, a unit price *and* a paper amount are all present. A read `0`
+quantity against a printed amount, though, is a genuine question and does fire.
+
+The reviewed gross is captured onto the document at save (`line_items[].amount`).
+The push path needed no threading: `of_order_items` carries qty and unit_price and
+every total downstream is `docTotals` over those two factors, so the gross is the
+same number by construction — which is why it can never drift from the screen.
+One knock-on was real and is fixed: `docTotal` sums line amounts, so without a
+gate every order over R12k would have raised `unusual_spend`, a flag whose text
+reads "above the usual range for this supplier" on a document that has no
+supplier at all. Orders are excluded from that heuristic.
+
+## Print before you commit to anything
+
+An order is a working document long before it is an invoice, and until now the
+only way to get a sheet out of one was to invoice it first — which is exactly the
+decision the sheet was meant to help make. **Print / PDF** now sits beside
+"Confirm & invoice" and prints the rows **as they stand on screen, unsaved edits
+and all**: a reviewer who has just corrected 560.90 to 569.90 must not be handed
+the mistake back on paper.
+
+It is the `ad4b49c` path unchanged — `mapExtractionToSheet` → `InvoiceSheetClassic`
+→ `window.print()` — fed from the live editor state rather than from
+`extracted_data`. The preview shell that `PrintTaxInvoice` owned is now
+`PrintSheetOverlay`, shared by both, because two print paths that drifted apart
+on the print CSS would paginate differently for no reason a reader could ever
+discover. An order that has not been invoiced prints **without an invoice
+number** — it does not have one, and inventing a plausible-looking one is how a
+document becomes a lie — and the preview chrome says so.
+
+## Gates
+
+`npx tsc --noEmit` — clean. `npm test` — **862 pass / 0 fail** (847 + 15, over
+the gross computation, the mismatch predicate and the live-rows print mapper).
+`npm run build` — clean. `npx eslint .` — 50 errors / 40 warnings, exactly the
+baseline, **zero in any file touched here**. Not verified in a browser: the
+screen is behind auth on a specific document, and the Bakubung order is Turn 'n
+Slice data.

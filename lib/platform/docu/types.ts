@@ -54,6 +54,11 @@ export interface DocuExtractedData extends ExtractedData {
    *  human can see "GRAPES WHITE → Avocado" instead of just "Avocado". Absent on
    *  documents synced before this existed — the editor degrades to the old view. */
   order_lines?: OrderLineRecord[] | null;
+  /** The model id that read this document, stamped at extraction time. Absent on
+   *  anything extracted before this was recorded — which is exactly the state
+   *  that made "was this Haiku or Sonnet?" a matter of inference rather than of
+   *  looking. Shown in the review editor; never used to decide anything. */
+  extraction_model?: string | null;
 }
 
 // ---------------------------------------------------------------------------

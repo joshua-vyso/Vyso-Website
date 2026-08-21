@@ -296,6 +296,17 @@ export interface OrderExtractionResult {
   customer_confidence: number;
   line_items: ExtractedLineItem[];
   overall_confidence: number;
+  /**
+   * The model id that actually read this document.
+   *
+   * Recorded because the question "was this read by Haiku or by Sonnet?" was
+   * unanswerable the one time it mattered — an order was re-uploaded minutes
+   * after `129456b` moved the order lane to Sonnet, and nothing on the document,
+   * in the response or in the row said which build had served it. A model id is
+   * one string; not having it cost an afternoon of inference from symptoms.
+   * Stored on `extracted_data.extraction_model` and shown in the review editor.
+   */
+  model: string;
 }
 
 /** A document/image content block for the model from a base64 file. */
@@ -333,10 +344,11 @@ Respond with ONLY a JSON object (no prose, no markdown code fences) of exactly t
   "customer_name": string | null,
   "customer_confidence": number,
   "line_items": [
-    { "raw_description": string, "description": string, "quantity": string, "unit": string, "unit_price": string, "confidence": number }
+    { "raw_description": string, "description": string, "quantity": string, "unit": string, "unit_price": string, "raw_amount": string, "confidence": number }
   ],
   "overall_confidence": number
 }
+TRANSCRIBE, DO NOT INTERPRET. Every character you copy off this document is evidence. Transcribe descriptions and numbers EXACTLY as printed — same letters, same digits, same spacing, same case, same abbreviations. Do NOT normalise, spell-correct, expand, translate or guess a character, and never replace a word on the page with a word you expected to see there: "GRAPES BLACK" is not "Graphis Black", and a product you do not recognise is a product you transcribe letter by letter. If a character or digit is genuinely unclear, do NOT pick the likelier one — use the amount column cross-check described below to settle it, and if that cannot settle it either, lower that line's confidence and leave what you can actually see.
 Rules:
 - "customer_name" = who PLACED the order. Read it from the most reliable cue:
     - WhatsApp screenshot: the CONTACT NAME in the chat header at the very top of the screen. NOT a phone number if a saved name is shown, NOT "you", and NEVER the business receiving the order. If only a phone number is shown, return that number.
@@ -350,7 +362,9 @@ Rules:
     - quantity = how many, digits only as a string ("5" from "5 boxes", "10" from "10x").
     - unit = the counting unit as a short lowercase plural noun read from the text: "boxes","punnets","bags","kg","crates","trays","bunches","packets","pockets". "" if none is stated.
     - unit_price = the price PER UNIT only if the customer actually wrote one, else "" (orders usually have no prices).
+    - raw_amount = the LINE TOTAL as printed in the row's own amount/nett/value column ("569.90"), copied digit for digit, else "" when the document has no such column. This is NOT the unit price and NOT the document total, and you must NEVER compute it — if the row shows no amount, return "".
     - confidence = 0-100 for that line.
+- USE THE AMOUNT COLUMN TO CHECK YOUR OWN DIGITS, never to invent them. When a row prints both a unit price and an amount, quantity x unit price should equal that amount. If it does not, you have misread a digit somewhere in the row: LOOK AT THE ROW AGAIN and transcribe all three figures afresh. Report what the paper actually shows even when the three still disagree — a disagreement we can see is a question for a human, and a row silently "corrected" into agreement is a wrong invoice nobody catches.
 - Parse messy, conversational text: "hi can I get 5 strawberries and 2 boxes blueberries pls 🙏" -> two line items. Ignore greetings, small talk, delivery addresses, dates and totals.
 - NEVER COMPUTE OR INFER A VALUE. If a quantity, unit or price is missing, blank, smudged or unreadable, return "" for that field and lower that line's confidence. Do not derive it from a line total, from the document total, from a neighbouring row, or from what would make the arithmetic work. A blank we can ask about is worth more than a number that is merely consistent.
 - Output all numbers as plain strings (no currency symbols); all confidence values 0-100.`;
@@ -422,6 +436,11 @@ When an item does not clearly match any product, keep the customer's own wording
             quantity: str(r.quantity),
             unit: str(r.unit),
             unit_price: str(r.unit_price),
+            // The paper's own line total, kept beside the paper's own words and
+            // for the same reason: it is the only independent witness to the
+            // figures on the row, and the review editor cross-checks quantity ×
+            // unit price against it. Never derived here — a blank stays blank.
+            raw_amount: str(r.raw_amount),
             confidence: clampPct(r.confidence),
           } as ExtractedLineItem;
         })
@@ -436,6 +455,7 @@ When an item does not clearly match any product, keep the customer's own wording
     customer_confidence: clampPct(parsed.customer_confidence),
     line_items: lines,
     overall_confidence: clampPct(parsed.overall_confidence),
+    model: ORDER_EXTRACT_MODEL,
   };
 }
 

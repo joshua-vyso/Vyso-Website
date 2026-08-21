@@ -113,6 +113,14 @@ export interface ExtractedLineItem {
    *  suggestion, never the only surviving record of what the customer wrote.
    *  See lib/platform/docu/order-line-match.ts. */
   raw_description?: string;
+  /** For uploaded customer ORDERS: the LINE TOTAL exactly as printed in the
+   *  row's own amount/nett column, before anything of ours touched it. The only
+   *  independent witness to the figures on the row — the review editor checks
+   *  quantity × unit price against it and warns when they disagree, which is
+   *  what catches a transposed digit ("560.90" against a printed 569.90).
+   *  Never computed; blank when the document prints no amount column.
+   *  See lib/platform/docu/order-line-totals.ts. */
+  raw_amount?: string;
   weight?: string;
   quantity?: string;
   units_per_box?: string;

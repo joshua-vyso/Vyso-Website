@@ -192,6 +192,7 @@ export function DocumentDetailPanel({
             customers={customers}
             linkedOrder={linkedOrder}
             orgUnits={orgUnits}
+            printContext={printContext}
           />
         ) : (
           <ExtractionEditor

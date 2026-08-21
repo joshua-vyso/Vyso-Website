@@ -111,6 +111,9 @@ export async function POST(req: Request) {
           line_items: order.line_items,
           customer_name: order.customer_name,
           customer_confidence: order.customer_confidence,
+          // Which model read it. One string, written once, so this never again
+          // has to be inferred from the shape of the mistakes it made.
+          extraction_model: order.model,
         },
       })
       .eq('id', doc.id);

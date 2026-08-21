@@ -89,7 +89,11 @@ export function deriveFlags(
   }
 
   // HEURISTIC / illustrative
-  const total = docTotal(doc);
+  // Orders are excluded: `docTotal` sums line amounts, and an order's lines now
+  // carry the reviewed gross, so without this gate every order over R12k would
+  // raise a spend flag reading "above the usual range for this supplier" — on a
+  // document that has no supplier at all, only a customer.
+  const total = doc.document_type === 'order' ? null : docTotal(doc);
   if (total != null && total > 12000) {
     add('unusual_spend', `Total of R ${Math.round(total).toLocaleString('en-ZA')} is above the usual range for this supplier.`, 'mock');
   }

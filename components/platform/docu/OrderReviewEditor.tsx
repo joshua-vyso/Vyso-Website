@@ -5,13 +5,26 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/platform/supabase-browser';
 import { usePlatform } from '@/lib/platform/session';
-import { zar } from '@/lib/platform/orderflow';
+// zar2, never zar: this screen exists to expose cent-level misreadings, and
+// rounding to whole rands prints 569.90 and 560.90 as the same number.
+import { zar2 } from '@/lib/platform/orderflow';
+import { InvoiceSheetClassic, type ClassicInvoiceParty } from '@/components/platform/orderflow/InvoiceSheetClassic';
+import { mapExtractionToSheet } from '@/lib/platform/docu/invoice-from-extraction';
 import type { DocuExtractedData } from '@/lib/platform/docu/types';
 import {
   matchReasonLabel,
   priceSourceLabel,
   type OrderLineRecord,
 } from '@/lib/platform/docu/order-line-match';
+import {
+  countGrossMismatches,
+  grossMismatch,
+  lineGross,
+  orderSubtotal,
+  toPrintableLines,
+} from '@/lib/platform/docu/order-line-totals';
+import { PrintSheetOverlay } from './PrintSheetOverlay';
+import type { TaxInvoicePrintContext } from './PrintTaxInvoice';
 
 export interface CustomerLite {
   id: string;
@@ -33,6 +46,11 @@ interface Line {
    *  reviewer may rewrite `description` to whatever they like; the record of
    *  what the customer actually wrote must not be a casualty of that. */
   raw: string;
+  /** The LINE TOTAL as printed in the paper's own amount column, read verbatim
+   *  and never edited here. It is the independent witness the Amount column is
+   *  checked against — see `grossMismatch`. Empty on the many orders that print
+   *  no amounts at all. */
+  raw_amount: string;
   /** This line's match + price provenance, when the order has been synced once.
    *  Null on a document synced before provenance existed, or a hand-added line. */
   record: OrderLineRecord | null;
@@ -59,12 +77,16 @@ export function OrderReviewEditor({
   customers,
   linkedOrder,
   orgUnits = [],
+  printContext,
 }: {
   documentId: string;
   extractedData: DocuExtractedData | null;
   customers: CustomerLite[];
   linkedOrder: LinkedOrder | null;
   orgUnits?: string[];
+  /** Seller identity + VAT rate for the printable sheet. Absent → no Print
+   *  button, because a sheet with no seller on it is not worth handing anyone. */
+  printContext?: TaxInvoicePrintContext | null;
 }) {
   const router = useRouter();
   const { org } = usePlatform();
@@ -107,6 +129,7 @@ export function OrderReviewEditor({
         unit: l.unit ?? '',
         unit_price: l.unit_price ?? '',
         raw,
+        raw_amount: l.raw_amount ?? '',
         record,
       };
     });
@@ -117,6 +140,7 @@ export function OrderReviewEditor({
     linkedOrder?.status === 'invoiced' ? linkedOrder.invoice_number ?? '—' : null,
   );
   const [orderId, setOrderId] = useState<string | null>(linkedOrder?.id ?? null);
+  const [printing, setPrinting] = useState(false);
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -127,11 +151,50 @@ export function OrderReviewEditor({
 
   const exactExists = customers.some((c) => c.name.trim().toLowerCase() === query.trim().toLowerCase());
 
-  const subtotal = lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unit_price) || 0), 0);
+  const subtotal = orderSubtotal(lines);
 
   // Lines the matcher refused to claim it identified. Counted for the banner so
   // the reviewer knows before scrolling that this order is not ready to invoice.
   const unmatched = lines.filter((l) => l.record && !l.record.matched).length;
+
+  // Rows whose quantity × unit price does not equal the amount printed beside
+  // them on the paper. A DIFFERENT failure from an unmatched product — the
+  // product may be perfectly right and a digit in the price wrong — so it gets
+  // its own count and its own sentence rather than being folded into the one
+  // above. This is the check that would have caught "Apple Top Red @ 560.90"
+  // against a printed 569.90 the moment the page rendered.
+  const mismatched = countGrossMismatches(lines);
+
+  // The sheet the Print button previews: built from the CURRENT rows, not from
+  // what is saved. A reviewer who has just corrected 560.90 to 569.90 and not
+  // yet pressed Confirm must not be handed the mistake back on paper.
+  const printSheet = useMemo(() => {
+    const profile = printContext?.companyProfile ?? null;
+    const base = mapExtractionToSheet({
+      fields: [],
+      lineItems: toPrintableLines(lines),
+      billTo: query.trim() || extractedName || null,
+      supplierName: profile?.company_name ?? printContext?.orgName ?? null,
+      defaultVatRate: printContext?.defaultVatRate ?? 0,
+      note: profile?.invoice_footer ?? null,
+      termsText: profile?.terms ?? null,
+    });
+    return {
+      ...base,
+      invoice: {
+        ...base.invoice,
+        // An order that has been invoiced prints under its real number; one that
+        // has not prints without a number, because it does not have one yet and
+        // inventing a plausible-looking one is how a document becomes a lie.
+        number: doneInvoice && doneInvoice !== '—' ? doneInvoice : '',
+        issueDate: new Date().toISOString().slice(0, 10),
+      },
+    };
+  }, [lines, query, extractedName, printContext, doneInvoice]);
+
+  const printCustomer: ClassicInvoiceParty | null = query.trim()
+    ? { name: query.trim() }
+    : printContext?.customer ?? null;
 
   function updateLine(i: number, patch: Partial<Line>) {
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -145,7 +208,7 @@ export function OrderReviewEditor({
     // record for that line, and the resolver needs some raw name to score.
     setLines((prev) => [
       ...prev,
-      { key: newKey(), description: '', quantity: '', unit: '', unit_price: '', raw: '', record: null },
+      { key: newKey(), description: '', quantity: '', unit: '', unit_price: '', raw: '', raw_amount: '', record: null },
     ]);
   }
 
@@ -196,6 +259,17 @@ export function OrderReviewEditor({
           quantity: l.quantity.trim(),
           unit: l.unit.trim(),
           unit_price: l.unit_price.trim(),
+          // The paper's own line total survives the round-trip for exactly the
+          // reason `raw_description` does: it is evidence, not a working value,
+          // and a re-save that dropped it would silently disarm the cross-check
+          // on every subsequent open of this document.
+          raw_amount: l.raw_amount.trim(),
+          // The gross the reviewer actually saw and signed off. The order sync
+          // re-derives it from qty × unit_price anyway (of_order_items carries
+          // the two factors, and every total downstream is `docTotals` over
+          // them), so this is the document's record rather than an input to the
+          // invoice — which is why it can never drift from what was on screen.
+          amount: lineGross(l).toFixed(2),
           confidence: 100,
         }));
       await supabase
@@ -299,6 +373,16 @@ export function OrderReviewEditor({
           ) : (
             <p className="mt-1.5 text-[12px] text-[#854F0B]">No customer name was read — pick or create one.</p>
           )}
+          {/* Which model read this document. Recorded at extraction time and
+              shown here because "was this Haiku or Sonnet?" was, once, a
+              question that could only be answered by inference from the shape
+              of the mistakes. Absent on anything extracted before the stamp
+              existed — and saying nothing is the honest answer there. */}
+          {extractedData?.extraction_model ? (
+            <p className="mt-1 text-[11.5px] text-[#A0A49C]">
+              Read by <span className="font-medium text-[#6B6F68]">{extractedData.extraction_model}</span>
+            </p>
+          ) : null}
         </div>
 
         {/* Products we would not claim to have identified. Deliberately loud and
@@ -318,6 +402,23 @@ export function OrderReviewEditor({
           </div>
         ) : null}
 
+        {/* Rows whose arithmetic disagrees with the paper's own amount column.
+            Kept separate from the unmatched-product banner above: that one says
+            "we do not know WHAT this is", this one says "we do not trust the
+            NUMBERS on it", and a reviewer fixes them in different places. */}
+        {mismatched > 0 ? (
+          <div className="mb-4 rounded-[12px] border border-[#F3D6D6] bg-[#FDF6F6] px-4 py-3">
+            <p className="text-[13px] font-medium text-[#A32D2D]">
+              <span className="of-num">{mismatched}</span> {mismatched === 1 ? 'line does' : 'lines do'} not add up to
+              the amount printed on the paper
+            </p>
+            <p className="mt-0.5 text-[12px] text-[#8A5A5A]">
+              Quantity × unit price should equal the document’s own amount column. Where it doesn’t, one of the three
+              figures was misread — the row says which amount the paper shows.
+            </p>
+          </div>
+        ) : null}
+
         {/* Lines */}
         <div className="mb-2 flex items-center justify-between">
           <h3 className="of-display text-[16px] font-semibold text-[#171A17]">Items (<span className="of-num">{lines.length}</span>)</h3>
@@ -329,11 +430,12 @@ export function OrderReviewEditor({
             + Add item
           </button>
         </div>
-        <div className="grid grid-cols-[1fr_64px_72px_84px_24px] gap-2 px-1 pb-1.5 text-[11px] font-medium uppercase tracking-[0.06em] text-[#A0A49C]">
+        <div className="grid grid-cols-[1fr_54px_66px_78px_86px_22px] gap-2 px-1 pb-1.5 text-[11px] font-medium uppercase tracking-[0.06em] text-[#A0A49C]">
           <span>Product</span>
           <span className="text-right">Qty</span>
           <span>Unit</span>
           <span className="text-right">Unit price</span>
+          <span className="text-right">Amount</span>
           <span />
         </div>
         {lines.length === 0 ? (
@@ -342,13 +444,24 @@ export function OrderReviewEditor({
           <div className="space-y-2">
             {lines.map((l, i) => {
               const r = l.record;
+              const gross = lineGross(l);
+              const off = grossMismatch(l);
               // Show the paper's words whenever the billed name is not simply
               // them. A line we matched correctly still gets the "→" so the
               // reviewer can check the rewrite rather than trust it.
               const showPaper = !!r && r.raw_description.trim().toLowerCase() !== l.description.trim().toLowerCase();
               return (
-                <div key={l.key} className={r && !r.matched ? 'rounded-[12px] bg-[#FFF9EF] p-2 ring-1 ring-[#F3E2C4]' : ''}>
-                  <div className="grid grid-cols-[1fr_64px_72px_84px_24px] items-center gap-2">
+                <div
+                  key={l.key}
+                  className={
+                    off
+                      ? 'rounded-[12px] bg-[#FDF6F6] p-2 ring-1 ring-[#F3D6D6]'
+                      : r && !r.matched
+                        ? 'rounded-[12px] bg-[#FFF9EF] p-2 ring-1 ring-[#F3E2C4]'
+                        : ''
+                  }
+                >
+                  <div className="grid grid-cols-[1fr_54px_66px_78px_86px_22px] items-center gap-2">
                     <input className={cell} value={l.description} onChange={(e) => updateLine(i, { description: e.target.value })} />
                     <input className={`${cell} of-num text-right`} inputMode="numeric" value={l.quantity} onChange={(e) => updateLine(i, { quantity: e.target.value.replace(/[^0-9.]/g, '') })} />
                     <select
@@ -365,6 +478,15 @@ export function OrderReviewEditor({
                       ))}
                     </select>
                     <input className={`${cell} of-num text-right`} inputMode="decimal" placeholder="from list" value={l.unit_price} onChange={(e) => updateLine(i, { unit_price: sanitizeDecimal(e.target.value) })} />
+                    {/* Gross — computed, never typed. It is a read-out of the two
+                        editable figures beside it, so an editable box here would
+                        only invite a third number that disagrees with both. */}
+                    <span
+                      className="of-num flex h-10 items-center justify-end px-1 text-[13px] tabular-nums text-[#3E4A57]"
+                      title="Quantity × unit price"
+                    >
+                      {zar2(gross)}
+                    </span>
                     <button
                       type="button"
                       onClick={() => removeLine(i)}
@@ -374,6 +496,20 @@ export function OrderReviewEditor({
                       ✕
                     </button>
                   </div>
+                  {/* The cross-check, on the row it belongs to. Both figures,
+                      no correction: we cannot know whether the quantity, the
+                      price or the amount is the misread one, and picking for
+                      the reviewer is how a wrong number becomes a confident
+                      one. "1 × 560.90 ≠ 569.90" is a question, and a question
+                      is what should appear here. */}
+                  {off ? (
+                    <p className="mt-1 px-1 text-[11.5px] leading-[1.5] text-[#A32D2D]">
+                      Doesn’t add up — paper shows{' '}
+                      <span className="of-num font-medium">{zar2(off.paper)}</span> for this line, this row comes to{' '}
+                      <span className="of-num font-medium">{zar2(off.gross)}</span>. Check the qty, the price or the
+                      amount against the document.
+                    </p>
+                  ) : null}
                   {r ? (
                     <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 px-1 text-[11.5px] leading-[1.5]">
                       {showPaper ? (
@@ -409,9 +545,12 @@ export function OrderReviewEditor({
                         {priceSourceLabel(r.price_source, r.price_list_name)}
                         {/* The paper's own figure, always, whether or not we used
                             it — an order priced from our list is right, but the
-                            reviewer must be able to see the gap they're signing off. */}
+                            reviewer must be able to see the gap they're signing
+                            off. To the CENT: rounded to whole rands, 569.90 and
+                            560.90 both print "R 570", and the one misread this
+                            line is here to expose disappears into the rounding. */}
                         {r.document_price != null && r.price_source !== 'document'
-                          ? ` · paper shows ${zar(r.document_price)}`
+                          ? ` · paper shows ${zar2(r.document_price)}`
                           : ''}
                       </span>
                     </div>
@@ -424,7 +563,7 @@ export function OrderReviewEditor({
 
         <div className="mt-4 flex items-center justify-between border-t border-[#EEF1F5] pt-3 text-[13px]">
           <span className="text-[#8A8E86]">Subtotal (excl. VAT) · blank prices fill from the price list</span>
-          <span className="of-num text-[16px] font-semibold text-[#171A17]">{zar(subtotal)}</span>
+          <span className="of-num text-[16px] font-semibold text-[#171A17]">{zar2(subtotal)}</span>
         </div>
       </div>
 
@@ -442,6 +581,23 @@ export function OrderReviewEditor({
         ) : msg ? (
           <span className="mr-auto text-[13px] text-[#A32D2D]">{msg}</span>
         ) : null}
+        {/* Print sits BEFORE the confirm, and works before it too. An order is a
+            working document long before it is an invoice: the picker needs a
+            sheet to walk the cold room with, and until now the only way to get
+            one was to invoice the order first — which is precisely the decision
+            the print is meant to help them make. It prints the rows as they
+            stand on screen, unsaved edits and all. */}
+        {printContext ? (
+          <button
+            type="button"
+            onClick={() => setPrinting(true)}
+            disabled={lines.length === 0}
+            title="Builds a sheet from the items as they stand right now — then print it or save it as PDF"
+            className="inline-flex h-[42px] items-center rounded-[11px] border border-[#E2E6EC] bg-white px-4 text-[14px] font-medium text-[#3E4A57] transition-all hover:border-[#C9DEF7] hover:bg-[#EAF2FC] hover:text-[#174C87] disabled:opacity-50"
+          >
+            Print / PDF
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => void confirm()}
@@ -451,6 +607,54 @@ export function OrderReviewEditor({
           {busy ? 'Working…' : doneInvoice ? 'Re-sync order' : 'Confirm & invoice'}
         </button>
       </div>
+
+      {printContext ? (
+        <PrintSheetOverlay
+          open={printing}
+          onClose={() => setPrinting(false)}
+          title={doneInvoice ? 'Your tax invoice' : 'This order, on paper'}
+          subtitle="Built from the items as they stand on screen, including edits you have not saved yet."
+          notes={
+            <>
+              {!doneInvoice ? (
+                <p>
+                  This order has not been invoiced, so it has no invoice number yet — it gets one when you press
+                  “Confirm &amp; invoice”. Print it as a picking or checking sheet until then.
+                </p>
+              ) : null}
+              {mismatched > 0 ? (
+                <p>
+                  <span className="of-num">{mismatched}</span> {mismatched === 1 ? 'line does' : 'lines do'} not match
+                  the amount printed on the original — those figures will print exactly as they read above.
+                </p>
+              ) : null}
+              {unmatched > 0 ? (
+                <p>
+                  <span className="of-num">{unmatched}</span> {unmatched === 1 ? 'line was' : 'lines were'} not matched
+                  to a product and {unmatched === 1 ? 'is' : 'are'} unpriced — {unmatched === 1 ? 'it' : 'they'} will
+                  print at R 0.00.
+                </p>
+              ) : null}
+              {printSheet.vatRateSource === 'default' ? (
+                <p>
+                  VAT is added at your default rate of <span className="of-num">{printSheet.vatRate}%</span> — an order
+                  carries no VAT of its own.
+                </p>
+              ) : null}
+            </>
+          }
+        >
+          <InvoiceSheetClassic
+            companyProfile={printContext.companyProfile}
+            orgName={printContext.orgName}
+            customer={printCustomer}
+            invoice={printSheet.invoice}
+            lines={printSheet.lines}
+            vatTreatment={printSheet.vatRate > 0 ? 'standard' : 'zero_rated'}
+            vatRate={printSheet.vatRate}
+          />
+        </PrintSheetOverlay>
+      ) : null}
     </div>
   );
 }

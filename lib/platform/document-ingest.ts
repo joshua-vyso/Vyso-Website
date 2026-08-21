@@ -737,6 +737,8 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
           line_items: order.line_items,
           customer_name: order.customer_name,
           customer_confidence: order.customer_confidence,
+          // Which model read it — see the same stamp in app/api/ai/extract.
+          extraction_model: order.model,
         },
       })
       .eq('id', documentId);
