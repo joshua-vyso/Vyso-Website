@@ -1,7 +1,8 @@
 import { NextResponse, after } from 'next/server';
 import { resolveUser, AI_CORS_HEADERS } from '@/lib/ai/auth';
 import { docWatchForDocument } from '@/lib/platform/doc-watch/run';
-import { extractDocument, extractOrderDocument, aiConfigured } from '@/lib/ai/anthropic';
+import { extractDocument, aiConfigured } from '@/lib/ai/anthropic';
+import { extractOrderDocument } from '@/lib/ai/order-reader';
 import { feedDocumentToProcurePulse, orgHasProcurePulse } from '@/lib/platform/procurepulse-feed';
 import { feedDocumentToSupplySync, orgHasSupplySync } from '@/lib/platform/supplysync-feed';
 import { syncOrderFromDocument } from '@/lib/platform/orderflow-from-doc';
@@ -112,8 +113,13 @@ export async function POST(req: Request) {
           customer_name: order.customer_name,
           customer_confidence: order.customer_confidence,
           // Which model read it. One string, written once, so this never again
-          // has to be inferred from the shape of the mistakes it made.
+          // has to be inferred from the shape of the mistakes it made — and with
+          // two providers in play, which PROVIDER served it too.
           extraction_model: order.model,
+          // Set only when the read did not go the way it was configured to (an
+          // OpenAI failure that fell back to Claude). A fallback nobody is told
+          // about is a document read by a model nobody chose.
+          extraction_warning: order.warning ?? null,
         },
       })
       .eq('id', doc.id);

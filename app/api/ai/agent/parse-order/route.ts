@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { resolveUser, AI_CORS_HEADERS } from '@/lib/ai/auth';
 import { isFinchAllowed } from '@/lib/ai/finch/config';
-import { extractOrderDocument, aiConfigured } from '@/lib/ai/anthropic';
+import { aiConfigured } from '@/lib/ai/anthropic';
+import { extractOrderDocument } from '@/lib/ai/order-reader';
 import { rateLimitAllowed } from '@/lib/platform/rate-limit';
 
 // Reading an order document (PDF/photo) can take a few seconds.

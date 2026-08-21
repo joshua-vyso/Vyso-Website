@@ -132,6 +132,115 @@ export function qualifiersConflict(aNormalised: string, bNormalised: string): bo
   return false;
 }
 
+/** True when a token is one of the qualifiers above (after aliasing). */
+function isQualifierToken(token: string): boolean {
+  const t = QUALIFIER_ALIASES[token] ?? token;
+  return QUALIFIER_GROUPS.some((g) => g.includes(t));
+}
+
+/**
+ * True when the ONLY thing the two names have in common is a qualifier.
+ *
+ * "PATTY PAN YELLOW" and "Tomato-Yellow Cocktail" share exactly one token:
+ * `yellow`. A colour is an attribute, not an identity — every yellow thing in
+ * the catalogue shares it — so a pair whose entire overlap is a colour, a size
+ * or a cut has told us nothing about being the same produce. This is the guard
+ * that stops a patty pan becoming a tomato, and `qualifiersConflict` cannot do
+ * it: the two names AGREE about yellow, which is precisely the problem.
+ *
+ * Sharing NOTHING is not caught here, and does not need to be: a candidate with
+ * no overlap at all scores 0 and never reaches a shortlist.
+ */
+export function sharesOnlyQualifiers(aNormalised: string, bNormalised: string): boolean {
+  const a = new Set(aNormalised.split(' ').filter(Boolean));
+  const b = new Set(bNormalised.split(' ').filter(Boolean));
+  let shared = 0;
+  let substantive = 0;
+  for (const t of a) {
+    if (!b.has(t)) continue;
+    shared += 1;
+    if (!isQualifierToken(t)) substantive += 1;
+  }
+  return shared > 0 && substantive === 0;
+}
+
+// --- pack / unit guards -----------------------------------------------------
+
+/**
+ * WHY THE PACK NEEDS ITS OWN GUARD, AND WHY IT IS NOT OPTIONAL.
+ *
+ * `normalizeName` deliberately throws packaging words away — "box", "kg",
+ * "punnet" are noise when you are trying to see that "Apples-Golden (kg)" and
+ * "Apples Golden" are the same produce. That is right for a duplicate-detection
+ * pass over a product list. It is CATASTROPHIC for pricing an order line,
+ * because it means:
+ *
+ *     scoreCatalogueMatch('FF - AVOCADO BOX', 'Avocado (box)') === 1
+ *     scoreCatalogueMatch('FF - AVOCADO BOX', 'Avocado (kg)')  === 1
+ *
+ * Two different products, two different prices, both scoring perfect identity —
+ * so `bestCatalogueCandidate` returned whichever it happened to iterate first,
+ * `AUTO_MATCH_FLOOR` waved it through at 100% confidence, and the reviewer was
+ * shown a certainty. Whichever way that coin landed, half of those invoices bill
+ * a box at a kilogram's price or a kilogram at a box's.
+ *
+ * The paper settles it and nothing else can: the order's own unit column says
+ * BOX. So a candidate whose pack disagrees with the line's unit is refused here,
+ * before the similarity score is ever consulted.
+ *
+ * SILENCE IS NOT DISAGREEMENT. Both sides must name a unit. Most order lines
+ * name none and most catalogues have half their unit column empty; treating
+ * absence as conflict would refuse nearly everything.
+ */
+
+/** Unit spellings that mean the same pack, folded before comparison. */
+const UNIT_ALIASES: Record<string, string> = {
+  box: 'box', boxes: 'box', bx: 'box', carton: 'box', cartons: 'box',
+  crate: 'crate', crates: 'crate',
+  punnet: 'punnet', punnets: 'punnet',
+  pkt: 'packet', pkts: 'packet', packet: 'packet', packets: 'packet', pack: 'packet', packs: 'packet',
+  bag: 'bag', bags: 'bag',
+  pocket: 'pocket', pockets: 'pocket',
+  tray: 'tray', trays: 'tray',
+  bunch: 'bunch', bunches: 'bunch',
+  each: 'each', ea: 'each', unit: 'each', units: 'each',
+  kg: 'kg', kgs: 'kg', kilogram: 'kg', kilograms: 'kg',
+  g: 'g', gram: 'g', grams: 'g',
+};
+
+/** The canonical form of a unit word, or null when nothing was named. */
+export function normaliseUnit(unit: string | null | undefined): string | null {
+  const u = (unit ?? '').trim().toLowerCase().replace(/[^a-z]/g, '');
+  if (!u) return null;
+  return UNIT_ALIASES[u] ?? u;
+}
+
+/**
+ * A catalogue name usually carries its pack in parentheses — "Avocado (box)",
+ * "Avocado (kg)". That IS the pack even when the row's own `unit` column is
+ * empty, which it frequently is.
+ */
+export function packFromName(name: string): string | null {
+  const m = /\(([^)]{1,12})\)\s*$/.exec((name ?? '').trim());
+  return m ? normaliseUnit(m[1]) : null;
+}
+
+/** The effective pack of a catalogue row: its unit column, else its name's suffix. */
+export function effectiveUnit(item: CatalogueItem): string | null {
+  return normaliseUnit(item.unit) ?? packFromName(item.name);
+}
+
+/** May a line counted in `lineUnit` be billed as a product sold in `itemUnit`? */
+export function unitsCompatible(
+  lineUnit: string | null | undefined,
+  itemUnit: string | null | undefined,
+): boolean {
+  const a = normaliseUnit(lineUnit);
+  const b = normaliseUnit(itemUnit);
+  if (!a || !b) return true;
+  return a === b;
+}
+
 // --- scoring ----------------------------------------------------------------
 
 /**
@@ -186,6 +295,16 @@ export type OrderMatchReason =
   | 'variant_conflict'
   /** Another line on this same document already took this product. */
   | 'duplicate'
+  /**
+   * The matching agent (`order-match-agent.ts`) was shown the shortlist and
+   * declined to commit to any of it. Distinct from `low_confidence`, which is
+   * the string-similarity gate's verdict: this one is a reader that looked at
+   * the paper's own wording, its pack unit and every candidate, and said none of
+   * them is this product. Worth its own reason because the two send a reviewer
+   * to different places — one means "check the spelling", the other means "we
+   * may genuinely not stock this".
+   */
+  | 'agent_declined'
   /** Nothing in the catalogue is close; this is a product the org may not sell. */
   | 'no_candidate';
 
@@ -246,10 +365,14 @@ export interface ResolveOptions<T extends CatalogueItem> {
 export function bestCatalogueCandidate<T extends CatalogueItem>(
   name: string,
   items: T[],
-  opts: { stripPrefix?: boolean } = {},
+  opts: { stripPrefix?: boolean; lineUnit?: string | null } = {},
 ): CatalogueCandidate<T> | null {
   let best: CatalogueCandidate<T> | null = null;
   for (const item of items) {
+    // The pack first, and before the score is even computed: "Avocado (box)" and
+    // "Avocado (kg)" both score 1 against a paper that says AVOCADO BOX, so a
+    // similarity comparison between them is a coin flip with a price on it.
+    if (!unitsCompatible(opts.lineUnit, effectiveUnit(item))) continue;
     const score = scoreCatalogueMatch(name, item.name, opts);
     if (score <= 0) continue;
     if (!best || score > best.score) best = { item, score };
@@ -297,12 +420,18 @@ export function resolveOrderLines<T extends CatalogueItem>(
       return { ...base, name: pinned.name, item: pinned, matched: true, confidence: 100, reason: 'matched' };
     }
 
-    const candidate = bestCatalogueCandidate(rawName, items, { stripPrefix });
+    // The unit the PAPER counted this line in. It is the only witness to which
+    // pack was ordered, and without it an avocado box and an avocado kilogram
+    // are the same product to every measure this module has.
+    const lineUnit = (line.unit ?? '').trim() || null;
+
+    const candidate = bestCatalogueCandidate(rawName, items, { stripPrefix, lineUnit });
     if (!candidate) {
-      // Nothing scored — but the catalogue may still hold a same-product-different
-      // -qualifier row, which scores 0 by design. Surface it as the near miss so
-      // review reads "we refused Grapes Black for GRAPES WHITE" rather than silence.
-      const conflicted = nearestConflicting(rawName, items, stripPrefix);
+      // Nothing scored — but the catalogue may still hold a same-produce row that
+      // a qualifier or a pack disagreement refused, which scores 0 (or is skipped)
+      // by design. Surface it as the near miss so review reads "we refused Grapes
+      // Black for GRAPES WHITE" rather than silence.
+      const conflicted = nearestConflicting(rawName, items, stripPrefix, lineUnit);
       if (conflicted) {
         return {
           ...base,
@@ -337,19 +466,37 @@ export function resolveOrderLines<T extends CatalogueItem>(
     };
   });
 
-  // Second pass — one product, one paper line.
+  return refuseDuplicateProducts(resolved);
+}
+
+/**
+ * Second pass — one product, one paper line.
+ *
+ * Exported because it is an INVARIANT, not a step: anything that re-decides a
+ * line's product afterwards (the Luna matching agent in `order-match-agent.ts`)
+ * has to be put back through it, or it reintroduces exactly the failure this
+ * module was written for — "FF - GRAPES WHITE BOX" landing on the Avocado the
+ * document's own avocado line had already taken. When two lines collide BOTH go
+ * to review, because we cannot know which row was the real one and merging them
+ * loses a line the customer ordered.
+ */
+export function refuseDuplicateProducts<T extends CatalogueItem>(
+  resolved: OrderLineResolution<T>[],
+): OrderLineResolution<T>[] {
+  const out = [...resolved];
   const byItem = new Map<string, number[]>();
-  for (const r of resolved) {
+  for (let i = 0; i < out.length; i += 1) {
+    const r = out[i];
     if (!r.matched || !r.item) continue;
     const seen = byItem.get(r.item.id) ?? [];
-    seen.push(r.index);
+    seen.push(i);
     byItem.set(r.item.id, seen);
   }
   for (const [, indexes] of byItem) {
     if (indexes.length < 2) continue;
     for (const i of indexes) {
-      const r = resolved[i];
-      resolved[i] = {
+      const r = out[i];
+      out[i] = {
         ...r,
         // Back to the paper's words: we no longer claim to know which line this is.
         name: r.rawName,
@@ -360,22 +507,26 @@ export function resolveOrderLines<T extends CatalogueItem>(
       };
     }
   }
-
-  return resolved;
+  return out;
 }
 
-/** The best catalogue row that a qualifier disagreement — and only that — refused. */
+/** The best catalogue row that a qualifier OR pack disagreement — and only that
+ *  — refused. It is still worth naming: "we have avocados, but by the kilogram"
+ *  is a useful thing for a reviewer to be told, and a blank field is not. */
 function nearestConflicting<T extends CatalogueItem>(
   name: string,
   items: T[],
   stripPrefix: boolean,
+  lineUnit: string | null = null,
 ): CatalogueCandidate<T> | null {
   const a = normalizeName(stripPrefix ? stripCategoryPrefix(name) : name);
   if (!a) return null;
   let best: CatalogueCandidate<T> | null = null;
   for (const item of items) {
     const b = normalizeName(item.name);
-    if (!b || !qualifiersConflict(a, b)) continue;
+    if (!b) continue;
+    const refused = qualifiersConflict(a, b) || !unitsCompatible(lineUnit, effectiveUnit(item));
+    if (!refused) continue;
     const score = diceCoefficient(a, b);
     if (score < SUGGEST_FLOOR) continue;
     if (!best || score > best.score) best = { item, score };
@@ -398,6 +549,8 @@ export function matchReasonLabel(reason: OrderMatchReason): string {
       return 'A different colour, size or cut to anything in your catalogue — confirm it';
     case 'duplicate':
       return 'Two lines on this document read as the same product — confirm both';
+    case 'agent_declined':
+      return 'None of your products is this item, as far as we can tell — confirm it';
     case 'no_candidate':
       return 'No product in your catalogue matches this line';
   }

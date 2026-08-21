@@ -59,6 +59,11 @@ export interface DocuExtractedData extends ExtractedData {
    *  that made "was this Haiku or Sonnet?" a matter of inference rather than of
    *  looking. Shown in the review editor; never used to decide anything. */
   extraction_model?: string | null;
+  /** Set only when the read did not go the way it was configured to — the
+   *  configured provider failed and the other one served the document. Carries
+   *  the API's own error text, and is shown beside the model stamp: a fallback
+   *  nobody is told about is a document read by a model nobody chose. */
+  extraction_warning?: string | null;
 }
 
 // ---------------------------------------------------------------------------

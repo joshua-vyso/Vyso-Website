@@ -50,6 +50,8 @@ import {
   type OrderLineRecord,
   type OrderPriceSource,
 } from './docu/order-line-match';
+import { applyAgentDecisions, buildAgentRequests } from './docu/order-match-agent';
+import { runOrderMatchAgent } from '@/lib/ai/order-match-call';
 
 export interface CustomerLite {
   id: string;
@@ -363,11 +365,38 @@ export async function syncOrderFromDocument(
     const pinned = alias.stock_item_id ? stockItems.find((it) => it.id === alias.stock_item_id) ?? null : null;
     if (pinned) pins.set(i, pinned);
   });
-  const resolutions = resolveOrderLines(
+  const deterministic = resolveOrderLines(
     lines.map((li, i) => ({ raw_description: rawNames[i], description: li.description ?? '' })),
     stockItems,
     { pins, stripPrefix: stripPrefixes },
   );
+
+  // ---------------------------------------------------------------------------
+  // THE MATCHING AGENT — a second opinion on the lines the gate could not settle.
+  //
+  // The deterministic gate is a string-similarity measure, and a string-
+  // similarity measure has no idea that MUSHROOM GABLE is a mushroom or that
+  // BRINJALS are aubergines. It is very good at refusing, which is why it stays,
+  // and hopeless at recognising, which is why this exists. It is asked ONLY
+  // about the lines the gate left open: a match at effective identity (0.9) is
+  // already settled and the agent never sees it.
+  //
+  // Nothing here can loosen an invariant. `applyAgentDecisions` re-checks every
+  // choice against the qualifier guard, the pack/unit guard and the line's own
+  // shortlist, then re-runs the document-wide duplicate pass — in code, where a
+  // prompt cannot argue with it. An unavailable agent returns no decisions and
+  // the deterministic result stands exactly as it was.
+  // ---------------------------------------------------------------------------
+  const agentRequests = buildAgentRequests(
+    deterministic,
+    lines.map((li) => li.unit ?? null),
+    stockItems,
+    { stripPrefix: stripPrefixes, bulkUnits: lines.map((li) => li.bulk_unit ?? null) },
+  );
+  const agentDecisions = await runOrderMatchAgent(agentRequests);
+  const resolutions = applyAgentDecisions(deterministic, agentRequests, agentDecisions, stockItems, {
+    stripPrefix: stripPrefixes,
+  });
 
   // CREATE-ON-UPLOAD dedupe: normalised line name → the pp_stock_items row we
   // created earlier IN THIS SAME RUN, so two identical unmatched lines link to one

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { extractDocument, extractOrderDocument } from '@/lib/ai/anthropic';
+import { extractDocument } from '@/lib/ai/anthropic';
+import { extractOrderDocument } from '@/lib/ai/order-reader';
 import { syncOrderFromDocument } from '@/lib/platform/orderflow-from-doc';
 import { feedDocumentToProcurePulse, orgHasProcurePulse } from '@/lib/platform/procurepulse-feed';
 import {
@@ -739,6 +740,7 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
           customer_confidence: order.customer_confidence,
           // Which model read it — see the same stamp in app/api/ai/extract.
           extraction_model: order.model,
+          extraction_warning: order.warning ?? null,
         },
       })
       .eq('id', documentId);
