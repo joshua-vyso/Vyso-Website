@@ -51,3 +51,7 @@ website-main/
 # electron desktop app build artifacts (do not commit)
 desktop/node_modules/
 desktop/dist/
+
+# extraction bench output (renders + raw model responses)
+.bench/
+.bench-*/
