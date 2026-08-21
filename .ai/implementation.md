@@ -5473,3 +5473,179 @@ the gross computation, the mismatch predicate and the live-rows print mapper).
 baseline, **zero in any file touched here**. Not verified in a browser: the
 screen is behind auth on a specific document, and the Bakubung order is Turn 'n
 Slice data.
+
+# A second reader, a second matcher, and a row that checks its own maths (2026-08-21, branch `main`)
+
+The same three-page Bakubung purchase order, a third time. `129456b` made the
+matching honest and `12ff849` made the digits checkable, and the run after both
+still came back like this:
+
+| The paper prints | What came back |
+| --- | --- |
+| AVOCADO — bulk 4 / unit qty 48 / unit cost 15.75 / **nett 756** | `Avocado 4.00 boxes @ 15.75 = R63` |
+| `GRAPES WHITE 2 @ 659 = 1,318` | `Avocado Box 2 @ 959` |
+| PINEAPPLE — 18 each @ 24.83 = 447 | `Pineapple 3 @ 24.83 = 74.49` |
+| `MIX VEGETABLES 66.90` | `Beetroot 2 @ 66.50` |
+| `BRINJALS` | `Cabbage 1 @ 118.50` |
+| CUCUMBER — 60 each @ 22.90 = 1,374 | `Celery Box 4 @ 52.90` |
+| `MUSHROOM GABLE 445.50` | `Mushroom Garlic Box 443` |
+
+Read down that column and there are **two different failures wearing one coat**,
+and the previous waves had been treating them as one.
+
+The avocado and the pineapple are not misreadings at all. Every digit is
+correct. `4`, `48`, `15.75` and `756` are all on the paper; the model simply
+multiplied the wrong two. That is a *semantic* error about which column is a
+cost **per**, and no amount of "transcribe, do not interpret" fixes it, because
+nothing was mis-transcribed.
+
+Everything else is a produce word replaced by a produce word — GABLE→Garlic,
+BRINJALS→Cabbage, MIX VEGETABLES→Beetroot, GRAPES WHITE→Avocado. Also not
+random. **A reader holding a catalogue in mind starts seeing catalogue words on
+the page.** We had been handing one call three dense pages *and* four hundred
+product names and asking it to transcribe and identify at the same time, and
+the transcription is what gave way.
+
+So: the reader now only reads, the matching is its own call, and the arithmetic
+is decided by the document rather than by either of them.
+
+## The row already knew
+
+`lib/platform/docu/row-arithmetic.ts` (new, pure). The purchase order prints
+four numbers per row and only three are independent, because it also prints the
+nett. So we stop asking a model which columns pair and ask the row:
+
+    48 × 15.75 = 756.00  ← the paper says 756.00. This one.
+     4 × 15.75 =  63.00
+ 4 × 48 × 15.75 = 3024.00
+
+Four hypotheses — `quantity × price` (the ordinary row, tried first because the
+overwhelming majority of order lines are that), `unit_qty × cost`,
+`bulk_qty × cost`, `bulk_qty × unit_qty × cost` — against the printed total, at
+`moneyMatches` tolerance from `line-audit.ts` rather than a second opinion about
+what "close enough" means. The set that reproduces the total wins and populates
+qty / unit / unit price, and stamps `arithmetic_basis` so the decision is
+inspectable rather than a silent rewrite.
+
+**When nothing reconciles, nothing is touched.** The row stands exactly as
+extracted and `12ff849`'s red ring asks the human. That restraint is the whole
+guarantee: a row quietly rewritten into agreement with its own total is
+precisely how R13,457.60 became R25,958.95.
+
+Fixture verdicts: Avocado → `unit_quantity`, qty 48 @ 15.75 = 756. Pineapple →
+`unit_quantity`, 18 @ 24.83 = 446.94 (and a paper that rounds it to 447 still
+reconciles, on the relative tolerance). Cucumber → 60 @ 22.90 = 1,374.
+`GRAPES WHITE 2 @ 659 = 1318` → `quantity`, untouched. It needed the reader to
+capture `bulk_quantity` / `bulk_unit` / `unit_quantity`, which the prompt now
+demands with the column semantics spelled out — *the unit cost is the price of
+one unit quantity, never of a bulk pack.*
+
+## Luna reads, and Luna matches — but they are two calls
+
+`ORDER_EXTRACT_PROVIDER` (default **openai**) + `OPENAI_ORDER_MODEL` (default
+`gpt-5.6-luna`). Raw `fetch`, no new npm dependency: the whole of what we need is
+one POST carrying a base64 image. Verified live against the API —
+`gpt-5.6-luna` is accepted and returns the transcription; `temperature` is
+rejected outright ("Only the default (1) value is supported") and `max_tokens`
+is rejected in favour of `max_completion_tokens`, so neither is ever sent.
+
+The Anthropic path is **not** decommissioned. It is the fallback for every
+failure and it serves every PDF order outright, because the chat-completions
+image part takes images and reaching for a second endpoint shape for one file
+type is not worth it. When the fallback runs, the document says so:
+`extraction_model` now records provider **and** model, and `extraction_warning`
+carries the API's own error text onto the review screen beside it. A silent
+fallback is a document read by a model nobody chose, and that already cost an
+afternoon once.
+
+The matching agent (`lib/platform/docu/order-match-agent.ts`, pure, +
+`lib/ai/order-match-call.ts`, transport) is a second independent call per
+document over a **relaxed** shortlist — floor 0.2 rather than `SUGGEST_FLOOR`'s
+0.5, because a shortlist is not a recommendation, it is what the agent is
+permitted to consider, and "MUSHROOM GABLE" against "Mushrooms Portabellini"
+scores far below 0.5 and is exactly the sort of pairing only a reader settles.
+Lines the deterministic gate settled at `AUTO_MATCH_FLOOR` (0.9) **bypass it
+entirely**.
+
+**Every invariant is re-enforced in code on the way back out, not left to the
+prompt.** An id must be on that line's own shortlist; the qualifier guard, the
+pack guard and the document-wide duplicate pass all re-run over the agent's
+answer; `none` produces an unmatched row with the paper's words, no price and no
+auto-invoice; and a failed call returns no decisions, which leaves every
+deterministic verdict exactly where it was. The agent can improve on the gate or
+be absent. It cannot loosen it.
+
+Live, against the fixture catalogue, Luna returned:
+
+> GRAPES WHITE → **none** ("white grapes do not match the only candidate, which
+> is black grapes") · PATTY PAN YELLOW → **none** · MUSHROOM GABLE → **none** ·
+> MIX VEGETABLES 2 PKT → **Mixed Vegetables** (98%)
+
+Four of the seven failures above, refused or fixed, by a model whose only job on
+that call was to choose.
+
+## Two holes the fixtures found, both on the DETERMINISTIC path
+
+Neither is about the agent, and both are worse than the thing the agent was
+added for.
+
+**`Avocado (box)` and `Avocado (kg)` both scored 1.0.** `normalizeName` throws
+packaging words away — correct for spotting that "Apples-Golden (kg)" and
+"Apples Golden" are one product, catastrophic for pricing an order line. Against
+a paper reading `FF - AVOCADO BOX` the matcher scored both catalogue rows at
+perfect identity, took whichever it iterated first, and `AUTO_MATCH_FLOOR` waved
+it through **at 100% confidence**. Whichever way that coin landed, half of those
+invoices bill a box at a kilogram's price. The paper's own unit column settles
+it and nothing else can, so pack compatibility is now checked **before**
+similarity is consulted, on the deterministic path and the agent's alike.
+
+**"PATTY PAN YELLOW" and "Tomato-Yellow Cocktail" share exactly one token:
+`yellow`.** `qualifiersConflict` cannot catch that, because the two names
+*agree* about yellow — which is the whole problem. A colour is an attribute;
+every yellow thing in the catalogue has it. So `sharesOnlyQualifiers` refuses
+any pair whose entire overlap is a qualifier. Sharing *nothing* is not caught
+and does not need to be: a candidate with no overlap scores 0 and never reaches
+a shortlist at all.
+
+## The keyboard
+
+`ad4b49c` mounted `ProductSuggestInput` in the invoice editor and stopped there
+— so the ORDER screen, the one where a description decides which product a line
+is matched to and priced from, still had plain inputs. Fixed.
+
+And `hooks/useGridNavigation.ts`, shared by both editors because a keyboard
+learned on an invoice should not have to be learned again on an order. ↑/↓
+always move a row; ←/→ move only when the caret is already at the edge of its
+text, so the thing meant to make checking easier does not make correcting
+"560.90" harder; Enter moves down; **Tab is left entirely alone** — it is the
+platform's own answer to "next field" and a reimplementation would only be a
+worse copy. The active cell takes the burnt-orange accent (`#BE5D23`) over
+150ms, `scrollIntoView({block:'nearest'})` smooth, and none of the motion under
+`prefers-reduced-motion`.
+
+Selects **move rather than spin**: ↑/↓ would natively change the value, so
+arrowing down a column of units would silently rewrite every unit it passed
+through. Changing a billed unit stays an explicit act.
+
+Coexistence with the suggestion dropdown is one boolean: the grid ignores any
+event that is already `defaultPrevented`, so whatever the typeahead has taken it
+keeps, and Esc closing the list is all it takes for the next arrow to move a
+row. No registry, no coordination. `inGrid` covers the two things that boolean
+cannot — ↓ on a closed list must not open it, and the list must not open on
+ARRIVAL, without which arrowing into the product column opens a dropdown nobody
+asked for and traps the next keystroke inside it.
+
+**This one WAS verified in a browser**, unlike the last two waves: a throwaway
+harness route, real trusted key presses, every rule above, and the orange ring
+visibly following focus. The route was deleted before committing.
+
+## Gates
+
+`npx tsc --noEmit` — clean. `npm test` — **899 pass / 0 fail** (862 + 37: the
+arithmetic resolver's verdicts on the fixture rows and its refusals, and the
+matching agent's shortlisting, parsing and five invariants). `npm run build` —
+clean. `npx eslint .` — 50 errors / 40 warnings, exactly the baseline.
+
+`OPENAI_API_KEY` must be added to **Vercel** as well as `.env.local`, or the
+deployed order lane falls back to Anthropic on every upload and stamps a warning
+on every document saying so.
