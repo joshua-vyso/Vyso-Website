@@ -6,6 +6,7 @@ import { createClient } from '@/lib/platform/supabase-browser';
 import { FIELD_REVIEW_THRESHOLD } from '@/lib/platform/tokens';
 import { ProductSuggestInput } from '@/components/platform/docu/ProductSuggestInput';
 import type { ProductOption } from '@/lib/platform/docu/product-suggest';
+import { GRID_CELL_FOCUS, gridCell, useGridNavigation } from '@/hooks/useGridNavigation';
 import type { DocumentStatus, ExtractedField, ExtractedLineItem } from '@/lib/platform/types';
 import type { DocuExtractedData } from '@/lib/platform/docu/types';
 
@@ -69,6 +70,7 @@ export function ExtractionEditor({
     () => extractedData?.supplier ?? fields.find((f) => isSupplierLabel(f.label))?.value ?? '',
   );
   const [busy, setBusy] = useState(false);
+  const { gridRef, onKeyDown: onGridKeyDown } = useGridNavigation<HTMLDivElement>();
 
   const needsReview = useMemo(
     () => draft.filter((f) => f.confidence < FIELD_REVIEW_THRESHOLD).length,
@@ -149,8 +151,12 @@ export function ExtractionEditor({
     router.refresh();
   };
 
+  // Same mechanism, same burnt-orange active cell as the order editor — a
+  // reviewer who learns the keyboard on one document type should not have to
+  // learn it again on the other. See hooks/useGridNavigation.ts.
   const cellCls =
-    'h-9 w-full rounded-[10px] border border-[#E4E9F0] bg-white px-2.5 text-[13px] text-[#171A17] outline-none placeholder:text-[#A0A49C] focus:border-[#3E7BC4]';
+    'h-9 w-full rounded-[10px] border border-[#E4E9F0] bg-white px-2.5 text-[13px] text-[#171A17] outline-none placeholder:text-[#A0A49C] ' +
+    GRID_CELL_FOCUS;
 
   return (
     <div className="flex flex-col rounded-2xl border border-[#EAEDF2] bg-white shadow-[0_1px_2px_rgba(20,24,20,0.03)]">
@@ -245,7 +251,7 @@ export function ExtractionEditor({
                 <span>Amount</span>
                 <span />
               </div>
-              <div className="mt-2 space-y-2">
+              <div className="mt-2 space-y-2" ref={gridRef} onKeyDown={onGridKeyDown}>
                 {lines.map((l, i) => (
                   <div key={i} className={COLS}>
                     <ProductSuggestInput
@@ -257,12 +263,15 @@ export function ExtractionEditor({
                       value={l.description ?? ''}
                       onChange={(v) => updateLine(i, 'description', v)}
                       onPick={(option) => pickProduct(i, option)}
+                      inGrid
+                      gridCell={gridCell(i, 0)}
                     />
-                    <input className={`${cellCls} of-num`} value={l.weight ?? ''} onChange={(e) => updateLine(i, 'weight', e.target.value)} />
-                    <input className={`${cellCls} of-num text-right`} value={l.quantity ?? ''} onChange={(e) => updateLine(i, 'quantity', e.target.value)} />
+                    <input className={`${cellCls} of-num`} data-grid-cell={gridCell(i, 1)} value={l.weight ?? ''} onChange={(e) => updateLine(i, 'weight', e.target.value)} />
+                    <input className={`${cellCls} of-num text-right`} data-grid-cell={gridCell(i, 2)} value={l.quantity ?? ''} onChange={(e) => updateLine(i, 'quantity', e.target.value)} />
                     <select
                       className={`${cellCls} cursor-pointer pr-1`}
                       value={l.unit ?? ''}
+                      data-grid-cell={gridCell(i, 3)}
                       onChange={(e) => updateLine(i, 'unit', e.target.value)}
                       aria-label="Unit"
                     >
@@ -273,9 +282,9 @@ export function ExtractionEditor({
                         </option>
                       ))}
                     </select>
-                    <input className={`${cellCls} of-num text-right`} value={l.units_per_box ?? ''} onChange={(e) => updateLine(i, 'units_per_box', e.target.value)} />
-                    <input className={`${cellCls} of-num text-right`} value={l.unit_price ?? ''} onChange={(e) => updateLine(i, 'unit_price', e.target.value)} />
-                    <input className={`${cellCls} of-num text-right`} value={l.amount ?? ''} onChange={(e) => updateLine(i, 'amount', e.target.value)} />
+                    <input className={`${cellCls} of-num text-right`} data-grid-cell={gridCell(i, 4)} value={l.units_per_box ?? ''} onChange={(e) => updateLine(i, 'units_per_box', e.target.value)} />
+                    <input className={`${cellCls} of-num text-right`} data-grid-cell={gridCell(i, 5)} value={l.unit_price ?? ''} onChange={(e) => updateLine(i, 'unit_price', e.target.value)} />
+                    <input className={`${cellCls} of-num text-right`} data-grid-cell={gridCell(i, 6)} value={l.amount ?? ''} onChange={(e) => updateLine(i, 'amount', e.target.value)} />
                     <button
                       type="button"
                       onClick={() => removeLine(i)}

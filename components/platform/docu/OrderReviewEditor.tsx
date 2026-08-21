@@ -24,6 +24,9 @@ import {
   toPrintableLines,
 } from '@/lib/platform/docu/order-line-totals';
 import { PrintSheetOverlay } from './PrintSheetOverlay';
+import { ProductSuggestInput } from './ProductSuggestInput';
+import type { ProductOption } from '@/lib/platform/docu/product-suggest';
+import { GRID_CELL_FOCUS, gridCell, useGridNavigation } from '@/hooks/useGridNavigation';
 import type { TaxInvoicePrintContext } from './PrintTaxInvoice';
 
 export interface CustomerLite {
@@ -77,6 +80,7 @@ export function OrderReviewEditor({
   customers,
   linkedOrder,
   orgUnits = [],
+  products = [],
   printContext,
 }: {
   documentId: string;
@@ -84,6 +88,14 @@ export function OrderReviewEditor({
   customers: CustomerLite[];
   linkedOrder: LinkedOrder | null;
   orgUnits?: string[];
+  /** The org's catalogue (pp_stock_items + confirmed aliases), fetched once by
+   *  the page. `ad4b49c` gave the INVOICE editor this typeahead and stopped
+   *  there — but an order line is the one that gets matched to a product and
+   *  priced from it, so a description typed here that differs from the
+   *  catalogue's spelling is the difference between a matched line and an
+   *  unpriced one. Empty is fine: the cell degrades to a plain text input,
+   *  because free text was always allowed here. */
+  products?: ProductOption[];
   /** Seller identity + VAT rate for the printable sheet. Absent → no Print
    *  button, because a sheet with no seller on it is not worth handing anyone. */
   printContext?: TaxInvoicePrintContext | null;
@@ -142,6 +154,12 @@ export function OrderReviewEditor({
   const [orderId, setOrderId] = useState<string | null>(linkedOrder?.id ?? null);
   const [printing, setPrinting] = useState(false);
 
+  // Excel-style movement over the rows below. See hooks/useGridNavigation.ts —
+  // the whole mechanism is a container keydown handler plus a data attribute per
+  // cell, and it defers to anything (the product typeahead) that has already
+  // taken the key.
+  const { gridRef, onKeyDown: onGridKeyDown } = useGridNavigation<HTMLDivElement>();
+
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return customers.slice(0, 8);
@@ -199,6 +217,17 @@ export function OrderReviewEditor({
   function updateLine(i: number, patch: Partial<Line>) {
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
   }
+  /** Taking a suggestion fills the catalogue's name and — only when the line has
+   *  no unit of its own — its unit. A unit read off the PAPER is never
+   *  overwritten: the customer's own order knows which pack was ordered better
+   *  than our catalogue does, and on this screen the pack decides the price. */
+  function pickProduct(i: number, option: ProductOption) {
+    const current = (lines[i]?.unit ?? '').trim();
+    updateLine(i, {
+      description: option.name,
+      ...(option.unit && !current ? { unit: option.unit } : {}),
+    });
+  }
   function removeLine(i: number) {
     setLines((prev) => prev.filter((_, idx) => idx !== i));
   }
@@ -206,10 +235,14 @@ export function OrderReviewEditor({
     // A hand-added line has no paper behind it, so `raw` stays empty until save,
     // where it takes the typed description — a human typing a product IS the
     // record for that line, and the resolver needs some raw name to score.
+    const nextIndex = lines.length;
     setLines((prev) => [
       ...prev,
       { key: newKey(), description: '', quantity: '', unit: '', unit_price: '', raw: '', raw_amount: '', record: null },
     ]);
+    // Land the caret in the new row's product cell, so adding a line by keyboard
+    // continues straight into typing it rather than into a hunt for the field.
+    requestAnimationFrame(() => document.getElementById(`order-line-desc-${nextIndex}`)?.focus());
   }
 
   async function confirm() {
@@ -304,8 +337,13 @@ export function OrderReviewEditor({
     }
   }
 
+  // The burnt-orange focus ring (#BE5D23 — globals.css's --accent/--ring) marks
+  // the ACTIVE cell, so a reviewer arrowing down a column can always see where
+  // they are without hunting for a caret. 150ms, and none of it under
+  // prefers-reduced-motion.
   const cell =
-    'h-10 w-full rounded-[10px] border border-[#E4E9F0] bg-white px-3 text-[13px] text-[#171A17] outline-none placeholder:text-[#A0A49C] focus:border-[#3E7BC4]';
+    'h-10 w-full rounded-[10px] border border-[#E4E9F0] bg-white px-3 text-[13px] text-[#171A17] outline-none placeholder:text-[#A0A49C] ' +
+    GRID_CELL_FOCUS;
 
   return (
     <div className="flex flex-col rounded-2xl border border-[#EAEDF2] bg-white shadow-[0_1px_2px_rgba(20,24,20,0.03)]">
@@ -383,6 +421,15 @@ export function OrderReviewEditor({
               Read by <span className="font-medium text-[#6B6F68]">{extractedData.extraction_model}</span>
             </p>
           ) : null}
+          {/* The read did not go the way it was configured to. Said out loud for
+              the same reason the model id is: a document quietly served by the
+              fallback provider is a document read by a model nobody chose, and
+              last time that took an afternoon of inference to establish. */}
+          {extractedData?.extraction_warning ? (
+            <p className="mt-1 text-[11.5px] leading-[1.5] text-[#854F0B]">
+              {extractedData.extraction_warning}
+            </p>
+          ) : null}
         </div>
 
         {/* Products we would not claim to have identified. Deliberately loud and
@@ -441,7 +488,7 @@ export function OrderReviewEditor({
         {lines.length === 0 ? (
           <p className="py-6 text-center text-[13px] text-[#8A8E86]">No items read — add what the customer ordered.</p>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-2" ref={gridRef} onKeyDown={onGridKeyDown}>
             {lines.map((l, i) => {
               const r = l.record;
               const gross = lineGross(l);
@@ -462,11 +509,23 @@ export function OrderReviewEditor({
                   }
                 >
                   <div className="grid grid-cols-[1fr_54px_66px_78px_86px_22px] items-center gap-2">
-                    <input className={cell} value={l.description} onChange={(e) => updateLine(i, { description: e.target.value })} />
-                    <input className={`${cell} of-num text-right`} inputMode="numeric" value={l.quantity} onChange={(e) => updateLine(i, { quantity: e.target.value.replace(/[^0-9.]/g, '') })} />
+                    <ProductSuggestInput
+                      id={`order-line-desc-${i}`}
+                      ariaLabel="Product"
+                      className={cell}
+                      options={products}
+                      placeholder={products.length > 0 ? 'Start typing a product…' : undefined}
+                      value={l.description}
+                      onChange={(v) => updateLine(i, { description: v })}
+                      onPick={(option) => pickProduct(i, option)}
+                      inGrid
+                      gridCell={gridCell(i, 0)}
+                    />
+                    <input className={`${cell} of-num text-right`} inputMode="numeric" data-grid-cell={gridCell(i, 1)} value={l.quantity} onChange={(e) => updateLine(i, { quantity: e.target.value.replace(/[^0-9.]/g, '') })} />
                     <select
                       className={`${cell} cursor-pointer pr-1`}
                       value={l.unit}
+                      data-grid-cell={gridCell(i, 2)}
                       onChange={(e) => updateLine(i, { unit: e.target.value })}
                       aria-label="Unit"
                     >
@@ -477,7 +536,7 @@ export function OrderReviewEditor({
                         </option>
                       ))}
                     </select>
-                    <input className={`${cell} of-num text-right`} inputMode="decimal" placeholder="from list" value={l.unit_price} onChange={(e) => updateLine(i, { unit_price: sanitizeDecimal(e.target.value) })} />
+                    <input className={`${cell} of-num text-right`} inputMode="decimal" placeholder="from list" data-grid-cell={gridCell(i, 3)} value={l.unit_price} onChange={(e) => updateLine(i, { unit_price: sanitizeDecimal(e.target.value) })} />
                     {/* Gross — computed, never typed. It is a read-out of the two
                         editable figures beside it, so an editable box here would
                         only invite a third number that disagrees with both. */}

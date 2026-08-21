@@ -20,6 +20,26 @@ import { suggestProducts, type ProductOption } from '@/lib/platform/docu/product
  *
  * Keyboard: ↓/↑ move, Enter takes the highlighted row, Esc closes without
  * changing anything, Tab leaves and closes.
+ *
+ * INSIDE A NAVIGABLE GRID it has to share those arrows, and does so through one
+ * boolean: every key it takes is `preventDefault`ed, and `useGridNavigation`
+ * ignores any event that is already defaultPrevented. So while the list is open
+ * ↑/↓ walk suggestions; Esc closes it; the next ↑/↓ moves a row. No registry, no
+ * coordination — the list simply stops claiming the key.
+ *
+ * `inGrid` covers the two things that cannot be settled by that boolean, both of
+ * them about ARRIVING at the cell rather than about a key:
+ *
+ *   • Standing alone, ↓ on a closed field OPENS the list — a good discovery
+ *     gesture. In a grid it would make the product column the one column you
+ *     cannot arrow down.
+ *   • Standing alone, the list opens on focus. In a grid that is worse than it
+ *     sounds: arrowing down the column would open the list on arrival, so the
+ *     NEXT ↓ would walk suggestions instead of moving on, and the reviewer would
+ *     be stuck one row down with a dropdown they never asked for.
+ *
+ * So in a grid the field arrives quiet, and opens when the reviewer actually
+ * asks — by typing, or by clicking into it.
  */
 export function ProductSuggestInput({
   id,
@@ -30,6 +50,8 @@ export function ProductSuggestInput({
   className,
   placeholder,
   ariaLabel,
+  inGrid = false,
+  gridCell,
 }: {
   id?: string;
   value: string;
@@ -41,6 +63,11 @@ export function ProductSuggestInput({
   className?: string;
   placeholder?: string;
   ariaLabel?: string;
+  /** Inside a `useGridNavigation` grid: arrive quiet, and leave the arrows to
+   *  the grid until the reviewer opens the list themselves. See above. */
+  inGrid?: boolean;
+  /** `data-grid-cell` for `useGridNavigation`, applied to the input itself. */
+  gridCell?: string;
 }) {
   const listId = useId();
   const [open, setOpen] = useState(false);
@@ -81,6 +108,7 @@ export function ProductSuggestInput({
         autoComplete="off"
         aria-label={ariaLabel}
         placeholder={placeholder}
+        data-grid-cell={gridCell}
         className={className}
         value={value}
         onChange={(e) => {
@@ -88,7 +116,10 @@ export function ProductSuggestInput({
           setActive(0);
           setOpen(true);
         }}
-        onFocus={() => setOpen(true)}
+        // In a grid, focus arrives by arrow key far more often than by intent,
+        // so arriving must not open anything. A click is intent, and does.
+        onFocus={() => { if (!inGrid) setOpen(true); }}
+        onClick={() => setOpen(true)}
         onBlur={() => setOpen(false)}
         onKeyDown={(e) => {
           if (e.key === 'Escape') {
@@ -102,7 +133,9 @@ export function ProductSuggestInput({
             return;
           }
           if (!show) {
-            if (e.key === 'ArrowDown' && matches.length > 0) {
+            // Closed. Inside a grid the arrows belong to the grid, so this is
+            // the one gesture that is switched off rather than shared.
+            if (!inGrid && e.key === 'ArrowDown' && matches.length > 0) {
               e.preventDefault();
               setOpen(true);
             }
