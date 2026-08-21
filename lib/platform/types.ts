@@ -121,6 +121,21 @@ export interface ExtractedLineItem {
    *  Never computed; blank when the document prints no amount column.
    *  See lib/platform/docu/order-line-totals.ts. */
   raw_amount?: string;
+  /** For uploaded customer ORDERS whose paper prints TWO quantity columns: the
+   *  outer/pack figure and the unit it counts ("4", "Box"). Blank on the many
+   *  documents with a single quantity column. Captured separately because
+   *  collapsing the two columns into one number is what produced "Avocado 4.00
+   *  boxes @ 15.75 = R63" against a printed nett of 756.00 — the cost on that
+   *  paper is per EACH, and which column it multiplies is not guessable from the
+   *  cost alone. See lib/platform/docu/row-arithmetic.ts. */
+  bulk_quantity?: string;
+  bulk_unit?: string;
+  /** The inner/each figure of the same two-column layout ("48"). */
+  unit_quantity?: string;
+  /** Which pairing of columns reproduced the row's own printed total, stamped by
+   *  `applyRowArithmetic`. Absent when the row needed no resolving or when
+   *  nothing reconciled — a decision left inspectable rather than silent. */
+  arithmetic_basis?: string;
   weight?: string;
   quantity?: string;
   units_per_box?: string;
