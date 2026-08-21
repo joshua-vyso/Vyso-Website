@@ -185,3 +185,59 @@ test('the OpenAI order model is overridable but never blank', () => {
     else process.env.OPENAI_ORDER_MODEL = before;
   }
 });
+
+// --- the purchaser ---------------------------------------------------------
+//
+// A Bakubung purchase order reached the review screen under "No customer name
+// was read — pick or create one", with "Purchaser: Bakubung Bush Lodge" printed
+// plainly on the page. The proximate cause was routing (the document went to the
+// invoice reader, which has no customer_name field at all — see
+// tests/docu-order-review-lines.test.ts), but the instruction was also weaker
+// than the paper: it named "Order From"/"Delivery To" and not the label this
+// document, and most printed POs, actually use.
+//
+// The trap is that the SAME page names us too. "Deliver To: Turn 'n Slice" is
+// the business receiving the order, and a reader that grabs the wrong block
+// invoices the customer's order to ourselves.
+
+test('the instruction names the labels a printed purchase order actually uses', () => {
+  for (const label of ['Purchaser', 'Ordered By', 'Bill To', 'Order From']) {
+    assert.ok(
+      ORDER_EXTRACT_INSTRUCTION.includes(`"${label}"`),
+      `the buyer cue names ${label}`,
+    );
+  }
+});
+
+test('the instruction still refuses the delivery/supplier block as the customer', () => {
+  // The receiving business is never the customer, however prominently the page
+  // prints it.
+  assert.match(ORDER_EXTRACT_INSTRUCTION, /"Deliver To"/);
+  assert.match(ORDER_EXTRACT_INSTRUCTION, /RECEIVING or FULFILLING the order/);
+  assert.match(ORDER_EXTRACT_INSTRUCTION, /NEVER the business receiving the order/);
+});
+
+test('the schema still carries a customer name and its confidence', () => {
+  assert.ok(ORDER_EXTRACT_INSTRUCTION.includes('"customer_name"'));
+  assert.ok(ORDER_EXTRACT_INSTRUCTION.includes('"customer_confidence"'));
+});
+
+test('a read purchaser survives coercion with its confidence', () => {
+  const out = coerceOrderExtraction(JSON.stringify({
+    customer_name: '  Bakubung Bush Lodge  ',
+    customer_confidence: 92,
+    line_items: [],
+    overall_confidence: 84,
+  }));
+  assert.equal(out.customer_name, 'Bakubung Bush Lodge', 'trimmed, not dropped');
+  assert.equal(out.customer_confidence, 92);
+});
+
+test('an unread purchaser is null rather than an empty string', () => {
+  // The editor branches on falsiness to decide between "Read from the document"
+  // and "No customer name was read", and "" must not read as a name.
+  const out = coerceOrderExtraction(JSON.stringify({
+    customer_name: '', customer_confidence: 0, line_items: [], overall_confidence: 0,
+  }));
+  assert.equal(out.customer_name, null);
+});

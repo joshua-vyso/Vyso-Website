@@ -122,7 +122,7 @@ Rules:
 - "customer_name" = who PLACED the order. Read it from the most reliable cue:
     - WhatsApp screenshot: the CONTACT NAME in the chat header at the very top of the screen. NOT a phone number if a saved name is shown, NOT "you", and NEVER the business receiving the order. If only a phone number is shown, return that number.
     - Email: the SENDER's display name. If only an email address is shown, derive a name from the local-part before "@", title-cased and split on "."/"_"/"-" (e.g. "john.smith@shop.co.za" -> "John Smith").
-    - Printed purchase order: the party the order is FROM — the buyer whose letterhead or "Order From"/"Delivery To" block heads the page.
+    - Printed purchase order: the party the order is FROM — the BUYER. A printed PO almost always labels them outright, and the label is the strongest cue on the page: "Purchaser", "Ordered By", "Order From", "Bill To", "Invoice To", "Customer", "Account Name", or the buyer's own letterhead at the top. Read the name next to whichever of those the page prints. BEWARE THE OPPOSITE FIELD: "Deliver To", "Delivery Address", "Ship To" and "Supplier" name the business RECEIVING or FULFILLING the order, which is us and is never the answer. When the page prints both — "Purchaser: Bakubung Bush Lodge" and "Deliver To: Turn 'n Slice" — the purchaser is the customer.
     - Handwritten / typed note: a name by "from", "customer", "client", a shop name, or the sign-off.
   Return the cleaned name in Title Case. Use null only if there is genuinely no name anywhere.
 - "customer_confidence" (0-100): how sure you are the name is right. A clear WhatsApp contact header or email sender display name is high (85-100); a name guessed from a phone number or an ambiguous scrawl is low (<60).

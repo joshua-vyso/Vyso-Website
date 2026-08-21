@@ -12,6 +12,7 @@ import { syncOrderFromDocument } from '@/lib/platform/orderflow-from-doc';
 import { classifyDocumentParties, resolveSupplierProfile } from '@/lib/platform/document-ingest';
 import type { DocumentPartiesVerdict } from '@/lib/platform/document-ingest';
 import { autoForwardDocumentToHubdoc } from '@/lib/platform/hubdoc';
+import { imagePixelSize } from '@/lib/platform/docu/image-size';
 import type { Document } from '@/lib/platform/types';
 
 // Multi-page statements with many line items can take a while to parse.
@@ -64,12 +65,59 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'That file is too large to process.' }, { status: 413, headers: AI_CORS_HEADERS });
   }
 
-  const base64 = Buffer.from(await file.arrayBuffer()).toString('base64');
+  const fileBytes = Buffer.from(await file.arrayBuffer());
+  const base64 = fileBytes.toString('base64');
   const mediaType = file.type || (doc.filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
+  // How much paper the reader is actually getting, recorded before it gets it.
+  // Null for PDFs and for anything whose header we cannot read — see
+  // lib/platform/docu/image-size.ts for why this is worth knowing at all.
+  const imagePixels = imagePixelSize(fileBytes);
+
+  // WHICH READER? An ORDER is read by `extractOrderDocument` and NOTHING ELSE
+  // in this file gives it what the review screen needs — the total-first row
+  // arithmetic, the `extraction_model` stamp and `customer_name` all live in
+  // that branch and only there.
+  //
+  // THE GATE USED TO BE `doc.document_type === 'order'` ALONE, AND THAT IS THE
+  // BUG THIS EXISTS TO FIX. Only two surfaces pre-type the row: the OrderFlow
+  // drop (`/api/ai/agent/ingest-document`, which classifies first) and a manual
+  // TypePicker change. The chat/Doc-U drop and the upload page both file rows
+  // UNTYPED — `uploadDocument` inserts no `document_type` at all, because on
+  // every other surface the classifier is what decides it. So a customer order
+  // dropped into the chat fell straight through to `extractDocument`, the
+  // INVOICE reader, which:
+  //
+  //   • never runs `applyRowArithmetic`, so "Avocado 4 @ 15.75 = R63" was never
+  //     rescued to the 48 × 15.75 = 756.00 the paper itself prints;
+  //   • never writes `extraction_model`, so the review screen's "Read by …"
+  //     line had nothing to render and silently vanished;
+  //   • never writes `customer_name`, so the screen said "No customer name was
+  //     read" about a page with "Purchaser: Bakubung Bush Lodge" printed on it.
+  //
+  // Three symptoms, one cause. So when the row arrives untyped we CLASSIFY
+  // FIRST — exactly as `ingestDocument` has always done for the drop path — and
+  // route on the answer. A pre-typed row skips this and costs nothing extra; an
+  // untyped NON-order reuses the very same classification result below rather
+  // than paying for a second read. Only an untyped ORDER costs two calls, which
+  // is the correct price for reading it with the right reader.
+  let generic: Awaited<ReturnType<typeof extractDocument>> | null = null;
+  let documentType = doc.document_type;
+  if (!documentType) {
+    try {
+      generic = await extractDocument({ base64, mediaType, filename: doc.filename });
+    } catch (err) {
+      await supabase.from('documents').update({ status: 'error' }).eq('id', doc.id);
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : 'Extraction failed' },
+        { status: 500, headers: AI_CORS_HEADERS },
+      );
+    }
+    documentType = generic.document_type;
+  }
 
   // ORDER documents (uploaded customer orders — WhatsApp/email/handwritten) use a
   // different reader and build an OrderFlow order instead of feeding stock.
-  if (doc.document_type === 'order') {
+  if (documentType === 'order') {
     // Give the order reader the org's catalogue so it resolves abbreviations and
     // varieties ("broc" → "Broccoli", "green apple" → "Apples Granny Smith") to the
     // exact product name — which the pricing match then prices.
@@ -120,6 +168,9 @@ export async function POST(req: Request) {
           // OpenAI failure that fell back to Claude). A fallback nobody is told
           // about is a document read by a model nobody chose.
           extraction_warning: order.warning ?? null,
+          // The size of the photo this was read from — the innocent
+          // explanation for a misread digit, and the `low_resolution` flag.
+          image_pixels: imagePixels,
         },
       })
       .eq('id', doc.id);
@@ -138,20 +189,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, order, orderSync }, { headers: AI_CORS_HEADERS });
   }
 
-  let result;
-  try {
-    result = await extractDocument({ base64, mediaType, filename: doc.filename });
-  } catch (err) {
-    // Don't leave the document stuck on "pending" — mark it errored so the
-    // inbox shows a failure the user can retry rather than an endless spinner.
-    await supabase.from('documents').update({ status: 'error' }).eq('id', doc.id);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Extraction failed' },
-      { status: 500, headers: AI_CORS_HEADERS },
-    );
+  // Already read, if this row arrived untyped: the classification above IS the
+  // extraction for everything that is not an order, and reading the same file
+  // twice would double the bill to learn nothing.
+  let result = generic;
+  if (!result) {
+    try {
+      result = await extractDocument({ base64, mediaType, filename: doc.filename });
+    } catch (err) {
+      // Don't leave the document stuck on "pending" — mark it errored so the
+      // inbox shows a failure the user can retry rather than an endless spinner.
+      await supabase.from('documents').update({ status: 'error' }).eq('id', doc.id);
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : 'Extraction failed' },
+        { status: 500, headers: AI_CORS_HEADERS },
+      );
+    }
   }
 
-  const documentType = doc.document_type ?? result.document_type;
+  documentType = documentType ?? result.document_type;
 
   // WHICH WAY DOES THIS DOCUMENT POINT? An invoice on the ORG'S OWN letterhead
   // is one the org ISSUED — "Invoice To: Investec Bank Limited" on Turn 'n Slice
@@ -204,6 +260,9 @@ export async function POST(req: Request) {
     line_audit: result.line_audit,
     // Only set when the org issued it — lib/platform/docu/document-direction.ts.
     direction: parties.record,
+    // Written on every document, not just orders: an invoice photographed too
+    // small misreads exactly the same way an order does.
+    image_pixels: imagePixels,
   };
 
   const { error: updateErr } = await supabase

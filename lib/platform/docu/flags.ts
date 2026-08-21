@@ -6,6 +6,7 @@ import { DOC_LOW_CONFIDENCE_THRESHOLD } from '@/lib/platform/tokens';
 import type { DocumentWithSupplier } from '@/lib/platform/types';
 import type { DocuExtractedData, DocumentFlag, FlagKind, FlagSeverity } from './types';
 import { docTotal, findFieldValue } from './extract';
+import { lowResolutionNote } from './image-size';
 
 export const FLAG_META: Record<FlagKind, { label: string; severity: FlagSeverity }> = {
   outgoing_invoice: { label: 'Outgoing invoice', severity: 'info' },
@@ -18,6 +19,7 @@ export const FLAG_META: Record<FlagKind, { label: string; severity: FlagSeverity
   unusual_spend: { label: 'Unusual spend', severity: 'warning' },
   unknown_supplier: { label: 'Unknown supplier', severity: 'warning' },
   low_confidence: { label: 'Low extraction confidence', severity: 'warning' },
+  low_resolution: { label: 'Photo may be too small to read', severity: 'warning' },
 };
 
 export const FLAG_SEVERITY_COLOR: Record<FlagSeverity, { bg: string; fg: string }> = {
@@ -41,6 +43,18 @@ export function deriveFlags(
   if (typeof doc.confidence === 'number' && doc.confidence < DOC_LOW_CONFIDENCE_THRESHOLD) {
     add('low_confidence', `Overall confidence ${Math.round(doc.confidence)}% — manual review recommended.`, 'derived');
   }
+
+  // REAL — the photo, not the reader, was the limit.
+  //
+  // BEFORE the confidence and arithmetic flags in spirit, even though it is
+  // listed after them: when this fires it is very often the CAUSE of those, and
+  // a reviewer told "these figures may be wrong" without being told "because
+  // the photo is 900px wide" is left doubting the product instead of retaking
+  // the picture. See lib/platform/docu/image-size.ts for what the threshold is
+  // and why it is that number.
+  const pixels = (doc.extracted_data as DocuExtractedData | null)?.image_pixels ?? null;
+  const lowRes = lowResolutionNote(pixels);
+  if (lowRes) add('low_resolution', lowRes, 'derived');
 
   // REAL — the extraction-time arithmetic audit (lib/platform/docu/line-audit.ts).
   // `line_realigned` means we moved the price/amount columns back onto their own

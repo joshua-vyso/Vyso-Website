@@ -51,13 +51,29 @@ async function fileToBase64(file: File): Promise<{ base64: string; mediaType: st
 /**
  * Downscale an image to at most `maxDim` on the long edge and re-encode as JPEG,
  * so a 12MP phone photo (which would blow the request-size limit and 413) becomes
- * a few hundred KB while staying legible for the order reader. Falls back to the
- * raw bytes if the browser can't decode it.
+ * a couple of hundred KB while staying LEGIBLE FOR THE ORDER READER. Falls back
+ * to the raw bytes if the browser can't decode it.
+ *
+ * 2600px matches `Vyso Mobile/lib/documents.js` and for the reason set out in
+ * full there: Claude's vision pipeline resizes every image to the model's own
+ * budget first — 1568px / 1568 visual tokens on a standard-tier model, 2576px /
+ * 4784 on Claude 4.7 and later — so 2600px is the smallest cap that can feed the
+ * high-res tier everything it will take, and anything larger is discarded by the
+ * API anyway. (https://platform.claude.com/docs/en/build-with-claude/vision)
+ *
+ * THE QUALITY IS LOWER THAN MOBILE'S q0.9, AND THAT IS DELIBERATE. This path
+ * posts the bytes base64-encoded inside a JSON body to `/api/ai/agent/
+ * ingest-document`, and the platform edge refuses a request body over 4.5MB
+ * before the handler can explain why — base64 inflating by a third the whole
+ * way. Mobile uploads the bytes straight to Storage and has no such ceiling, so
+ * it can afford the extra fidelity. q0.85 at 2600px lands near 1-1.5MB, which
+ * base64s to about 2MB and leaves real headroom under the edge limit; q0.9 on a
+ * busy page can approach it.
  */
 async function imageToScaledBase64(
   file: File,
-  maxDim = 2000,
-  quality = 0.82,
+  maxDim = 2600,
+  quality = 0.85,
 ): Promise<{ base64: string; mediaType: string }> {
   try {
     const dataUrl = await readDataUrl(file);

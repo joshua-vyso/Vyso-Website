@@ -64,6 +64,15 @@ export interface DocuExtractedData extends ExtractedData {
    *  the API's own error text, and is shown beside the model stamp: a fallback
    *  nobody is told about is a document read by a model nobody chose. */
   extraction_warning?: string | null;
+  /** How big the image was, in pixels, at the moment it was handed to the
+   *  reader. Absent for PDFs (no single pixel size) and for anything extracted
+   *  before this was recorded.
+   *
+   *  Recorded because "was the photo too small to read?" was unanswerable after
+   *  the fact, and it is the innocent explanation for a misread digit that a
+   *  reviewer is entitled to be given before they doubt the product. Drives the
+   *  `low_resolution` flag — see lib/platform/docu/image-size.ts. */
+  image_pixels?: { width: number; height: number } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,7 +88,10 @@ export type FlagKind =
   | 'credit_note'
   | 'unusual_spend'
   | 'unknown_supplier'
-  | 'low_confidence';
+  | 'low_confidence'
+  /** The uploaded photo had fewer pixels of paper than the reader can use —
+   *  lib/platform/docu/image-size.ts. */
+  | 'low_resolution';
 
 export type FlagSeverity = 'info' | 'warning' | 'critical';
 

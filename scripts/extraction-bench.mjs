@@ -50,6 +50,14 @@
  *   node scripts/extraction-bench.mjs --images ~/Desktop/bakubung
  *   node scripts/extraction-bench.mjs --list
  *
+ *   node scripts/extraction-bench.mjs --resolution all --variants head-sonnet,head-sonnet5
+ *
+ *   --resolution <a,b> ALSO sweep the image-resolution axis: `native`, `px3200`,
+ *                     `px2000`, `px1500`, or `all`. Prints one table per level
+ *                     plus a resolution × variant matrix, and reports what
+ *                     Anthropic's vision pipeline will actually resize each
+ *                     level to on both the standard and high-res tiers — which
+ *                     is usually the number that explains the result.
  *   --runs <n>        runs per variant (default 2 — nondeterminism needs ≥2)
  *   --degrade <lvl>   synthetic difficulty: light | heavy | brutal (default heavy).
  *                     At `light` every current variant ties at 100% and the bench
@@ -77,45 +85,94 @@ const REPO = resolve(HERE, '..');
    The ground truth
    ────────────────────────────────────────────────────────────────────────────
 
-   The Bakubung Bush Lodge → Turn 'n Slice purchase order, 22 lines, as
-   reconstructed from the three test suites that already carry pieces of it:
-   `tests/docu-order-line-match.test.ts` (eighteen paper lines, verbatim raw
-   descriptions and the four that were mis-resolved), `tests/docu-row-arithmetic
-   .test.ts` (the avocado / pineapple / cucumber two-column rows with their
-   printed netts) and `tests/docu-order-line-totals.test.ts` (Apples Top Red at
-   569.90, the digit the reader turned into 560.90).
+   Bakubung Bush Lodge purchase order #16537 (SO-KITC-2026082010321 3), 22 lines
+   across two printed pages, TRANSCRIBED OFF THE PHOTOGRAPH ITSELF —
+   `~/Desktop/bakubung/IMG_3960.JPG`.
 
-   `bulk`/`each` are the document's TWO quantity columns; `cost` is per EACH
-   where an each column exists and per BULK otherwise, and `nett` is what the
-   paper prints — the row's own arithmetic has to close, because the amount
-   column cross-check is one of the things under test.                        */
+   IT USED TO BE A RECONSTRUCTION AND THAT MADE THE BENCH LIE. The first version
+   of this table was assembled out of the three test suites that carry pieces of
+   the story (`docu-order-line-match`, `docu-row-arithmetic`,
+   `docu-order-line-totals`) because no photo had arrived yet. When the photo did
+   arrive, every variant at every resolution scored exactly 55% on names and 57%
+   on digits — eight runs, two models, four image sizes, not one point of
+   spread. That is not a measurement, it is a constant, and the constant was the
+   distance between this table and the actual paper: the reconstruction has
+   NAARTJIES, BANANAS, BUTTERNUT and TOMATOES ROUND, and the real order has
+   BRINJALS, BROCCOLI, GINGER CRUSHED, GARLIC CRUSHED, LETTUCE MIXED and
+   MUSHROOM GABLE. The readers were right and the answer key was wrong.
+
+   THE TRANSCRIPTION IS CHECKED AGAINST THE DOCUMENT'S OWN TOTAL. Every row's
+   nett equals its `each` x `cost`, and the twenty-two netts sum to 13,457.60 —
+   which is what the paper prints as Total, and the same R13,457.60 that was
+   once invoiced as R25,958.95. An answer key that reproduces the document's own
+   arithmetic is one that can be trusted to score a reader.
+
+   `bulk`/`each` are the document's TWO quantity columns (headed "Bulk Quantity"
+   and "Unit Quantity"). On THIS document every row prints both, and `cost` — the
+   "Unit Cost" column — is per EACH throughout: nett = each x cost, never
+   bulk x cost. The avocado row is the famous one (4 boxes, 48 avocados, 15.75
+   each, 756.00) but it is the rule here, not the exception.                   */
 
 const GROUND_TRUTH = [
-  { raw: 'FF - APPLES TOP RED BOX',      bulk: '1',  bulkUnit: 'Box',    each: '',   eachUnit: '',     cost: '569.90', nett: '569.90' },
-  { raw: 'FF - AVOCADO BOX',             bulk: '4',  bulkUnit: 'Box',    each: '48', eachUnit: 'Each', cost: '15.75',  nett: '756.00' },
-  { raw: 'FF - GRAPES WHITE BOX',        bulk: '2',  bulkUnit: 'Box',    each: '',   eachUnit: '',     cost: '659.00', nett: '1318.00' },
-  { raw: 'FF - GRAPES BLACK BOX',        bulk: '2',  bulkUnit: 'Box',    each: '',   eachUnit: '',     cost: '659.00', nett: '1318.00' },
-  { raw: 'FF - STRAWBERRIES PKT',        bulk: '20', bulkUnit: 'Pkt',    each: '',   eachUnit: '',     cost: '29.90',  nett: '598.00' },
-  { raw: 'FF - BANANAS BOX',             bulk: '2',  bulkUnit: 'Box',    each: '',   eachUnit: '',     cost: '189.00', nett: '378.00' },
-  { raw: 'FF - NAARTJIES BOX',           bulk: '1',  bulkUnit: 'Box',    each: '',   eachUnit: '',     cost: '145.50', nett: '145.50' },
-  { raw: 'FF - PINEAPPLE BOX',           bulk: '3',  bulkUnit: 'Box',    each: '18', eachUnit: 'Each', cost: '24.83',  nett: '446.94' },
-  { raw: 'VEG - MIX VEGETABLES 2 PKT',   bulk: '2',  bulkUnit: 'Pkt',    each: '',   eachUnit: '',     cost: '88.00',  nett: '176.00' },
-  { raw: 'VEG - CAULIFLOWER',            bulk: '25', bulkUnit: 'Each',   each: '',   eachUnit: '',     cost: '30.90',  nett: '772.50' },
-  { raw: 'VEG - SWEET CORN',             bulk: '15', bulkUnit: 'Punnet', each: '',   eachUnit: '',     cost: '46.40',  nett: '696.00' },
-  { raw: 'VEG - PATTY PAN YELLOW',       bulk: '20', bulkUnit: 'Punnet', each: '',   eachUnit: '',     cost: '23.50',  nett: '470.00' },
-  { raw: 'VEG - PEPPERS GREEN',          bulk: '3',  bulkUnit: 'Box',    each: '',   eachUnit: '',     cost: '210.00', nett: '630.00' },
-  { raw: 'VEG - PEPPERS RED',            bulk: '2',  bulkUnit: 'Box',    each: '',   eachUnit: '',     cost: '245.00', nett: '490.00' },
-  { raw: 'VEG - PEPPERS YELLOW',         bulk: '2',  bulkUnit: 'Box',    each: '',   eachUnit: '',     cost: '245.00', nett: '490.00' },
-  { raw: 'VEG - BABY MARROW',            bulk: '4',  bulkUnit: 'Box',    each: '',   eachUnit: '',     cost: '165.00', nett: '660.00' },
-  { raw: 'VEG - TOMATOES ROUND',         bulk: '6',  bulkUnit: 'Box',    each: '',   eachUnit: '',     cost: '132.00', nett: '792.00' },
-  { raw: 'VEG - BUTTERNUT WHOLE',        bulk: '3',  bulkUnit: 'Box',    each: '',   eachUnit: '',     cost: '98.00',  nett: '294.00' },
-  { raw: 'VEG - BUTTERNUT CUBED PKT',    bulk: '10', bulkUnit: 'Pkt',    each: '',   eachUnit: '',     cost: '32.50',  nett: '325.00' },
-  { raw: 'VEG - LETTUCE ICEBERG',        bulk: '8',  bulkUnit: 'Each',   each: '',   eachUnit: '',     cost: '18.90',  nett: '151.20' },
-  { raw: 'VEG - CUCUMBER BOX',           bulk: '4',  bulkUnit: 'Box',    each: '60', eachUnit: 'Each', cost: '22.90',  nett: '1374.00' },
-  { raw: 'VEG - TOMATO-YELLOW COCKTAIL', bulk: '12', bulkUnit: 'Punnet', each: '',   eachUnit: '',     cost: '27.40',  nett: '328.80' },
+  // ── page 1 ──────────────────────────────────────────────────────────────
+  { raw: 'FF - APPLE TOP RED Each',            bulk: '1',  bulkUnit: 'Box',    each: '1',  eachUnit: 'Box',      cost: '569.90', nett: '569.90' },
+  { raw: 'FF - AVOCADO BOX',                   bulk: '4',  bulkUnit: 'Box',    each: '48', eachUnit: 'Each',     cost: '15.75',  nett: '756.00' },
+  { raw: 'FF - GRAPES BLACK BOX Each',         bulk: '2',  bulkUnit: 'Box',    each: '2',  eachUnit: 'Box',      cost: '659.00', nett: '1318.00' },
+  { raw: 'FF - GRAPES WHITE BOX Each',         bulk: '2',  bulkUnit: 'Box',    each: '2',  eachUnit: 'Box',      cost: '659.00', nett: '1318.00' },
+  // 18 x 24.83 = 446.94 and the paper rounds its nett to 447.00 — a genuine
+  // half-percent gap that `moneyMatches` is built to tolerate.
+  { raw: 'FF - PINEAPPLE BOX Each',            bulk: '3',  bulkUnit: 'Box',    each: '18', eachUnit: 'Each',     cost: '24.83',  nett: '447.00' },
+  // ── page 2 ──────────────────────────────────────────────────────────────
+  { raw: 'FF - STRAWBERRIES PKT Each',         bulk: '20', bulkUnit: 'Punnet', each: '20', eachUnit: 'Each',     cost: '29.90',  nett: '598.00' },
+  { raw: 'VEG - BABY MARROW GREEN BOX Each',   bulk: '1',  bulkUnit: 'Box',    each: '1',  eachUnit: 'Box',      cost: '99.00',  nett: '99.00' },
+  { raw: 'VEG - BRINJALS BOX Each',            bulk: '1',  bulkUnit: 'Box',    each: '1',  eachUnit: 'Each',     cost: '118.50', nett: '118.50' },
+  { raw: 'VEG - MIX VEGETABLES Kilogram',      bulk: '2',  bulkUnit: 'Packet', each: '20', eachUnit: 'Kilogram', cost: '66.90',  nett: '1338.00' },
+  { raw: 'VEG - CAULIFLOWER PKT Each',         bulk: '25', bulkUnit: 'Packet', each: '25', eachUnit: 'Each',     cost: '30.90',  nett: '772.50' },
+  { raw: 'VEG - BROCCOLI PKT Each',            bulk: '15', bulkUnit: 'Packet', each: '15', eachUnit: 'Each',     cost: '21.00',  nett: '315.00' },
+  { raw: 'VEG - CUCUMBER BOX Each',            bulk: '4',  bulkUnit: 'Box',    each: '60', eachUnit: 'Each',     cost: '22.90',  nett: '1374.00' },
+  { raw: 'PSAL - GINGER CRUSHED BUCKET Each',  bulk: '2',  bulkUnit: 'Packet', each: '2',  eachUnit: 'Kilogram', cost: '108.50', nett: '217.00' },
+  { raw: 'PSAL - GARLIC CRUSHED BUCKET Each',  bulk: '1',  bulkUnit: 'Packet', each: '1',  eachUnit: 'Kilogram', cost: '79.70',  nett: '79.70' },
+  { raw: 'VEG - LETTUCE MIXED BOX',            bulk: '3',  bulkUnit: 'Box',    each: '3',  eachUnit: 'Box',      cost: '165.00', nett: '495.00' },
+  { raw: 'VEG - MUSHROOM GABLE BOX Each',      bulk: '2',  bulkUnit: 'Box',    each: '2',  eachUnit: 'Box',      cost: '445.50', nett: '891.00' },
+  { raw: 'VEG - SWEET CORN PKT Each',          bulk: '15', bulkUnit: 'Packet', each: '15', eachUnit: 'Each',     cost: '46.40',  nett: '696.00' },
+  { raw: 'VEG - TOMATO COCTAIL RED PKT Each',  bulk: '20', bulkUnit: 'Packet', each: '20', eachUnit: 'Each',     cost: '39.90',  nett: '798.00' },
+  { raw: 'VEG - PATTY PAN YELLOW PKT Each',    bulk: '20', bulkUnit: 'Packet', each: '20', eachUnit: 'Each',     cost: '23.50',  nett: '470.00' },
+  { raw: 'VEG - PEPPERS GREEN BOX Each',       bulk: '2',  bulkUnit: 'Box',    each: '2',  eachUnit: 'Box',      cost: '129.50', nett: '259.00' },
+  { raw: 'VEG - PEPPERS RED BOX Each',         bulk: '1',  bulkUnit: 'Box',    each: '1',  eachUnit: 'Box',      cost: '279.00', nett: '279.00' },
+  { raw: 'VEG - PEPPERS YELLOW BOX Each',      bulk: '1',  bulkUnit: 'Box',    each: '1',  eachUnit: 'Box',      cost: '249.00', nett: '249.00' },
 ];
 
+/** What the paper prints as Total. The answer key has to reproduce it. */
+const GROUND_TRUTH_TOTAL = 13457.60;
+
 const GROUND_TRUTH_CUSTOMER = 'Bakubung Bush Lodge';
+
+/**
+ * THE ANSWER KEY CHECKS ITSELF, at import, before a single token is billed.
+ *
+ * A bench is only ever as good as its ground truth, and a wrong ground truth
+ * does not announce itself — it produces a plausible table in which every
+ * variant is mediocre and no variant is better, which is exactly what the
+ * previous reconstruction produced for a full run. This document prints its own
+ * Total, and every row prints its own nett, so the key can be audited against
+ * the paper by arithmetic instead of by trust.
+ */
+(function auditGroundTruth() {
+  const num = (s) => Number(String(s).replace(/[^0-9.]/g, ''));
+  for (const r of GROUND_TRUTH) {
+    const expect = Math.round(num(r.each) * num(r.cost) * 100) / 100;
+    const printed = num(r.nett);
+    // Half a percent, the same tolerance `moneyMatches` uses — the pineapple
+    // row's 446.94 really is printed as 447.00.
+    if (Math.abs(expect - printed) > Math.max(0.01, printed * 0.005)) {
+      throw new Error(`ground truth: ${r.raw} — ${r.each} x ${r.cost} = ${expect}, but nett says ${r.nett}`);
+    }
+  }
+  const sum = Math.round(GROUND_TRUTH.reduce((s, r) => s + num(r.nett), 0) * 100) / 100;
+  if (Math.abs(sum - GROUND_TRUTH_TOTAL) > 0.05) {
+    throw new Error(`ground truth: the ${GROUND_TRUTH.length} netts sum to ${sum}, but the paper's Total is ${GROUND_TRUTH_TOTAL}`);
+  }
+})();
 
 /** Turn 'n Slice's catalogue as the failing lines found it — see docu-order-line-match.test.ts. */
 const CATALOGUE = [
@@ -134,10 +191,12 @@ function parseArgs(argv) {
   const out = {
     runs: 2, variants: null, images: null, out: join(REPO, '.bench'),
     makeImage: false, list: false, catalogue: true, degrade: 'heavy',
+    resolutions: null,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
-    if (a === '--degrade') out.degrade = argv[++i];
+    if (a === '--resolution') out.resolutions = argv[++i].split(',').map((s) => s.trim()).filter(Boolean);
+    else if (a === '--degrade') out.degrade = argv[++i];
     else if (a === '--out') out.out = resolve(argv[++i]);
     else if (a === '--runs') out.runs = Number(argv[++i]);
     else if (a === '--variants') out.variants = argv[++i].split(',').map((s) => s.trim()).filter(Boolean);
@@ -263,7 +322,7 @@ function pageHtml(level) {
   <p class="sub">Pilanesberg, North West &middot; VAT 4180288***</p>
   <p class="sub"><strong>PURCHASE ORDER</strong> &nbsp; No. PO-44127</p>
   <div class="meta">
-    <div><strong>Order From:</strong> Bakubung Bush Lodge</div>
+    <div><strong>Purchaser:</strong> Bakubung Bush Lodge</div>
     <div><strong>Deliver To:</strong> Turn 'n Slice</div>
     <div><strong>Date:</strong> 2026-08-20</div>
   </div>
@@ -280,6 +339,110 @@ function pageHtml(level) {
     </tfoot>
   </table>
 </div>`;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   The RESOLUTION axis
+   ────────────────────────────────────────────────────────────────────────────
+
+   WHY. The mobile Capture path downscales every photo to 2000px on the long
+   edge at JPEG q0.8 (`Vyso Mobile/lib/documents.js`), and the OrderFlow web
+   drop does the same thing in a canvas at q0.82 (`order-ingest-client.ts`).
+   Only the chat/Doc-U drop sends the original bytes. The obvious suspicion,
+   when the same document comes back with 560.90 where the paper prints 569.90,
+   is that we threw the pixels away ourselves before the model ever saw them.
+
+   THE SUSPICION IS MOSTLY WRONG, AND THE DOCS SAY WHY. Anthropic's vision
+   pipeline resizes every image down to the model's own budget before reading
+   it. On a STANDARD-tier model — which `claude-sonnet-4-6`, the current order
+   reader, is — that budget is 1568px on the long edge AND 1568 visual tokens,
+   where one visual token is a 28x28 patch: ceil(w/28) * ceil(h/28) <= 1568.
+   For a 4:3 page that lands around 1269x952. It is the TOKEN budget that binds
+   on an ordinary photo, not the edge limit.
+   (https://platform.claude.com/docs/en/build-with-claude/vision)
+
+   So a 5712x4284 original and a 2000px downscale are resized to THE SAME ~1.2MP
+   before Sonnet 4.6 reads either of them, and uploading more pixels buys
+   nothing at all. Which makes the interesting axis not "how big do we send it"
+   but "which tier reads it": Claude 4.7 and later models are HIGH-RESOLUTION
+   tier — 2576px long edge and 4784 visual tokens, roughly three times the
+   detail on the same page.
+
+   This axis exists to MEASURE that rather than argue it. Every level below is
+   what some real path in the product actually produces, plus the two ends of
+   the range, so the table answers a question somebody has to act on.          */
+
+const RESOLUTIONS = {
+  /** The file exactly as it arrived. The chat/Doc-U web drop sends this. */
+  native: { edge: null, quality: null, note: 'as uploaded — the chat/Doc-U web drop' },
+  /** The raise proposed for mobile Capture. */
+  px3200: { edge: 3200, quality: 90, note: 'proposed mobile Capture' },
+  /** What mobile Capture and the OrderFlow web drop produce TODAY. */
+  px2000: { edge: 2000, quality: 80, note: 'mobile Capture + OrderFlow drop, today' },
+  /** The low end, and roughly what a standard-tier model sees anyway. */
+  px1500: { edge: 1500, quality: 70, note: 'the low end' },
+};
+
+/**
+ * Produce the file one resolution level would send, and report what it is.
+ *
+ * `native` is passed through untouched — re-encoding it would measure our own
+ * JPEG settings rather than the file the product actually uploads. Everything
+ * else goes through `sips`, which ships with macOS, for the same reason the
+ * synthetic render does: no new dependency in a repo that has kept image
+ * tooling out of it.
+ */
+function resolveResolution(src, level, outDirRaw) {
+  const spec = RESOLUTIONS[level];
+  if (!spec) throw new Error(`Unknown resolution "${level}". Use ${Object.keys(RESOLUTIONS).join(' | ')}.`);
+  const outDir = resolve(outDirRaw);
+  mkdirSync(outDir, { recursive: true });
+
+  const dims = (p) => {
+    try {
+      const txt = execFileSync('/usr/bin/sips', ['-g', 'pixelWidth', '-g', 'pixelHeight', p], { encoding: 'utf8' });
+      const w = /pixelWidth:\s*(\d+)/.exec(txt)?.[1];
+      const h = /pixelHeight:\s*(\d+)/.exec(txt)?.[1];
+      return w && h ? { w: Number(w), h: Number(h) } : null;
+    } catch { return null; }
+  };
+
+  if (spec.edge == null) {
+    const d = dims(src);
+    return { path: src, level, dims: d, bytes: readFileSync(src).length, note: spec.note };
+  }
+  const base = src.split('/').pop().replace(/\.[^.]+$/, '');
+  const jpg = join(outDir, `${base}.${level}.jpg`);
+  execFileSync('/usr/bin/sips', [
+    '-Z', String(spec.edge), src, '--out', jpg,
+    '-s', 'format', 'jpeg', '-s', 'formatOptions', String(spec.quality),
+  ], { stdio: ['ignore', 'ignore', 'ignore'] });
+  return { path: jpg, level, dims: dims(jpg), bytes: readFileSync(jpg).length, note: spec.note };
+}
+
+/**
+ * What Anthropic's vision pipeline will actually resize this to, per the
+ * published algorithm — the largest aspect-preserving size that satisfies BOTH
+ * the tier's long-edge limit and ceil(w/28) * ceil(h/28) <= its token budget.
+ *
+ * Printed beside each resolution because it is the number that explains the
+ * result: two levels that collapse to the same effective size cannot possibly
+ * score differently, and a table that showed only what we UPLOADED would invite
+ * exactly the wrong conclusion from that tie.
+ */
+function effectiveSize(w, h, tier) {
+  const { edge, budget } = tier === 'high' ? { edge: 2576, budget: 4784 } : { edge: 1568, budget: 1568 };
+  let best = null;
+  // Walk scales down from 1 and keep the largest that fits both constraints.
+  for (let s = 1; s > 0.02; s -= 0.005) {
+    const cw = Math.max(28, Math.round(w * s));
+    const ch = Math.max(28, Math.round(h * s));
+    if (Math.max(cw, ch) > edge) continue;
+    if (Math.ceil(cw / 28) * Math.ceil(ch / 28) > budget) continue;
+    best = { w: cw, h: ch, tokens: Math.ceil(cw / 28) * Math.ceil(ch / 28) };
+    break;
+  }
+  return best;
 }
 
 const CHROME_CANDIDATES = [
@@ -462,6 +625,14 @@ async function buildVariants(opts) {
     { id: 'priors-sonnet', label: 'PRIORS prompt · sonnet-4-6', prompt: priorsPrompt, provider: 'anthropic', model: 'claude-sonnet-4-6', note: 'isolates the PROMPT axis' },
     { id: 'priors-haiku',  label: 'PRIORS prompt · haiku-4-5', prompt: priorsPrompt, provider: 'anthropic', model: 'claude-haiku-4-5',  note: 'the candidate' },
     { id: 'priors-luna',   label: 'PRIORS prompt · gpt-5.6-luna', prompt: priorsPrompt, provider: 'openai', model: 'gpt-5.6-luna',      note: 'the candidate, other provider' },
+    // HIGH-RESOLUTION TIER. Claude 4.7 and later read images at 2576px / 4784
+    // visual tokens against Sonnet 4.6's 1568 / 1568 — about three times the
+    // detail on the same page, and the only lever that actually changes how
+    // much of a blurred digit reaches the model. Every variant above this line
+    // is standard-tier and sees a 22-line purchase order at roughly 1269x952
+    // no matter what we upload.
+    { id: 'head-sonnet5',  label: 'HEAD prompt · sonnet-5',    prompt: headPrompt,   provider: 'anthropic', model: 'claude-sonnet-5',   note: 'HIGH-RES tier, Sonnet price' },
+    { id: 'head-opus48',   label: 'HEAD prompt · opus-4-8',    prompt: headPrompt,   provider: 'anthropic', model: 'claude-opus-4-8',   note: 'HIGH-RES tier, the ceiling' },
   ].filter((v) => !opts.variants || opts.variants.includes(v.id));
 }
 
@@ -805,13 +976,63 @@ async function main() {
   // pages) or as N separate rows read separately; there is no N-image call to
   // bench, and inventing one here would bench something the app cannot do.
   const first = images[0];
-  const base64 = readFileSync(first).toString('base64');
-  const mediaType = extname(first).toLowerCase() === '.png' ? 'image/png' : 'image/jpeg';
   if (images.length > 1) {
     console.log(`Note     ${images.length} images found; benching the FIRST only — production reads one file per document row.`);
   }
 
   const variants = await buildVariants(opts);
+
+  // THE RESOLUTION AXIS. Off unless asked for, because it multiplies the bill
+  // by the number of levels and the ordinary question this bench answers
+  // ("which prompt, which model?") does not need it.
+  if (opts.resolutions) {
+    const levels = opts.resolutions.includes('all') ? Object.keys(RESOLUTIONS) : opts.resolutions;
+    const matrix = [];
+    for (const level of levels) {
+      const img = resolveResolution(first, level, opts.out);
+      const std = img.dims ? effectiveSize(img.dims.w, img.dims.h, 'standard') : null;
+      const hi = img.dims ? effectiveSize(img.dims.w, img.dims.h, 'high') : null;
+      console.log('');
+      console.log(`── resolution ${level} — ${img.note}`);
+      console.log(`   uploaded  ${img.dims ? `${img.dims.w}x${img.dims.h}` : '?'}  ${(img.bytes / 1024 / 1024).toFixed(2)} MB`);
+      // What the model ACTUALLY sees, which is the number that explains ties.
+      console.log(`   Claude sees  standard-tier ${std ? `${std.w}x${std.h} (${std.tokens} vis tok)` : '?'}   ·   high-res tier ${hi ? `${hi.w}x${hi.h} (${hi.tokens} vis tok)` : '?'}`);
+      const res = await benchOne({
+        variants, opts, imagePath: img.path,
+        tag: level,
+      });
+      printTable(res);
+      matrix.push({ level, img: { dims: img.dims, bytes: img.bytes }, standard: std, high: hi, results: res });
+    }
+
+    console.log('');
+    console.log('RESOLUTION × VARIANT — names / digits');
+    const ids = variants.map((v) => v.id);
+    const w0 = 10;
+    console.log(['resolution'.padEnd(w0), ...ids.map((i) => i.padEnd(16))].join(' '));
+    console.log([('─'.repeat(w0)), ...ids.map(() => '─'.repeat(16))].join(' '));
+    for (const m of matrix) {
+      const cells = ids.map((id) => {
+        const r = m.results.find((x) => x.id === id);
+        if (!r || r.error) return 'ERROR'.padEnd(16);
+        return `${pct(r.mean.nameRate).trim()} / ${pct(r.mean.digitRate).trim()}`.padEnd(16);
+      });
+      console.log([m.level.padEnd(w0), ...cells].join(' '));
+    }
+    console.log('');
+    writeFileSync(join(opts.out, 'bench-resolution.json'), JSON.stringify({ at: new Date().toISOString(), source: first, matrix }, null, 2));
+    console.log(`Resolution matrix in ${join(opts.out, 'bench-resolution.json')}`);
+    return;
+  }
+
+  const results = await benchOne({ variants, opts, imagePath: first, tag: null });
+  report(results, opts);
+}
+
+/** Run every variant N times against ONE image. */
+async function benchOne({ variants, opts, imagePath, tag }) {
+  const base64 = readFileSync(imagePath).toString('base64');
+  const mediaType = extname(imagePath).toLowerCase() === '.png' ? 'image/png' : 'image/jpeg';
   const results = [];
 
   for (const v of variants) {
@@ -825,7 +1046,9 @@ async function main() {
         const t0 = Date.now();
         const { text, stop, usage } = await call({ model: v.model, prompt, base64, mediaType });
         const ms = Date.now() - t0;
-        writeFileSync(join(opts.out, `${v.id}.run${n + 1}.json`), text);
+        // The tag keeps one resolution level's raw responses from overwriting
+        // another's — the misses are the whole point of keeping them.
+        writeFileSync(join(opts.out, `${v.id}${tag ? `.${tag}` : ''}.run${n + 1}.json`), text);
         const { customer_name, rows } = parseRows(text);
         const score = scoreRun(rows, customer_name);
         runs.push({ rows, score, ms, stop, usage });
@@ -861,6 +1084,11 @@ async function main() {
     });
   }
 
+  return results;
+}
+
+/** The table, the misses and the verdict for one image's worth of runs. */
+function report(results, opts) {
   printTable(results);
 
   // The misses themselves, because a rate tells you a variant is worse and the
@@ -883,7 +1111,7 @@ async function main() {
   if (ranked.length) {
     console.log(`WINNER on names+digits: ${ranked[0].id} — ${ranked[0].label}`);
   }
-  writeFileSync(join(opts.out, 'bench.json'), JSON.stringify({ at: new Date().toISOString(), synthetic, images, results }, null, 2));
+  writeFileSync(join(opts.out, 'bench.json'), JSON.stringify({ at: new Date().toISOString(), results }, null, 2));
   console.log(`Raw responses and bench.json in ${opts.out}`);
 }
 

@@ -5779,3 +5779,127 @@ default since `02a25ef`, shipped ahead of any measurement.
 baseline; not one is in a file this wave touched.
 
 `.bench/` is gitignored: it holds renders and raw model responses.
+
+## Doc-U order lane — the reader was never the problem (routing wave)
+
+Turn 'n Slice re-uploaded the Bakubung purchase order and got 13 of 22 rows
+right: five invented product names (Carrots White, Spinach Box, Microgreens
+Garlic, Tomato Flavourst Yellow, Cabbage Green), five digit slips (560.90,
+459.00, 66.50, 92.00, 32.50), no customer name, no "Read by …" stamp, and the
+two rows `row-arithmetic.ts` exists to rescue — Avocado shown as 4 @ 15.75 =
+R63 against a printed 756.00, Pineapple 3 @ 24.83 = R74.49 against 447.00 — not
+rescued.
+
+**Every one of those is the same bug, and it is not a reading bug.**
+
+### The root cause: `/api/ai/extract` picked the wrong reader
+
+The order branch was gated on `doc.document_type === 'order'`. Only two
+surfaces pre-type the row — the OrderFlow drop (`/api/ai/agent/ingest-document`,
+which classifies first) and a manual TypePicker change. **The chat/Doc-U drop
+and the upload page file rows UNTYPED**: `uploadDocument` inserts no
+`document_type` at all, because everywhere else the classifier decides it.
+
+So a customer order dropped into the chat fell straight past the order branch
+into `extractDocument` — the INVOICE reader. That reader has no order prompt, no
+TRANSCRIBE clause, no two-column rule, and no `raw_amount`/`unit_quantity`
+fields. It therefore:
+
+- never runs `applyRowArithmetic` → the avocado row is never rescued;
+- never writes `extraction_model` → "Read by …" has nothing to render and
+  silently vanishes, which is exactly why Josh could not find it;
+- never writes `customer_name` → "No customer name was read" about a page with
+  **Purchaser: Bakubung Bush Lodge** printed on it.
+
+Three symptoms, one line of code. The invented names are what a generic invoice
+reader does with a produce order — note that **carrots, spinach and microgreens
+do not appear anywhere on the paper**.
+
+**Fix**: when the row arrives untyped, classify first and route on the answer —
+the same thing `ingestDocument` has always done. A pre-typed row costs nothing
+extra; an untyped non-order reuses the classification rather than re-reading.
+Only an untyped order costs two calls, which is the right price for using the
+right reader.
+
+### The reader itself is perfect on this document
+
+`scripts/extraction-bench.mjs` grew a `--resolution` axis and was pointed at the
+real photo (`~/Desktop/bakubung/IMG_3960.JPG`, 5712×4284, 3.8 MB). Two runs per
+cell, HEAD prompt:
+
+| resolution | uploaded | Claude sees (std tier) | sonnet-4-6 | sonnet-5 |
+|---|---|---|---|---|
+| native | 5712×4284, 3.81 MB | 1257×942 (1530 tok) | **100% / 100%** | 95% / 100% |
+| px3200 q90 | 3200×2400, 1.75 MB | 1264×948 (1564 tok) | **100% / 100%** | 91% / 100% |
+| px2000 q80 | 2000×1500, 0.55 MB | 1270×952 (1564 tok) | **100% / 100%** | 95% / 100% |
+| px1500 q70 | 1500×1125, 0.27 MB | 1267×951 (1564 tok) | **100% / 100%** | 93% / 100% |
+
+(names / digits; customer read correctly in every cell.)
+
+**Resolution does not matter, and the vision docs say why.** Claude resizes every
+image to the model's own budget first: standard tier (which `claude-sonnet-4-6`
+is) gets 1568px long edge AND 1568 visual tokens at one 28×28 patch each, so a
+4:3 page lands near 1270×950 whether you upload 5712px or 1500px. The 2000px
+downscale everyone suspected was never the constraint — the column headed
+"Claude sees" is identical across all four rows.
+(https://platform.claude.com/docs/en/build-with-claude/vision)
+
+Sonnet 4.6 reads all 22 rows and every digit correctly at every size. Sonnet 5
+(high-res tier, 2576px / 4784 tokens) is no better and marginally worse on
+names — its only real miss is transcribing "BUCKET" as "BUCCKET". **There is no
+model or resolution change worth making here.** The prod failures were never
+this reader's output.
+
+### The bench's answer key was wrong, and the bench said so
+
+The first real-photo run scored every variant at exactly 55% names / 57% digits
+— eight runs, two models, four image sizes, zero spread. That is a constant, not
+a measurement, and the constant was the distance between `GROUND_TRUTH` and the
+paper: it had been *reconstructed* from three test suites before any photo
+existed, and carried NAARTJIES, BANANAS, BUTTERNUT and TOMATOES ROUND, while the
+real order has BRINJALS, BROCCOLI, GINGER CRUSHED, GARLIC CRUSHED, LETTUCE MIXED
+and MUSHROOM GABLE. The readers were right; the answer key was wrong.
+
+`GROUND_TRUTH` is now transcribed off the photograph (PO #16537, 22 lines, two
+pages) and **audits itself at import**: every row's `each × cost` must reproduce
+its printed nett, and the 22 netts must sum to the paper's own Total of
+13,457.60. They do. A wrong answer key does not announce itself — it produces a
+plausible table in which nothing is better than anything else.
+
+### What changed
+
+- **`app/api/ai/extract/route.ts`** — classify untyped rows before choosing the
+  reader; stamp `image_pixels`. The root-cause fix.
+- **`lib/platform/docu/order-review-lines.ts`** (new) — the editor's opening
+  rows extracted from a `useState` initialiser into a pure module, so "does this
+  screen open on post-arithmetic numbers?" is answerable without React. That
+  seam did not exist, which is why nothing went red for a fortnight.
+- **`OrderReviewEditor.tsx`** — uses it; **"Read by …" moved to the Items
+  header** as a pill, and **absence is now rendered** ("Reader not recorded")
+  rather than skipped. A missing stamp used to look identical to a feature that
+  was never built, and post-fix an unstamped order means the invoice reader read
+  it — the one document a reviewer should distrust.
+- **`lib/ai/order-prompt.ts`** — the buyer cue now names the labels a printed PO
+  actually uses ("Purchaser", "Ordered By", "Bill To", "Invoice To", "Customer",
+  "Account Name") and names the trap explicitly: "Deliver To"/"Ship To" is the
+  business receiving the order and is never the customer.
+- **`lib/platform/docu/image-size.ts`** (new) — JPEG/PNG header reader (no
+  decoder, no dependency; steps over the EXIF thumbnail by segment length) plus
+  a `low_resolution` flag when the long edge is under 1568px — the point below
+  which *we*, not the model, are the binding constraint. Stamped by both write
+  sites, so "was the photo too small?" stops being unanswerable after the fact.
+- **`order-ingest-client.ts`** — OrderFlow drop 2000px/q0.82 → 2600px/q0.85.
+  2600px is the smallest cap that feeds the high-res tier fully; q0.85 not q0.9
+  because this path posts base64-in-JSON under Vercel's 4.5 MB edge limit.
+- **Vyso Mobile `lib/documents.js`** — 2000px/q0.8 → 2600px/q0.9 (`b2c2a03`,
+  pushed). Not a fix for these misreads — it removes a silent ceiling on any
+  future high-res-tier read, and q0.9 cuts second-pass JPEG artifacts on small
+  tabular figures. JS-only, so OTA-able once build 3 ships.
+
+### Gates
+
+`npx tsc --noEmit` — clean. `npm test` — **937 pass / 0 fail** (916 + 21 new:
+`docu-order-review-lines` ×7, `docu-image-size` ×9, `docu-order-prompt` +5).
+`npm run build` — clean. `npm run lint` — 50 errors / 40 warnings, exactly the
+baseline; not one is in a file this wave touched. Mobile: `npx expo export
+--platform ios` — clean.

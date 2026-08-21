@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { extractDocument } from '@/lib/ai/anthropic';
 import { extractOrderDocument } from '@/lib/ai/order-reader';
+import { imagePixelSize } from '@/lib/platform/docu/image-size';
 import { syncOrderFromDocument } from '@/lib/platform/orderflow-from-doc';
 import { feedDocumentToProcurePulse, orgHasProcurePulse } from '@/lib/platform/procurepulse-feed';
 import {
@@ -667,6 +668,10 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
   const safeName = filename.replace(/[^\w.\-() ]+/g, '_');
   const storagePath = `${orgId}/${randomUUID()}_${safeName}`;
   const bytes = Buffer.from(base64, 'base64');
+  // How much paper the reader got. Same stamp the /api/ai/extract path writes —
+  // this pipeline serves the chat drop and the inbound-email worker, and a
+  // photo emailed in too small misreads exactly like one uploaded too small.
+  const imagePixels = imagePixelSize(bytes);
   const { error: upErr } = await supabase.storage
     .from('documents')
     .upload(storagePath, bytes, { contentType: mediaType || 'application/octet-stream', upsert: false });
@@ -741,6 +746,7 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
           // Which model read it — see the same stamp in app/api/ai/extract.
           extraction_model: order.model,
           extraction_warning: order.warning ?? null,
+          image_pixels: imagePixels,
         },
       })
       .eq('id', documentId);
@@ -818,6 +824,7 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
     bill_to: cls.bill_to,
     // Arithmetic audit of the lines (null when they add up) — lib/platform/docu/line-audit.ts.
     line_audit: cls.line_audit,
+    image_pixels: imagePixels,
     // Only set when the org issued it — lib/platform/docu/document-direction.ts.
     direction: parties.record,
   };

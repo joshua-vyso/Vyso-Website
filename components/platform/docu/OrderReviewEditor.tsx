@@ -16,6 +16,7 @@ import {
   priceSourceLabel,
   type OrderLineRecord,
 } from '@/lib/platform/docu/order-line-match';
+import { buildReviewLines } from '@/lib/platform/docu/order-review-lines';
 import {
   countGrossMismatches,
   grossMismatch,
@@ -119,33 +120,10 @@ export function OrderReviewEditor({
   const [customerId, setCustomerId] = useState<string | null>(initialCustomer?.id ?? null);
   const [query, setQuery] = useState(initialCustomer?.name ?? extractedName);
   const [openList, setOpenList] = useState(false);
-  const [lines, setLines] = useState<Line[]>(() => {
-    // Pair each extracted line with its provenance record. Keyed by the paper's
-    // words rather than by position, because `syncOrderFromDocument` skips lines
-    // whose raw text is empty and so its array can be shorter than this one; a
-    // per-key queue keeps two rows with identical paper text in order.
-    const queues = new Map<string, OrderLineRecord[]>();
-    for (const r of extractedData?.order_lines ?? []) {
-      const k = r.raw_description.trim().toLowerCase();
-      const q = queues.get(k) ?? [];
-      q.push(r);
-      queues.set(k, q);
-    }
-    return (extractedData?.line_items ?? []).map((l) => {
-      const raw = ((l.raw_description ?? '').trim() || (l.description ?? '').trim()).trim();
-      const record = queues.get(raw.toLowerCase())?.shift() ?? null;
-      return {
-        key: newKey(),
-        description: l.description ?? '',
-        quantity: l.quantity ?? '',
-        unit: l.unit ?? '',
-        unit_price: l.unit_price ?? '',
-        raw,
-        raw_amount: l.raw_amount ?? '',
-        record,
-      };
-    });
-  });
+  // The opening rows come from `lib/platform/docu/order-review-lines.ts` — a
+  // pure module, so "does this screen open on post-arithmetic numbers?" is a
+  // question a unit test can answer without rendering React. See its docblock.
+  const [lines, setLines] = useState<Line[]>(() => buildReviewLines(extractedData, newKey));
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [doneInvoice, setDoneInvoice] = useState<string | null>(
@@ -411,16 +389,6 @@ export function OrderReviewEditor({
           ) : (
             <p className="mt-1.5 text-[12px] text-[#854F0B]">No customer name was read — pick or create one.</p>
           )}
-          {/* Which model read this document. Recorded at extraction time and
-              shown here because "was this Haiku or Sonnet?" was, once, a
-              question that could only be answered by inference from the shape
-              of the mistakes. Absent on anything extracted before the stamp
-              existed — and saying nothing is the honest answer there. */}
-          {extractedData?.extraction_model ? (
-            <p className="mt-1 text-[11.5px] text-[#A0A49C]">
-              Read by <span className="font-medium text-[#6B6F68]">{extractedData.extraction_model}</span>
-            </p>
-          ) : null}
           {/* The read did not go the way it was configured to. Said out loud for
               the same reason the model id is: a document quietly served by the
               fallback provider is a document read by a model nobody chose, and
@@ -467,8 +435,34 @@ export function OrderReviewEditor({
         ) : null}
 
         {/* Lines */}
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="of-display text-[16px] font-semibold text-[#171A17]">Items (<span className="of-num">{lines.length}</span>)</h3>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-y-2">
+          <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+            <h3 className="of-display text-[16px] font-semibold text-[#171A17]">Items (<span className="of-num">{lines.length}</span>)</h3>
+            {/* WHO READ THESE ROWS, beside the rows themselves.
+                It lived under the customer field until Josh went looking for it
+                on a misread order and could not find it — which is the only
+                test of a provenance stamp that matters. Every figure below is
+                one model's reading of a photograph, and the reviewer deciding
+                whether to trust them is entitled to know whose reading it is
+                without hunting for it.
+                ABSENCE IS RENDERED, NOT SKIPPED. A missing stamp used to look
+                exactly like a feature that was never built, and the two mean
+                very different things: since the routing fix in
+                `app/api/ai/extract/route.ts` an unstamped ORDER means the rows
+                came from the invoice reader — no row arithmetic, no customer
+                name — which is precisely the document a reviewer should treat
+                with suspicion. Saying "reader not recorded" out loud is how
+                that becomes visible instead of inferable. */}
+            {extractedData?.extraction_model ? (
+              <span className="inline-flex items-center rounded-[7px] bg-[#F1F3EF] px-2 py-[3px] text-[11.5px] text-[#6B6F68]">
+                Read by <span className="ml-1 font-medium text-[#3F443C]">{extractedData.extraction_model}</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded-[7px] bg-[#FFF9EF] px-2 py-[3px] text-[11.5px] text-[#8A6A38]">
+                Reader not recorded
+              </span>
+            )}
+          </div>
           <button
             type="button"
             onClick={addLine}
