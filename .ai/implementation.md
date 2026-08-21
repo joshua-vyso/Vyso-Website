@@ -5649,3 +5649,133 @@ clean. `npx eslint .` — 50 errors / 40 warnings, exactly the baseline.
 `OPENAI_API_KEY` must be added to **Vercel** as well as `.env.local`, or the
 deployed order lane falls back to Anthropic on every upload and stamps a warning
 on every document saying so.
+
+---
+
+# The bench that said we were wrong
+
+Turn 'n Slice reported the order reader had been "near perfect on any document,
+handwritten or printed" before 2026-08-20, and since then garbles names and
+digits **differently on every run** — yesterday "Graphis"/560.90, today "Oranges
+White Box"/50.90/a duplicate Apple row/"Mushroom Garlic 461" — on
+`claude-sonnet-4-6` and on `gpt-5.6-luna` alike.
+
+The obvious suspect was the prompt hardening. "TRANSCRIBE, DO NOT INTERPRET —
+never substitute an expected word" reads exactly like an instruction that would
+strip a model of the error-correction priors that make it good at a blurred
+photo, and it landed in the same day as the regression. **It is not the bug.**
+`scripts/extraction-bench.mjs` was built to test that theory and refuted it.
+
+## The forensic diff, 28c1da2^ → HEAD
+
+Three things moved in the order lane that day, not one:
+
+| # | what | where | commit |
+|---|------|-------|--------|
+| 1 | order reads left `EXTRACT_MODEL` (**haiku-4-5**) for a new `ORDER_EXTRACT_MODEL` (**sonnet-4-6**) | `lib/ai/anthropic.ts:40` | `129456b` |
+| 2 | the default provider became **openai / gpt-5.6-luna**; Anthropic demoted to fallback | `lib/ai/order-reader.ts:39` | `02a25ef` |
+| 3a | schema `+raw_description`; "ONE ENTRY PER ROW"; "NEVER COMPUTE OR INFER A VALUE"; catalogue clause hardened | `ORDER_EXTRACT_INSTRUCTION` | `129456b` |
+| 3b | schema `+raw_amount`; the TRANSCRIBE clause; the amount-column cross-check | same | `12ff849` |
+| 3c | prompt extracted to `lib/ai/order-prompt.ts`; schema `+bulk_quantity/bulk_unit/unit_quantity`; two-column clause; catalogue clause **shortened** to "leave it alone"; printed-PO added to the doc types and to the `customer_name` cues | `lib/ai/order-prompt.ts` | `02a25ef` |
+| 4 | order `max_tokens` 4000 → 8000 (invoices are 16000) | `lib/ai/anthropic.ts` | `129456b` |
+
+**The image pipeline did not change.** `app/api/ai/extract/route.ts:67` is
+`Buffer.from(await file.arrayBuffer()).toString('base64')` today and was before
+28c1da2 — no resize, no re-encode, no quality change, no EXIF handling either
+way. Multi-page is unchanged too: a PDF goes as one `document` block carrying
+**all** pages on the Anthropic path, and there has never been an N-image call —
+a multi-image order is N `documents` rows read separately. One thing that *did*
+change: `02a25ef` made a PDF order **throw** on the OpenAI path
+(`order-reader.ts:92`) and bounce to Anthropic, so with Luna in front every PDF
+order silently switched provider mid-flight.
+
+## The bench
+
+`scripts/extraction-bench.mjs`. Ground truth is the 22-line Bakubung purchase
+order reassembled from the three suites that already hold pieces of it
+(`docu-order-line-match`, `docu-row-arithmetic`, `docu-order-line-totals`),
+rendered as a NebulaPOS-style page with headless Chrome and then **degraded** —
+lens blur, lost contrast, ~2° rotation, uneven light, downscale, JPEG crush — at
+`light | heavy | brutal`. It takes `~/Desktop/bakubung/*.jpg` instead when those
+exist. The pre-yesterday prompt is not transcribed into the harness; it is
+recovered at run time from `git show 28c1da2^:lib/ai/anthropic.ts`, and the
+current one is imported from `order-prompt.ts` itself.
+
+**`light` measured nothing.** Every variant but the pre-yesterday one scored
+100% / 100%; a crisp render of an HTML table is a document every model reads
+perfectly. The reading below is at `heavy`.
+
+| variant | rows | names | qty | cost | nett | digits | self-agreement |
+|---|---|---|---|---|---|---|---|
+| **HEAD prompt · sonnet-4-6** (n=4) | 22.0 | **100%** | 73% | 55% | 61% | **63%** | 58% |
+| PRIORS prompt · sonnet-4-6 (n=4) | 22.0 | **100%** | 50% | 31% | 31% | 37% | 50% |
+| HEAD prompt · haiku-4-5 | 23.0 | 73% | 31% | 6% | 6% | 14% | **0%** |
+| PRIORS prompt · haiku-4-5 | 22.5 | 77% | 21% | 0% | 3% | 8% | 4% |
+| HEAD prompt · gpt-5.6-luna | 21.5 | 68% | 3% | 3% | 50% | 4% | 64% |
+| PRIORS prompt · gpt-5.6-luna | 22.0 | 82% | 0% | 0% | — | 0% | 64% |
+| PRE prompt · haiku-4-5 (28c1da2^) | 20.0 | 75% | 19% | 0% | — | 10% | 43% |
+
+**Winner: the prompt we already have, on the model the fallback already uses.**
+
+## What the numbers say
+
+**The hardening is load-bearing, not harmful.** HEAD beats the priors-allowed
+rewrite by 26 points of digit accuracy on the same model with no cost to names,
+and the four-run ranges do not overlap (63% spread 55–71 vs 37% spread 32–45).
+The `uncertain: true` flag the priors variant buys its honesty with fires on
+21.5 of 22 rows — a flag on everything is a flag on nothing.
+
+**The pre-yesterday prompt is worse on both axes**, and worse in ways nobody
+would take back: it drops the entire unit-cost column on a printed PO ("orders
+usually have no prices"), it names **Turn 'n Slice** as the customer because it
+has no printed-purchase-order cue, and it still resolves SWEET CORN to Baby
+Sweet Corn — the R46.40-vs-R375 bug `129456b` exists to prevent.
+
+**Haiku was never the good reader.** `129456b` recorded a belief that Haiku "did
+the reading well and the deciding badly" and moved the lane to Sonnet on the
+deciding. The reading half was never measured, and it is false: Haiku invents a
+23rd row, drops rows it read the run before, returns "AVOCADO WHITE" for GRAPES
+WHITE and "BUTTERFLY WHOLE" for BUTTERNUT WHOLE, and agrees with itself **0%**
+of the time across two runs of one image. Zero self-agreement *is* the symptom
+Josh described.
+
+**Luna is the regression.** It does not misread the document so much as decline
+it: nearly every unit price and amount comes back blank (3% and 4%), and the
+names it does return carry inventions — "Bananas Bunch", "Strawberries Pun",
+"Baby Marrows 2" for MIX VEGETABLES — that no downstream gate can catch, because
+a plausible product name is not a detectable error. It has been the production
+default since `02a25ef`, shipped ahead of any measurement.
+
+## What changed
+
+- **`ORDER_EXTRACT_PROVIDER` defaults to `anthropic`** again
+  (`lib/ai/order-prompt.ts`). An unrecognised value now stays on the default
+  instead of switching, so a typo cannot move the lane onto the losing model.
+- **The prompt is untouched.** The bench says leave it, and a note above
+  `ORDER_EXTRACT_INSTRUCTION` says why, with the numbers, so the next person to
+  suspect that clause reads the result before deleting it.
+- **The fallback ladder runs both ways.** It only knew how to fall from OpenAI
+  to Anthropic, purely because of which provider was in front the day it was
+  written; an Anthropic outage had no second chance at all.
+- **Order `max_tokens` 8000 → 16_000**, the invoice ceiling. The 22-line page
+  peaks at ~2.6k output tokens, which leaves 8000 looking safe right up until a
+  60-line document arrives — and a truncated read comes back as **valid JSON
+  with rows missing**, the one failure mode nothing downstream detects.
+- Everything prompt-independent is **kept exactly as it is**: total-first row
+  arithmetic, the matching honesty gate, the gross cross-check, provenance
+  display, `raw_amount` capture. `raw_amount` is not a cost — the variant that
+  captures it reads 100% of names; the one that does not reads 75%.
+- **`tests/docu-order-prompt.test.ts`** exists at last. `order-prompt.ts` has
+  claimed that file by name since `02a25ef` without one, which is how every
+  clause below could have been softened by anyone without a single thing going
+  red. 17 tests pinning the contract — the TRANSCRIBE rule, the never-infer
+  rule, the four fields post-processing depends on, the note fencing, the
+  coercion's refusals, and the provider default.
+
+## Gates
+
+`npx tsc --noEmit` — clean. `npm test` — **916 pass / 0 fail** (899 + 17).
+`npm run build` — clean. `npm run lint` — 50 errors / 40 warnings, exactly the
+baseline; not one is in a file this wave touched.
+
+`.bench/` is gitignored: it holds renders and raw model responses.

@@ -29,14 +29,25 @@ const EXTRACT_MODEL = process.env.ANTHROPIC_EXTRACT_MODEL || 'claude-haiku-4-5';
 // scoped to its own tier for that reason. An order is read against the org's
 // CATALOGUE — several hundred product names — so on top of transcribing a dense
 // multi-page purchase order the model has to decide, per line, which catalogue
-// product each row is and which it merely resembles. Haiku 4.5 did the reading
-// well and the deciding badly: on a three-page Bakubung Bush Lodge PO it filed
-// "GRAPES WHITE" as a second Avocado, "Mix Vegetables" as Cabbage and "Sweet
-// Corn" as Baby Sweet Corn, and the order invoiced at R25,958.95 against a paper
-// total of R13,457.60. The gate in lib/platform/docu/order-line-match.ts is what
-// makes those failures visible; Sonnet is what stops most of them being made.
-// Invoices and statements — a single supplier, no catalogue reasoning — stay on
-// EXTRACT_MODEL's Haiku tier, where they measured equal to Opus.
+// product each row is and which it merely resembles. Haiku 4.5 did the deciding
+// badly: on a three-page Bakubung Bush Lodge PO it filed "GRAPES WHITE" as a
+// second Avocado, "Mix Vegetables" as Cabbage and "Sweet Corn" as Baby Sweet
+// Corn, and the order invoiced at R25,958.95 against a paper total of
+// R13,457.60. 129456b moved the lane to Sonnet on that evidence and recorded a
+// belief that Haiku "did the reading well" — which was never measured and turns
+// out to be FALSE. scripts/extraction-bench.mjs, on a degraded 22-line render of
+// that same document, four runs each:
+//
+//     claude-sonnet-4-6   names 100%   digits 63%   run-to-run agreement 58%
+//     claude-haiku-4-5    names  73%   digits 14%   run-to-run agreement  0%
+//
+// Haiku invents a twenty-third row, drops rows it did read the run before, and
+// returns "AVOCADO WHITE" for GRAPES WHITE and "BUTTERFLY WHOLE" for BUTTERNUT
+// WHOLE. Zero agreement between two runs of the same image IS the symptom Turn
+// 'n Slice reported, and this tier is where it lived. Sonnet stays.
+// Invoices and statements — a single supplier, no catalogue reasoning, and a
+// clean supplier PDF rather than a photo — stay on EXTRACT_MODEL's Haiku tier,
+// where they measured equal to Opus.
 const ORDER_EXTRACT_MODEL = process.env.ANTHROPIC_ORDER_EXTRACT_MODEL || 'claude-sonnet-4-6';
 // The operational summary is a short (≤500 char) briefing, not deep reasoning,
 // so it runs on the fast/cheap Haiku tier. Override with ANTHROPIC_SUMMARY_MODEL.
@@ -346,7 +357,16 @@ export async function extractOrderDocumentAnthropic(params: {
 }): Promise<OrderExtractionResult> {
   const message = await client().messages.create({
     model: ORDER_EXTRACT_MODEL,
-    max_tokens: 8000,
+    // 16k, the invoice/statement ceiling, and for the same reason. An order line
+    // carries TEN fields now (raw_description, raw_amount and the two quantity
+    // columns joined the original five), so a three-page purchase order is a far
+    // bigger object than the 4000 this started at and than the 8000 it was
+    // raised to. The bench's 22-line page peaks at ~2.6k output tokens, which
+    // leaves 8000 looking safe right up until a 60-line document arrives — and
+    // a truncated read comes back as VALID JSON WITH ROWS MISSING, the one
+    // failure mode nothing downstream can detect. Headroom is cheap; only tokens
+    // actually generated are billed.
+    max_tokens: 16_000,
     messages: [
       {
         role: 'user',

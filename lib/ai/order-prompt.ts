@@ -41,6 +41,71 @@ export interface OrderExtractionResult {
   warning?: string | null;
 }
 
+/** Which provider reads orders. */
+export type OrderProvider = 'openai' | 'anthropic';
+
+/**
+ * ANTHROPIC unless something explicitly asks for OpenAI.
+ *
+ * `02a25ef` had this the other way round, to get Luna tested in the lane where
+ * reading was failing — the right instinct in the wrong order, because it made
+ * an unmeasured model the default and left Turn 'n Slice to do the measuring on
+ * live orders. `scripts/extraction-bench.mjs` measures it properly now, and on
+ * the degraded 22-line Bakubung purchase order, four runs each, the HEAD prompt
+ * scores:
+ *
+ *     claude-sonnet-4-6   names 100%   digits 63%
+ *     gpt-5.6-luna        names  68%   digits  4%
+ *
+ * Luna does not merely misread that document, it declines it: nearly every
+ * unit-price and amount comes back blank, and the names it does return carry
+ * inventions ("Bananas Bunch", "Baby Marrows 2") that no downstream gate can
+ * catch, because a plausible product name is not a detectable error.
+ *
+ * An UNRECOGNISED value stays on the default rather than switching, so a typo
+ * in an env var cannot quietly move the order lane onto the losing model.
+ *
+ * Lives here rather than in `./order-reader.ts` because that module is
+ * `server-only` and this one is pure: `tests/docu-order-prompt.test.ts` pins
+ * this default, and a default nobody can pin is a default that flips again.
+ */
+export function orderProvider(): OrderProvider {
+  return (process.env.ORDER_EXTRACT_PROVIDER ?? '').trim().toLowerCase() === 'openai'
+    ? 'openai'
+    : 'anthropic';
+}
+
+/** The OpenAI model the order reader uses when it is asked for. */
+export function openaiOrderModel(): string {
+  return (process.env.OPENAI_ORDER_MODEL ?? '').trim() || 'gpt-5.6-luna';
+}
+
+/**
+ * The instruction. MEASURED, and it stays as it is.
+ *
+ * When order reads started garbling names and digits, the natural suspicion was
+ * this text: "TRANSCRIBE, DO NOT INTERPRET — never substitute an expected word"
+ * reads like an instruction that would strip a model of the error-correction
+ * priors that make it good at a blurred photo, and the regression arrived in the
+ * same day as that clause. `scripts/extraction-bench.mjs` was built to test it
+ * and the suspicion is WRONG. On a degraded 22-line Bakubung purchase order,
+ * four runs each on claude-sonnet-4-6:
+ *
+ *     this instruction                       names 100%   digits 63%
+ *     a "priors allowed + flag uncertain"    names 100%   digits 37%
+ *     the pre-hardening instruction (28c1da2^, on haiku)  names 75%  digits 10%
+ *
+ * The hardening is not the bug — it is worth twenty-six points of digit accuracy,
+ * with no measured cost to names, and the ranges do not overlap across runs. The
+ * pre-hardening version is worse on both axes and worse in ways nobody would
+ * accept back: it drops the entire unit-cost column on a printed PO ("orders
+ * usually have no prices"), names the RECEIVING business as the customer, and
+ * resolves SWEET CORN to Baby Sweet Corn — the R46.40-vs-R375 bug 129456b exists
+ * to prevent.
+ *
+ * The regression was the PROVIDER (see `./order-reader.ts`). Before softening a
+ * single clause below, run the bench.
+ */
 export const ORDER_EXTRACT_INSTRUCTION = `You are Doc-U's ORDER reader for an SME food & wholesale business in South Africa.
 The attached file is a CUSTOMER ORDER — it may be a WhatsApp screenshot, an email, a photo of a handwritten note, a typed list, or a printed purchase order from a point-of-sale system. Read it (handwriting included) and return WHO is ordering and WHAT they want.
 Respond with ONLY a JSON object (no prose, no markdown code fences) of exactly this shape:
