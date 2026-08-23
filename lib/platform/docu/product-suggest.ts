@@ -46,6 +46,20 @@ export interface ProductOption {
    * books it under, and inserting the mess back would defeat the alias.
    */
   aka?: string[] | null;
+  /**
+   * What `id` actually points at: a `pp_stock_items` row (`'product'`) or a
+   * `pp_name_aliases` row that resolves to no product (`'alias'`).
+   *
+   * Free text and a real product used to be the only two things this list
+   * offered, so nobody had to tell them apart. The order editor now WRITES the
+   * picked id into `cd_customer_item_aliases.stock_item_id` — a column with a
+   * foreign key onto the catalogue — so picking an alias-only row would either
+   * be rejected by the database or, worse, silently store an id that points at
+   * a different table's row. A learned link is only offered for `'product'`.
+   * Absent on options built before this existed; callers that care must ask for
+   * `'product'` explicitly rather than test for `!== 'alias'`.
+   */
+  kind?: 'product' | 'alias';
 }
 
 /**

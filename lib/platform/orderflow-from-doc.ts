@@ -11,7 +11,12 @@
  * threshold); an unknown/partial customer behaves exactly as before.
  *   • cd_customer_item_aliases — an exact raw_name → catalogue mapping wins over
  *     fuzzy matching: it fixes the stock item, the printed invoice name and the
- *     billing unit for that customer's coded/misspelled order line.
+ *     billing unit for that customer's coded/misspelled order line. Rows come
+ *     from two places now: typed on the customer's settings screen, or LEARNED
+ *     when a reviewer confirms a product on the order review screen
+ *     (`source='review_confirm'`). Either way the scope is one customer —
+ *     "strawberries → strawberry punnets" learned for Indaba tells us nothing
+ *     about Sandton Sun and is never read for them.
  *   • strip_order_prefixes (default true) — strips a leading category code like
  *     "FF - " / "VEG - " / "PSAL - " from the order name before fuzzy matching.
  *   • invoice_price_basis — 'price_list' re-prices every line from OUR list
@@ -51,6 +56,7 @@ import {
   type OrderPriceSource,
 } from './docu/order-line-match';
 import { applyAgentDecisions, buildAgentRequests } from './docu/order-match-agent';
+import { indexAliasesForCustomer, lookupAlias } from './docu/customer-item-alias';
 import { runOrderMatchAgent } from '@/lib/ai/order-match-call';
 
 export interface CustomerLite {
@@ -296,15 +302,17 @@ export async function syncOrderFromDocument(
       .from('cd_customer_item_aliases')
       .select('*')
       .eq('org_id', orgId)
-      .eq('customer_id', customerId);
+      .eq('customer_id', customerId)
+      // Oldest first, so `indexAliasesForCustomer`'s last-wins collision rule
+      // lands on the newest-created ruling when two rows collide on the lookup
+      // key (they can only differ in the casing the DB stored them under — the
+      // unique index is on the literal `raw_name`).
+      .order('created_at', { ascending: true });
     aliases = (aliasRows ?? []) as CdCustomerItemAlias[];
   }
-  // raw_name (lowercased, trimmed) → alias, for an exact-match lookup per line.
-  const aliasByRaw = new Map<string, CdCustomerItemAlias>();
-  for (const a of aliases) {
-    const key = (a.raw_name ?? '').toLowerCase().trim();
-    if (key) aliasByRaw.set(key, a);
-  }
+  // The customer's own vocabulary, keyed for an exact lookup per line — and
+  // keyed by CUSTOMER, which is the entire claim: see docu/customer-item-alias.ts.
+  const aliasByRaw = indexAliasesForCustomer(aliases, customerId);
   // Aliases + all params only steer a KNOWN customer's order — an unknown/partial
   // customer behaves exactly as before (no alias, no prefix strip, doc price first).
   const applyParams = customerKnown ? matchedCustomer : null;
@@ -359,14 +367,31 @@ export async function syncOrderFromDocument(
   const pins = new Map<number, StockLite>();
   const aliasByIndex = new Map<number, CdCustomerItemAlias>();
   lines.forEach((li, i) => {
-    const alias = aliasByRaw.get(rawNames[i].toLowerCase()) ?? aliasByRaw.get((li.description ?? '').trim().toLowerCase());
+    const alias = lookupAlias(aliasByRaw, rawNames[i], li.description ?? '');
     if (!alias) return;
     aliasByIndex.set(i, alias);
     const pinned = alias.stock_item_id ? stockItems.find((it) => it.id === alias.stock_item_id) ?? null : null;
     if (pinned) pins.set(i, pinned);
   });
   const deterministic = resolveOrderLines(
-    lines.map((li, i) => ({ raw_description: rawNames[i], description: li.description ?? '' })),
+    lines.map((li, i) => ({
+      raw_description: rawNames[i],
+      description: li.description ?? '',
+      // The paper's unit, for PINNED lines only.
+      //
+      // On a pinned line it drives the sanity note (`packNote`) — the human's
+      // ruling still stands, but "the paper says PKT and you linked this to a
+      // product sold by the kg" is worth saying out loud once the customer's POS
+      // changes its wording under a link made months ago.
+      //
+      // On an UNPINNED line the same field arms `bestCatalogueCandidate`'s pack
+      // guard, which has never run in this path: nothing has ever passed a unit
+      // here, so the guard has been dormant since it was written. Arming it is a
+      // change to WHICH LINES MATCH on every order in the system, and that is a
+      // decision to take deliberately and measure — not a side effect of adding
+      // learned links. Left dormant, and written down in .ai/implementation.md.
+      unit: pins.has(i) ? (li.unit ?? '') : '',
+    })),
     stockItems,
     { pins, stripPrefix: stripPrefixes },
   );
@@ -506,6 +531,18 @@ export async function syncOrderFromDocument(
       match_confidence: alias ? 100 : res.confidence,
       match_reason: s ? 'matched' : res.reason,
       suggestion: res.suggestion,
+      // Why a line nothing scored is nonetheless claiming 100%: a human ruled on
+      // this customer's wording. The review row prints the sentence rather than
+      // the amber "not matched" bubble — see aliasProvenanceLabel.
+      // Non-null means "an alias pinned this line", which is the question the
+      // row asks. 'review_confirm' is one a reviewer made on a document;
+      // 'mapping' is one typed on the customer's settings screen — a row written
+      // before the source column existed cannot tell us which, and calling it a
+      // confirmation would be the one thing we must not do.
+      alias_source: alias ? alias.source ?? 'mapping' : null,
+      alias_confirmed_at: alias ? alias.updated_at ?? alias.created_at ?? null : null,
+      // Noticed, not enforced. Only ever set on a line an alias pinned.
+      pack_note: res.packNote,
       unit_price: unitPrice,
       price_source: priceSource,
       price_list_name: priceListName,

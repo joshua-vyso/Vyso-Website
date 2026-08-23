@@ -340,6 +340,19 @@ export interface OrderLineResolution<T extends CatalogueItem = CatalogueItem> {
   reason: OrderMatchReason;
   /** What it nearly was, for one-click review. Null when nothing was close. */
   suggestion: { id: string; name: string; confidence: number } | null;
+  /**
+   * A quiet disagreement worth mentioning but not worth refusing over.
+   *
+   * Only ever set on a PINNED line — one a human has already ruled on for this
+   * customer. Everywhere else in this module a pack disagreement is fatal, and
+   * rightly: an avocado box billed at an avocado kilogram's price is the failure
+   * the guard exists for. But a pin is not a guess the guard is second-checking,
+   * it is a person's answer, and overruling it would mean the confirmation a
+   * reviewer made last week silently stops working the week the customer's POS
+   * starts printing a different unit. So the human wins and the screen says what
+   * it noticed: "the paper says PKT; you linked this to Sweet Corn (kg)".
+   */
+  packNote: string | null;
 }
 
 /** How `resolveOrderLines` should behave for this document's customer. */
@@ -408,8 +421,14 @@ export function resolveOrderLines<T extends CatalogueItem>(
       confidence: 0,
       reason: 'no_candidate',
       suggestion: null,
+      packNote: null,
     };
     if (!rawName) return base;
+
+    // The unit the PAPER counted this line in. It is the only witness to which
+    // pack was ordered, and without it an avocado box and an avocado kilogram
+    // are the same product to every measure this module has.
+    const lineUnit = (line.unit ?? '').trim() || null;
 
     // A customer's confirmed alias (cd_customer_item_aliases) is a human ruling
     // on this exact raw name, so it skips the gate entirely — but NOT the
@@ -417,13 +436,20 @@ export function resolveOrderLines<T extends CatalogueItem>(
     // loses a line whoever decided the mapping.
     const pinned = opts.pins?.get(index);
     if (pinned) {
-      return { ...base, name: pinned.name, item: pinned, matched: true, confidence: 100, reason: 'matched' };
+      const pinnedUnit = effectiveUnit(pinned);
+      return {
+        ...base,
+        name: pinned.name,
+        item: pinned,
+        matched: true,
+        confidence: 100,
+        reason: 'matched',
+        // Noticed, said out loud, not acted on. See `packNote`.
+        packNote: unitsCompatible(lineUnit, pinnedUnit)
+          ? null
+          : `The paper counts this line in ${lineUnit}, and you linked it to a product sold by the ${pinnedUnit}.`,
+      };
     }
-
-    // The unit the PAPER counted this line in. It is the only witness to which
-    // pack was ordered, and without it an avocado box and an avocado kilogram
-    // are the same product to every measure this module has.
-    const lineUnit = (line.unit ?? '').trim() || null;
 
     const candidate = bestCatalogueCandidate(rawName, items, { stripPrefix, lineUnit });
     if (!candidate) {
@@ -618,6 +644,23 @@ export interface OrderLineRecord {
   match_reason: OrderMatchReason;
   /** What a refused line nearly matched, for one-click review. */
   suggestion: { id: string; name: string; confidence: number } | null;
+  /**
+   * Set when this line's product came from a `cd_customer_item_aliases` ruling
+   * rather than from the matcher: `'review_confirm'` for one a reviewer
+   * confirmed on a document, null/absent for one typed on the customer's
+   * settings screen. It is what lets the row say WHY it is claiming 100%
+   * confidence on a line that scores nothing like it — see
+   * `aliasProvenanceLabel` in `customer-item-alias.ts`. Optional because every
+   * record written before learning existed has no opinion about it.
+   */
+  alias_source?: string | null;
+  /** When that ruling was last made. Dates the sentence above. */
+  alias_confirmed_at?: string | null;
+  /**
+   * A pack disagreement on a line a human pinned — noticed, printed quietly,
+   * never enforced. See `OrderLineResolution.packNote`.
+   */
+  pack_note?: string | null;
   /** The unit price actually billed. Null when the line is unpriced. */
   unit_price: number | null;
   price_source: OrderPriceSource;

@@ -5903,3 +5903,156 @@ plausible table in which nothing is better than anything else.
 `npm run build` — clean. `npm run lint` — 50 errors / 40 warnings, exactly the
 baseline; not one is in a file this wave touched. Mobile: `npx expo export
 --platform ios` — clean.
+
+---
+
+## Doc-U order lane — the review screen learns (customer-scoped product links)
+
+Every wave before this one made the matcher *better at refusing*. That was the
+right direction and it is why the Bakubung order can no longer be invoiced at
+twice its value — but a matcher that only refuses hands the same question to a
+human forever. Turn 'n Slice's reviewer answered "VEG - SWEET CORN PKT Each is
+Sweet Corn" on Monday, and on Thursday the same customer's order asked again,
+because the answer lived exactly as long as the page did.
+
+It now lives in `cd_customer_item_aliases` — the table `orderflow-from-doc.ts`
+has always consulted *before* the matcher, and which until now only ever
+contained rows somebody typed into a settings screen in advance. Almost nobody
+does that in advance. The place the knowledge appears is the review screen, at
+the moment somebody looks at the amber bubble and picks the product.
+
+### Scoped to one counterparty, and that is the claim rather than a limitation
+
+"Strawberries → Strawberry Punnets 250g" learned for Indaba is a fact about how
+Indaba writes their orders. It says nothing whatever about Sandton Sun, and a
+system that generalised it would be manufacturing a guess and then printing
+"Learned from your confirmation" beside it — strictly worse than the fuzzy match
+it replaced, because the reviewer now has every reason to trust it and no way to
+see that nobody ever confirmed it for *them*. Every lookup is keyed by
+`customer_id`; there is no org-wide variant and there should not be one. (The
+org-wide table is `pp_name_aliases`, scoped that way for the opposite reason: it
+maps what a *supplier* prints onto our catalogue, where there is one truth.)
+
+### Precedence, unchanged in shape
+
+A learned link is a pin, and pins already sat at the top of the ladder:
+
+1. **Customer-scoped alias** — exact key match → auto-link, confidence 100,
+   bypasses scoring entirely. Excluded from the matching agent's shortlist too
+   (`buildAgentRequests` skips anything already matched at ≥ the auto floor), so
+   Luna is never asked to second-guess a human.
+2. Deterministic gate (`AUTO_MATCH_FLOOR` 0.9, qualifier + pack guards).
+3. The matching agent, on what the gate could not settle.
+4. `refuseDuplicateProducts` over the lot — **including the pins**. A learned
+   link buys no exemption from one-product-one-line: two paper rows landing on
+   one product is a lost line whoever decided the mapping.
+
+### The key is deliberately blunt
+
+`aliasKey` is lowercase + collapsed whitespace + trim, and explicitly **not**
+`normalizeName` — which throws packaging words away and would therefore fold
+"SWEET CORN PKT" and "SWEET CORN BOX" onto one key. That is right for spotting
+duplicate products and catastrophic here: a learned link decides which SKU gets
+billed, and the pack decides the price.
+
+### The pack guard, demoted on a line a human ruled on
+
+Everywhere else a pack disagreement is fatal. On a pinned line it is a note:
+"The paper counts this line in pkt, and you linked it to a product sold by the
+kg." The human's ruling stands — overruling it would mean a confirmation made in
+August silently stops working the week the customer's POS changes its wording.
+
+**A dormant guard found while doing this, deliberately left dormant.**
+`bestCatalogueCandidate`'s pack guard has never run in the order path: nothing
+has ever passed `unit` into `resolveOrderLines` from `orderflow-from-doc.ts`, so
+`lineUnit` is always null there. This wave passes the unit **for pinned lines
+only** (that is what feeds the note above). Arming it for unpinned lines changes
+*which lines match* on every order in the system — safe in direction (it refuses
+rather than mis-bills) but not a side effect to smuggle in under a UI feature.
+Its own wave, with the bench run against it.
+
+### UX states
+
+| State | Colour | Sentence |
+|---|---|---|
+| matcher refused, nothing confirmed | amber | "…not matched · closest: Sweet Corn (kg) (80%)" (unchanged) |
+| confirmed, customer known, saving | amber | "Saving Sweet Corn (kg)…" |
+| confirmed, customer known, stored | **green** | "Saved. We'll remember this link for next time — Sweet Corn (kg)." |
+| confirmed, **customer unknown** | amber | "Linked for this order. Pick the customer and we'll remember it next time — Sweet Corn (kg)." |
+| confirmed, save failed | amber | "Linked for this order, but not remembered — {the actual error}" |
+| pinned by a learned link on a later sync | green chip | "Learned from your confirmation on 14 Aug 2026" |
+| pinned by a settings-screen mapping | green chip | "From this customer's order mappings" |
+
+The last two are two sentences on purpose. One is a decision somebody made
+looking at a real document; the other is a row typed into a settings page.
+Printing "Learned from your confirmation" over the second is a small,
+load-bearing lie — it is the sentence that tells a reviewer *where to go* when
+the link turns out to be wrong. A row written before the `source` column existed
+gets the second sentence, because we genuinely do not know which it was.
+
+Both doors into the decision now teach: the "closest: …" button *and* the
+product typeahead. Only one of them used to.
+
+### Customer unknown — held, then offered
+
+A reviewer who confirms products before naming the customer has made good
+decisions about this order and no decision at all about a counterparty. Those
+links are **held, not written**, and the moment a customer is named a one-click
+banner appears: "Remember 3 links for Bakubung Bush Lodge? Their next order will
+match these lines on its own." Offered rather than auto-saved, and the choice is
+recorded here: confirming a product is a statement about *this order*; storing a
+permanent fact about a named business is a larger one, and it only ended up
+implicit because the customer field was still empty. One click, with the name in
+the sentence, is what makes the scope visible at the moment it is stored. A
+typed name that *is* an existing customer counts as named — creating a customer
+is not a side effect anybody asked for when they clicked a product.
+
+### Supplier invoices — follow-up, not built
+
+`ExtractionEditor.tsx` has the product typeahead but **no match provenance at
+all**: no `OrderLineRecord`, no not-matched bubble, no suggestion to confirm. So
+there is no equivalent confirm affordance to mirror, and the honest move is not
+to invent one here. `pp_name_aliases` already has `status='confirmed'` and is
+already written by `/api/procurepulse/product-alias` from the ProcurePulse
+reconciliation screen; wiring supplier-scoped learning into the invoice editor
+needs that editor to grow line-level match records first. Logged as follow-up.
+
+### What changed
+
+- **`supabase/customer-item-alias-learning.sql`** (new) — `source`,
+  `document_id`, `created_by`, `updated_at` on `cd_customer_item_aliases`. The
+  existing `unique (org_id, customer_id, raw_name)` already enforces the scope
+  and is the upsert's conflict target; RLS unchanged (the org policy covers the
+  new columns). Migration-tolerant: the write retries without the provenance
+  columns if they are missing, keeping the **link** and losing only the date —
+  and the screen then honestly renders it as a mapping, not a confirmation.
+- **`lib/platform/docu/customer-item-alias.ts`** (new, pure) — `aliasKey`,
+  `indexAliasesForCustomer` (drops other customers' rows even though the query
+  already filtered them: a filter that exists only in a query string is a filter
+  no test can point at), `lookupAlias`, `aliasProvenanceLabel`, and the bubble
+  state machine.
+- **`order-line-match.ts`** — `OrderLineResolution.packNote`; `OrderLineRecord`
+  gains `alias_source` / `alias_confirmed_at` / `pack_note`. `lineUnit` moved
+  above the pin branch so the pin can be sanity-checked against it.
+- **`orderflow-from-doc.ts`** — uses the shared key/index/lookup; carries the
+  alias provenance into the record; passes the paper's unit for pinned lines.
+- **`OrderReviewEditor.tsx`** — confirming a product (either door) upserts the
+  link from the browser, RLS-scoped, like every other write on this screen; the
+  bubble; the pending banner; the unmatched banner no longer counts a line the
+  reviewer has since answered (a banner that keeps counting answered questions
+  teaches people to ignore it, which is the only way it can fail).
+- **`product-suggest.ts` + `app/app/docu/[id]/page.tsx`** — `ProductOption.kind`.
+  The list mixes catalogue rows with alias-only rows, and the picked id is now
+  written into a column with a foreign key onto `pp_stock_items`. Only
+  `kind: 'product'` is offered a learned link.
+- **`orderflow-activity.ts`** — `customer_item_link_learned`. A learned link
+  silently re-prices every future order carrying that wording; who made it and
+  when should not be something only the database knows.
+
+### Gates
+
+`npx tsc --noEmit` — clean. `npm test` — **958 pass / 0 fail** (937 + 21 new in
+`docu-customer-item-alias`: the key, the no-leak case, precedence, the duplicate
+invariant over pins, the pack note, provenance wording, the state machine).
+`npm run build` — clean. `npm run lint` — 50 errors / 40 warnings, exactly the
+baseline; none in a file this wave touched.

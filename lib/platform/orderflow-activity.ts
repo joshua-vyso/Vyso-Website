@@ -64,4 +64,5 @@ export const ACTIVITY_EVENT_LABEL: Record<string, string> = {
   price_list_updated: 'Price list updated',
   product_created: 'Product added',
   product_updated: 'Product updated',
+  customer_item_link_learned: 'Order name linked to a product',
 };

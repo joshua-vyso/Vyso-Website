@@ -18,6 +18,17 @@ import {
 } from '@/lib/platform/docu/order-line-match';
 import { buildReviewLines } from '@/lib/platform/docu/order-review-lines';
 import {
+  ALIAS_SOURCE_REVIEW_CONFIRM,
+  aliasKey,
+  aliasProvenanceLabel,
+  bubbleIsGood,
+  bubbleState,
+  bubbleText,
+  pendingConfirmations,
+  type LineConfirmation,
+} from '@/lib/platform/docu/customer-item-alias';
+import { logActivity } from '@/lib/platform/orderflow-activity';
+import {
   countGrossMismatches,
   grossMismatch,
   lineGross,
@@ -63,6 +74,19 @@ interface Line {
 let seq = 0;
 const newKey = () => `l${++seq}`;
 
+/** A Postgres/PostgREST complaint that a column this write names doesn't exist. */
+function isMissingColumn(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  // PGRST204 — PostgREST's schema cache has no such column. 42703 — Postgres'.
+  if (error.code === 'PGRST204' || error.code === '42703') return true;
+  return /column .* (does not exist|of relation)/i.test(error.message ?? '');
+}
+
+/** A "relation does not exist" — the customer-ai-invoicing migration hasn't run. */
+function isMissingTable(error: { code?: string; message?: string } | null): boolean {
+  return error?.code === '42P01' || /relation .* does not exist/i.test(error?.message ?? '');
+}
+
 function sanitizeDecimal(s: string): string {
   const cleaned = s.replace(/[^0-9.]/g, '');
   const parts = cleaned.split('.');
@@ -102,7 +126,7 @@ export function OrderReviewEditor({
   printContext?: TaxInvoicePrintContext | null;
 }) {
   const router = useRouter();
-  const { org } = usePlatform();
+  const { org, email } = usePlatform();
 
   // Unit options for a line: the org's units, plus the line's current value when
   // it isn't one of them (so an extracted unit is never silently dropped).
@@ -131,6 +155,14 @@ export function OrderReviewEditor({
   );
   const [orderId, setOrderId] = useState<string | null>(linkedOrder?.id ?? null);
   const [printing, setPrinting] = useState(false);
+  /**
+   * What the reviewer has confirmed on this screen, keyed by the row's React
+   * key rather than its index — a row removed above shifts every index below it
+   * and would otherwise hand one line's green receipt to another line.
+   */
+  const [confirmations, setConfirmations] = useState<Map<string, LineConfirmation>>(() => new Map());
+  /** Set while the "Remember these N links" offer is being acted on. */
+  const [remembering, setRemembering] = useState(false);
 
   // Excel-style movement over the rows below. See hooks/useGridNavigation.ts —
   // the whole mechanism is a container keydown handler plus a data attribute per
@@ -151,7 +183,10 @@ export function OrderReviewEditor({
 
   // Lines the matcher refused to claim it identified. Counted for the banner so
   // the reviewer knows before scrolling that this order is not ready to invoice.
-  const unmatched = lines.filter((l) => l.record && !l.record.matched).length;
+  // A line the reviewer has since confirmed no longer counts: the banner is a
+  // list of open questions, and one that keeps counting an answered one teaches
+  // people to ignore it — which is the only way this banner can fail.
+  const unmatched = lines.filter((l) => l.record && !l.record.matched && !confirmations.has(l.key)).length;
 
   // Rows whose quantity × unit price does not equal the amount printed beside
   // them on the paper. A DIFFERENT failure from an unmatched product — the
@@ -205,6 +240,155 @@ export function OrderReviewEditor({
       description: option.name,
       ...(option.unit && !current ? { unit: option.unit } : {}),
     });
+    // Picking a product from the typeahead IS confirming one. The dropdown and
+    // the "closest: …" button are two doors into the same decision, and only one
+    // of them used to teach us anything.
+    void confirmProduct(i, { id: option.id, name: option.name, kind: option.kind });
+  }
+
+  // -------------------------------------------------------------------------
+  // LEARNED, CUSTOMER-SCOPED LINKS
+  //
+  // The ruling a reviewer makes here — "'VEG - SWEET CORN PKT Each' is Sweet
+  // Corn" — used to live exactly as long as the page. It is now written to
+  // `cd_customer_item_aliases` keyed on (org, CUSTOMER, the paper's own words),
+  // which is the table `orderflow-from-doc.ts` already consults before it
+  // consults the matcher. So the next order from THIS customer arrives matched,
+  // and the next order from a different customer does not — because nobody has
+  // said what that customer means by the same words.
+  //
+  // Written from the browser, like every other write on this screen: RLS scopes
+  // it to the org, and a route would add a hop without adding a check. See
+  // `lib/platform/docu/customer-item-alias.ts` for the key and the states.
+  // -------------------------------------------------------------------------
+
+  /**
+   * The customer this document's links may be stored against, or null.
+   *
+   * A typed name that IS an existing customer counts — the reviewer has named
+   * the counterparty even if they never touched the dropdown. A typed name that
+   * is NOT one does not: creating a customer is a side effect nobody asked for
+   * when they clicked a product, so those links wait (see `pending`).
+   */
+  const knownCustomerId =
+    customerId ?? customers.find((c) => c.name.trim().toLowerCase() === query.trim().toLowerCase())?.id ?? null;
+  const knownCustomerName = knownCustomerId ? customers.find((c) => c.id === knownCustomerId)?.name ?? null : null;
+
+  function setConfirmation(key: string, next: LineConfirmation | null) {
+    setConfirmations((prev) => {
+      const out = new Map(prev);
+      if (next) out.set(key, next);
+      else out.delete(key);
+      return out;
+    });
+  }
+
+  /**
+   * Store one learned link. Returns the human-readable failure, or null on success.
+   *
+   * The upsert OVERWRITES on (org, customer, raw_name): a reviewer who links the
+   * same paper text to a different product has changed their mind, and the newer
+   * ruling is the one that should govern the next order. It is logged to the
+   * customer's activity feed for exactly that reason — a link silently re-prices
+   * every future order carrying that wording, so who changed it and when should
+   * not be a thing only the database knows.
+   */
+  async function saveLink(
+    cid: string,
+    rawName: string,
+    stockItemId: string,
+    productName: string,
+  ): Promise<string | null> {
+    const supabase = createClient();
+    if (!supabase || !org?.id) return 'You’re not signed in.';
+    const row = {
+      org_id: org.id,
+      customer_id: cid,
+      raw_name: rawName,
+      stock_item_id: stockItemId,
+    };
+    const conflict = { onConflict: 'org_id,customer_id,raw_name' };
+    let { error } = await supabase.from('cd_customer_item_aliases').upsert(
+      {
+        ...row,
+        source: ALIAS_SOURCE_REVIEW_CONFIRM,
+        document_id: documentId,
+        updated_at: new Date().toISOString(),
+      },
+      conflict,
+    );
+    // Pre-migration (supabase/customer-item-alias-learning.sql not run): keep the
+    // LINK, lose only the provenance. A reviewer's ruling working without a date
+    // beside it beats a ruling that does not work at all — and the screen still
+    // tells the truth afterwards, because a row with no `source` renders as
+    // "From this customer's order mappings" rather than as a confirmation.
+    if (isMissingColumn(error)) ({ error } = await supabase.from('cd_customer_item_aliases').upsert(row, conflict));
+    if (error) {
+      return isMissingTable(error)
+        ? 'Learned links aren’t set up yet — run supabase/customer-ai-invoicing.sql in Supabase.'
+        : error.message;
+    }
+    logActivity(supabase, {
+      orgId: org.id,
+      actorEmail: email,
+      entityType: 'customer',
+      entityId: cid,
+      customerId: cid,
+      event: 'customer_item_link_learned',
+      description: `“${rawName}” → ${productName}`,
+    });
+    return null;
+  }
+
+  /**
+   * A reviewer confirmed a product for a line. Set it on the row, then remember
+   * it — but only against a customer we can name.
+   */
+  async function confirmProduct(
+    i: number,
+    option: { id: string; name: string; kind?: 'product' | 'alias' },
+  ) {
+    const line = lines[i];
+    if (!line) return;
+    const rawName = line.raw.trim();
+    // Nothing to learn from a hand-added row (no paper behind it), and nothing
+    // storable from an alias-only suggestion (its id is not a catalogue row —
+    // see ProductOption.kind).
+    if (!aliasKey(rawName) || option.kind === 'alias') return;
+    const confirmation: LineConfirmation = {
+      stockItemId: option.id,
+      productName: option.name,
+      rawName,
+      status: knownCustomerId ? 'saving' : 'pending_customer',
+    };
+    setConfirmation(line.key, confirmation);
+    if (!knownCustomerId) return;
+    const failure = await saveLink(knownCustomerId, rawName, option.id, option.name);
+    setConfirmation(line.key, { ...confirmation, status: failure ? 'failed' : 'saved', message: failure });
+  }
+
+  /**
+   * The links held back because nobody had named the customer yet.
+   *
+   * Offered rather than written automatically. Confirming a product is a
+   * statement about THIS order; teaching us a permanent fact about a named
+   * counterparty is a bigger one, and it only ended up implicit here because the
+   * customer field was still empty at the time. One click, with the customer's
+   * name in the sentence, is what makes the scope of the thing visible at the
+   * moment it is stored.
+   */
+  const pending = pendingConfirmations(confirmations, lines.map((l) => l.key));
+
+  async function rememberPending() {
+    if (!knownCustomerId || remembering) return;
+    setRemembering(true);
+    for (const [key, c] of confirmations) {
+      if (c.status !== 'pending_customer') continue;
+      setConfirmation(key, { ...c, status: 'saving' });
+      const failure = await saveLink(knownCustomerId, c.rawName, c.stockItemId, c.productName);
+      setConfirmation(key, { ...c, status: failure ? 'failed' : 'saved', message: failure });
+    }
+    setRemembering(false);
   }
   function removeLine(i: number) {
     setLines((prev) => prev.filter((_, idx) => idx !== i));
@@ -400,6 +584,33 @@ export function OrderReviewEditor({
           ) : null}
         </div>
 
+        {/* THE LINKS WAITING ON A NAME.
+            A reviewer who confirms products before naming the customer has made
+            perfectly good decisions about this order and no decision at all about
+            a counterparty — so those links are held, not written, and offered here
+            the moment a customer exists to hold them against. One click, with the
+            customer's name in the sentence, because "we will remember this" is a
+            claim about every future order from that business and the person
+            agreeing to it should be able to see who it is about. */}
+        {knownCustomerId && pending.length > 0 ? (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-[#CFE0F3] bg-[#F5F9FE] px-4 py-3">
+            <p className="text-[13px] text-[#174C87]">
+              Remember <span className="of-num font-medium">{pending.length}</span>{' '}
+              {pending.length === 1 ? 'link' : 'links'} for{' '}
+              <span className="font-medium">{knownCustomerName ?? query.trim()}</span>? Their next order will match
+              {pending.length === 1 ? ' this line' : ' these lines'} on its own.
+            </p>
+            <button
+              type="button"
+              onClick={() => void rememberPending()}
+              disabled={remembering}
+              className="inline-flex h-9 shrink-0 items-center rounded-[10px] bg-[#1F5FA8] px-3.5 text-[13px] font-semibold text-white transition-colors hover:bg-[#174C87] disabled:opacity-60"
+            >
+              {remembering ? 'Saving…' : 'Remember them'}
+            </button>
+          </div>
+        ) : null}
+
         {/* Products we would not claim to have identified. Deliberately loud and
             above the table: this is the state that invoiced a R13,457.60 order at
             R25,958.95, and it used to be invisible because a near-miss match was
@@ -491,15 +702,21 @@ export function OrderReviewEditor({
               // them. A line we matched correctly still gets the "→" so the
               // reviewer can check the rewrite rather than trust it.
               const showPaper = !!r && r.raw_description.trim().toLowerCase() !== l.description.trim().toLowerCase();
+              // What this row is asking, or answering. `r ? r.matched : null` —
+              // no record is not "not matched": an unsynced document has made no
+              // claim about the line, and painting it amber would invent one.
+              const bubble = bubbleState(r ? r.matched : null, confirmations.get(l.key) ?? null);
               return (
                 <div
                   key={l.key}
                   className={
                     off
                       ? 'rounded-[12px] bg-[#FDF6F6] p-2 ring-1 ring-[#F3D6D6]'
-                      : r && !r.matched
-                        ? 'rounded-[12px] bg-[#FFF9EF] p-2 ring-1 ring-[#F3E2C4]'
-                        : ''
+                      : bubbleIsGood(bubble)
+                        ? 'rounded-[12px] bg-[#F3FAF6] p-2 ring-1 ring-[#CDE7DA]'
+                        : bubble.kind !== 'none'
+                          ? 'rounded-[12px] bg-[#FFF9EF] p-2 ring-1 ring-[#F3E2C4]'
+                          : ''
                   }
                 >
                   <div className="grid grid-cols-[1fr_54px_66px_78px_86px_22px] items-center gap-2">
@@ -563,9 +780,9 @@ export function OrderReviewEditor({
                       amount against the document.
                     </p>
                   ) : null}
-                  {r ? (
+                  {r || bubble.kind !== 'none' ? (
                     <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 px-1 text-[11.5px] leading-[1.5]">
-                      {showPaper ? (
+                      {showPaper && r ? (
                         <span className="text-[#A0A49C]">
                           Paper said <span className="font-medium text-[#6B6F68]">“{r.raw_description}”</span>
                           <span className="mx-1">→</span>
@@ -576,7 +793,20 @@ export function OrderReviewEditor({
                           )}
                         </span>
                       ) : null}
-                      {!r.matched ? (
+                      {/* WHY A LINE NOTHING SCORED IS CLAIMING 100%.
+                          A line pinned by a learned link matches on no similarity
+                          at all — "VEG - SWEET CORN PKT Each" scores 0.8 against
+                          Sweet Corn (kg), below every floor in the matcher — so
+                          without this sentence the row would show a certainty
+                          with no visible basis, which is the exact shape of the
+                          failure this whole screen was built to expose. It says
+                          whose ruling it is and when it was made. */}
+                      {r?.matched && r.alias_source ? (
+                        <span className="inline-flex items-center rounded-[7px] bg-[#EFF6F2] px-2 py-[2px] font-medium text-[#0F6E56]">
+                          {aliasProvenanceLabel(r.alias_source, r.alias_confirmed_at)}
+                        </span>
+                      ) : null}
+                      {bubble.kind === 'unmatched' && r ? (
                         <span className="text-[#854F0B]">
                           {matchReasonLabel(r.match_reason)}
                           {r.suggestion ? (
@@ -584,7 +814,11 @@ export function OrderReviewEditor({
                               {' · closest: '}
                               <button
                                 type="button"
-                                onClick={() => updateLine(i, { description: r.suggestion!.name })}
+                                onClick={() => {
+                                  const pick = r.suggestion!;
+                                  updateLine(i, { description: pick.name });
+                                  void confirmProduct(i, { id: pick.id, name: pick.name, kind: 'product' });
+                                }}
                                 className="font-medium text-[#1F5FA8] underline-offset-2 hover:underline"
                               >
                                 {r.suggestion.name}
@@ -594,6 +828,18 @@ export function OrderReviewEditor({
                           ) : null}
                         </span>
                       ) : null}
+                      {/* The receipt. Green once the link is stored against the
+                          customer; amber while it is not, and honest about why. */}
+                      {bubble.kind !== 'none' && bubble.kind !== 'unmatched' ? (
+                        <span className={bubbleIsGood(bubble) ? 'font-medium text-[#0F6E56]' : 'text-[#854F0B]'}>
+                          {bubbleText(bubble)}
+                        </span>
+                      ) : null}
+                      {/* Noticed, not enforced: the human's ruling stands even
+                          when the paper's unit has since drifted from the pack
+                          they linked it to. Said quietly, because they chose it. */}
+                      {r?.pack_note ? <span className="text-[#A0A49C]">{r.pack_note}</span> : null}
+                      {r ? (
                       <span className="text-[#A0A49C]">
                         {priceSourceLabel(r.price_source, r.price_list_name)}
                         {/* The paper's own figure, always, whether or not we used
@@ -606,6 +852,7 @@ export function OrderReviewEditor({
                           ? ` · paper shows ${zar2(r.document_price)}`
                           : ''}
                       </span>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>

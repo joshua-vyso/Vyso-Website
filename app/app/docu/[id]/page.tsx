@@ -163,6 +163,9 @@ export default async function DocumentReviewPage({
         unit: s.unit ?? null,
         hint: [s.category, aka.length > 0 ? `also “${aka[0]}”` : null].filter(Boolean).join(' · ') || null,
         aka,
+        // A real catalogue row — the only kind whose id may be stored as a
+        // learned link's stock_item_id. See ProductOption.kind.
+        kind: 'product' as const,
       };
     }),
     ...aliases
@@ -173,6 +176,9 @@ export default async function DocumentReviewPage({
         unit: null,
         hint: 'known name',
         aka: [a.raw_name.trim()],
+        // `id` is a pp_name_aliases row, NOT a product. Offerable to type
+        // against; never storable as a link's stock_item_id.
+        kind: 'alias' as const,
       })),
   ];
 

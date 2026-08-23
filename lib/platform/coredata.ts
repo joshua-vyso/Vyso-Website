@@ -94,6 +94,19 @@ export interface CdCustomerItemAlias {
   /** auto | bulk | order_unit — overrides the customer's default quantity basis. */
   quantity_basis: string | null;
   created_at: string;
+  /**
+   * `'review_confirm'` when a reviewer confirmed this link on a document,
+   * null/absent for a mapping typed on the customer's settings screen. Optional
+   * because the column arrives with supabase/customer-item-alias-learning.sql
+   * and every row written before it has no opinion about where it came from.
+   */
+  source?: string | null;
+  /** The document the ruling was made on, when it was made in review. */
+  document_id?: string | null;
+  /** Who ruled. A learned link re-prices future orders; it should be traceable. */
+  created_by?: string | null;
+  /** Last overwritten — a re-confirmation replaces the row, latest decision wins. */
+  updated_at?: string | null;
 }
 
 export interface CdPaymentTerm {
