@@ -18,10 +18,10 @@
  * copies. Schema: supabase/core-data.sql.
  */
 
-import type { StockItem } from '@/lib/platform/types';
-import type { PlPriceList, PlOverride } from '@/lib/platform/pricepilot';
-import { sellPrice } from '@/lib/platform/pricepilot';
-import type { OfCustomer } from '@/lib/platform/orderflow';
+import type { StockItem } from './types.ts';
+import type { PlPriceList, PlOverride } from './pricepilot.ts';
+import { sellPrice } from './pricepilot.ts';
+import type { OfCustomer } from './orderflow.ts';
 
 // ---------------------------------------------------------------------------
 // Entity types

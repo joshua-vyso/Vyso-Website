@@ -15,8 +15,27 @@ import { autoForwardDocumentToHubdoc } from '@/lib/platform/hubdoc';
 import { imagePixelSize } from '@/lib/platform/docu/image-size';
 import type { Document } from '@/lib/platform/types';
 
-// Multi-page statements with many line items can take a while to parse.
-export const maxDuration = 60;
+// Multi-page statements with many line items can take a while to parse — and an
+// ORDER now takes THREE SEQUENTIAL MODEL CALLS, which is why 60 seconds stopped
+// being enough on 23 Aug 2026.
+//
+// An untyped upload (chat, Doc-U drop, the upload page) pays for a classify read
+// before `extractOrderDocument` — that is the routing fix in 98d0750, and it is
+// correct — and then `syncOrderFromDocument` calls the matching agent, whose own
+// timeout used to be 90s. The `order_lines` audit trail the review screen draws
+// EVERY annotation from is written after all three, so it is the first thing a
+// killed invocation loses: the document lands `extracted` with perfect line
+// items and no provenance, which looks exactly like a feature that was never
+// built. Two uploads of the same purchase order that morning proved it —
+// 07:25:17 finished its order sync at 07:26:14 (57s, just inside) and carries
+// 22 records; 08:01:39 has none and no OrderFlow order either.
+//
+// 300 is what the agent routes here already use (`/api/agents/*`), the matching
+// agent is capped at 30s (`ORDER_MATCH_AGENT_TIMEOUT_MS`), and the chat's own
+// 60s watch is unaffected: it already says "Still reading — it'll appear in
+// Doc-U when done" and walks away, which is now TRUE rather than a euphemism for
+// a half-written document.
+export const maxDuration = 300;
 
 export async function OPTIONS() {
   return new NextResponse(null, { headers: AI_CORS_HEADERS });
@@ -180,11 +199,25 @@ export async function POST(req: Request) {
 
     // Build the OrderFlow order — auto-invoices when the customer is confidently
     // matched, else holds as a draft for review (best-effort; never fail extraction).
+    //
+    // THIS IS ALSO WHAT WRITES THE REVIEW SCREEN'S ANNOTATIONS. `extracted_data
+    // .order_lines` — the paper's words, what each line matched, where its price
+    // came from — is written inside this call and nowhere else, so "the order
+    // sync did not run" and "the reviewer sees no provenance at all" are the same
+    // sentence. Awaited INLINE rather than moved into `after()` because the
+    // response's `orderSync.orderId` is what PublishOrderButton navigates on; the
+    // budget above is what makes finishing it affordable.
+    //
+    // A FAILURE IS NO LONGER SILENT. It stays best-effort — a document that read
+    // correctly must not be marked errored because the matcher could not run —
+    // but the reason is logged and returned, because "annotations are missing"
+    // was diagnosable only by reading the database.
     let orderSync = null;
     try {
       orderSync = await syncOrderFromDocument(supabase, { documentId: doc.id, orgId: doc.org_id });
-    } catch {
-      /* swallow — extraction already succeeded */
+      if (!orderSync.ok) console.error('order sync did not build an order', doc.id, orderSync.reason);
+    } catch (err) {
+      console.error('order sync threw', doc.id, err);
     }
     return NextResponse.json({ ok: true, order, orderSync }, { headers: AI_CORS_HEADERS });
   }

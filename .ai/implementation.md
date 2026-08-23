@@ -6056,3 +6056,153 @@ needs that editor to grow line-level match records first. Logged as follow-up.
 invariant over pins, the pack note, provenance wording, the state machine).
 `npm run build` — clean. `npm run lint` — 50 errors / 40 warnings, exactly the
 baseline; none in a file this wave touched.
+
+---
+
+## Doc-U order lane — the annotations were never written (a budget, not a gate)
+
+The Bakubung purchase order re-uploaded through the chat after the routing fix
+read almost perfectly — "Read by anthropic/claude-sonnet-4-6", "Bakubung Bush
+Lodge · 97% sure", Avocado 48 × 15.75 = 756, Mix Vegetables 20 × 66.9 = 1,338 —
+and arrived on the review screen with **every per-row annotation gone**: no
+amber "Paper said … → not matched · closest: …", no green learned-link chip, no
+"Priced from your price list" / "Price read off the document" line under a
+single row.
+
+### What produces them, and what did not run
+
+Every annotation on that screen is drawn from one field:
+`documents.extracted_data.order_lines` — an `OrderLineRecord[]` written by
+`syncOrderFromDocument` in `orderflow-from-doc.ts` after the document-wide
+matching pass in `order-line-match.ts`. `order-review-lines.ts` pairs those
+records onto the editor's rows **by the paper's own words**, and
+`OrderReviewEditor` gates the whole annotation strip on `l.record`. No record,
+no strip — and, crucially, **a row with no record renders identically to a row
+that matched perfectly**.
+
+Two hypotheses were wrong and are worth writing down as wrong.
+
+**The routing fix did not skip the matching pass.** `98d0750` left
+`syncOrderFromDocument` exactly where it was, awaited inline in the order branch
+of `/api/ai/extract`. The pre-typed OrderFlow drop and the newly-routed untyped
+upload run the *same* call on the same line.
+
+**`cc5f005` did not gate the annotations behind a new null field.** Its editor
+diff is additive — the alias chip and the pack note are new *inside* a strip
+whose gate (`r || bubble.kind !== 'none'`) predates it.
+
+### The actual cause: three sequential model calls inside a 60-second route
+
+The database settles it. Two uploads of the same purchase order that morning:
+
+| Document | Uploaded | `order_lines` | `of_orders` |
+|---|---|---|---|
+| `c2d7f60f` | 07:25:17 | **22 records** | created 07:26:14 — **57s later** |
+| `745ac9ca` | 08:01:39 | **absent** | none |
+
+Fifty-seven seconds against `export const maxDuration = 60`. The second upload
+went over and the invocation was killed. Everything *before* the kill had
+already committed — `status: 'extracted'`, 22 line items, the customer, the
+reader stamp — which is why the screen looked healthy. The write *after* it
+never happened, and that write is the entire provenance layer.
+
+The order lane costs three sequential model calls now, and the routing fix is
+what added the third:
+
+1. `extractDocument` — the classify read, paid by every **untyped** upload
+   (chat, Doc-U drop, upload page). This is `98d0750` and it is correct.
+2. `extractOrderDocument` — the order reader.
+3. `runOrderMatchAgent`, inside the sync — **whose own `timeoutMs` was 90_000**.
+
+A sub-call budgeted for ninety seconds inside a sixty-second invocation is not a
+slow agent; it is a guarantee that the work after it never runs. It was equally
+wrong inside `/api/orderflow/order-from-document` (`maxDuration` 60), which has
+carried the same latent failure since the agent landed.
+
+### The fix
+
+- **`app/api/ai/extract/route.ts`** — `maxDuration` 60 → **300**, matching the
+  `/api/agents/*` routes. The sync stays **awaited inline**, not moved into
+  `after()`: `PublishOrderButton` navigates on `orderSync.orderId` from the
+  response body, and an `after()` callback cannot put it there. The chat's own
+  60s watch is unaffected — it already says "Still reading — it'll appear in
+  Doc-U when done" and walks away, which is now true rather than a euphemism for
+  a half-written document.
+- **`lib/ai/order-match-call.ts`** — `ORDER_MATCH_AGENT_TIMEOUT_MS = 30_000`,
+  exported and named. Generous for a JSON reply about a handful of unsettled
+  lines, and it leaves room in *every* route budget for the writes that follow.
+  A timeout here was never an error: the agent returns `[]` and the
+  deterministic verdicts stand.
+- **The sync's failure is no longer silent.** It stays best-effort — a document
+  that read correctly must not be marked errored because the matcher could not
+  run — but `{ ok: false, reason }` and a thrown error are both logged now.
+  "The annotations are missing" was diagnosable only by reading the database.
+
+### The editor degrades honestly, and offers the one-click repair
+
+`noMatchPass` — no row carries a record — now renders above the unmatched
+banner, because it is the stronger statement: that one says "3 of these lines
+are questions", this one says **"none of them were ever asked"**.
+
+> **Products aren't matched yet.** No line below has been checked against your
+> catalogue or priced from it, so this screen can't tell you which ones it is
+> unsure of. Matching runs when you confirm — or run it now to see the answers
+> first. **[Run matching]**
+
+**Why a button and not a page-open trigger.** Running the pass on open would
+mean *looking* at a document creates customers, creates products, and — when the
+customer is known and every line matches and prices — issues an invoice. None of
+that may be a side effect of navigation. Behind a button it is a chosen action,
+and the outcome is the one the killed invocation owed the reviewer anyway: the
+same endpoint the Confirm button already uses, with `finalize: false`, so
+`syncOrderFromDocument` makes exactly the decision it would have made at 08:01.
+The invoice number appears on screen the moment it does.
+
+The rows are **re-paired, not rebuilt** (`attachRecords`, lifted out of
+`buildReviewLines`): anything the reviewer has typed stays, and `raw` — the
+paper's own words, which no edit touches — is the join key. A row that matches
+nothing keeps the record it had, so a partial write can only ever add
+annotations, never strip them.
+
+### The test, and the seam it needed
+
+`docu-order-review-lines.test.ts` walks a real model response to the editor's
+opening rows and stops there, which is exactly why it stayed green through this:
+it never asks whether anything *wrote* the provenance those rows are supposed to
+carry. `tests/docu-order-annotations.test.ts` continues that walk **through the
+sync** — the same `syncOrderFromDocument` the route calls, on the same persisted
+`extracted_data` — against a fake PostgREST client. The matcher, the pricer, the
+record builder and the pairing are all real.
+
+The seam did not exist and two small changes made it:
+
+- **`syncOrderFromDocument` takes an optional `matchAgent`.** Lazily imported by
+  default, because `@/lib/ai/order-match-call` pulls in `server-only` and the
+  OpenAI transport, and `node --test` resolves neither the `@/` alias nor those
+  modules. Injected in the test, so the audit trail is proven not to depend on a
+  network call.
+- **`orderflow-from-doc.ts` and `coredata.ts` now use `.ts`-suffixed relative
+  imports** (the house style for every module `node --test` loads directly).
+  `allowImportingTsExtensions` was already on.
+
+The load-bearing assertion is the third one: the records must pair onto **every**
+row. `strip_order_prefixes` defaults on for a known customer and this document
+creates one, so a sync that ever stored the *stripped* name would silently
+un-annotate every prefixed line — which is every line on a Turn 'n Slice order.
+
+The learned-link flow is untouched (the editor diff removes exactly one import
+line and adds the rest); `docu-customer-item-alias`'s 21 tests over the amber →
+"Saving…" → green "Saved. We'll remember this link" state machine still pass.
+
+### Josh's current document
+
+`745ac9ca` does **not** need a re-upload. It has no `order_lines` and no
+OrderFlow order, so it opens on the new banner; **Run matching** builds both and
+the annotations appear in place. A re-upload would work too and costs a second
+read of the same photograph for nothing.
+
+### Gates
+
+`npx tsc --noEmit` — clean. `npm test` — **963 pass / 0 fail** (958 + 5 new in
+`docu-order-annotations`). `npm run build` — clean. `npm run lint` — 50 errors /
+40 warnings, exactly the baseline.

@@ -16,7 +16,7 @@ import {
   priceSourceLabel,
   type OrderLineRecord,
 } from '@/lib/platform/docu/order-line-match';
-import { buildReviewLines } from '@/lib/platform/docu/order-review-lines';
+import { attachRecords, buildReviewLines } from '@/lib/platform/docu/order-review-lines';
 import {
   ALIAS_SOURCE_REVIEW_CONFIRM,
   aliasKey,
@@ -187,6 +187,20 @@ export function OrderReviewEditor({
   // list of open questions, and one that keeps counting an answered one teaches
   // people to ignore it — which is the only way this banner can fail.
   const unmatched = lines.filter((l) => l.record && !l.record.matched && !confirmations.has(l.key)).length;
+
+  // NO RECORD ON ANY ROW IS NOT "EVERYTHING MATCHED" — it is "nothing was ever
+  // asked". Every annotation on this screen (the paper's words, the amber
+  // not-matched bubble, the learned-link chip, the price provenance) is drawn
+  // from `extracted_data.order_lines`, which `syncOrderFromDocument` writes. When
+  // that pass does not finish, the rows render clean and silent and look exactly
+  // like a perfectly matched order — the single most dangerous thing this screen
+  // can do, because a reviewer's whole job here is to see what we are unsure of.
+  //
+  // It happened: the extract route's order lane grew a third model call and ran
+  // past its 60s budget, so the write after it never landed. The budget is fixed
+  // (maxDuration 300, agent capped at 30s), and this says so out loud for every
+  // document already sitting in the database with no pass behind it.
+  const noMatchPass = lines.length > 0 && !lines.some((l) => l.record);
 
   // Rows whose quantity × unit price does not equal the amount printed beside
   // them on the paper. A DIFFERENT failure from an unmatched product — the
@@ -499,6 +513,65 @@ export function OrderReviewEditor({
     }
   }
 
+  /**
+   * Run the product-matching pass on a document that never got one.
+   *
+   * The SAME endpoint the Confirm button uses, with `finalize: false` — this is
+   * not a new pass, it is the one extraction should have run, run late. Which
+   * means it can do everything extraction would have: create a customer, create
+   * products for lines the catalogue has nothing for, and — when the customer is
+   * known and every line is matched and priced — invoice the order, exactly as it
+   * would have at 08:01. That is not a surprise smuggled in behind a button; it
+   * is the outcome that was interrupted, and the screen shows the invoice number
+   * the moment it happens.
+   *
+   * The rows are RE-PAIRED, not rebuilt: anything the reviewer has already typed
+   * stays, and `raw` — the paper's own words, which no edit touches — is the join.
+   */
+  async function runMatchPass() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch('/api/orderflow/order-from-document', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ documentId, customerId: customerId ?? null, finalize: false }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        orderId?: string;
+        invoice_number?: string | null;
+      };
+      if (!res.ok) {
+        setMsg(json?.error ?? 'Could not match the products.');
+        return;
+      }
+      setOrderId(json.orderId ?? null);
+      if (json.invoice_number) setDoneInvoice(json.invoice_number);
+
+      const supabase = createClient();
+      const { data } = (await supabase
+        ?.from('documents')
+        .select('extracted_data')
+        .eq('id', documentId)
+        .maybeSingle()) ?? { data: null };
+      const records = ((data as { extracted_data?: DocuExtractedData | null } | null)?.extracted_data ?? null)
+        ?.order_lines;
+      if (!records?.length) {
+        // Honest about the one case a green tick would lie about: the order was
+        // built, but the audit trail this screen renders still is not there.
+        setMsg('The order was built, but no line records came back — nothing below has been checked.');
+        return;
+      }
+      setLines((prev) => attachRecords(prev, records));
+      router.refresh();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Could not match the products.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // The burnt-orange focus ring (#BE5D23 — globals.css's --accent/--ring) marks
   // the ACTIVE cell, so a reviewer arrowing down a column can always see where
   // they are without hunting for a caret. 150ms, and none of it under
@@ -607,6 +680,30 @@ export function OrderReviewEditor({
               className="inline-flex h-9 shrink-0 items-center rounded-[10px] bg-[#1F5FA8] px-3.5 text-[13px] font-semibold text-white transition-colors hover:bg-[#174C87] disabled:opacity-60"
             >
               {remembering ? 'Saving…' : 'Remember them'}
+            </button>
+          </div>
+        ) : null}
+
+        {/* NOTHING WAS CHECKED. Above the unmatched banner because it is the
+            stronger statement: that one says "3 of these lines are questions",
+            this one says "none of them were ever asked". Without it the grid
+            below is indistinguishable from an order that matched perfectly. */}
+        {noMatchPass ? (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-[#F3E2C4] bg-[#FFF9EF] px-4 py-3">
+            <div className="min-w-[240px] flex-1">
+              <p className="text-[13px] font-medium text-[#854F0B]">Products aren’t matched yet</p>
+              <p className="mt-0.5 text-[12px] text-[#8A6A38]">
+                No line below has been checked against your catalogue or priced from it, so this screen can’t tell you
+                which ones it is unsure of. Matching runs when you confirm — or run it now to see the answers first.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void runMatchPass()}
+              disabled={busy}
+              className="inline-flex h-9 shrink-0 items-center rounded-[10px] bg-[#1F5FA8] px-3.5 text-[13px] font-semibold text-white transition-colors hover:bg-[#174C87] disabled:opacity-60"
+            >
+              {busy ? 'Matching…' : 'Run matching'}
             </button>
           </div>
         ) : null}

@@ -42,11 +42,11 @@
  * ----------------------------------------------------------------------------
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { ExtractedData } from './types';
-import { invoiceNumber, vatRateForTreatment } from './orderflow';
-import type { OfCustomer } from './orderflow';
-import type { CdCustomerItemAlias, CdPriceList, CdPriceOverride } from './coredata';
-import { customerPriceList, resolvePrice } from './coredata';
+import type { ExtractedData } from './types.ts';
+import { invoiceNumber, vatRateForTreatment } from './orderflow.ts';
+import type { OfCustomer } from './orderflow.ts';
+import type { CdCustomerItemAlias, CdPriceList, CdPriceOverride } from './coredata.ts';
+import { customerPriceList, resolvePrice } from './coredata.ts';
 import {
   AUTO_MATCH_FLOOR,
   bestCatalogueCandidate,
@@ -54,10 +54,33 @@ import {
   resolveOrderLines,
   type OrderLineRecord,
   type OrderPriceSource,
-} from './docu/order-line-match';
-import { applyAgentDecisions, buildAgentRequests } from './docu/order-match-agent';
-import { indexAliasesForCustomer, lookupAlias } from './docu/customer-item-alias';
-import { runOrderMatchAgent } from '@/lib/ai/order-match-call';
+} from './docu/order-line-match.ts';
+import { applyAgentDecisions, buildAgentRequests } from './docu/order-match-agent.ts';
+import { indexAliasesForCustomer, lookupAlias } from './docu/customer-item-alias.ts';
+import type { MatchAgentDecision, MatchAgentLine } from './docu/order-match-agent.ts';
+
+/**
+ * The matching agent, as a function this module can be handed.
+ *
+ * IMPORTED LAZILY AND OPTIONALLY, and the two reasons are different.
+ *
+ * OPTIONALLY, so a test can drive the whole sync — resolution, pricing, the
+ * `order_lines` audit trail — without a network. That seam did not exist when
+ * an upload silently produced no audit trail at all: the only way to ask "does
+ * reading an order actually write the annotations the review screen renders?"
+ * was to upload one and look.
+ *
+ * LAZILY, because `@/lib/ai/order-match-call` pulls in `server-only` and the
+ * OpenAI transport, and a `node --test` process resolves neither the `@/` alias
+ * nor those modules. The dynamic import is never evaluated when an agent is
+ * supplied.
+ */
+export type OrderMatchAgent = (requests: MatchAgentLine[]) => Promise<MatchAgentDecision[]>;
+
+const defaultMatchAgent: OrderMatchAgent = async (requests) => {
+  const { runOrderMatchAgent } = await import('@/lib/ai/order-match-call');
+  return runOrderMatchAgent(requests);
+};
 
 export interface CustomerLite {
   id: string;
@@ -216,7 +239,14 @@ async function syncStock(db: DB, orgId: string, orderId: string, invoiced: boole
 
 export async function syncOrderFromDocument(
   db: DB,
-  params: { documentId: string; orgId: string; customerId?: string | null; finalize?: boolean },
+  params: {
+    documentId: string;
+    orgId: string;
+    customerId?: string | null;
+    finalize?: boolean;
+    /** Override the matching agent. Tests inject; production leaves it alone. */
+    matchAgent?: OrderMatchAgent;
+  },
 ): Promise<SyncResult> {
   const { documentId, orgId } = params;
 
@@ -418,7 +448,7 @@ export async function syncOrderFromDocument(
     stockItems,
     { stripPrefix: stripPrefixes, bulkUnits: lines.map((li) => li.bulk_unit ?? null) },
   );
-  const agentDecisions = await runOrderMatchAgent(agentRequests);
+  const agentDecisions = await (params.matchAgent ?? defaultMatchAgent)(agentRequests);
   const resolutions = applyAgentDecisions(deterministic, agentRequests, agentDecisions, stockItems, {
     stripPrefix: stripPrefixes,
   });

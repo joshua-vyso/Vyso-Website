@@ -56,25 +56,46 @@ export function buildReviewLines(
   extractedData: DocuExtractedData | null,
   makeKey: () => string,
 ): ReviewLine[] {
+  const rows: ReviewLine[] = (extractedData?.line_items ?? []).map((l) => ({
+    key: makeKey(),
+    description: l.description ?? '',
+    quantity: l.quantity ?? '',
+    unit: l.unit ?? '',
+    unit_price: l.unit_price ?? '',
+    raw: ((l.raw_description ?? '').trim() || (l.description ?? '').trim()).trim(),
+    raw_amount: l.raw_amount ?? '',
+    record: null,
+  }));
+  return attachRecords(rows, extractedData?.order_lines);
+}
+
+/**
+ * Pair provenance records onto rows that already exist, BY THE PAPER'S WORDS.
+ *
+ * Its own function because the pairing now happens twice: once when the screen
+ * opens, and once when a reviewer runs the matching pass from the screen itself
+ * on a document whose pass never finished (see OrderReviewEditor's "Run
+ * matching" banner). Re-pairing rather than rebuilding is the point there — the
+ * rows on screen may carry edits nobody has saved, and `raw` is the one field
+ * an edit cannot touch, which is exactly why it is the join key.
+ *
+ * A row whose paper text matches nothing keeps the record it already had, so a
+ * partial write can only ever ADD annotations, never silently strip them.
+ */
+export function attachRecords<T extends { raw: string; record: OrderLineRecord | null }>(
+  rows: T[],
+  records: OrderLineRecord[] | null | undefined,
+): T[] {
+  if (!records?.length) return rows;
   const queues = new Map<string, OrderLineRecord[]>();
-  for (const r of extractedData?.order_lines ?? []) {
+  for (const r of records) {
     const k = r.raw_description.trim().toLowerCase();
     const q = queues.get(k) ?? [];
     q.push(r);
     queues.set(k, q);
   }
-
-  return (extractedData?.line_items ?? []).map((l) => {
-    const raw = ((l.raw_description ?? '').trim() || (l.description ?? '').trim()).trim();
-    return {
-      key: makeKey(),
-      description: l.description ?? '',
-      quantity: l.quantity ?? '',
-      unit: l.unit ?? '',
-      unit_price: l.unit_price ?? '',
-      raw,
-      raw_amount: l.raw_amount ?? '',
-      record: queues.get(raw.toLowerCase())?.shift() ?? null,
-    };
+  return rows.map((row) => {
+    const found = queues.get(row.raw.trim().toLowerCase())?.shift() ?? null;
+    return found ? { ...row, record: found } : row;
   });
 }

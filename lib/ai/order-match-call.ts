@@ -24,6 +24,26 @@ import {
  * agent can only ever improve on the gate or be absent; it cannot break it.
  */
 
+/**
+ * How long the agent may take, and it must be SHORTER THAN THE ROUTE THAT
+ * CONTAINS IT.
+ *
+ * It was 90 seconds, inside `/api/orderflow/order-from-document` (maxDuration
+ * 60) and inside `/api/ai/extract` (60 at the time) — a sub-call budgeted for
+ * longer than the whole invocation it runs in. That is not a slow agent, it is
+ * a guarantee that the work AFTER it never happens, and the work after it is
+ * the `order_lines` audit trail the review screen draws every annotation from.
+ * On 23 Aug 2026 an order read at 08:01 reached `status: 'extracted'` with 22
+ * perfect line items and no `order_lines` at all, because the invocation was
+ * killed before the write.
+ *
+ * 30 seconds is generous for a JSON reply about a handful of unsettled lines,
+ * and leaves room in every route budget for the writes that follow. A timeout
+ * here is not a failure — `runOrderMatchAgent` returns `[]` and the
+ * deterministic verdicts stand, which is the whole design.
+ */
+export const ORDER_MATCH_AGENT_TIMEOUT_MS = 30_000;
+
 /** The OpenAI model the matching agent uses. */
 export function openaiMatchModel(): string {
   return (process.env.OPENAI_MATCH_MODEL ?? '').trim() || 'gpt-5.6-luna';
@@ -50,7 +70,7 @@ export async function runOrderMatchAgent(requests: MatchAgentLine[]): Promise<Ma
       // has already transcribed verbatim. Handing it the picture again would
       // invite it to re-read rather than to choose.
       maxTokens: 8_000,
-      timeoutMs: 90_000,
+      timeoutMs: ORDER_MATCH_AGENT_TIMEOUT_MS,
     });
     return parseAgentDecisions(raw);
   } catch (e) {
