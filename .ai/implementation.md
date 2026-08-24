@@ -6206,3 +6206,90 @@ read of the same photograph for nothing.
 `npx tsc --noEmit` — clean. `npm test` — **963 pass / 0 fail** (958 + 5 new in
 `docu-order-annotations`). `npm run build` — clean. `npm run lint` — 50 errors /
 40 warnings, exactly the baseline.
+
+# Unlock every module for every org — pay-gating removed (2026-08-24, branch `main`)
+
+Per `.ai/plan_unlock_all_modules.md`: focus shifted from OrderFlow to
+ProcurePulse, and modules are no longer pay-gated. Every org — existing and
+future — now gets every module. There was no payment integration anywhere;
+the "pay-gate" was entirely `organisations.locked_modules` plus the two
+onboarding RPCs that populated it.
+
+### What changed
+
+- **`supabase/unlock-all-modules.sql` (new).** One-shot, idempotent migration
+  Josh pastes into the Supabase dashboard SQL editor: `update organisations
+  set locked_modules = '{}'` for every existing row, then `create or replace`
+  of `onboarding_create_org` and `onboarding_choose_modules` copied verbatim
+  from `supabase/onboarding.sql`, with only the locking logic changed (see
+  below). Ends with a commented verification query.
+- **`supabase/onboarding.sql`** — the canonical file — updated in place with
+  the same two function-body edits, so a fresh environment bootstrapped from
+  it matches production:
+  - `onboarding_create_org`: seeds `locked_modules = '{}'` instead of
+    "everything except Doc-U".
+  - `onboarding_choose_modules(p_modules text[])`: signature and validation
+    (exactly 3 distinct valid non-docu keys, none `= 'docu'`) are unchanged
+    on purpose — the RPC call from the client stays a drop-in. Only the
+    locking logic changed: it now always sets `locked_modules = '{}'`
+    instead of computing "the 5 keys the caller didn't pick." Still advances
+    `onboarding_stage` to `'data'` exactly as before.
+  - `locked_modules` itself is **not** dropped — it stays as dormant
+    kill-switch plumbing (useful later for abuse/offboarding); it's
+    data-driven, so empty data means nothing is locked. Comments in both SQL
+    files call this out explicitly.
+- **`components/platform/onboarding/StageModules.tsx`** — the "pick 3
+  modules" onboarding step. Removed the 3-of-N selection cap entirely: every
+  module (Doc-U + the rest) now renders as a static "Included" row instead of
+  a togglable button, and the copy changed from "Choose your modules" /
+  "Your 14-day trial includes Doc-U plus any 3 modules" to "All modules are
+  included" / "nothing to pick, nothing locked." The RPC call is kept exactly
+  as the server still expects it: since `onboarding_choose_modules` still
+  validates "exactly 3 distinct valid non-docu keys" server-side (left alone
+  per the plan), the component still sends 3 keys (the first 3 non-docu
+  modules, arbitrarily — which 3 no longer matters, since the RPC discards
+  them and always unlocks). `onDone(...)`, which feeds `StageData.tsx`'s
+  "what your data unlocks" list, now receives **every** module key instead of
+  just the chosen 3, so that downstream copy reflects what's actually true
+  without needing any change to `StageData.tsx` itself.
+- **`components/platform/onboarding/OnboardingFlow.tsx`** — updated the
+  Finch intro copy for the `modules` stage to match ("Your full toolkit" /
+  "every module... nothing to pick and nothing locked") instead of the old
+  "pick your toolkit" / "choose the three" copy.
+
+### Constraints honored (per plan, not touched)
+
+`locked_modules` column, `ModuleLockGuard`, sidebar lock UI, `moduleOpen`
+server checks, `TrialGate`, `org_features` seeding, the TEMPORARY features
+loop in `supabase-server.ts`, RLS policies, `Vyso Platform/shared/modules.ts`
+and its mobile mirror, and all demo-org SQL files
+(`demo-all-in-one.sql`, `morco-users-roles.sql`, `tns-users-roles.sql`,
+`org-locked-modules.sql`).
+
+### Deviations from the plan
+
+- The plan's Step 1 sketch only mentions the `update` statement and the two
+  `create or replace` bodies, ending with a commented verification query. The
+  actual `unlock-all-modules.sql` also repeats the `grant execute on
+  function ... to authenticated` statements after each function (present in
+  `onboarding.sql` immediately after each definition). This is not one of
+  the plan's listed diffs, but `grant` is idempotent/harmless to re-run and
+  keeps the one-shot migration self-sufficient if pasted into a project
+  where the grants somehow lapsed. No functional effect either way — the
+  grants already exist.
+- Step 3 said "smallest blast radius on `onboarding_stage` transitions" and
+  left the exact UI shape ("keep the screen... or restyle") to the
+  implementer. Chose to keep the screen, keep the RPC call and its
+  server-side "exactly 3" validation completely untouched (no SQL beyond
+  what Step 1/2 already specify), and only change what the client sends/
+  displays. This also touched `OnboardingFlow.tsx`'s stage-intro copy (one
+  string), which the plan's file list didn't call out by name but is part
+  of the same module-picker screen's presented copy.
+
+### Gates
+
+`npx tsc --noEmit` — clean. `npm run lint` — 50 errors / 40 warnings, the
+same pre-existing baseline (none in the files touched by this change; the
+repo already had unrelated uncommitted changes in `VysoAIModal.tsx`,
+`WasteLog.tsx`, `categories.tsx`, wastewatch `shared.tsx`, and others before
+this task started). `npm test` — **963 pass / 0 fail**, no change in count.

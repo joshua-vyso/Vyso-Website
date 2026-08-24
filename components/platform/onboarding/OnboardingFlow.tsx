@@ -25,8 +25,8 @@ const INTRO: Record<OnboardingStage, { title: string; body: string }> = {
     body: "I'll help you get Vyso set up in a few minutes. First, tell me a little about your business so I can tailor everything to you. We're in early access, so thanks for being one of the first here.",
   },
   modules: {
-    title: 'Pick your toolkit.',
-    body: 'Your 14-day trial includes Doc-U plus any 3 modules. Choose the three that match how you work — you can always change later.',
+    title: 'Your full toolkit.',
+    body: 'Your 14-day trial includes every module — Doc-U and the rest — with nothing to pick and nothing locked.',
   },
   data: {
     title: "Let's bring your data in.",

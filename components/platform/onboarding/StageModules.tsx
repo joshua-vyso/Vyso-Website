@@ -1,14 +1,13 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import posthog from 'posthog-js';
 import { createClient } from '@/lib/platform/supabase-browser';
 import { MODULES } from '@/lib/platform/modules';
 import { MODULE_META, type VysoModuleMeta } from '@/lib/platform/module-meta';
 import { AppIcon } from '@/components/platform/AppIcon';
 import type { FeatureKey } from '@/lib/platform/types';
 import { MigrationMissingCard, isMissingRpcError } from './shared';
-
-const REQUIRED = 3;
 
 /** Map a FeatureKey → its display metadata (icon, accent, description). MODULE_META
  *  is keyed by friendly name, so index it by featureKey. */
@@ -17,26 +16,16 @@ const META_BY_FEATURE = Object.fromEntries(
 ) as Record<FeatureKey, VysoModuleMeta>;
 
 export function StageModules({ onDone }: { onDone: (keys: FeatureKey[]) => void }) {
-  const [selected, setSelected] = useState<Set<FeatureKey>>(new Set());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [migrationMissing, setMigrationMissing] = useState(false);
 
-  // Doc-U is always included; the rest are the selectable trial modules.
+  // Doc-U is always included; the rest are shown as included too — modules are
+  // no longer pay-gated, so there's nothing left to choose here.
   const selectable = useMemo(() => MODULES.filter((m) => m.key !== 'docu'), []);
-  const count = selected.size;
-
-  function toggle(key: FeatureKey) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else if (next.size < REQUIRED) next.add(key);
-      return next;
-    });
-  }
+  const allKeys = useMemo(() => MODULES.map((m) => m.key), []);
 
   async function submit() {
-    if (count !== REQUIRED) return;
     setError(null);
     setMigrationMissing(false);
 
@@ -46,9 +35,15 @@ export function StageModules({ onDone }: { onDone: (keys: FeatureKey[]) => void 
       return;
     }
 
-    const keys = [...selected];
+    // onboarding_choose_modules still validates "exactly 3 distinct valid
+    // non-docu keys" server-side (see supabase/onboarding.sql) — its
+    // signature/validation were deliberately left unchanged so this RPC call
+    // stays a drop-in. Which 3 we send no longer matters: the function always
+    // sets locked_modules = '{}' regardless. onDone below still receives every
+    // module, since that's what's actually true now.
+    const rpcModules = selectable.slice(0, 3).map((m) => m.key);
     setSaving(true);
-    const { error: rpcError } = await supabase.rpc('onboarding_choose_modules', { p_modules: keys });
+    const { error: rpcError } = await supabase.rpc('onboarding_choose_modules', { p_modules: rpcModules });
     setSaving(false);
 
     if (rpcError) {
@@ -59,24 +54,19 @@ export function StageModules({ onDone }: { onDone: (keys: FeatureKey[]) => void 
       setError(rpcError.message);
       return;
     }
-    onDone(keys);
+    posthog.capture('onboarding_modules_selected', { module_count: allKeys.length });
+    onDone(allKeys);
   }
 
   return (
     <div className="rounded-2xl border border-[#E4E9F0] bg-white p-6 sm:p-7">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="of-display text-[20px] font-semibold text-[#171A17]">Choose your modules</h1>
+          <h1 className="of-display text-[20px] font-semibold text-[#171A17]">All modules are included</h1>
           <p className="mt-1 text-[13.5px] text-[#6B6F68]">
-            Your 14-day trial includes Doc-U plus any 3 modules.
+            Every module is included in your 14-day trial — nothing to pick, nothing locked.
           </p>
         </div>
-        <span
-          className="mt-1 shrink-0 rounded-full px-3 py-1 text-[12.5px] font-semibold"
-          style={{ backgroundColor: '#EAF2FC', color: '#174C87' }}
-        >
-          {count} of {REQUIRED} selected
-        </span>
       </div>
 
       {migrationMissing ? <MigrationMissingCard className="mt-5" /> : null}
@@ -89,44 +79,27 @@ export function StageModules({ onDone }: { onDone: (keys: FeatureKey[]) => void 
           <div className="truncate text-[12.5px] text-[#6B6F68]">{META_BY_FEATURE.docu.description}</div>
         </div>
         <span className="shrink-0 rounded-full bg-[#DCEBFB] px-2.5 py-1 text-[11px] font-semibold text-[#174C87]">
-          Always included
+          Included
         </span>
       </div>
 
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {selectable.map((m) => {
           const meta = META_BY_FEATURE[m.key];
-          const active = selected.has(m.key);
-          const atLimit = count >= REQUIRED && !active;
           return (
-            <button
+            <div
               key={m.key}
-              type="button"
-              onClick={() => toggle(m.key)}
-              aria-pressed={active}
-              disabled={atLimit}
-              className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition-colors ${
-                active
-                  ? 'border-[#3E7BC4] bg-[#EAF2FC]'
-                  : atLimit
-                    ? 'cursor-not-allowed border-[#EEF1F5] bg-white opacity-55'
-                    : 'border-[#E4E9F0] bg-white hover:border-[#C9DEF7] hover:bg-[#F5F9FE]'
-              }`}
+              className="flex items-start gap-3 rounded-2xl border border-[#E4E9F0] bg-white p-4 text-left"
             >
               <AppIcon name={meta.icon} size={34} />
               <div className="min-w-0 flex-1">
                 <div className="of-display text-[14.5px] font-semibold text-[#171A17]">{meta.name}</div>
                 <div className="mt-0.5 text-[12.5px] leading-snug text-[#6B6F68]">{meta.description}</div>
               </div>
-              <span
-                className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] ${
-                  active ? 'border-[#1F5FA8] bg-[#1F5FA8] text-white' : 'border-[#CBD5E1] bg-white text-transparent'
-                }`}
-                aria-hidden
-              >
-                ✓
+              <span className="mt-0.5 shrink-0 rounded-full bg-[#EEF1F5] px-2.5 py-1 text-[11px] font-semibold text-[#4A4E47]">
+                Included
               </span>
-            </button>
+            </div>
           );
         })}
       </div>
@@ -141,7 +114,7 @@ export function StageModules({ onDone }: { onDone: (keys: FeatureKey[]) => void 
         <button
           type="button"
           onClick={() => void submit()}
-          disabled={count !== REQUIRED || saving}
+          disabled={saving}
           className="inline-flex h-[44px] items-center justify-center rounded-[11px] bg-[#1F5FA8] px-6 text-[14px] font-semibold text-white transition-colors hover:bg-[#174C87] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saving ? 'Saving…' : 'Continue'}

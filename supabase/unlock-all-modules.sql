@@ -1,62 +1,32 @@
 -- ============================================================================
--- Self-serve signup + Finch-guided onboarding
+-- Unlock every module for every org (2026-08-24)
 -- ----------------------------------------------------------------------------
--- Adds the onboarding/trial columns to `organisations` and the SECURITY
--- DEFINER RPCs the web app calls to provision a brand-new org for the
--- signing-up user (no service-role key in the browser).
+-- Focus shifted from OrderFlow to ProcurePulse; modules are no longer
+-- pay-gated. Every org — existing and future — gets every module.
+--
+-- `locked_modules` is NOT removed: it stays as dormant kill-switch plumbing
+-- (useful for abuse/offboarding later — data-driven, so empty data means
+-- nothing is locked). This migration just makes sure nothing is ever
+-- populated into it by default again: existing rows are cleared, and the
+-- two onboarding RPCs that used to compute a locked set now always write
+-- `'{}'`.
 --
 -- HOW TO APPLY: paste into the Supabase dashboard SQL editor and run once, in
 -- the SAME project the app points at (NEXT_PUBLIC_SUPABASE_URL). Idempotent —
--- safe to re-run. Until it is applied the onboarding RPCs simply do not exist;
--- the app surfaces a visible "Setup migration missing" card rather than crashing.
---
--- ⚠ REQUIRED DASHBOARD STEP (do this too, or verification codes never arrive):
---   Supabase dashboard → Authentication → Emails → "Confirm signup" template.
---   Replace the confirmation-link body with the 6-digit code token, e.g.:
---       <h2>Your Vyso verification code</h2>
---       <p>Enter this code to finish creating your account:</p>
---       <p style="font-size:28px;letter-spacing:6px;"><b>{{ .Token }}</b></p>
---   `{{ .Token }}` outputs the 6-digit OTP the signup flow verifies via
---   supabase.auth.verifyOtp({ type: 'signup', ... }). The default template only
---   emits a {{ .ConfirmationURL }} link, which this flow does not use.
+-- safe to re-paste; every statement below is a plain UPDATE or CREATE OR
+-- REPLACE.
 -- ============================================================================
 
--- ── organisations: onboarding + trial columns ──────────────────────────────
-alter table organisations add column if not exists industry text;
-alter table organisations add column if not exists employee_count text;              -- band: '1-5'|'6-20'|'21-50'|'51-200'|'200+'
-alter table organisations add column if not exists trial_started_at timestamptz;
-alter table organisations add column if not exists trial_ends_at timestamptz;
-alter table organisations add column if not exists onboarding_stage text not null default 'profile';  -- 'profile'|'modules'|'data'|'done'
-alter table organisations add column if not exists onboarding_completed_at timestamptz;
-
--- Backfill: every pre-existing org is already "done" — it never sees onboarding
--- and has no trial clock. New orgs are created by the RPC below with their own
--- stage/trial values, so this only touches history.
-update organisations
-   set onboarding_stage = 'done',
-       onboarding_completed_at = now()
- where onboarding_completed_at is null;
-
--- Widen the org_features feature_key CHECK to the full module list, so seeding
--- all nine rows below never trips an older, narrower constraint. Idempotent.
-alter table org_features drop constraint if exists org_features_feature_key_check;
-alter table org_features add constraint org_features_feature_key_check
-  check (feature_key in (
-    'docu','procurepulse','pricepilot','marginview','wastelog',
-    'shiftboard','suppliers','orderflow','reportgen'
-  ));
-
--- The "Join Waitlist" feature (and its `waitlist_signups` table + `waitlist_join()`
--- RPC, previously defined here) has been removed from the app; the already-applied
--- live table/function are harmless and can be dropped manually if desired.
+-- ── Clear every existing org's locks ────────────────────────────────────────
+-- One-shot fix for orgs that already exist (including ones mid-onboarding —
+-- if they later hit onboarding_choose_modules below, the new body keeps them
+-- unlocked, so there's no stuck state either way).
+update public.organisations set locked_modules = '{}';
 
 -- ── RPC 1: create the org for the signing-up user (onboarding stage 1) ──────
--- Guards: caller authenticated AND has no org yet. Creates the organisations
--- row (tier 'start', 14-day trial clock, no modules locked — pay-gating was
--- removed, see supabase/unlock-all-modules.sql), upserts the caller's
--- profile as 'owner', and seeds nine enabled org_features rows. Idempotent:
--- if the caller already has an org, its id is returned unchanged
--- (double-submit safe).
+-- Same as supabase/onboarding.sql, except the org is now seeded fully
+-- unlocked instead of "everything except Doc-U" — there is no stage-2 module
+-- choice left to gate on.
 create or replace function onboarding_create_org(
   p_org_name text,
   p_industry text,
@@ -147,13 +117,12 @@ $$;
 grant execute on function onboarding_create_org(text, text, text, text) to authenticated;
 
 -- ── RPC 2: record the module choice (onboarding stage 2) ────────────────────
--- Guards: caller is the org owner, onboarding not yet completed, exactly 3
--- distinct valid non-docu keys (signature and validation kept as-is so the
--- onboarding UI's RPC call stays a drop-in — see StageModules.tsx). No
--- pay-gating: locked_modules is always set to '{}' regardless of what was
--- chosen (the chosen list is simply discarded — no schema change needed to
--- keep recording it). Still advances the stage to 'data' exactly as before.
--- Re-runnable until onboarding_complete() locks it.
+-- Signature and p_modules validation (exactly 3 distinct valid non-docu keys)
+-- are unchanged on purpose — the onboarding UI still calls this RPC the same
+-- way, so this stays a drop-in replace with no client-side contract change.
+-- The only behavioural difference: locked_modules is now always '{}' instead
+-- of "the 5 keys the caller didn't pick". The chosen list itself is simply
+-- discarded (no schema change needed to keep recording it).
 create or replace function onboarding_choose_modules(p_modules text[])
 returns void
 language plpgsql
@@ -213,37 +182,6 @@ $$;
 
 grant execute on function onboarding_choose_modules(text[]) to authenticated;
 
--- ── RPC 3: finish onboarding (stage 3 done or skipped) ──────────────────────
--- Guards: caller is the org owner. Marks the stage 'done' and stamps
--- onboarding_completed_at (which is what app/app + /onboarding gate on).
-create or replace function onboarding_complete()
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_uid    uuid := auth.uid();
-  v_org_id uuid;
-  v_role   text;
-begin
-  if v_uid is null then
-    raise exception 'not authenticated' using errcode = '28000';
-  end if;
-
-  select p.org_id, p.role into v_org_id, v_role from profiles p where p.id = v_uid;
-  if v_org_id is null then
-    raise exception 'caller has no organisation';
-  end if;
-  if v_role is distinct from 'owner' then
-    raise exception 'only the owner can complete onboarding';
-  end if;
-
-  update organisations
-     set onboarding_stage        = 'done',
-         onboarding_completed_at = coalesce(onboarding_completed_at, now())
-   where id = v_org_id;
-end;
-$$;
-
-grant execute on function onboarding_complete() to authenticated;
+-- ── Verify ───────────────────────────────────────────────────────────────
+-- select id, name, locked_modules from public.organisations;
+-- expect locked_modules = '{}' for every row.
