@@ -130,7 +130,6 @@ export function RecipeEditor({
 }) {
   const router = useRouter();
 
-  const [name, setName] = useState(recipe.name ?? '');
   const [outputProduct, setOutputProduct] = useState(recipe.output_product ?? '');
   const [outputQty, setOutputQty] = useState(recipe.output_qty != null ? String(recipe.output_qty) : '');
   const [outputUnit, setOutputUnit] = useState(recipe.output_unit ?? '');
@@ -186,6 +185,13 @@ export function RecipeEditor({
   const plan = useMemo(() => maxRecipeBatches(draftIngredients, stockByItem), [draftIngredients, stockByItem]);
   const tone = READINESS[plan.readiness];
 
+  // The recipe's name IS what it produces — one source of truth instead of a
+  // separately-typed name that drifts from "Produces" (Josh's live recipe was
+  // stuck showing "New recipe" this way). Mirrors live as the user types, and
+  // save() below persists this same value as `name` so lists, the batch
+  // picker, and Finch's fuzzy recipe matching all see it too.
+  const displayName = outputProduct.trim() || 'Untitled recipe';
+
   const planCount = Math.max(0, Number(planN) || 0);
 
   function updateRow(i: number, patch: Partial<Row>) {
@@ -221,7 +227,7 @@ export function RecipeEditor({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           id: recipe.id,
-          name: name.trim() || 'Untitled recipe',
+          name: displayName,
           output_product: outputProduct,
           output_qty: outputQty,
           // Locked once the output is linked to a stock item — same reasoning
@@ -288,12 +294,17 @@ export function RecipeEditor({
       </Link>
 
       <div className="mt-2 flex items-start justify-between gap-4">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Recipe name"
-          className="of-display min-w-0 flex-1 border-0 bg-transparent text-[20px] font-semibold tracking-[-0.015em] text-[#171A17] outline-none placeholder:text-[#C4C4BE]"
-        />
+        {/* Not an input — the recipe's name mirrors "Produces" below (see
+           `displayName`) rather than being typed separately, so there's one
+           source of truth instead of a name that can drift from the output. */}
+        <div
+          title={outputProduct.trim() ? undefined : 'Set "Produces" below to name this recipe'}
+          className={`of-display min-w-0 flex-1 truncate text-[20px] font-semibold tracking-[-0.015em] ${
+            outputProduct.trim() ? 'text-[#171A17]' : 'text-[#C4C4BE]'
+          }`}
+        >
+          {displayName}
+        </div>
         <button
           type="button"
           onClick={() => void remove()}

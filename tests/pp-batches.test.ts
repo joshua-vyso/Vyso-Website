@@ -6,8 +6,11 @@ import {
   outputMovement,
   floorOnHand,
   filterRecipes,
+  scaleRecipePrefill,
+  appendBatchCountNote,
   OUTPUT_FUZZY_ACCEPT,
   type OutputCandidate,
+  type RecipePrefillInput,
 } from '../lib/platform/procurepulse/batch-logic.ts';
 import { scoreProductName } from '../lib/platform/docu/product-suggest.ts';
 import { distinctItemUnits } from '../lib/platform/procurepulse/units.ts';
@@ -208,6 +211,84 @@ test('filterRecipes: respects the max cap, keeping input order', () => {
   const matches = filterRecipes(many, '', 8);
   assert.equal(matches.length, 8);
   assert.equal(matches[0].name, 'Recipe 0');
+});
+
+// ---------------------------------------------------------------------------
+// scaleRecipePrefill / appendBatchCountNote — the Batches page's "Batches"
+// count multiplier. Josh's ask: set the count once instead of it only ever
+// incrementing by one and having to retype the recipe each time.
+// ---------------------------------------------------------------------------
+
+const MIXED_VEG_RECIPE: RecipePrefillInput = {
+  output_qty: 5,
+  output_unit: 'kg',
+  ingredients: [
+    { stock_item_id: 'i-butternut', product_name: 'Butternut', qty_per_batch: 2, unit: 'kg' },
+    { stock_item_id: 'i-broccoli', product_name: 'Broccoli', qty_per_batch: 1.5, unit: 'kg' },
+    { stock_item_id: null, product_name: 'Garnish', qty_per_batch: 0, unit: null },
+  ],
+};
+
+test('scaleRecipePrefill: count of 1 reproduces the plain per-batch quantities', () => {
+  const scaled = scaleRecipePrefill(MIXED_VEG_RECIPE, 1);
+  assert.equal(scaled.outputQty, '5');
+  assert.deepEqual(
+    scaled.rows.map((r) => r.qty_used),
+    ['2', '1.5', ''],
+  );
+});
+
+test('scaleRecipePrefill: multiplies every per-batch quantity and the output by the count', () => {
+  const scaled = scaleRecipePrefill(MIXED_VEG_RECIPE, 3);
+  assert.equal(scaled.outputQty, '15');
+  assert.deepEqual(
+    scaled.rows.map((r) => r.qty_used),
+    ['6', '4.5', ''],
+  );
+});
+
+test('scaleRecipePrefill: a zero/unset per-batch qty stays blank, not "0", at any count', () => {
+  const scaled = scaleRecipePrefill(MIXED_VEG_RECIPE, 4);
+  assert.equal(scaled.rows[2].qty_used, '');
+});
+
+test('scaleRecipePrefill: non-positive or invalid counts fall back to 1', () => {
+  for (const bad of [0, -2, NaN, Infinity]) {
+    const scaled = scaleRecipePrefill(MIXED_VEG_RECIPE, bad);
+    assert.equal(scaled.outputQty, '5');
+  }
+});
+
+test('scaleRecipePrefill: rounds off floating-point noise instead of leaking long decimals', () => {
+  const recipe: RecipePrefillInput = {
+    output_qty: 1,
+    output_unit: null,
+    ingredients: [{ stock_item_id: 'a', product_name: 'A', qty_per_batch: 0.1, unit: null }],
+  };
+  const scaled = scaleRecipePrefill(recipe, 3);
+  assert.equal(scaled.rows[0].qty_used, '0.3');
+});
+
+test('scaleRecipePrefill: stock_item_id and unit pass through unchanged', () => {
+  const scaled = scaleRecipePrefill(MIXED_VEG_RECIPE, 2);
+  assert.equal(scaled.rows[0].stock_item_id, 'i-butternut');
+  assert.equal(scaled.rows[0].unit, 'kg');
+  assert.equal(scaled.outputUnit, 'kg');
+});
+
+test('appendBatchCountNote: a count of 1 or less leaves notes untouched', () => {
+  assert.equal(appendBatchCountNote('Ran a bit hot', 1), 'Ran a bit hot');
+  assert.equal(appendBatchCountNote('Ran a bit hot', 0), 'Ran a bit hot');
+  assert.equal(appendBatchCountNote('  Ran a bit hot  ', -1), 'Ran a bit hot');
+});
+
+test('appendBatchCountNote: appends a "× N batches" marker for a count above 1', () => {
+  assert.equal(appendBatchCountNote('Ran a bit hot', 3), 'Ran a bit hot (× 3 batches)');
+});
+
+test('appendBatchCountNote: blank notes with a multi-batch count yield just the marker, no stray parens', () => {
+  assert.equal(appendBatchCountNote('', 4), '× 4 batches');
+  assert.equal(appendBatchCountNote('   ', 4), '× 4 batches');
 });
 
 // ---------------------------------------------------------------------------

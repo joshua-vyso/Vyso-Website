@@ -135,3 +135,83 @@ export function filterRecipes<T extends RecipeSearchable>(recipes: T[], query: s
   const matches = q ? recipes.filter((r) => r.name.toLowerCase().includes(q)) : recipes;
   return matches.slice(0, max);
 }
+
+// ---------------------------------------------------------------------------
+// scaleRecipePrefill / appendBatchCountNote — the Batches page's "Batches"
+// count. Josh's ask: set how many batches a run makes once, instead of the
+// count only ever incrementing by one and having to retype the recipe each
+// time. Persistence is unchanged — still one `pp_batches` row per confirm,
+// just with quantities already multiplied by the count.
+// ---------------------------------------------------------------------------
+
+export interface RecipePrefillIngredient {
+  stock_item_id: string | null;
+  product_name: string;
+  qty_per_batch: number;
+  unit: string | null;
+}
+
+/** The subset of a recipe `scaleRecipePrefill` needs — matches RecipeLite's
+ *  shape in BatchLogger.tsx without this framework-free module importing a
+ *  client component's types. */
+export interface RecipePrefillInput {
+  output_qty: number | null;
+  output_unit: string | null;
+  ingredients: RecipePrefillIngredient[];
+}
+
+export interface ScaledIngredientRow {
+  stock_item_id: string | null;
+  product_name: string;
+  /** Pre-stringified for the qty input, '' when the per-batch qty is 0/unset
+   *  (the same "blank, not 0" convention the unscaled prefill already used). */
+  qty_used: string;
+  unit: string | null;
+}
+
+export interface ScaledRecipePrefill {
+  rows: ScaledIngredientRow[];
+  outputQty: string;
+  outputUnit: string | null;
+}
+
+/** Round off float noise (0.1 * 3 === 0.30000000000000004) without claiming
+ *  more precision than a stock qty ever needs. */
+function roundQty(n: number): number {
+  return Math.round(n * 1e6) / 1e6;
+}
+
+/**
+ * Multiply a recipe's per-batch quantities by a batch count, for the
+ * Batches page's "Batches" field. An invalid/non-positive count falls back
+ * to 1 (the field's own default) rather than zeroing every prefill out from
+ * under the user. Every field is recomputed wholesale on each call — the
+ * plan's documented simplest-acceptable behaviour: a hand-edit made before
+ * changing the count is expected to be re-entered after, not preserved.
+ */
+export function scaleRecipePrefill(recipe: RecipePrefillInput, count: number): ScaledRecipePrefill {
+  const n = Number.isFinite(count) && count > 0 ? count : 1;
+  return {
+    rows: recipe.ingredients.map((ing) => ({
+      stock_item_id: ing.stock_item_id,
+      product_name: ing.product_name,
+      qty_used: ing.qty_per_batch ? String(roundQty(ing.qty_per_batch * n)) : '',
+      unit: ing.unit,
+    })),
+    outputQty: recipe.output_qty != null ? String(roundQty(recipe.output_qty * n)) : '',
+    outputUnit: recipe.output_unit,
+  };
+}
+
+/**
+ * Append a "× N batches" marker to a batch's notes when N > 1 — the only
+ * record of the multiplier in the audit trail, since a multi-batch confirm
+ * still writes just the one `pp_batches` row (already-multiplied quantities,
+ * no schema change). N <= 1 leaves notes untouched, matching prior behaviour.
+ */
+export function appendBatchCountNote(notes: string, count: number): string {
+  const trimmed = notes.trim();
+  if (!Number.isFinite(count) || count <= 1) return trimmed;
+  const marker = `× ${count} batches`;
+  return trimmed ? `${trimmed} (${marker})` : marker;
+}

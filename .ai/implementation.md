@@ -6857,3 +6857,143 @@ pass / 0 fail** (997 from Phase C + 12 new cases). `npm run build` —
 succeeds, exit 0, no errors or warnings; both touched routes
 (`/app/procurepulse/recipes/[id]`, `/app/procurepulse/recipes/batches`)
 compiled as dynamic routes as before.
+
+## ProcurePulse Manufacturing — recipe name mirrors its output, batches get a count (2026-08-24)
+
+Josh's feedback, verbatim: "new recipe should become the name of the recipe
+(produces {{product name}}). also, i should be able to set amount of batches
+created instead of it incrementally going up by one each time and having to
+retype recipe name, and rinsing and repeating." Two independent UX fixes,
+`RecipeEditor.tsx` and `BatchLogger.tsx` only — no API contract, migration,
+or Finch-path change.
+
+### 1. Recipe name mirrors "Produces"
+
+`RecipeEditor.tsx` had its own `name` state, editable in the header input and
+independent of `outputProduct` — so a recipe created via `RecipesView`'s "+
+New recipe" button (which POSTs `{ name: 'New recipe' }` with no output yet)
+stayed literally named "New recipe" forever unless someone remembered to
+retype the header too. That's exactly Josh's live recipe.
+
+Fix: the header is no longer an input. It's a `displayName` derived value —
+`outputProduct.trim() || 'Untitled recipe'` — so it updates live as the user
+types in "Produces", with no second field to keep in sync:
+
+```ts
+const displayName = outputProduct.trim() || 'Untitled recipe';
+```
+
+`save()` now PATCHes `name: displayName` instead of a separately-typed `name`
+state. `app/api/procurepulse/recipe/route.ts` PATCH already accepted `name`
+and only ever used it as-is (`str(body.name) ?? 'Untitled recipe'`) — no
+server change needed, confirmed by reading the route before touching the
+client.
+
+**Existing-data fix, confirmed by the code path, no SQL:** Josh's live recipe
+already has some `output_product` value (it's in production use) but a
+`name` stuck at "New recipe" from creation. With `save()` now sending
+`displayName` (= the trimmed `output_product`) as `name` on every save, the
+next time he opens that recipe and clicks "Save recipe" — even with no other
+change — the PATCH body carries the correct name and the row is fixed. No
+migration or backfill needed. (A brand-new recipe still starts as "New
+recipe" until its first save with a "Produces" value filled in, per the
+unchanged POST default in `RecipesView.tsx` — expected, since it has no
+output yet to mirror.)
+
+This also means recipe lists, the Batches picker (`filterRecipes` matches on
+`name`), and Finch's fuzzy recipe matching all converge on the same string
+going forward — one source of truth instead of two fields that could drift.
+
+### 2. Batches count multiplier + no-reset confirm loop
+
+`BatchLogger.tsx` previously prefilled ingredient/output quantities at
+exactly 1× the recipe's per-batch amounts, and `confirm()` called
+`clearRecipe()` on success — so logging N batches of the same recipe meant
+picking the recipe again and retyping every quantity, N times. This is the
+"incrementally going up by one... having to retype recipe name, rinse and
+repeat" Josh described.
+
+**Count input + scaling.** A new "Batches" field sits next to the recipe
+picker (`batchCount` state, digits-only via `sanitizeInt`, defaulting to
+`'1'`). Picking a recipe or changing the count both funnel through one
+function, `applyCount(r, count)`, which calls the new pure helper
+`scaleRecipePrefill` (added to `lib/platform/procurepulse/batch-logic.ts` so
+it's covered by `tests/pp-batches.test.ts` without a DOM):
+
+```ts
+export function scaleRecipePrefill(recipe: RecipePrefillInput, count: number): ScaledRecipePrefill {
+  const n = Number.isFinite(count) && count > 0 ? count : 1;
+  return {
+    rows: recipe.ingredients.map((ing) => ({
+      stock_item_id: ing.stock_item_id,
+      product_name: ing.product_name,
+      qty_used: ing.qty_per_batch ? String(roundQty(ing.qty_per_batch * n)) : '',
+      unit: ing.unit,
+    })),
+    outputQty: recipe.output_qty != null ? String(roundQty(recipe.output_qty * n)) : '',
+    outputUnit: recipe.output_unit,
+  };
+}
+```
+
+An invalid/non-positive count falls back to 1 rather than zeroing every
+field. `roundQty` (`Math.round(n * 1e6) / 1e6`) exists only to strip
+floating-point noise (`0.1 * 3 === 0.30000000000000004`) — a stock qty never
+needs more than a few decimals of precision.
+
+Per the plan's documented simplest-acceptable behaviour, a count change
+recomputes **every** row from the recipe's own per-batch numbers — it does
+not try to detect or preserve a hand-edit made before the count was changed.
+Hand-edits made after choosing the count (weighing on the floor rarely hits
+the recipe exactly) are untouched, since nothing re-runs `applyCount` on
+those keystrokes.
+
+**Persistence is unchanged.** One `pp_batches` row per confirm, carrying the
+already-multiplied quantities — no schema change, exactly as the plan
+required. The only trace of the multiplier is in the notes, via a second new
+pure helper:
+
+```ts
+export function appendBatchCountNote(notes: string, count: number): string {
+  const trimmed = notes.trim();
+  if (!Number.isFinite(count) || count <= 1) return trimmed;
+  const marker = `× ${count} batches`;
+  return trimmed ? `${trimmed} (${marker})` : marker;
+}
+```
+
+A count of 1 leaves notes exactly as typed (no marker noise on the common
+case); a blank note at a multi-batch count yields just the marker, not a
+note with stray empty parens.
+
+**No-reset confirm loop.** `confirm()` no longer calls `clearRecipe()` on
+success. Instead it calls `applyCount(recipe, count)` again (re-deriving
+fresh prefills at the same count) and resets only `notes` — the recipe stays
+selected, the picker stays open to the same choice, and the quantities are
+immediately ready for another identical run. The existing "Cancel" button is
+renamed **"Clear"** (same `clearRecipe()` handler, which now also resets
+`batchCount` back to `'1'`) — this is the explicit "affordance to deselect
+the recipe" the plan asked for, reusing the button that already did the job
+rather than adding a redundant second control.
+
+### Tests — `tests/pp-batches.test.ts` (+9 cases)
+
+`scaleRecipePrefill`: count of 1 reproduces the plain per-batch numbers;
+multiplies every ingredient qty and the output by the count; a zero/unset
+per-batch qty stays blank (not `"0"`) at any count; non-positive/invalid
+counts (`0`, `-2`, `NaN`, `Infinity`) fall back to 1; floating-point noise
+(`0.1 × 3`) rounds to `"0.3"`, not a long decimal; `stock_item_id`/`unit`
+pass through unchanged. `appendBatchCountNote`: count ≤ 1 leaves notes
+untouched (including a non-trivial trim case); count > 1 appends the `"×
+N batches"` marker; blank notes at a multi-batch count produce just the
+marker with no stray parens.
+
+### Gates
+
+`npx tsc --noEmit` — clean. `npx eslint` over the four touched files
+(`components/platform/procurepulse/{RecipeEditor,BatchLogger}.tsx`,
+`lib/platform/procurepulse/batch-logic.ts`, `tests/pp-batches.test.ts`) —
+zero issues. `npm test` — **1018 pass / 0 fail** (1009 prior + 9 new cases).
+`npm run build` — succeeds, exit 0, no errors anywhere in the output; both
+touched routes (`/app/procurepulse/recipes/[id]`,
+`/app/procurepulse/recipes/batches`) compiled as before.

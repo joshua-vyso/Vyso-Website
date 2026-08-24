@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { filterRecipes } from '@/lib/platform/procurepulse/batch-logic';
+import { appendBatchCountNote, filterRecipes, scaleRecipePrefill } from '@/lib/platform/procurepulse/batch-logic';
 import { distinctItemUnits } from '@/lib/platform/procurepulse/units';
 
 /** The thin recipe shape the logger needs: header + its ingredient lines. */
@@ -51,6 +51,15 @@ function sanitizeDecimal(s: string): string {
   const cleaned = s.replace(/[^0-9.]/g, '');
   const parts = cleaned.split('.');
   return parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : cleaned;
+}
+function sanitizeInt(s: string): string {
+  return s.replace(/[^0-9]/g, '');
+}
+/** The count text field's value → a real multiplier. A blank/zero/invalid
+ *  field (e.g. mid-edit) reads as 1, the field's own default — never 0. */
+function parsedCount(raw: string): number {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
 function timeAgo(iso: string): string {
@@ -155,6 +164,10 @@ export function BatchLogger({
   const [rows, setRows] = useState<Row[]>([]);
   const [outputQty, setOutputQty] = useState('');
   const [outputUnit, setOutputUnit] = useState('');
+  /** How many batches this run makes — multiplies every prefilled quantity
+   *  below. Text field (not a number input) so it can go through the same
+   *  digits-only sanitizer as everything else here. */
+  const [batchCount, setBatchCount] = useState('1');
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
@@ -222,32 +235,48 @@ export function BatchLogger({
     })();
   }, []);
 
+  /** (Re)compute the ingredient/output prefills from `r`'s per-batch
+   *  quantities × `count` — the one place quantities get derived from the
+   *  recipe, called on both recipe pick and every count change so the two
+   *  stay in lockstep (see `scaleRecipePrefill`). */
+  function applyCount(r: RecipeLite, count: number) {
+    const scaled = scaleRecipePrefill(r, count);
+    setRows(scaled.rows.map((row) => ({ ...row, unit: row.unit ?? '' })));
+    setOutputQty(scaled.outputQty);
+    setOutputUnit(scaled.outputUnit ?? '');
+  }
+
   function pickRecipe(r: RecipeLite) {
     setRecipeId(r.id);
     setQuery(r.name);
     setOpenPicker(false);
-    setRows(
-      r.ingredients.map((ing) => ({
-        stock_item_id: ing.stock_item_id,
-        product_name: ing.product_name,
-        qty_used: ing.qty_per_batch ? String(ing.qty_per_batch) : '',
-        unit: ing.unit ?? '',
-      })),
-    );
-    setOutputQty(r.output_qty != null ? String(r.output_qty) : '');
-    setOutputUnit(r.output_unit ?? '');
+    applyCount(r, parsedCount(batchCount));
     setNotes('');
     setMsg(null);
   }
 
+  /** Deselect the recipe and reset the form — the "Clear" affordance. Also
+   *  resets the count: a fresh recipe pick should start from 1, not carry
+   *  over whatever the last run happened to use. */
   function clearRecipe() {
     setRecipeId(null);
     setQuery('');
     setRows([]);
     setOutputQty('');
     setOutputUnit('');
+    setBatchCount('1');
     setNotes('');
     setMsg(null);
+  }
+
+  /** Batch count changed — recompute every prefill from the recipe's own
+   *  per-batch quantities at the new count (simplest acceptable behaviour:
+   *  this discards any hand-edit made before the count change, on the
+   *  assumption hand-edits happen after the count is chosen, not before). */
+  function updateBatchCount(raw: string) {
+    const cleaned = sanitizeInt(raw);
+    setBatchCount(cleaned);
+    if (recipe) applyCount(recipe, parsedCount(cleaned));
   }
 
   function updateRow(i: number, qty: string) {
@@ -267,6 +296,7 @@ export function BatchLogger({
     // so the live item's unit wins over the row's own field for linked rows
     // (same reasoning for the output below).
     const effectiveOutputUnit = outputItem ? outputItem.unit : outputUnit || recipe.output_unit || null;
+    const count = parsedCount(batchCount);
     try {
       const res = await fetch('/api/procurepulse/batch', {
         method: 'POST',
@@ -283,7 +313,10 @@ export function BatchLogger({
             };
           }),
           output: { qty: Number(outputQty) || 0, unit: effectiveOutputUnit },
-          notes: notes.trim() || undefined,
+          // The persisted row stays singular (one pp_batches row per confirm,
+          // already-multiplied quantities) — this is the multiplier's only
+          // trace in the audit trail. See appendBatchCountNote.
+          notes: appendBatchCountNote(notes, count) || undefined,
           source: 'manual',
         }),
       });
@@ -298,7 +331,12 @@ export function BatchLogger({
           kind: 'ok',
           text: `Produced ${outputQty || recipe.output_qty || 0}${effectiveOutputUnit ? ` ${effectiveOutputUnit}` : ''} of ${json.output.name} — now ${json.output.new_on_hand} on hand.`,
         });
-        clearRecipe();
+        // Keep the recipe selected and re-prefill for the same count, rather
+        // than clearing — Josh's ask: hit Confirm again for another run
+        // without re-picking the recipe or retyping quantities. `clearRecipe`
+        // (the "Clear" button) is still there for when the run is done.
+        applyCount(recipe, count);
+        setNotes('');
         void loadRecent();
       }
     } catch {
@@ -344,6 +382,18 @@ export function BatchLogger({
               ))}
             </div>
           ) : null}
+        </div>
+
+        <div className="mt-2 flex items-center gap-2 text-[13px] text-[#6B6F68]">
+          <span>Batches</span>
+          <input
+            value={batchCount}
+            onChange={(e) => updateBatchCount(e.target.value)}
+            inputMode="numeric"
+            placeholder="1"
+            className="of-num h-10 w-[72px] rounded-[10px] border border-[#E4E9F0] bg-white px-3 text-right text-[14px] text-[#171A17] outline-none placeholder:text-[#A0A49C] focus:border-[#3E7BC4]"
+          />
+          <span className="text-[#8A8E86]">× the recipe&apos;s per-batch quantities</span>
         </div>
 
         {!recipe ? (
@@ -430,7 +480,7 @@ export function BatchLogger({
                 onClick={clearRecipe}
                 className="inline-flex h-[42px] items-center rounded-[11px] border border-[#E2E6EC] bg-white px-[18px] text-[14px] font-medium text-[#3E4A57] transition-all hover:border-[#C9DEF7] hover:bg-[#EAF2FC] hover:text-[#174C87]"
               >
-                Cancel
+                Clear
               </button>
               <button
                 type="button"
