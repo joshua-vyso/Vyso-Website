@@ -112,3 +112,26 @@ export function ingredientMovements(
 export function outputMovement(stockItemId: string, qty: number, reason = 'batch_produced'): MovementDelta {
   return { stockItemId, change: Math.max(0, Number(qty) || 0), reason };
 }
+
+// ---------------------------------------------------------------------------
+// filterRecipes — the Batches page's recipe typeahead
+// ---------------------------------------------------------------------------
+
+/** The one field the picker filters on — kept minimal so any recipe shape works. */
+export interface RecipeSearchable {
+  name: string;
+}
+
+/**
+ * Recipes to offer in the Batches page's picker. With no query, every one of
+ * the org's recipes — focusing the field must show the full list immediately
+ * (there may be only one, and "nothing appears until you type" is exactly the
+ * dead-picker bug this replaces), not just an empty dropdown waiting for a
+ * keystroke. With a query, a case-insensitive substring match on the name.
+ * `max` caps the dropdown the same way it always did (scroll, not pagination).
+ */
+export function filterRecipes<T extends RecipeSearchable>(recipes: T[], query: string, max = 8): T[] {
+  const q = query.trim().toLowerCase();
+  const matches = q ? recipes.filter((r) => r.name.toLowerCase().includes(q)) : recipes;
+  return matches.slice(0, max);
+}

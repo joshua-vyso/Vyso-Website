@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getPlatformSession, createServerSupabase } from '@/lib/platform/supabase-server';
 import { fetchStock, fetchRecipe, fetchIngredientsForRecipe } from '@/lib/platform/procurepulse-queries';
+import { distinctItemUnits } from '@/lib/platform/procurepulse/units';
 import { RecipeEditor, type ItemLite } from '@/components/platform/procurepulse/RecipeEditor';
 
 export default async function RecipeDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -42,5 +43,9 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
     avg_unit_price: i.avg_unit_price,
   }));
 
-  return <RecipeEditor recipe={recipe} ingredients={ingredients} items={lite} />;
+  // The org's own unit vocabulary (pp_stock_items.unit, however messy) rather
+  // than the fixed conversion-engine list — see distinctItemUnits' header.
+  const unitOptions = distinctItemUnits(items.map((i) => i.unit));
+
+  return <RecipeEditor recipe={recipe} ingredients={ingredients} items={lite} unitOptions={unitOptions} />;
 }

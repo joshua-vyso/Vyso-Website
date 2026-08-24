@@ -5,10 +5,12 @@ import {
   ingredientMovements,
   outputMovement,
   floorOnHand,
+  filterRecipes,
   OUTPUT_FUZZY_ACCEPT,
   type OutputCandidate,
 } from '../lib/platform/procurepulse/batch-logic.ts';
 import { scoreProductName } from '../lib/platform/docu/product-suggest.ts';
+import { distinctItemUnits } from '../lib/platform/procurepulse/units.ts';
 
 // ---------------------------------------------------------------------------
 // resolveOutputProduct — precedence: explicit > recipe-linked > fuzzy > create
@@ -162,4 +164,87 @@ test('floorOnHand: a positive delta adds normally', () => {
 
 test('floorOnHand: a non-numeric current value is treated as 0', () => {
   assert.equal(floorOnHand(Number('not-a-number'), 3), 3);
+});
+
+// ---------------------------------------------------------------------------
+// filterRecipes — the Batches page's recipe typeahead. Root-cause fix: the
+// picker used to compute matches only when `query` was non-empty, so
+// focusing the field with nothing typed showed nothing — with an org that
+// has one recipe, that read as "typeahead does nothing" in production.
+// ---------------------------------------------------------------------------
+
+const RECIPES = [
+  { name: 'New recipe' },
+  { name: 'Mixed Veg' },
+  { name: 'Roasted Squash Medley' },
+];
+
+test('filterRecipes: empty query returns every recipe (focus-with-no-input case)', () => {
+  const matches = filterRecipes(RECIPES, '');
+  assert.equal(matches.length, 3);
+});
+
+test('filterRecipes: whitespace-only query is treated the same as empty', () => {
+  const matches = filterRecipes(RECIPES, '   ');
+  assert.equal(matches.length, 3);
+});
+
+test('filterRecipes: a single org recipe still appears on an empty query', () => {
+  const matches = filterRecipes([{ name: 'New recipe' }], '');
+  assert.deepEqual(matches, [{ name: 'New recipe' }]);
+});
+
+test('filterRecipes: query filters by case-insensitive substring', () => {
+  const matches = filterRecipes(RECIPES, 'veg');
+  assert.deepEqual(matches, [{ name: 'Mixed Veg' }]);
+});
+
+test('filterRecipes: query with no match returns an empty list', () => {
+  assert.deepEqual(filterRecipes(RECIPES, 'nonexistent'), []);
+});
+
+test('filterRecipes: respects the max cap, keeping input order', () => {
+  const many = Array.from({ length: 20 }, (_, i) => ({ name: `Recipe ${i}` }));
+  const matches = filterRecipes(many, '', 8);
+  assert.equal(matches.length, 8);
+  assert.equal(matches[0].name, 'Recipe 0');
+});
+
+// ---------------------------------------------------------------------------
+// distinctItemUnits — the unit <select>'s vocabulary: dedupe case-insensitively,
+// sort, and always be able to represent a field's current (possibly odd) value.
+// ---------------------------------------------------------------------------
+
+test('distinctItemUnits: dedupes case-insensitively, keeping first-seen casing', () => {
+  const units = distinctItemUnits(['kg', 'Kg', 'KG', 'boxes']);
+  assert.deepEqual(units, ['boxes', 'kg']);
+});
+
+test('distinctItemUnits: sorts alphabetically, case-insensitively', () => {
+  const units = distinctItemUnits(['punnets', 'boxes', 'Bags', 'kg']);
+  assert.deepEqual(units, ['Bags', 'boxes', 'kg', 'punnets']);
+});
+
+test('distinctItemUnits: blank/null/undefined entries are dropped', () => {
+  const units = distinctItemUnits(['kg', '', '   ', null, undefined, 'g']);
+  assert.deepEqual(units, ['g', 'kg']);
+});
+
+test('distinctItemUnits: the org\'s real messy unit list survives intact (no crash, no silent merge of distinct units)', () => {
+  const raw = ['boxes', 'pockets', 'punnets', 'bags', 'cartons', 'bunches', 'trays', 'bushels', 'box', 'kg', 'pkt'];
+  const units = distinctItemUnits(raw);
+  assert.equal(units.length, raw.length); // all distinct once lower-cased, none collide
+  assert.deepEqual(units, [...units].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })));
+});
+
+test('distinctItemUnits: folding an odd current value in makes it selectable even though no stock item uses it', () => {
+  const orgUnits = ['kg', 'boxes'];
+  const units = distinctItemUnits([...orgUnits, '250gr pkt']);
+  assert.ok(units.includes('250gr pkt'));
+});
+
+test('distinctItemUnits: folding in a value already present does not duplicate it', () => {
+  const orgUnits = ['kg', 'boxes'];
+  const units = distinctItemUnits([...orgUnits, 'KG']);
+  assert.deepEqual(units, ['boxes', 'kg']);
 });

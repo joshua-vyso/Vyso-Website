@@ -8,6 +8,7 @@ import {
   rand,
   type RecipeReadiness,
 } from '@/lib/platform/procurepulse';
+import { distinctItemUnits } from '@/lib/platform/procurepulse/units';
 import type { Recipe, RecipeIngredient, StockItem } from '@/lib/platform/types';
 
 /** The thin stock snapshot the editor needs for typeahead + availability. */
@@ -45,14 +46,87 @@ function sanitizeInt(s: string): string {
 let rowSeq = 0;
 const newKey = () => `r${++rowSeq}`;
 
+const OTHER = '__other__';
+
+/**
+ * Unit control for a line that ISN'T linked to a stock item: a `<select>` of
+ * the org's known units, sorted and deduped case-insensitively, plus the
+ * field's own current value folded in (so it can always represent what's
+ * already there, even a one-off unit — see `distinctItemUnits`). "Other…"
+ * drops to a plain input: the org's unit data is too messy (pkt / 250gr pkt /
+ * bx …) to treat as a closed list, so this must never block a new one.
+ */
+function UnitPicker({
+  value,
+  options,
+  onChange,
+  size = 'md',
+}: {
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+  /** 'md' matches the ingredients table's `field` row height; 'sm' matches
+   *  the h-10 controls in the recipe-header output row. Same component,
+   *  two contexts with pre-existing, different input heights. */
+  size?: 'sm' | 'md';
+}) {
+  const known = useMemo(() => distinctItemUnits([...options, value]), [options, value]);
+  const [customOpen, setCustomOpen] = useState(false);
+  const h = size === 'sm' ? 'h-10' : 'h-11';
+  const rounded = size === 'sm' ? 'rounded-[10px]' : 'rounded-[12px]';
+
+  if (customOpen) {
+    return (
+      <div className="flex items-center gap-1">
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="unit"
+          className={`${h} w-[76px] ${rounded} border border-[#E4E9F0] bg-white px-2 text-[14px] text-[#171A17] outline-none focus:border-[#3E7BC4]`}
+        />
+        <button
+          type="button"
+          onClick={() => setCustomOpen(false)}
+          aria-label="Back to unit list"
+          className="text-[11px] text-[#8A8E86] hover:text-[#3E4A57]"
+        >
+          list
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <select
+      value={value}
+      onChange={(e) => (e.target.value === OTHER ? setCustomOpen(true) : onChange(e.target.value))}
+      className={`${h} w-[96px] ${rounded} border border-[#E4E9F0] bg-white px-2 text-[14px] text-[#171A17] outline-none focus:border-[#3E7BC4]`}
+    >
+      <option value="">unit…</option>
+      {known.map((u) => (
+        <option key={u} value={u}>
+          {u}
+        </option>
+      ))}
+      <option value={OTHER}>Other…</option>
+    </select>
+  );
+}
+
 export function RecipeEditor({
   recipe,
   ingredients,
   items,
+  unitOptions,
 }: {
   recipe: Recipe;
   ingredients: RecipeIngredient[];
   items: ItemLite[];
+  /** The org's distinct stock-item units — see `distinctItemUnits`. Built
+   *  server-side by the page (it already has the stock read) and handed down
+   *  as a plain prop rather than re-fetched here. */
+  unitOptions: string[];
 }) {
   const router = useRouter();
 
@@ -77,6 +151,12 @@ export function RecipeEditor({
   const [msg, setMsg] = useState<string | null>(null);
 
   const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
+  /** Set only once a batch has resolved/created the output product (the batch
+   *  route's "learned link") — until then the output unit stays editable. */
+  const outputItem = useMemo(
+    () => (recipe.output_stock_item_id ? itemById.get(recipe.output_stock_item_id) ?? null : null),
+    [recipe.output_stock_item_id, itemById],
+  );
 
   // Live plan — reuse the shared helper. We only ever read on_hand / avg_unit_price
   // off the stock item, so the ItemLite → StockItem cast is safe here.
@@ -86,16 +166,22 @@ export function RecipeEditor({
   );
   const draftIngredients: RecipeIngredient[] = useMemo(
     () =>
-      rows.map((r) => ({
-        id: r.key,
-        org_id: recipe.org_id,
-        recipe_id: recipe.id,
-        stock_item_id: r.stock_item_id,
-        product_name: r.product_name,
-        qty_per_batch: Number(r.qty_per_batch) || 0,
-        unit: r.unit || null,
-      })),
-    [rows, recipe.org_id, recipe.id],
+      rows.map((r) => {
+        // A row linked to a stock item is denominated in THAT item's unit —
+        // its own live unit, not whatever this recipe last saved, is what
+        // stock decrements have to agree with (see the unit <select> below).
+        const item = r.stock_item_id ? itemById.get(r.stock_item_id) : null;
+        return {
+          id: r.key,
+          org_id: recipe.org_id,
+          recipe_id: recipe.id,
+          stock_item_id: r.stock_item_id,
+          product_name: r.product_name,
+          qty_per_batch: Number(r.qty_per_batch) || 0,
+          unit: item ? item.unit : r.unit || null,
+        };
+      }),
+    [rows, recipe.org_id, recipe.id, itemById],
   );
   const plan = useMemo(() => maxRecipeBatches(draftIngredients, stockByItem), [draftIngredients, stockByItem]);
   const tone = READINESS[plan.readiness];
@@ -138,16 +224,21 @@ export function RecipeEditor({
           name: name.trim() || 'Untitled recipe',
           output_product: outputProduct,
           output_qty: outputQty,
-          output_unit: outputUnit,
+          // Locked once the output is linked to a stock item — same reasoning
+          // as each ingredient row below.
+          output_unit: outputItem ? outputItem.unit : outputUnit,
           notes,
           ingredients: rows
             .filter((r) => r.product_name.trim())
-            .map((r) => ({
-              stock_item_id: r.stock_item_id,
-              product_name: r.product_name.trim(),
-              qty_per_batch: Number(r.qty_per_batch) || 0,
-              unit: r.unit || null,
-            })),
+            .map((r) => {
+              const item = r.stock_item_id ? itemById.get(r.stock_item_id) : null;
+              return {
+                stock_item_id: r.stock_item_id,
+                product_name: r.product_name.trim(),
+                qty_per_batch: Number(r.qty_per_batch) || 0,
+                unit: item ? item.unit : r.unit || null,
+              };
+            }),
         }),
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string };
@@ -230,12 +321,16 @@ export function RecipeEditor({
           placeholder="qty"
           className="of-num h-10 w-[72px] rounded-[10px] border border-[#E4E9F0] bg-white px-3 text-right text-[14px] text-[#171A17] outline-none placeholder:text-[#A0A49C] focus:border-[#3E7BC4]"
         />
-        <input
-          value={outputUnit}
-          onChange={(e) => setOutputUnit(e.target.value)}
-          placeholder="unit"
-          className="h-10 w-[110px] rounded-[10px] border border-[#E4E9F0] bg-white px-3 text-[14px] text-[#171A17] outline-none placeholder:text-[#A0A49C] focus:border-[#3E7BC4]"
-        />
+        {outputItem ? (
+          <span
+            title="Locked to the linked stock item's unit"
+            className="flex h-10 items-center rounded-[10px] border border-[#E4E9F0] bg-[#FBFCFE] px-3 text-[14px] text-[#171A17]"
+          >
+            {outputItem.unit}
+          </span>
+        ) : (
+          <UnitPicker value={outputUnit} options={unitOptions} onChange={setOutputUnit} size="sm" />
+        )}
         <span className="text-[#8A8E86]">per batch</span>
       </div>
 
@@ -265,7 +360,7 @@ export function RecipeEditor({
                 <div className="flex items-center gap-2 px-5 py-2.5 text-[11px] font-medium uppercase tracking-[0.06em] text-[#A0A49C]">
                   <div className="flex-1">Ingredient</div>
                   <div className="w-[92px] text-right">Per batch</div>
-                  <div className="w-[88px]">Unit</div>
+                  <div className="w-[96px]">Unit</div>
                   <div className="w-6" />
                 </div>
                 {rows.map((row, i) => {
@@ -315,12 +410,16 @@ export function RecipeEditor({
                           value={row.qty_per_batch}
                           onChange={(e) => updateRow(i, { qty_per_batch: sanitizeDecimal(e.target.value) })}
                         />
-                        <input
-                          className={`${field} w-[88px]`}
-                          placeholder="unit"
-                          value={row.unit}
-                          onChange={(e) => updateRow(i, { unit: e.target.value })}
-                        />
+                        {item ? (
+                          <div
+                            title="Locked to the linked stock item's unit"
+                            className={`${field} flex w-[88px] items-center bg-[#FBFCFE] text-[#6B6F68]`}
+                          >
+                            {item.unit}
+                          </div>
+                        ) : (
+                          <UnitPicker value={row.unit} options={unitOptions} onChange={(v) => updateRow(i, { unit: v })} />
+                        )}
                         <button
                           type="button"
                           onClick={() => removeRow(i)}

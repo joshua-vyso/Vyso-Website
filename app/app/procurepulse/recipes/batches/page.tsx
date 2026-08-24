@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getPlatformSession, createServerSupabase } from '@/lib/platform/supabase-server';
 import { fetchStock, fetchRecipes, fetchRecipeIngredients } from '@/lib/platform/procurepulse-queries';
+import { distinctItemUnits } from '@/lib/platform/procurepulse/units';
 import { PageHead } from '@/components/platform/procurepulse/ui';
 import { BatchLogger, type RecipeLite, type ItemLite } from '@/components/platform/procurepulse/BatchLogger';
 
@@ -32,6 +33,7 @@ export default async function BatchesPage() {
     output_product: r.output_product,
     output_qty: r.output_qty,
     output_unit: r.output_unit,
+    output_stock_item_id: r.output_stock_item_id,
     ingredients: (ingredientsByRecipe.get(r.id) ?? []).map((i) => ({
       stock_item_id: i.stock_item_id,
       product_name: i.product_name,
@@ -42,11 +44,15 @@ export default async function BatchesPage() {
 
   const itemLites: ItemLite[] = items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, on_hand: i.on_hand }));
 
+  // The org's own unit vocabulary (pp_stock_items.unit, however messy) rather
+  // than the fixed conversion-engine list — see distinctItemUnits' header.
+  const unitOptions = distinctItemUnits(items.map((i) => i.unit));
+
   return (
     <div>
       <PageHead title="Batches" subtitle="Log a production run — pick a recipe, confirm the weights used, and stock moves automatically" />
       <div className="mt-5">
-        <BatchLogger recipes={recipeLites} items={itemLites} />
+        <BatchLogger recipes={recipeLites} items={itemLites} unitOptions={unitOptions} />
       </div>
     </div>
   );

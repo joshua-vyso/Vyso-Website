@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { filterRecipes } from '@/lib/platform/procurepulse/batch-logic';
+import { distinctItemUnits } from '@/lib/platform/procurepulse/units';
 
 /** The thin recipe shape the logger needs: header + its ingredient lines. */
 export interface RecipeLite {
@@ -9,6 +11,10 @@ export interface RecipeLite {
   output_product: string | null;
   output_qty: number | null;
   output_unit: string | null;
+  /** Set once a batch has resolved/created the output product (see the batch
+   *  route's "learned link"). When set, the output unit is locked to that
+   *  item's own unit rather than editable here. */
+  output_stock_item_id: string | null;
   ingredients: {
     stock_item_id: string | null;
     product_name: string;
@@ -62,6 +68,67 @@ function timeAgo(iso: string): string {
 const field =
   'h-11 rounded-[12px] border border-[#E4E9F0] bg-white px-4 text-[14px] text-[#171A17] outline-none placeholder:text-[#A0A49C] focus:border-[#3E7BC4]';
 
+const OTHER = '__other__';
+
+/**
+ * Unit control for a line that ISN'T locked to a stock item: a `<select>` of
+ * the org's known units, sorted and deduped case-insensitively, plus the
+ * field's own current value folded in (so it can always represent what's
+ * already there, even a one-off unit — see `distinctItemUnits`). "Other…"
+ * drops to a plain input: the org's unit data is too messy (pkt / 250gr pkt /
+ * bx …) to treat as a closed list, so this must never block a new one.
+ */
+function UnitPicker({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+}) {
+  const known = useMemo(() => distinctItemUnits([...options, value]), [options, value]);
+  const [customOpen, setCustomOpen] = useState(false);
+
+  if (customOpen) {
+    return (
+      <div className="flex items-center gap-1">
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="unit"
+          className="h-10 w-[76px] rounded-[10px] border border-[#E4E9F0] bg-white px-2 text-[13px] text-[#171A17] outline-none focus:border-[#3E7BC4]"
+        />
+        <button
+          type="button"
+          onClick={() => setCustomOpen(false)}
+          aria-label="Back to unit list"
+          className="text-[11px] text-[#8A8E86] hover:text-[#3E4A57]"
+        >
+          list
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <select
+      value={value}
+      onChange={(e) => (e.target.value === OTHER ? setCustomOpen(true) : onChange(e.target.value))}
+      className="h-10 w-[104px] rounded-[10px] border border-[#E4E9F0] bg-white px-2 text-[13px] text-[#171A17] outline-none focus:border-[#3E7BC4]"
+    >
+      <option value="">unit…</option>
+      {known.map((u) => (
+        <option key={u} value={u}>
+          {u}
+        </option>
+      ))}
+      <option value={OTHER}>Other…</option>
+    </select>
+  );
+}
+
 /**
  * Log a Manufacturing batch: typeahead a recipe, adjust the weights actually
  * used (prefilled from the recipe but editable — a person weighing on the
@@ -70,12 +137,24 @@ const field =
  * moves — this component just collects what happened and shows what came
  * back.
  */
-export function BatchLogger({ recipes, items }: { recipes: RecipeLite[]; items: ItemLite[] }) {
+export function BatchLogger({
+  recipes,
+  items,
+  unitOptions,
+}: {
+  recipes: RecipeLite[];
+  items: ItemLite[];
+  /** The org's distinct stock-item units — see `distinctItemUnits`. Built
+   *  server-side by the page (it already has the stock read) and handed down
+   *  as a plain prop rather than re-fetched here. */
+  unitOptions: string[];
+}) {
   const [query, setQuery] = useState('');
   const [openPicker, setOpenPicker] = useState(false);
   const [recipeId, setRecipeId] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [outputQty, setOutputQty] = useState('');
+  const [outputUnit, setOutputUnit] = useState('');
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
@@ -84,12 +163,31 @@ export function BatchLogger({ recipes, items }: { recipes: RecipeLite[]; items: 
 
   const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
   const recipe = useMemo(() => recipes.find((r) => r.id === recipeId) ?? null, [recipes, recipeId]);
+  /** Set only once the recipe's output has a learned link — until then the
+   *  output unit stays editable (see RecipeLite.output_stock_item_id). */
+  const outputItem = useMemo(
+    () => (recipe?.output_stock_item_id ? itemById.get(recipe.output_stock_item_id) ?? null : null),
+    [recipe, itemById],
+  );
 
+  // Root cause of the "dead picker" bug this replaces: the old version only
+  // computed matches once `query` was non-empty, so focusing the field with
+  // nothing typed yet showed no dropdown at all — with an org that has one
+  // recipe, that reads as "typeahead does nothing". filterRecipes() returns
+  // every recipe for an empty query, so focus alone now surfaces the list.
   const matches = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q || recipeId) return [];
-    return recipes.filter((r) => r.name.toLowerCase().includes(q)).slice(0, 8);
+    if (recipeId) return [];
+    return filterRecipes(recipes, query, 8);
   }, [recipes, query, recipeId]);
+
+  /** Recipe selected, and the one number that actually has to be right —
+   *  gates the Confirm button (a zero/blank output would log a batch that
+   *  produced nothing, which is never intentional). */
+  const canConfirm = useMemo(() => {
+    if (!recipe) return false;
+    const qty = Number(outputQty);
+    return Number.isFinite(qty) && qty > 0;
+  }, [recipe, outputQty]);
 
   /** Re-fetched after a confirmed batch (from a click handler, not an effect —
    *  see the mount-time effect below for why that distinction matters here). */
@@ -137,6 +235,7 @@ export function BatchLogger({ recipes, items }: { recipes: RecipeLite[]; items: 
       })),
     );
     setOutputQty(r.output_qty != null ? String(r.output_qty) : '');
+    setOutputUnit(r.output_unit ?? '');
     setNotes('');
     setMsg(null);
   }
@@ -146,6 +245,7 @@ export function BatchLogger({ recipes, items }: { recipes: RecipeLite[]; items: 
     setQuery('');
     setRows([]);
     setOutputQty('');
+    setOutputUnit('');
     setNotes('');
     setMsg(null);
   }
@@ -154,23 +254,35 @@ export function BatchLogger({ recipes, items }: { recipes: RecipeLite[]; items: 
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, qty_used: sanitizeDecimal(qty) } : r)));
   }
 
+  function updateRowUnit(i: number, unit: string) {
+    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, unit } : r)));
+  }
+
   async function confirm() {
-    if (!recipe || busy) return;
+    if (!recipe || busy || !canConfirm) return;
     setBusy(true);
     setMsg(null);
+    // A row linked to a stock item decrements THAT item — its unit, not
+    // whatever the recipe last had saved, is what the on_hand math must use,
+    // so the live item's unit wins over the row's own field for linked rows
+    // (same reasoning for the output below).
+    const effectiveOutputUnit = outputItem ? outputItem.unit : outputUnit || recipe.output_unit || null;
     try {
       const res = await fetch('/api/procurepulse/batch', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           recipe_id: recipe.id,
-          ingredients: rows.map((r) => ({
-            stock_item_id: r.stock_item_id,
-            product_name: r.product_name,
-            qty_used: Number(r.qty_used) || 0,
-            unit: r.unit || null,
-          })),
-          output: { qty: Number(outputQty) || 0, unit: recipe.output_unit },
+          ingredients: rows.map((r) => {
+            const item = r.stock_item_id ? itemById.get(r.stock_item_id) : null;
+            return {
+              stock_item_id: r.stock_item_id,
+              product_name: r.product_name,
+              qty_used: Number(r.qty_used) || 0,
+              unit: item ? item.unit : r.unit || null,
+            };
+          }),
+          output: { qty: Number(outputQty) || 0, unit: effectiveOutputUnit },
           notes: notes.trim() || undefined,
           source: 'manual',
         }),
@@ -184,7 +296,7 @@ export function BatchLogger({ recipes, items }: { recipes: RecipeLite[]; items: 
       } else {
         setMsg({
           kind: 'ok',
-          text: `Produced ${outputQty || recipe.output_qty || 0}${recipe.output_unit ? ` ${recipe.output_unit}` : ''} of ${json.output.name} — now ${json.output.new_on_hand} on hand.`,
+          text: `Produced ${outputQty || recipe.output_qty || 0}${effectiveOutputUnit ? ` ${effectiveOutputUnit}` : ''} of ${json.output.name} — now ${json.output.new_on_hand} on hand.`,
         });
         clearRecipe();
         void loadRecent();
@@ -247,7 +359,7 @@ export function BatchLogger({ recipes, items }: { recipes: RecipeLite[]; items: 
                 <div className="flex items-center gap-2 border-b border-[#EEF1F5] pb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-[#A0A49C]">
                   <div className="flex-1">Ingredient</div>
                   <div className="w-[100px] text-right">Used</div>
-                  <div className="w-[76px]">Unit</div>
+                  <div className="w-[104px]">Unit</div>
                 </div>
                 {rows.map((row, i) => {
                   const item = row.stock_item_id ? itemById.get(row.stock_item_id) : null;
@@ -268,7 +380,18 @@ export function BatchLogger({ recipes, items }: { recipes: RecipeLite[]; items: 
                         value={row.qty_used}
                         onChange={(e) => updateRow(i, e.target.value)}
                       />
-                      <div className="w-[76px] text-[13px] text-[#6B6F68]">{row.unit || '—'}</div>
+                      <div className="w-[104px]">
+                        {item ? (
+                          <div
+                            title="Locked to the linked stock item's unit"
+                            className="truncate text-[13px] text-[#6B6F68]"
+                          >
+                            {item.unit}
+                          </div>
+                        ) : (
+                          <UnitPicker value={row.unit} options={unitOptions} onChange={(v) => updateRowUnit(i, v)} />
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -286,7 +409,11 @@ export function BatchLogger({ recipes, items }: { recipes: RecipeLite[]; items: 
                 placeholder="qty"
                 className="of-num h-10 w-[80px] rounded-[10px] border border-[#E4E9F0] bg-white px-3 text-right text-[14px] text-[#171A17] outline-none placeholder:text-[#A0A49C] focus:border-[#3E7BC4]"
               />
-              <span>{recipe.output_unit || ''}</span>
+              {outputItem ? (
+                <span title="Locked to the linked stock item's unit">{outputItem.unit}</span>
+              ) : (
+                <UnitPicker value={outputUnit} options={unitOptions} onChange={setOutputUnit} />
+              )}
             </div>
 
             <textarea
@@ -308,7 +435,7 @@ export function BatchLogger({ recipes, items }: { recipes: RecipeLite[]; items: 
               <button
                 type="button"
                 onClick={() => void confirm()}
-                disabled={busy}
+                disabled={busy || !canConfirm}
                 className="inline-flex h-[42px] items-center rounded-[11px] bg-[#1F5FA8] px-[18px] text-[14px] font-semibold text-white transition-colors hover:bg-[#174C87] disabled:opacity-50"
               >
                 {busy ? 'Confirming…' : 'Confirm batch'}

@@ -6729,3 +6729,131 @@ issues** (the single error it lists in `app/api/ai/agent/route.ts` —
 pre-existing and was confirmed identical on a stashed tree). `npm test` —
 **997 pass / 0 fail** (978 from Phase B + 19 new `finch-batch-tool.test.ts`
 cases).
+
+## ProcurePulse Manufacturing — the picker was dead, units were free text (2026-08-24)
+
+Josh's production report on Batches (Phase B, above): "batches do nothing",
+"no typeahead for created recipes", and ingredient/output units are "just a
+typable field" instead of the units the org actually measures in. Bug fix +
+UX pass, `BatchLogger.tsx` and `RecipeEditor.tsx` only — the batch route's
+contract, the chat/Finch path, and the migration are all untouched.
+
+### Root cause of the dead picker
+
+`BatchLogger.tsx`'s recipe-match `useMemo` short-circuited to `[]` whenever
+`query` was empty:
+
+```ts
+const matches = useMemo(() => {
+  const q = query.trim().toLowerCase();
+  if (!q || recipeId) return [];
+  return recipes.filter((r) => r.name.toLowerCase().includes(q)).slice(0, 8);
+}, [recipes, query, recipeId]);
+```
+
+Focusing the input fires `onFocus={() => setOpenPicker(true)}`, but with
+`query` still `''` at that point `matches` stayed empty, so the dropdown
+never rendered (`openPicker && matches.length > 0`) until the user typed a
+substring that matched a name. With the org's one recipe ("New recipe"),
+that reads exactly as "no typeahead for created recipes" — there was nothing
+wrong with the org's data, the picker just never showed anything to click
+without the user first guessing the right characters to type. This was the
+actual cause of "batches do nothing" too: the Confirm button, ingredient
+rows and output fields only render once a recipe is picked (`{!recipe ? ...
+: (...)}`), so a picker that never surfaces a recipe means the rest of the
+form is unreachable — nothing downstream needed fixing on its own.
+
+Fix: extracted the filter into a pure `filterRecipes(recipes, query, max)`
+(`lib/platform/procurepulse/batch-logic.ts`) that returns every recipe for
+an empty query and a case-insensitive substring match otherwise; the
+component now calls it unconditionally on focus. Confirmed no second bug in
+the confirm→POST path: `BatchLogger`'s payload
+(`recipe_id`, `ingredients[].{stock_item_id, product_name, qty_used, unit}`,
+`output.{qty, unit}`, `notes`, `source}`) matches
+`app/api/procurepulse/batch/route.ts`'s parsed body field-for-field — the
+route's `str()`/`num()` coercions accept exactly what the client sends,
+including `unit: null` for an unset value. The Confirm button is now also
+gated on `canConfirm` (recipe selected AND output qty parses to a number
+`> 0`) so a blank/zero output can't be submitted, per the "quantities valid"
+requirement — it was previously gated only on `busy`.
+
+### Unit dropdowns
+
+Both components already show ingredient rows and an output line; the unit
+field was always a bare `<input>`/text span with no relationship to what the
+linked stock item was actually counted in. New rule, applied identically in
+both:
+
+- **Linked to a stock item** (`row.stock_item_id` set, or the recipe's
+  `output_stock_item_id` resolves to a catalogue row): the unit is shown
+  read-only as that item's OWN live unit (looked up via `itemById`, not
+  whatever was last saved on the recipe/ingredient row) — a batch decrements
+  that item's `on_hand`, so the unit the math uses has to be the item's, not
+  a stale copy that can drift.
+- **Unlinked / free text**: a new `UnitPicker` (`<select>` + "Other…" → a
+  small text input) replaces the free-text `<input>`. Populated from
+  `distinctItemUnits()` (new, `lib/platform/procurepulse/units.ts`) — the
+  org's own `pp_stock_items.unit` values, deduped case-insensitively and
+  sorted, NOT the existing `allUnits()`/`BUILT_IN_UNITS` list (that one is a
+  fixed conversion-engine vocabulary plus the opt-in `pp_settings.custom_units`
+  used by Products/Doc-U/OrderFlow — a different concept from "what's this
+  org's stock actually denominated in today", and this org's real data
+  (`pkt`, `250gr pkt`, `bx`, `bushels`, …) is exactly the messy case a fixed
+  list would fight). The field's own current value is folded into the option
+  list before rendering, so a `<select>` can always represent what's already
+  saved even if no other stock item uses that unit — "Other…" is only for
+  typing a genuinely new one.
+- `unitOptions: string[]` is built server-side — `distinctItemUnits(items.map(i
+  => i.unit))` — in both `app/app/procurepulse/recipes/batches/page.tsx` and
+  `app/app/procurepulse/recipes/[id]/page.tsx` (both already run `fetchStock`)
+  and passed down as a plain prop. No new API route, per the task's
+  constraint.
+- `RecipeLite` (`BatchLogger.tsx`) gained `output_stock_item_id` so the
+  Batches page can apply the same lock rule to the output line that
+  `RecipeEditor` already could via `Recipe.output_stock_item_id` — the
+  Batches server page now maps that field through from `fetchRecipes()`.
+- `RecipeEditor.save()` and `BatchLogger.confirm()` both resolve the unit
+  they actually POST from the live linked item when one exists, not the
+  free-text field, closing the drift window between "recipe says kg" and "the
+  stock item is actually counted in boxes" that motivated this rule.
+
+`UnitPicker` is duplicated (not shared) between the two files, matching the
+existing house convention of duplicating small pure helpers like
+`sanitizeDecimal` per component rather than a premature shared UI import;
+`distinctItemUnits()` itself is the one place the dedupe/sort logic lives.
+
+### Tests — `tests/pp-batches.test.ts` (+12 cases)
+
+- `filterRecipes`: empty/whitespace query returns every recipe (the
+  focus-with-no-input case that was broken); a single-recipe org still
+  surfaces on focus; case-insensitive substring filtering; no match → `[]`;
+  the `max` cap.
+- `distinctItemUnits`: case-insensitive dedupe keeping first-seen casing;
+  alphabetical case-insensitive sort; blank/null/undefined entries dropped;
+  the org's actual messy unit list (`boxes`/`pockets`/`punnets`/…/`pkt`)
+  survives with no collisions; folding in an odd current value makes it
+  selectable; folding in a value already present doesn't duplicate it.
+
+### Verification
+
+Login-gated: `.env.local` points at the production database and no test
+credentials were available in this session, so browser verification of the
+picker/dropdowns against the live org (1 recipe, "New recipe" — Butternut/kg,
+Broccoli/head) was not possible; per the task's fallback instruction this
+pass relied on component-level reasoning plus the gates below instead. The
+Confirm button was never exercised (per instruction — it would move real
+customer stock).
+
+### Gates
+
+`npx tsc --noEmit` — clean. `npm run lint` (full repo) — 90 problems (50
+errors / 40 warnings), same pre-existing baseline as Phase B/C above;
+`npx eslint` over the seven files this pass touched
+(`components/platform/procurepulse/{BatchLogger,RecipeEditor}.tsx`,
+`lib/platform/procurepulse/{batch-logic,units}.ts`,
+`app/app/procurepulse/recipes/{batches/page,[id]/page}.tsx`,
+`tests/pp-batches.test.ts`) reports **zero issues**. `npm test` — **1009
+pass / 0 fail** (997 from Phase C + 12 new cases). `npm run build` —
+succeeds, exit 0, no errors or warnings; both touched routes
+(`/app/procurepulse/recipes/[id]`, `/app/procurepulse/recipes/batches`)
+compiled as dynamic routes as before.
