@@ -60,12 +60,51 @@ export function isFinchAllowed(email: string | null | undefined): boolean {
 
 /**
  * Model tiers. Haiku is the default (fast + cheap) for UI Q&A, analytics and
- * parsing; the workflow tier (Sonnet) is reserved for multi-step actions and is
- * wired in a later phase. Both are env-overridable so models can be swapped
+ * parsing; the workflow tier is reserved for multi-step actions (order
+ * building, batch logging). Both are env-overridable so models can be swapped
  * without a redeploy.
  */
 export const AGENT_MODEL = process.env.ANTHROPIC_AGENT_MODEL || 'claude-haiku-4-5';
+/** The workflow tier's ANTHROPIC model. Still read on that path, and only
+ *  there — `workflowModel()` below is what the route asks. */
 export const WORKFLOW_MODEL = process.env.ANTHROPIC_WORKFLOW_MODEL || 'claude-sonnet-4-6';
+
+/**
+ * Who serves the WORKFLOW tier (Manufacturing C1).
+ *
+ * DEFAULT OPENAI, AND THE ANTHROPIC PATH STAYS WHOLE. The batch-logging
+ * conversation ("used butternut 0.6 kg and broc 1.0 kg…") is a matching
+ * problem, and `gpt-5.6-luna` is the model this codebase already trusts with
+ * exactly that job on the Doc-U lane (lib/ai/order-match-call.ts). But a
+ * provider swap on the tier that CALLS TOOLS is the kind of change you want a
+ * way back from at 6am, so the Anthropic loop in app/api/ai/agent/route.ts is
+ * untouched and `FINCH_WORKFLOW_PROVIDER=anthropic` reverts to it — one env
+ * var, no deploy, no code path deleted.
+ *
+ * THE Q&A TIER IS NOT AFFECTED. `AGENT_MODEL` (Haiku) still answers every
+ * ordinary turn, and the chat titler still runs on it.
+ */
+export type WorkflowProvider = 'openai' | 'anthropic';
+
+export function workflowProvider(): WorkflowProvider {
+  return (process.env.FINCH_WORKFLOW_PROVIDER ?? '').trim().toLowerCase() === 'anthropic'
+    ? 'anthropic'
+    : 'openai';
+}
+
+/** The model id for whichever provider currently owns the workflow tier. */
+export function workflowModel(): string {
+  if (workflowProvider() === 'anthropic') return WORKFLOW_MODEL;
+  return (process.env.FINCH_WORKFLOW_MODEL ?? '').trim() || 'gpt-5.6-luna';
+}
 
 /** Output cap for a chat turn. Haiku 4.5 allows up to 64k; a chat reply is small. */
 export const AGENT_MAX_TOKENS = 2048;
+
+/**
+ * Output cap for a WORKFLOW turn. Larger than the Q&A one because on the
+ * gpt-5.x family reasoning tokens are billed against this same budget
+ * (lib/ai/openai.ts says the same thing about `max_completion_tokens`), and a
+ * turn that runs out mid-tool-call comes back empty with no error at all.
+ */
+export const WORKFLOW_MAX_TOKENS = 4096;

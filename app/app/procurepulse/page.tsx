@@ -27,6 +27,7 @@ const MOVEMENT_LABEL: Record<string, string> = {
   count_adjustment: 'Count adjustment',
   recipe_reserved: 'Reserved for recipe',
   recipe_consumed: 'Used in recipe',
+  batch_produced: 'Produced from batch',
   used: 'Used',
   reorder: 'Reorder',
   transfer: 'Transfer',

@@ -609,6 +609,8 @@ export const PRODUCE_CATEGORIES = [
   'Herbs',
   'Salad & Leafy Greens',
   'Mushrooms',
+  'Dried & Processed',
+  'Packaging',
   'Other',
 ] as const;
 
@@ -619,10 +621,12 @@ For EACH product, assign exactly one category from this fixed list:
 - "Herbs" — basil, coriander, parsley, mint, rosemary, thyme, dill, chives, etc.
 - "Salad & Leafy Greens" — lettuce, spinach, rocket, mixed leaves, kale, microgreens, watercress, etc.
 - "Mushrooms" — button, portabellini, oyster, shiitake, brown, white mushrooms, etc.
-- "Other" — anything that is not fresh produce or is genuinely unclear (eggs, packaging, pallets, deposits, etc.).
+- "Dried & Processed" — dried fruit, nuts, seeds, frozen produce, tinned/canned goods, juices, sauces, or anything else not sold fresh.
+- "Packaging" — punnets, boxes, crates, bags, pallets, cartons and other packaging or containers sold/consumed as stock items.
+- "Other" — anything that is not fresh produce or packaging, or is genuinely unclear (eggs, deposits, sundries, etc.).
 Respond with ONLY a JSON object (no prose, no markdown code fences) mapping each product id to its category:
 { "<id>": "Fruit", "<id>": "Vegetables", ... }
-Every id you are given MUST appear exactly once. Use ONLY the six category strings above, spelled exactly as shown.`;
+Every id you are given MUST appear exactly once. Use ONLY the eight category strings above, spelled exactly as shown.`;
 
 /**
  * Assign a produce category to each product by name. Returns a partial map of

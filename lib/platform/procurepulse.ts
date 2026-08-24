@@ -385,6 +385,10 @@ export const CATEGORY_COLORS: Record<string, string> = {
   Herbs: '#3E7BC4',
   'Salad & Leafy Greens': '#0F6E56',
   Mushrooms: '#854F0B',
+  // New in the fresh-produce wholesaler taxonomy (.ai/plan_procurepulse_manufacturing.md
+  // Phase A): dried/frozen/tinned goods and packaging/container stock items, split out
+  // of "Other" so the donut doesn't dump everything non-fresh into one slice.
+  'Dried & Processed': '#7A5AA8',
   Other: '#8A8E86',
   Uncategorised: '#E2E6EC',
 };

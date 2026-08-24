@@ -8,6 +8,7 @@ import { ChatComposer } from '@/components/platform/chat/ChatComposer';
 import { ChatDropZone } from '@/components/platform/chat/ChatDropZone';
 import { ChatTranscript } from '@/components/platform/chat/ChatTranscript';
 import { HubdocCards } from '@/components/platform/chat/HubdocConfirmCard';
+import { BatchCards } from '@/components/platform/chat/BatchConfirmCard';
 import { isBubbleRoute } from '@/lib/ai/finch/module-route';
 import { FinchBubble } from './FinchBubble';
 import { useFinchChat } from './FinchChatProvider';
@@ -267,6 +268,10 @@ export function GlobalChatDock() {
                 asked wherever the owner is standing. The order/ingest cards stay
                 bubble-only — they can only arise on an OrderFlow screen. */}
             <HubdocCards />
+            {/* Manufacturing C2 — here for the same reason: "I've just made 20 kg
+                of coleslaw" is said wherever the owner is standing, and the
+                Brief carries ProcurePulse's tools. */}
+            <BatchCards />
           </ChatDropZone>
         ) : null}
 

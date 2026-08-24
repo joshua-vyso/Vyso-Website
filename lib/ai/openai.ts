@@ -144,3 +144,52 @@ export async function openaiJson(call: OpenAiJsonCall): Promise<string> {
   }
   return text;
 }
+
+/**
+ * One STREAMING chat-completions call, handed back as the raw `Response` for
+ * the caller to read frame by frame.
+ *
+ * ADDED FOR FINCH'S WORKFLOW TIER (Manufacturing C1), ALONGSIDE `openaiJson`
+ * RATHER THAN INSTEAD OF IT. The two calls want opposite things: `openaiJson`
+ * wants one settled JSON object and the Doc-U lane must keep getting exactly
+ * that, while a chat turn wants tokens as they are produced and tool calls as
+ * they are decided. Sharing the key handling and the verbatim-error rule is
+ * worth one more export; sharing a return type would mean changing the
+ * extraction lane to get a chat feature, which is not a trade this file makes.
+ *
+ * DELIBERATELY DUMB, like its neighbour: the request body is the caller's, the
+ * SSE frames are the caller's to parse (lib/ai/finch/openai-loop.ts). All this
+ * owns is the key, the URL and turning a non-2xx into an error that names the
+ * model the API actually refused.
+ *
+ * NO `temperature`, and `max_completion_tokens` NOT `max_tokens` — the same two
+ * gpt-5.x rules the header of this file explains. The caller supplies both the
+ * budget and, when it sends function tools, `reasoning_effort: 'none'`.
+ */
+export async function openaiChatStream(
+  body: Record<string, unknown>,
+  opts: { signal?: AbortSignal } = {},
+): Promise<Response> {
+  const key = (process.env.OPENAI_API_KEY ?? '').trim();
+  if (!key) throw new Error('OPENAI_API_KEY is not configured');
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+    signal: opts.signal,
+    body: JSON.stringify({ ...body, stream: true }),
+  });
+
+  if (!res.ok || !res.body) {
+    // The error body is JSON even on a streaming request — it failed before the
+    // stream began. Its own message, verbatim, for the same reason as above.
+    const detail = (await res.json().catch(() => null)) as { error?: { message?: string; code?: string } } | null;
+    const err = detail?.error;
+    throw new Error(
+      `OpenAI ${res.status} for model "${String(body.model ?? 'unknown')}": ${err?.message ?? 'no error body'}${
+        err?.code ? ` (${err.code})` : ''
+      }`,
+    );
+  }
+  return res;
+}

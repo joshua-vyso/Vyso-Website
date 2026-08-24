@@ -31,3 +31,29 @@ export const CREATE_ORDER_RE =
 export function looksLikeOrderRequest(text: string): boolean {
   return CREATE_ORDER_RE.test(text ?? '');
 }
+
+/**
+ * "I made a batch" in the owner's own words (Manufacturing C2).
+ *
+ * SAME JOB AS `CREATE_ORDER_RE`, DIFFERENT TIER TRIGGER: a match escalates a
+ * ProcurePulse (or Brief) turn to the workflow tier and puts
+ * `pp_prepare_batch_log` on the table. Without it the sentence lands on Haiku
+ * with no batch tool offered, and Finch explains how to log a batch by hand —
+ * which reads as it ignoring what was just said.
+ *
+ * THREE PHRASINGS, BECAUSE JOSH'S OWN SENTENCE IS THE HARDEST ONE. "used
+ * butternut 0.6 kg and broc 1.0 kg. create a product entry using recipe mixed
+ * veg" never says "batch" at all — it is recognised by `recipe` appearing
+ * alongside a used/made/create verb. The other two are the short forms people
+ * actually type once they trust it: "log a batch", "made a batch of coleslaw".
+ *
+ * Loose on purpose, like its neighbour: a false positive costs one Q&A turn on
+ * a pricier model, a false negative costs the feature.
+ */
+export const LOG_BATCH_RE =
+  /\b(log|logged|record|create|creating|make|made|making|produce|produced|run|ran)\b[\s\S]{0,24}\bbatch\b|\bbatch\s+of\b|\b(used|use|using|took|made|make|create|creating|add)\b[\s\S]{0,80}\brecipe\b|\brecipe\b[\s\S]{0,40}\b(batch|made|produced)\b/i;
+
+/** `LOG_BATCH_RE.test`, for the same two reasons as `looksLikeOrderRequest`. */
+export function looksLikeBatchRequest(text: string): boolean {
+  return LOG_BATCH_RE.test(text ?? '');
+}

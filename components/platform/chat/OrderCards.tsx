@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { stashParsedOrder, type ParsedOrder } from '@/lib/ai/finch/order-handoff';
 import type { DockCard } from '@/components/platform/shell/FinchChatProvider';
 import { HubdocConfirmCard } from './HubdocConfirmCard';
+import { BatchConfirmCard } from './BatchConfirmCard';
 import type { OrderIngestResult } from '@/lib/platform/docu/order-ingest-client';
 
 /**
@@ -57,6 +58,10 @@ export function DockCards({
           // Plugins X2 — chat hand-off. Unlike the two below it has nowhere to
           // navigate to: the decision it carries is made here.
           <HubdocConfirmCard key={card.id} card={card} onDismiss={() => onDismiss(card.id)} />
+        ) : card.kind === 'pp_batch_confirm' ? (
+          // Manufacturing C2 — same shape of decision, made in the same place:
+          // the button writes the batch, nothing before it does.
+          <BatchConfirmCard key={card.id} card={card} onDismiss={() => onDismiss(card.id)} />
         ) : card.kind === 'draft' ? (
           <OrderDraftCard
             key={card.id}

@@ -6293,3 +6293,439 @@ same pre-existing baseline (none in the files touched by this change; the
 repo already had unrelated uncommitted changes in `VysoAIModal.tsx`,
 `WasteLog.tsx`, `categories.tsx`, wastewatch `shared.tsx`, and others before
 this task started). `npm test` — **963 pass / 0 fail**, no change in count.
+
+## ProcurePulse categorisation fix — Turn 'n Slice (2026-08-24)
+
+Plan: `.ai/plan_procurepulse_manufacturing.md`, Phase A only. Josh's complaint
+was "no products categorised" — all 963 Turn 'n Slice `pp_stock_items` rows sat
+at `category IS NULL`, so the dashboard donut showed 100% Uncategorised.
+
+### What was actually wrong
+
+`categoriseProducts()` in `lib/ai/anthropic.ts` already carried a
+fresh-produce taxonomy (Fruit / Vegetables / Herbs / Salad & Leafy Greens /
+Mushrooms / Other) — it was never the Meridian FMCG set (Field Produce /
+Prepared Lines / Dairy & Chilled / …) the plan's recon flagged as a
+possibility. The categorisation *feature* (route + button) was already
+wired up in `app/api/procurepulse/categorise/route.ts` and
+`LiveStockView.tsx`; it had simply never been run for Turn 'n Slice. The
+taxonomy was missing two buckets a produce wholesaler's real catalogue needs
+— dried/frozen/tinned goods and packaging/container line items were both
+being forced into "Other" — so it was widened to match the plan's target
+eight-category list rather than left as-is.
+
+### Changes
+
+- `lib/ai/anthropic.ts` — `PRODUCE_CATEGORIES` and `CATEGORISE_SYSTEM` now
+  list eight categories instead of six: added `Dried & Processed` (dried
+  fruit, nuts, seeds, frozen produce, tinned goods, juices, sauces) and
+  `Packaging` (punnets, boxes, crates, bags, pallets, cartons). Endpoint
+  batching/auth in `categorise/route.ts` untouched, as scoped.
+- `lib/platform/procurepulse.ts` — added a `'Dried & Processed': '#7A5AA8'`
+  entry to `CATEGORY_COLORS` (a colour distinct from every existing slice).
+  `Packaging` already had a colour from the Meridian taxonomy sharing the
+  same object, so no new entry was needed there.
+- `scripts/categorise-tns.ts` (new) — one-off runner. Finds the Turn 'n
+  Slice org the same tolerant way `supabase/tns-users-roles.sql` does
+  (`organisations.name ilike '%turn%slice%'`, oldest match) rather than a
+  hardcoded id, since the org id must never be guessed. Reads
+  `SUPABASE_SERVICE_ROLE_KEY` / `ANTHROPIC_API_KEY` from `.env.local` by
+  hand (same pattern as `scripts/backfill-price-watch.ts`, for the same
+  reason: `lib/ai/anthropic.ts` is `server-only` and cannot be imported from
+  a plain node/tsx process). Duplicates the `categoriseProducts()` transport
+  at the byte level rather than importing it, fetches only rows with a
+  NULL/blank `category` for that org, runs them through Claude Haiku in the
+  same 120-per-batch chunks as the route, writes `category` back, and prints
+  a per-category distribution. Only ever touches NULL rows, so re-running it
+  is a safe no-op once the catalogue is filled in.
+
+### Ran it
+
+Both keys were present in `.env.local`. `npx tsx scripts/categorise-tns.ts`:
+
+```
+Turn 'n Slice org: Turn 'n Slice (a24f858b-b40b-4824-bc29-8818f034d44b)
+963 stock items total, 963 uncategorised.
+Running 9 categorisation batch(es) of up to 120...
+Updated 963/963 item(s).
+
+-- category distribution --
+  Vegetables               384
+  Fruit                    209
+  Dried & Processed        139
+  Salad & Leafy Greens     97
+  Herbs                    59
+  Other                    41
+  Mushrooms                32
+  Packaging                2
+  TOTAL                    963
+```
+
+0 NULL remaining — every row got a category on the first pass, none needed a
+retry.
+
+### Deviations from the plan
+
+- The plan's step 1 was conditional ("if its prompt taxonomy is the Meridian
+  FMCG set…"); it wasn't, so that branch didn't apply. The taxonomy was
+  still widened from six to the plan's full eight-category list, since that
+  part of the instruction wasn't conditional.
+- Did not touch anything in Phases B/C's reserved list (`supabase/pp-batches.sql`,
+  `app/api/procurepulse/batch`, batches UI, `lib/ai/finch/*`,
+  `app/api/ai/agent/route.ts`, `app/app/procurepulse/layout.tsx`, recipes
+  pages, `app/app/procurepulse/page.tsx`).
+
+### Gates
+
+`npx tsc --noEmit` — clean. `npx eslint lib/ai/anthropic.ts
+lib/platform/procurepulse.ts scripts/categorise-tns.ts` — clean, no new
+issues. `npm run lint` (full repo) — same pre-existing 50 errors / 40
+warnings baseline as the entry above, none in the three files this task
+touched (all pre-existing failures are in `wastewatch/*`,
+`instrumentation-client.ts`, `price-watch/run.ts`, `posthog-server.ts`).
+
+## ProcurePulse Manufacturing — Batches (Phase B) (2026-08-24)
+
+Implements `.ai/plan_procurepulse_manufacturing.md` Phase B only: the
+Recipes tab becomes Manufacturing (Recipes + Batches sub-nav), and logging a
+batch — pick a recipe, adjust the weights actually used, confirm — now
+writes real stock movements (ingredients down, output up) instead of just
+planning against live stock the way the existing Recipes page already did.
+Phase A (categorisation) landed separately above; Phase C (chat-driven
+logging on Finch) is not part of this pass.
+
+### B1 — migration `supabase/pp-batches.sql`
+
+- `pp_recipes.output_stock_item_id` (nullable, `on delete set null`): links
+  a recipe's free-text `output_product` to a real `pp_stock_items` row so a
+  batch has something to increment. Learned the first time a batch resolves
+  or creates one (see B2) — no backfill needed, existing recipes just start
+  unlinked.
+- `pp_batches` (header) + `pp_batch_ingredients` (lines), same
+  header/ingredient-lines shape as `pp_recipes`/`pp_recipe_ingredients`.
+  `pp_batches.recipe_id` is `on delete set null` (not cascade) with
+  `recipe_name` denormalised onto the row: a batch is a historical stock
+  movement record, so deleting or renaming the recipe it came from must
+  never erase or relabel that the stock actually moved. `source` is
+  `'manual' | 'chat'` (checked) even though only `'manual'` exists yet, so
+  Phase C needs no further migration.
+- Indexes: `(org_id, created_at desc)` on `pp_batches`, `(batch_id)` on
+  `pp_batch_ingredients`. RLS: both tables get the verbatim
+  `pp_recipes_all`-shaped org-scoped policy.
+- The plan's `pp_movements.reason` CHECK-constraint step turned out to be
+  moot: grepped the base schema (`Vyso Platform/supabase/schema.sql:298-308`)
+  and every `supabase/pp-*.sql` migration in this repo — `reason` is plain
+  `text` everywhere, no CHECK exists to extend. Documented that finding in
+  the migration file instead of adding a guarded `alter`. The route still
+  degrades to a looser reason on insert failure (see B2), so it keeps
+  working unattended if a CHECK is ever added later.
+- `'batch_produced'` added to `MOVEMENT_LABEL` in
+  `app/app/procurepulse/page.tsx` ("Produced from batch") — the one edit the
+  plan explicitly pre-cleared against Phase A's file list.
+
+### B2 — API `app/api/procurepulse/batch/route.ts`
+
+Pure logic (output-resolution precedence, per-ingredient movement deltas,
+floor-at-zero decrement) lives in `lib/platform/procurepulse/batch-logic.ts`
+so it's testable without a database; the route is fetch-inputs-then-call.
+
+Auth: `resolveUser(req)` (like `categorise/route.ts`), then a `profiles`
+lookup for `org_id` (the `app/api/ai/agent/route.ts` pattern —
+`resolveUser` only authenticates, it doesn't scope by org). Every insert is
+explicitly `org_id`-stamped on top of RLS, matching the rest of
+`/api/procurepulse/*`.
+
+**`POST` contract** (Phase C should code against this):
+
+Request:
+```jsonc
+{
+  "recipe_id": "uuid",                    // required
+  "ingredients": [                        // optional, defaults to []
+    { "stock_item_id": "uuid|null", "product_name": "string", "qty_used": 0.6, "unit": "kg|null" }
+  ],
+  "output": {                             // optional — all fields optional
+    "stock_item_id": "uuid",              // explicit output pick (highest precedence)
+    "qty": 12,                            // falls back to the recipe's output_qty
+    "unit": "kg"                          // falls back to the recipe's output_unit
+  },
+  "notes": "string",                      // optional
+  "source": "manual" | "chat"             // optional, defaults to "manual"
+}
+```
+
+Success response (200):
+```jsonc
+{
+  "ok": true,
+  "batch_id": "uuid",
+  "output": { "stock_item_id": "uuid", "name": "Mixed Veg", "new_on_hand": 12 },
+  "movements": 3   // count of pp_movements rows actually written (ingredients + output)
+}
+```
+Errors: `401` (no session / no org), `400` (`recipe_id` missing), `404`
+(recipe not found or not this org's), `500` with `{ "error": "…" }` —
+`friendly()` names `supabase/pp-batches.sql` when the tables/column are
+missing (mirrors `recipe/route.ts`'s `friendly()`).
+
+Behaviour:
+1. Load the recipe (404 if missing/foreign).
+2. Resolve the output product via `resolveOutputProduct()`:
+   `output.stock_item_id` → `recipe.output_stock_item_id` → a fuzzy match
+   against the org's catalogue using `scoreProductName` (accept floor 0.85,
+   `docu/product-suggest.ts`'s substring tier — anything looser risks
+   silently posting onto the wrong product, worse than a duplicate a human
+   can merge) → else **create** a new `pp_stock_items` row
+   (`on_hand: 0`). If the recipe had no `output_stock_item_id`, the
+   resolved/created id is written back onto it (learned link).
+3. Insert the `pp_batches` header + `pp_batch_ingredients` lines (every
+   named ingredient is recorded, even ones with no `stock_item_id` — audit
+   trail of what was actually used).
+4. Ingredient lines WITH a `stock_item_id` and positive `qty_used` each get a
+   `pp_movements` row (`change: -qty_used`, `reason: 'recipe_consumed'`,
+   `source_label: 'Batch: <recipe name>'`) and `on_hand` decrements, floored
+   at 0. Unresolved lines move no stock (recorded, not zeroed).
+5. The output gets one positive movement (`reason: 'batch_produced'`) and
+   `on_hand` increments. Both movement inserts retry with a looser reason
+   (`'used'` / `'received'`) on failure — dead code today (B1 found no CHECK
+   constraint to reject anything) but keeps the route working if one is
+   added later, same shape as `order-stock/route.ts`'s `adjustOnHand`
+   degradation.
+6. `GET` returns `{ ok: true, batches: [...] }` — the org's 50 most recent
+   batches, newest first, feeding the Batches page's recent list.
+
+### B3 — UI
+
+- `components/platform/procurepulse/ui.tsx`: the top-level tab renamed
+  `Recipes` → `Manufacturing` (same `href`, `/app/procurepulse/recipes` — no
+  URL changes).
+- New `app/app/procurepulse/recipes/layout.tsx` (scoped to this section
+  only — Dashboard/Products/etc. are untouched) renders
+  `components/platform/procurepulse/ManufacturingSubnav.tsx`, a small
+  two-link nav (Recipes / Batches) using the same `usePathname`-active-tab
+  idiom as `PpSubnav`.
+- New `app/app/procurepulse/recipes/batches/page.tsx` (server component,
+  same shape as `recipes/page.tsx`) + `components/platform/procurepulse/BatchLogger.tsx`
+  (client): typeahead recipe picker → ingredient rows prefilled from
+  `qty_per_batch` (editable) → output qty prefilled from the recipe
+  (editable) → Confirm posts to `/api/procurepulse/batch` → success message
+  + refreshed recent-batches list. Styled to match `AddStockButton.tsx` /
+  `RecipeEditor.tsx` (same input/card classes, same typeahead-dropdown
+  pattern).
+- `recipes/page.tsx` gained a "Log batch" button in the `PageHead` header,
+  linking to the Batches page.
+- `lib/platform/types.ts` (website copy only — see Deviations): added
+  `Recipe.output_stock_item_id`, plus new `Batch` / `BatchIngredient`
+  interfaces for `pp_batches` / `pp_batch_ingredients`.
+
+### B4 — tests `tests/pp-batches.test.ts`
+
+15 pure-logic tests against `batch-logic.ts`, `node:test` + `.ts`-suffixed
+relative imports (no `@/` alias, matches `docu-product-suggest.test.ts`'s
+`.ts` import style):
+- `resolveOutputProduct`: explicit beats linked beats fuzzy beats create,
+  each tier only firing when the one before it produced nothing; a
+  below-floor name creates rather than guesses; an empty catalogue always
+  creates.
+- `ingredientMovements`: one negative delta per resolved positive-qty
+  ingredient; unresolved (`stockItemId: null`) and non-positive/non-finite
+  lines are dropped, not zeroed; custom reason honoured.
+- `outputMovement`: positive qty passes through; negative/NaN floors to 0.
+- `floorOnHand`: the actual never-negative-stock guarantee, plus a
+  non-numeric current value treated as 0.
+
+### Deviations from the plan
+
+- **No `pp_movements.reason` CHECK-constraint ALTER.** Per B1 above, none
+  exists to guard against; documented the finding in the migration comment
+  instead of writing a speculative `alter ... drop constraint / add
+  constraint` against a constraint name that doesn't exist. The route's
+  degradation logic is written as if one might exist, so nothing regresses
+  if a future migration adds one.
+- **`lib/platform/types.ts` only updated in this repo.** Its header states
+  it's mirrored byte-identical from `Vyso Platform/shared/types.ts` into
+  `mobile/lib/types.ts` and here. Phase B's scope is the Vyso Website repo;
+  I did not touch the other two copies. Follow-up: port
+  `output_stock_item_id` / `Batch` / `BatchIngredient` into
+  `Vyso Platform/shared/types.ts` (and re-copy to mobile) if/when mobile or
+  another surface needs them — they're additive, so the copies just being
+  behind isn't currently breaking anything.
+- Did not touch `lib/ai/anthropic.ts`, `scripts/`, or the `CATEGORY_COLORS`
+  block of `lib/platform/procurepulse.ts` (Phase A's territory, per
+  instruction). Phase C's files (`lib/ai/finch/*`, `app/api/ai/agent/route.ts`,
+  chat tool/card work) are untouched — out of scope for B.
+
+### Gates
+
+`npx tsc --noEmit` — clean. `npm run lint` (full repo) — 90 problems (50
+errors / 40 warnings), same pre-existing baseline the Phase A entry above
+already reported (51/41 before this task's own two lint fixes — see below —
+netted it down by one error and one warning); zero errors or warnings in
+any file this task touched (`supabase/pp-batches.sql`,
+`lib/platform/procurepulse/batch-logic.ts`,
+`app/api/procurepulse/batch/route.ts`,
+`components/platform/procurepulse/{ManufacturingSubnav,BatchLogger}.tsx`,
+`app/app/procurepulse/recipes/{layout,batches/page}.tsx`,
+`app/app/procurepulse/recipes/page.tsx`, `app/app/procurepulse/page.tsx`,
+`components/platform/procurepulse/ui.tsx`, `lib/platform/types.ts`,
+`tests/pp-batches.test.ts`). Two lint issues were fixed along the way, both
+in code this task wrote: an `eslint-disable-next-line no-console` in
+`batch/route.ts` that ESLint flagged as unused (the repo's config doesn't
+gate `no-console` there — removed), and `BatchLogger.tsx`'s mount-time
+`useEffect` calling a named async helper that (eventually) sets state —
+`react-hooks/set-state-in-effect` flags that even when the helper's first
+statement is an `await`, not just a synchronous `setState()`; inlined the
+fetch as an IIFE instead, the same shape `AddStockButton.tsx`'s mount effect
+already uses. `npm test` — **978 pass / 0 fail** (963 from Phase A's baseline
++ 15 new `pp-batches.test.ts` cases, all passing).
+`npm test` — **963 pass / 0 fail**, no change in count.
+
+## ProcurePulse Manufacturing — chat-driven batch logging (Phase C) (2026-08-24)
+
+Implements `.ai/plan_procurepulse_manufacturing.md` Phase C: Finch's workflow
+tier moves to `gpt-5.6-luna` (C1) and gains `pp_prepare_batch_log`, a
+read-only tool that turns "used butternut 0.6 kg and broc 1.0 kg, create a
+product entry using recipe mixed veg" into a confirm card whose button posts
+to Phase B's `POST /api/procurepulse/batch` with `source: 'chat'` (C2).
+Phases A and B are above; this pass codes against B's route contract and
+changes none of it.
+
+### C1 — the workflow tier's provider switch
+
+- `lib/ai/finch/config.ts`: `workflowProvider()` reads
+  `FINCH_WORKFLOW_PROVIDER` and answers `'openai'` unless it is literally
+  `anthropic`; `workflowModel()` answers `FINCH_WORKFLOW_MODEL ||
+  'gpt-5.6-luna'` on the OpenAI path and the unchanged `WORKFLOW_MODEL`
+  (`ANTHROPIC_WORKFLOW_MODEL || 'claude-sonnet-4-6'`) on the Anthropic one.
+  `WORKFLOW_MAX_TOKENS = 4096` is new and larger than the Q&A cap because on
+  gpt-5.x reasoning tokens bill against `max_completion_tokens`, and a turn
+  that exhausts it comes back empty with no error. `AGENT_MODEL` (Haiku) and
+  the chat titler are untouched — the Q&A tier did not move.
+- `lib/ai/openai.ts`: ONE new export, `openaiChatStream(body, {signal})`.
+  Nothing existing was changed, so the Doc-U/OrderFlow extraction lane
+  (`openaiJson` → `order-reader.ts`, `order-match-call.ts`) is byte-identical.
+  It shares the key handling and the verbatim-error rule and returns the raw
+  streaming `Response`; the frames are the caller's to parse.
+- `lib/ai/finch/openai-loop.ts` (new): the whole OpenAI agentic loop —
+  streaming chat-completions, per-`index` accumulation of streamed tool-call
+  deltas, the assistant/`tool` message pair, tools withheld on the final
+  allowed turn. It emits nothing itself: every visible effect goes through
+  callbacks the route wires to the SSE frames it already sends
+  (`{text,turn}`, `{interim}`, `{tool}`, `{card}`, `{orderDraft}`), so the
+  client reader needed no change to consume a different provider.
+  `reasoning_effort: 'none'` is sent on every request — mandatory with
+  function tools on chat-completions, else the API 400s — and `tool_choice`
+  is deliberately NOT sent ('auto' is already the default).
+- `app/api/ai/agent/route.ts`: one branch, `useOpenAiWorkflow`. The Anthropic
+  loop is intact below it (its `max_tokens` now reads the shared `maxTokens`,
+  which is `AGENT_MAX_TOKENS` on every path it previously took). The two
+  per-tool `if` blocks that emitted `orderDraft`/`card` were factored into
+  `sideEffectFrame(name, content)` so both loops draw the same cards from the
+  same table — that is what makes the env flip a true revert.
+- `OPENAI_API_KEY` is present in `.env.local` (checked by presence, not
+  printed).
+
+### C2 — `pp_prepare_batch_log` + the confirm card
+
+- `lib/ai/finch/batch-draft.ts` (new): the resolution rules as pure functions
+  (`resolveByName`, `resolveIngredient`, `resolveRecipe`) plus
+  `prepareBatchLog`, which reads and drafts and **never writes**. No
+  `server-only`, relative `.ts` imports — the procurepulse-data.ts convention,
+  so `node --test` can load it. Three outcomes, not two: matched, `ambiguous`
+  (candidates handed back for the MODEL to ask about), `unresolved`.
+  `pp_name_aliases` is consulted FIRST and is not scored — a confirmed alias
+  is a human who already ruled on that name. `NAME_ACCEPT = 0.85` is
+  `scoreProductName`'s substring tier (every dice/fuzzy guess scores strictly
+  below 0.8), the same floor `batch-logic.ts` uses for a batch's output;
+  `TIE_MARGIN = 0.04` is the tie-breaker that turns two equally-good matches
+  into a question. Output resolution re-uses B2's `resolveOutputProduct`
+  verbatim so the card can say `action: 'existing' | 'create'` — the route
+  re-runs it for real at confirm time and its answer is the one that counts.
+  Calling the tool with only a recipe name prefills that recipe's own
+  `qty_per_batch` lines, matching the Batches screen.
+- `lib/ai/finch/tools.ts`: `pp_prepare_batch_log` added to
+  `PROCUREPULSE_TOOLS` with `workflow: true` (so ProcurePulse's bubble and the
+  Brief both reach it, via the existing `TOOLS_BY_MODULE` spreads) plus a
+  `toSpokenIngredients` coercer. The registry header now says "three
+  exceptions".
+- `lib/ai/finch/order-intent.ts`: new `LOG_BATCH_RE` / `looksLikeBatchRequest`
+  beside the order one — same file, same reason (one copy, two readers).
+  Josh's own sentence never says "batch", so it is caught by `recipe`
+  appearing alongside a used/made/create verb; "log a batch" and "made a batch
+  of" are the short forms. Verified against 7 positives and 5 negatives
+  (stock, price-history, order-building and debtors questions all stay on the
+  Q&A tier).
+- `app/api/ai/agent/route.ts`: `wantsBatchWorkflow` escalates a ProcurePulse
+  or Brief turn on that regex — server-side only, so the client needed no new
+  flag (there is no sticky arm to keep: a batch is one sentence, not a
+  negotiation). `buildBatchCard` mirrors `buildHubdocCard` (only an `ok:true`
+  prepare becomes a card) and a `pp_prepare_batch_log` activity line was added.
+- `lib/ai/finch/knowledge.ts`: `MANUFACTURING_KNOWLEDGE` spliced into the
+  ProcurePulse and Brief docs, plus a `batchSection` in the system prompt
+  gated on the workflow tier. Most of both is about what NOT to say: never
+  claim a batch has been logged, always ask about `ambiguous`, always name
+  `unresolved` as recorded-but-not-stock-moving, always say whether the output
+  creates a new product. The ProcurePulse screen list now says "Manufacturing
+  (Recipes … and Batches)".
+- `components/platform/chat/BatchConfirmCard.tsx` (new): renders
+  "broc → Broccoli Florets · 1 kg · 8 on hand" per line (the owner's word is
+  shown only when it differs from the catalogue's), the ambiguous and
+  unresolved notes, and the output with `new product, created on confirm`
+  where that applies. Confirm POSTs the draft to `/api/procurepulse/batch`
+  with `source: 'chat'`, unresolved lines riding along by NAME so they reach
+  the audit trail while moving no stock, and no `output.stock_item_id` when
+  the draft says a product will be created (the route owns that decision).
+  Success replaces the button and writes one local transcript line via
+  `appendAssistantLine` — a fact, not a model turn, exactly as
+  `HubdocConfirmCard` does. Exports `BatchCards` for the chat-page surface.
+- `components/platform/shell/FinchChatProvider.tsx`: `BatchConfirmDockCard`
+  added to `DockCard`; `parseCardEvent` became a two-`kind` switch with
+  `parseBatchCard` defaulting every list to empty and every number to 0.
+  `components/platform/chat/OrderCards.tsx` draws it in the bubble;
+  `GlobalChatDock.tsx` draws `<BatchCards />` beside `<HubdocCards />`.
+- `tests/finch-batch-tool.test.ts` (new, 19 cases): "broc" → the broccoli
+  product; an exact name beating a longer prefix match; two broccoli lines
+  returning candidates rather than a pick; the `CANDIDATE_LIMIT` cap; unknown
+  and blank names landing in `unresolved`; confirmed aliases winning over an
+  ambiguous score; dismissed and dangling aliases being ignored; the same
+  rules on recipes; and the two thresholds themselves.
+
+### Deviations from the plan
+
+- **Chat-completions, not the Responses API.** The plan allowed either and
+  said to follow the repo's existing luna convention — which is raw-`fetch`
+  chat-completions (`lib/ai/openai.ts`). Taken, with the `reasoning_effort:
+  'none'` requirement the plan flagged. Smoke-tested live against the real
+  API with the exact body this loop sends: HTTP 200, the tool call streamed
+  back correctly parsed (`{"recipe_name":"mixed veg","ingredients":[{"name":
+  "broccoli","qty":1,"unit":"kg"}]}`), so the model id, the parameter set and
+  the delta accumulation are all confirmed rather than assumed.
+- **`lib/ai/finch/runtime.ts` untouched.** The plan named it alongside the
+  route as a place the OpenAI loop might live. It is the Anthropic client
+  module and the OpenAI path needs nothing from it, so the loop went into its
+  own file instead; `sanitizeMessages` is still the one entry point for
+  validating a conversation.
+- **The route's two card `if` blocks were factored into one helper.** Not in
+  the plan, but writing the third one inline would have meant the OpenAI loop
+  either duplicating the table or drifting from it — the exact failure the
+  order-intent regex's own file header describes.
+- **The tool also accepts a recipe name alone.** The plan's schema has
+  `ingredients` as a field; making it optional (prefilling the recipe's
+  per-batch quantities) costs one query and makes "log a batch of mixed veg"
+  work the way the Batches screen does.
+- **`confirm_token` is returned and carried on the card but not verified by
+  the route** — identical to `hubdoc_prepare_send`, and for the same reason:
+  the confirm route re-authenticates the caller and re-resolves the recipe
+  against their own org, so the token identifies a prepared batch rather than
+  authorising one.
+
+### Gates
+
+`npx tsc --noEmit` — clean. `npm run lint` (full repo) — 90 problems (50
+errors / 40 warnings), exactly the baseline Phase B recorded above;
+`npx eslint` over the thirteen files this pass touched reports **zero new
+issues** (the single error it lists in `app/api/ai/agent/route.ts` —
+`@next/next/no-assign-module-variable` on the `module` local — is
+pre-existing and was confirmed identical on a stashed tree). `npm test` —
+**997 pass / 0 fail** (978 from Phase B + 19 new `finch-batch-tool.test.ts`
+cases).

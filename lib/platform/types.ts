@@ -433,9 +433,40 @@ export interface Recipe {
   output_product: string | null;
   output_qty: number | null;
   output_unit: string | null;
+  /** Links the recipe's free-text output to a real product so batches have a
+   *  row to increment. Null until a batch resolves/creates one (learned link
+   *  — see app/api/procurepulse/batch/route.ts). Added by pp-batches.sql. */
+  output_stock_item_id: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** A logged production run of a recipe (`pp_batches`). */
+export interface Batch {
+  id: string;
+  org_id: string;
+  recipe_id: string | null;
+  recipe_name: string;
+  output_stock_item_id: string | null;
+  output_product: string;
+  output_qty: number;
+  output_unit: string | null;
+  notes: string | null;
+  source: 'manual' | 'chat';
+  created_by: string | null;
+  created_at: string;
+}
+
+/** One ingredient line actually used in a batch (`pp_batch_ingredients`). */
+export interface BatchIngredient {
+  id: string;
+  org_id: string;
+  batch_id: string;
+  stock_item_id: string | null;
+  product_name: string;
+  qty_used: number;
+  unit: string | null;
 }
 
 /** An ingredient line of a recipe (`pp_recipe_ingredients`). */

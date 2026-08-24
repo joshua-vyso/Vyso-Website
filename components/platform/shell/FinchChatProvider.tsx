@@ -236,9 +236,73 @@ export interface HubdocConfirmDockCard {
   documents: HubdocConfirmDocument[];
 }
 
+/** One matched ingredient line on a batch confirm card: what the owner said,
+ *  what it resolved to, and what is on the shelf. Mirrors `DraftLine` in
+ *  lib/ai/finch/batch-draft.ts — declared here rather than imported because that
+ *  module is server-side and this is a client component's view of the wire. */
+export interface BatchDraftLine {
+  stock_item_id: string;
+  spoken_name: string;
+  matched_name: string;
+  qty: number;
+  unit: string | null;
+  on_hand: number;
+}
+
+/** A spoken name that matched two or more products. Shown so the owner can see
+ *  what the model is about to ask them — never silently resolved. */
+export interface BatchDraftAmbiguity {
+  spoken_name: string;
+  qty: number;
+  unit: string | null;
+  candidates: { stock_item_id: string; name: string; unit: string | null; on_hand: number }[];
+}
+
+/** A spoken name that matched nothing. Recorded on the batch, moves no stock. */
+export interface BatchDraftUnresolved {
+  spoken_name: string;
+  qty: number;
+  unit: string | null;
+}
+
+export interface BatchDraftOutput {
+  stock_item_id: string | null;
+  name: string;
+  qty: number;
+  unit: string | null;
+  /** 'create' means confirming makes a NEW product with this name. */
+  action: 'existing' | 'create';
+  on_hand: number | null;
+}
+
+/**
+ * A Manufacturing batch the owner has been asked to confirm (Manufacturing C2).
+ *
+ * THE CARD IS THE CONSENT, exactly as it is for Hubdoc above.
+ * `pp_prepare_batch_log` matched the names and moved nothing; pressing the
+ * card's button posts the draft to `POST /api/procurepulse/batch` with
+ * `source: 'chat'` — the same route the Batches screen uses, which
+ * re-authenticates the caller and re-resolves the recipe against their own org.
+ * Provider state, never persisted: a Confirm button redrawn from history
+ * tomorrow would offer to move stock against a shelf nobody re-read.
+ */
+export interface BatchConfirmDockCard {
+  kind: 'pp_batch_confirm';
+  id: string;
+  /** Identifies the prepared batch, for the log line if one is ever needed. */
+  token: string;
+  recipeId: string;
+  recipeName: string;
+  lines: BatchDraftLine[];
+  ambiguous: BatchDraftAmbiguity[];
+  unresolved: BatchDraftUnresolved[];
+  output: BatchDraftOutput;
+  notes: string | null;
+}
+
 /** The non-sentence things Finch hands back. Drawn by chat/OrderCards.tsx under
  *  the bubble's transcript; see that file for why they are not messages. */
-export type DockCard = OrderDraftDockCard | IngestDockCard | HubdocConfirmDockCard;
+export type DockCard = OrderDraftDockCard | IngestDockCard | HubdocConfirmDockCard | BatchConfirmDockCard;
 
 /** The `{card}` SSE event, before it is trusted. Everything is optional: this
  *  is a payload from the wire, and one malformed field must degrade the card,
@@ -248,11 +312,76 @@ interface CardEvent {
   token?: unknown;
   intakeEmailMasked?: unknown;
   documents?: unknown;
+  draft?: unknown;
+}
+
+const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
+
+/** Narrow the `draft` half of a batch card event. Every list defaults to empty
+ *  and every number to 0 — a truncated payload should draw a card that says
+ *  less, never one that claims a quantity nobody sent. */
+function parseBatchCard(raw: CardEvent, id: string): BatchConfirmDockCard | null {
+  const draft = (raw.draft ?? null) as Record<string, unknown> | null;
+  if (!draft || typeof draft !== 'object') return null;
+  const recipeId = str(draft.recipe_id);
+  const output = (draft.output ?? null) as Record<string, unknown> | null;
+  if (!recipeId || !output) return null;
+
+  const list = (value: unknown): Record<string, unknown>[] =>
+    Array.isArray(value) ? value.filter((v): v is Record<string, unknown> => !!v && typeof v === 'object') : [];
+
+  return {
+    kind: 'pp_batch_confirm',
+    id,
+    token: typeof raw.token === 'string' ? raw.token : '',
+    recipeId,
+    recipeName: str(draft.recipe_name) ?? 'Batch',
+    lines: list(draft.ingredients)
+      .map((l) => ({
+        stock_item_id: str(l.stock_item_id) ?? '',
+        spoken_name: str(l.spoken_name) ?? '',
+        matched_name: str(l.matched_name) ?? '',
+        qty: num(l.qty),
+        unit: str(l.unit),
+        on_hand: num(l.on_hand),
+      }))
+      .filter((l) => l.stock_item_id && l.matched_name),
+    ambiguous: list(draft.ambiguous).map((a) => ({
+      spoken_name: str(a.spoken_name) ?? '',
+      qty: num(a.qty),
+      unit: str(a.unit),
+      candidates: list(a.candidates).map((c) => ({
+        stock_item_id: str(c.stock_item_id) ?? '',
+        name: str(c.name) ?? '',
+        unit: str(c.unit),
+        on_hand: num(c.on_hand),
+      })),
+    })),
+    unresolved: list(draft.unresolved).map((u) => ({
+      spoken_name: str(u.spoken_name) ?? '',
+      qty: num(u.qty),
+      unit: str(u.unit),
+    })),
+    output: {
+      stock_item_id: str(output.stock_item_id),
+      name: str(output.name) ?? 'Output',
+      qty: num(output.qty),
+      unit: str(output.unit),
+      // Anything that is not literally 'create' is drawn as landing on an
+      // existing line — the cautious reading, and the one that never promises a
+      // new product this client cannot be sure will be made.
+      action: output.action === 'create' ? 'create' : 'existing',
+      on_hand: typeof output.on_hand === 'number' ? output.on_hand : null,
+    },
+    notes: str(draft.notes),
+  };
 }
 
 /** Narrow a `{card}` event into a dock card, or null when it is not one this
  *  build knows how to draw (an older/newer server, or a truncated payload). */
-function parseCardEvent(raw: CardEvent, id: string): HubdocConfirmDockCard | null {
+function parseCardEvent(raw: CardEvent, id: string): DockCard | null {
+  if (raw.kind === 'pp_batch_confirm') return parseBatchCard(raw, id);
   if (raw.kind !== 'hubdoc_confirm' || !Array.isArray(raw.documents)) return null;
   const documents = raw.documents
     .filter((d): d is Record<string, unknown> => !!d && typeof d === 'object')
@@ -297,9 +426,10 @@ interface SseEvent {
   /** The workflow tier's prepared order (W4). Dropped by this provider until
    *  this wave, because nothing here could draw it. */
   orderDraft?: OrderDraftEvent;
-  /** A card the answer wants a decision on — today only the Hubdoc confirm
-   *  (Plugins X2 — chat hand-off). Same channel as `orderDraft`, but typed by
-   *  `kind` so the next one is a case rather than a second field. */
+  /** A card the answer wants a decision on: the Hubdoc confirm (Plugins X2 —
+   *  chat hand-off) or the Manufacturing batch confirm (C2). Same channel as
+   *  `orderDraft`, typed by `kind` — which is what made the second one a case
+   *  in `parseCardEvent` rather than a second field on the wire. */
   card?: CardEvent;
 }
 
@@ -938,9 +1068,10 @@ export function FinchChatProvider({
             ]);
             orderModeRef.current = false;
           }
-          // A card the answer wants a decision on (Plugins X2 — chat hand-off).
-          // `hubdoc_prepare_send` sent nothing; this is the surface on which a
-          // PERSON decides whether anything leaves Vyso.
+          // A card the answer wants a decision on (Plugins X2 — chat hand-off;
+          // Manufacturing C2). The tool behind it sent nothing and wrote
+          // nothing; this is the surface on which a PERSON decides whether
+          // anything leaves Vyso or any stock moves.
           else if (evt.card) {
             const card = parseCardEvent(evt.card, `card_${cardSeq.current++}`);
             if (card) setCards((prev) => [...prev, card]);

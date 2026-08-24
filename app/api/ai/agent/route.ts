@@ -2,12 +2,21 @@ import { NextResponse, after } from 'next/server';
 import type Anthropic from '@anthropic-ai/sdk';
 import { resolveUser, AI_CORS_HEADERS } from '@/lib/ai/auth';
 import { agentClient, agentConfigured, sanitizeMessages } from '@/lib/ai/finch/runtime';
-import { AGENT_MODEL, WORKFLOW_MODEL, AGENT_MAX_TOKENS, isAgentModule, isFinchAllowed } from '@/lib/ai/finch/config';
+import {
+  AGENT_MODEL,
+  AGENT_MAX_TOKENS,
+  WORKFLOW_MAX_TOKENS,
+  isAgentModule,
+  isFinchAllowed,
+  workflowModel,
+  workflowProvider,
+} from '@/lib/ai/finch/config';
 import { buildSystemPrompt } from '@/lib/ai/finch/knowledge';
 import { buildTitlePrompt, normaliseChatTitle } from '@/lib/ai/finch/chat-title';
 import { attachmentContextLine } from '@/lib/ai/finch/attachments';
-import { CREATE_ORDER_RE } from '@/lib/ai/finch/order-intent';
+import { CREATE_ORDER_RE, looksLikeBatchRequest } from '@/lib/ai/finch/order-intent';
 import { splitTurnText, type TurnText } from '@/lib/ai/finch/narration';
+import { runOpenAiWorkflowLoop } from '@/lib/ai/finch/openai-loop';
 import { toolDefsFor, runTool, type ToolContext } from '@/lib/ai/finch/tools';
 import { canSeeMoney as roleSeesMoney } from '@/lib/platform/access';
 import { rateLimitAllowed } from '@/lib/platform/rate-limit';
@@ -22,7 +31,7 @@ import {
 } from '@/lib/platform/finch-chats';
 
 // Tool-use turns can chain a couple of round-trips, and the workflow tier runs
-// on Sonnet (slower) — give headroom.
+// on a slower, stronger model whichever provider serves it — give headroom.
 export const maxDuration = 60;
 
 // Safety cap on the agentic loop (each iteration = one model turn ± tool calls).
@@ -48,6 +57,7 @@ const TOOL_ACTIVITY: Record<string, string> = {
   pp_get_stock_position: 'Checking stock cover…',
   pw_margin_exposure: 'Sizing the margin effect…',
   hubdoc_prepare_send: 'Preparing the Hubdoc hand-off…',
+  pp_prepare_batch_log: 'Matching the batch to your products…',
 };
 
 /**
@@ -108,6 +118,58 @@ function buildHubdocCard(toolResult: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Turn a `pp_prepare_batch_log` result into the confirm card the client draws
+ * (Manufacturing C2).
+ *
+ * SAME THREE RULES AS `buildHubdocCard` ABOVE, for the same reasons. Only a
+ * successful prepare becomes a card — an {ok:false} carries a sentence naming
+ * where the owner fixes it, and burying that under a button that cannot work is
+ * worse than no card. NOTHING IS WRITTEN BY THIS ROUTE: the card carries a
+ * recipe id, matched stock-item ids and quantities, and its button posts them to
+ * `POST /api/procurepulse/batch`, which re-authenticates the caller, re-resolves
+ * the recipe against their own org and moves the stock itself.
+ */
+function buildBatchCard(toolResult: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(toolResult) as { ok?: boolean; confirm_token?: unknown; draft?: unknown };
+    if (parsed.ok !== true || !parsed.draft || typeof parsed.draft !== 'object') return null;
+    return {
+      kind: 'pp_batch_confirm',
+      token: typeof parsed.confirm_token === 'string' ? parsed.confirm_token : '',
+      draft: parsed.draft,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The SSE frame (if any) a finished tool owes the client.
+ *
+ * ONE TABLE, TWO LOOPS. The Anthropic loop and the OpenAI workflow loop both
+ * call this, so a tool that draws a card draws the same card whichever provider
+ * ran the turn — which is the entire promise `FINCH_WORKFLOW_PROVIDER` makes.
+ * Everything it returns is DISPLAY DATA: nothing is saved and nothing is sent by
+ * any branch below.
+ */
+function sideEffectFrame(toolName: string, content: string): Record<string, unknown> | null {
+  // The order-builder streams a structured draft so the client can render a
+  // "review in a new order" card. No order is saved server-side.
+  if (toolName === 'orderflow_prepare_order') return { orderDraft: buildOrderDraft(content) };
+  // The two prepare-then-confirm tools stream their list as a `card`, which is
+  // what the OWNER presses. Same channel, same rule.
+  if (toolName === 'hubdoc_prepare_send') {
+    const card = buildHubdocCard(content);
+    return card ? { card } : null;
+  }
+  if (toolName === 'pp_prepare_batch_log') {
+    const card = buildBatchCard(content);
+    return card ? { card } : null;
+  }
+  return null;
 }
 
 /** Cap on documents cited by one turn — a chat message, not a data dump. */
@@ -226,14 +288,21 @@ export async function POST(req: Request) {
   const module = isAgentModule(body.module) ? body.module : 'orderflow';
   const orgName = typeof body.orgName === 'string' ? body.orgName.slice(0, 120) : null;
 
-  // Escalate to the Sonnet workflow tier when the user is building an order —
-  // either flagged explicitly by the client (the "/" customer picker) or detected
-  // from the message. Only OrderFlow has a workflow tool today.
+  // Escalate to the workflow tier when the user is doing something rather than
+  // asking something — either flagged explicitly by the client (the "/" customer
+  // picker) or detected from the message.
   // The turn being answered. Its INDEX matters as well as its text: an attached
   // document's ids are prepended to this message and nothing else (W5).
   const lastUserIndex = messages.map((m) => m.role).lastIndexOf('user');
   const lastUserText = lastUserIndex >= 0 ? messages[lastUserIndex].content : '';
-  const wantsWorkflow = module === 'orderflow' && (body.workflow === true || CREATE_ORDER_RE.test(lastUserText));
+  const wantsOrderWorkflow = module === 'orderflow' && (body.workflow === true || CREATE_ORDER_RE.test(lastUserText));
+  /* Manufacturing C2. Detected SERVER-SIDE only, unlike order building: there is
+   * no sticky arm to keep (a batch is one sentence, not a negotiation), so the
+   * client needs no new flag and no new code to reach this tier. ProcurePulse
+   * and the Brief both carry the batch tool — see TOOLS_BY_MODULE. */
+  const wantsBatchWorkflow =
+    (module === 'procurepulse' || module === 'brief') && looksLikeBatchRequest(lastUserText);
+  const wantsWorkflow = wantsOrderWorkflow || wantsBatchWorkflow;
   const system = buildSystemPrompt({ module, orgName, workflow: wantsWorkflow });
 
   // Resolve the caller's org + role (for tools + the finance gate). RLS lets a
@@ -287,7 +356,15 @@ export async function POST(req: Request) {
   // Only offer tools when we have an org to read from. Workflow tools (order
   // building) are only offered on the workflow tier.
   const tools = orgId ? toolDefsFor(module, { workflow: wantsWorkflow }) : [];
-  const model = wantsWorkflow ? WORKFLOW_MODEL : AGENT_MODEL;
+  /* WHICH MODEL, AND WHOSE (Manufacturing C1). The Q&A tier is Haiku and always
+   * has been; the workflow tier now answers to `FINCH_WORKFLOW_PROVIDER`,
+   * defaulting to OpenAI's gpt-5.6-luna. `useOpenAiWorkflow` is the ONLY branch:
+   * everything below it — the SSE frames, the tool results, the narration split,
+   * the persistence tail — is shared, so an owner cannot tell which provider
+   * answered and neither can the client. */
+  const useOpenAiWorkflow = wantsWorkflow && workflowProvider() === 'openai';
+  const model = wantsWorkflow ? workflowModel() : AGENT_MODEL;
+  const maxTokens = wantsWorkflow ? WORKFLOW_MAX_TOKENS : AGENT_MAX_TOKENS;
 
   const client = agentClient();
   const encoder = new TextEncoder();
@@ -325,10 +402,11 @@ export async function POST(req: Request) {
       // into, and only that one — the model must be able to tell which question
       // was about which file, and the STORED message keeps the owner's own
       // words (the persistence tail below reads `lastUserText`, untouched).
-      const convo: Anthropic.MessageParam[] = messages.map((m, i) => ({
+      const turnMessages = messages.map((m, i) => ({
         role: m.role,
         content: i === lastUserIndex && attachmentLine ? `${attachmentLine}\n\n${m.content}` : m.content,
       }));
+      const convo: Anthropic.MessageParam[] = turnMessages.map((m) => ({ role: m.role, content: m.content }));
       /* Text PER TURN, not one running string (see lib/ai/finch/narration.ts).
        *
        * A turn that ends by calling a tool can still have said something first
@@ -347,78 +425,102 @@ export async function POST(req: Request) {
        *  same tool called twice while the model refines its arguments) do not
        *  read as a stutter in the transcript. */
       let lastActivity: string | null = null;
+      /** The ✦ status line for a tool about to run. Consecutive duplicates are
+       *  swallowed; the same tool again AFTER a different one is a second look
+       *  and the owner should see it. Shared by both provider loops so the
+       *  transcript reads identically whichever answered. */
+      const announceTool = (name: string) => {
+        outcome.tools.push(name);
+        const activity = TOOL_ACTIVITY[name] ?? 'Looking things up…';
+        if (activity !== lastActivity) safeEnqueue(send({ tool: activity }));
+        lastActivity = activity;
+      };
 
       try {
-        for (let turn = 0; turn < MAX_TURNS; turn++) {
-          const current: TurnText = { turn, text: '', interim: false };
-          turnTexts.push(current);
-          // On the final allowed turn, withhold tools so the model MUST produce a
-          // text answer rather than requesting a tool whose result nothing reads.
-          const offerTools = tools.length > 0 && turn < MAX_TURNS - 1;
-          const modelStream = client.messages.stream(
-            {
-              model,
-              max_tokens: AGENT_MAX_TOKENS,
-              system,
-              messages: convo,
-              ...(offerTools ? { tools } : {}),
+        if (useOpenAiWorkflow) {
+          /* The workflow tier on gpt-5.6-luna (Manufacturing C1). Every frame it
+           * emits is one this route already sent, which is why the client did
+           * not have to learn anything about a second provider. */
+          const openAiTurns = await runOpenAiWorkflowLoop({
+            model,
+            system,
+            messages: turnMessages,
+            tools,
+            maxTokens,
+            maxTurns: MAX_TURNS,
+            signal: req.signal,
+            callbacks: {
+              onText: (delta, turn) => safeEnqueue(send({ text: delta, turn })),
+              onInterim: (turn) => safeEnqueue(send({ interim: turn })),
+              onToolCall: announceTool,
+              runTool: (name, input) => runTool(module, name, toolCtx, input),
+              onToolResult: (name, content, isError) => {
+                if (isError) return;
+                const frame = sideEffectFrame(name, content);
+                if (frame) safeEnqueue(send(frame));
+              },
             },
-            { signal: req.signal },
-          );
-          for await (const event of modelStream) {
-            if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-              current.text += event.delta.text;
-              safeEnqueue(send({ text: event.delta.text, turn }));
-            }
-          }
-          const finalMsg = await modelStream.finalMessage();
-          convo.push({ role: 'assistant', content: finalMsg.content });
-
-          if (finalMsg.stop_reason !== 'tool_use') break;
-
-          // Everything this turn said was said on the way to a tool call. Tell
-          // the client so it can move that text out of the answer and under the
-          // ✦ lines, where an aside belongs.
-          current.interim = true;
-          if (current.text.trim()) safeEnqueue(send({ interim: turn }));
-
-          // Run each requested tool through the RLS-scoped client, then feed the
-          // results back for the model's next turn.
-          const toolUses = finalMsg.content.filter(
-            (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
-          );
-          const results: Anthropic.ToolResultBlockParam[] = [];
-          for (const tu of toolUses) {
-            outcome.tools.push(tu.name);
-            const activity = TOOL_ACTIVITY[tu.name] ?? 'Looking things up…';
-            // Consecutive only: the same tool again AFTER a different one is a
-            // second look and the owner should see it.
-            if (activity !== lastActivity) safeEnqueue(send({ tool: activity }));
-            lastActivity = activity;
-            const { content, isError } = await runTool(
-              module,
-              tu.name,
-              toolCtx,
-              (tu.input ?? {}) as Record<string, unknown>,
+          });
+          turnTexts.push(...openAiTurns);
+        } else {
+          for (let turn = 0; turn < MAX_TURNS; turn++) {
+            const current: TurnText = { turn, text: '', interim: false };
+            turnTexts.push(current);
+            // On the final allowed turn, withhold tools so the model MUST produce a
+            // text answer rather than requesting a tool whose result nothing reads.
+            const offerTools = tools.length > 0 && turn < MAX_TURNS - 1;
+            const modelStream = client.messages.stream(
+              {
+                model,
+                max_tokens: maxTokens,
+                system,
+                messages: convo,
+                ...(offerTools ? { tools } : {}),
+              },
+              { signal: req.signal },
             );
-            results.push({ type: 'tool_result', tool_use_id: tu.id, content, is_error: isError });
-
-            // The order-builder tool also streams a structured draft to the
-            // client so it can render a "review in a new order" card. This is
-            // display data only — no order is saved server-side.
-            if (tu.name === 'orderflow_prepare_order' && !isError) {
-              safeEnqueue(send({ orderDraft: buildOrderDraft(content) }));
+            for await (const event of modelStream) {
+              if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+                current.text += event.delta.text;
+                safeEnqueue(send({ text: event.delta.text, turn }));
+              }
             }
+            const finalMsg = await modelStream.finalMessage();
+            convo.push({ role: 'assistant', content: finalMsg.content });
 
-            // The Hubdoc prepare tool streams its list to the client as a
-            // `card`, which is the confirm card the OWNER presses. Same channel,
-            // same rule: display data, nothing saved and nothing sent here.
-            if (tu.name === 'hubdoc_prepare_send' && !isError) {
-              const card = buildHubdocCard(content);
-              if (card) safeEnqueue(send({ card }));
+            if (finalMsg.stop_reason !== 'tool_use') break;
+
+            // Everything this turn said was said on the way to a tool call. Tell
+            // the client so it can move that text out of the answer and under the
+            // ✦ lines, where an aside belongs.
+            current.interim = true;
+            if (current.text.trim()) safeEnqueue(send({ interim: turn }));
+
+            // Run each requested tool through the RLS-scoped client, then feed the
+            // results back for the model's next turn.
+            const toolUses = finalMsg.content.filter(
+              (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
+            );
+            const results: Anthropic.ToolResultBlockParam[] = [];
+            for (const tu of toolUses) {
+              announceTool(tu.name);
+              const { content, isError } = await runTool(
+                module,
+                tu.name,
+                toolCtx,
+                (tu.input ?? {}) as Record<string, unknown>,
+              );
+              results.push({ type: 'tool_result', tool_use_id: tu.id, content, is_error: isError });
+
+              // A prepared draft / confirm card, streamed to the client as its
+              // own frame. Display data only — nothing is saved or sent here.
+              if (!isError) {
+                const frame = sideEffectFrame(tu.name, content);
+                if (frame) safeEnqueue(send(frame));
+              }
             }
+            convo.push({ role: 'user', content: results });
           }
-          convo.push({ role: 'user', content: results });
         }
         // Reached only when the loop ended on its own terms — this is what
         // makes the turn "complete" and therefore storable. ONLY the final

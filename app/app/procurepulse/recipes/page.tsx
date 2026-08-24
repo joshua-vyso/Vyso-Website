@@ -4,7 +4,7 @@ import { fetchStock, fetchRecipes, fetchRecipeIngredients } from '@/lib/platform
 import { maxRecipeBatches, computeRecipeKpis, rand } from '@/lib/platform/procurepulse';
 import type { RecipeWithPlan } from '@/lib/platform/procurepulse';
 import type { StockItem } from '@/lib/platform/types';
-import { PageHead, KpiCard } from '@/components/platform/procurepulse/ui';
+import { PageHead, KpiCard, PpButton } from '@/components/platform/procurepulse/ui';
 import { RecipesView, type RecipeCard } from '@/components/platform/procurepulse/RecipesView';
 
 /**
@@ -58,6 +58,7 @@ export default async function ProcurePulseRecipes() {
       <PageHead
         title="Recipes"
         subtitle="Combine stock products into finished items — with live ingredient availability and stock cost"
+        right={<PpButton href="/app/procurepulse/recipes/batches">Log batch</PpButton>}
       />
 
       <div className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
