@@ -2,13 +2,12 @@ import { SITE } from "@/lib/marketing/site";
 import { HUB, SOLUTION_LIST, type Solution } from "@/lib/marketing/solutions";
 
 /* ── /solutions structured data ──────────────────────────────────────────────
-   Both builders read the same objects the pages render, so the schema can
-   never claim something the page doesn't say. Server-only by construction —
-   `lib/marketing/solutions.ts` imports nothing with `"use client"`.
-
-   `@id`s are page-scoped (`…/solutions/<slug>#service`) and deliberately do
-   NOT reuse the sitewide `#finch` node from `app/layout.tsx`: these describe
-   the implementation service Vyso sells around a problem, not the product.  */
+   Rebuilt on the Vyso entity (`.ai/plan_vyso_redesign_2026.md` §8): the
+   `Service` nodes reference `${SITE.url}/#organization`, the SAME `@id`
+   `app/layout.tsx`'s graph declares, rather than inventing a second entity —
+   the pattern the file this replaces got right, just pointed at the wrong
+   company. Both builders read the exact objects the pages render, so the
+   schema can never claim something the page doesn't say. */
 
 const ORG = { "@id": `${SITE.url}/#organization` };
 
@@ -57,8 +56,8 @@ export function buildSolutionSchema(solution: Solution) {
       {
         "@type": "Service",
         "@id": `${url}#service`,
-        name: `${solution.name} with Finch`,
-        serviceType: "Operations software and implementation",
+        name: solution.name,
+        serviceType: "Operations automation and implementation",
         description: solution.description,
         provider: ORG,
         areaServed: { "@type": "Country", name: "South Africa" },
@@ -66,7 +65,7 @@ export function buildSolutionSchema(solution: Solution) {
       {
         "@type": "FAQPage",
         "@id": `${url}#faq`,
-        /* Mirrors the visible `<dl>` exactly — no hidden Q&As (§7.4). */
+        /* Mirrors the visible `<dl>` exactly, no hidden Q&As (plan §7.4). */
         mainEntity: solution.faqs.map(({ question, answer }) => ({
           "@type": "Question",
           name: question,

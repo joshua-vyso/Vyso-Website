@@ -1,14 +1,15 @@
-/* One OG image per solution, from that solution's own entry in
-   `lib/marketing/solutions.ts`. The card is its `exampleFinding` — the single
-   worked card the page renders under an ILLUSTRATIVE EXAMPLE caption, and the
-   caption travels with it here. */
+/* One OG image per solution, from that solution's own `og` field in
+   `lib/marketing/solutions.ts`. Renders on the `--vy-*` template
+   (`lib/og/vyso.tsx`, Phase 1) — import only, per plan §7.4: this file wires
+   a page's own data into the shared renderer, it does not touch the
+   renderer itself. */
 
-import { renderOgImage, OG_CONTENT_TYPE, OG_SIZE } from "@/lib/og/render";
-import { getSolution } from "@/lib/marketing/solutions";
+import { renderVysoOgImage, OG_SIZE, OG_CONTENT_TYPE } from "@/lib/og/vyso";
+import { HUB, getSolution } from "@/lib/marketing/solutions";
 
 export const runtime = "nodejs";
 /* Segment-level: `alt` cannot read `params`. */
-export const alt = "Finch by Vyso — what Finch fixes";
+export const alt = "Vyso, automation that knows what happens next";
 export const size = OG_SIZE;
 export const contentType = OG_CONTENT_TYPE;
 
@@ -17,30 +18,19 @@ export default async function Image({ params }: { params: Promise<{ slug: string
   const solution = getSolution(slug);
 
   if (!solution) {
-    return renderOgImage({
-      eyebrow: "WHAT FINCH FIXES",
-      title: "Four problems Finch was built to watch.",
-      finding: {
-        agent: "FINCH",
-        observation: "Money leakage, procurement, reporting and the operations dashboard.",
-        impact: "Priced per scope, after a free audit",
-        evidence: "vyso.co.za/solutions",
-      },
-      state: null,
+    return renderVysoOgImage({
+      eyebrow: HUB.eyebrow,
+      title: HUB.heading,
+      continuation: HUB.continuation,
+      lead: HUB.lead,
+      frameTitle: "Solutions",
+      feed: [
+        { time: "1", text: "WhatsApp orders, invoicing and spreadsheets, automated." },
+        { time: "2", text: "Procurement, stock and reporting, watched continuously." },
+        { time: "3", text: "Documents read and money leakage caught, before it compounds." },
+      ],
     });
   }
 
-  const finding = solution.exampleFinding;
-  return renderOgImage({
-    eyebrow: solution.eyebrow,
-    title: solution.title,
-    finding: {
-      agent: finding.agent,
-      observation: finding.observation,
-      impact: finding.impact,
-      evidence: finding.evidence,
-      meta: finding.meta,
-    },
-    caption: "ILLUSTRATIVE EXAMPLE",
-  });
+  return renderVysoOgImage(solution.og);
 }

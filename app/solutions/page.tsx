@@ -1,17 +1,16 @@
 import type { Metadata } from "next";
 
-import { AuditBand } from "@/components/finch/AuditBand";
-import { FinchFooter } from "@/components/finch/FinchFooter";
-import { FinchNav } from "@/components/finch/FinchNav";
-import { Breadcrumb, Eyebrow } from "@/components/finch/solutions/SolutionBits";
-import { SolutionCards } from "@/components/finch/solutions/SolutionCards";
-import { buildSolutionsHubSchema } from "@/components/finch/solutions/solutions-jsonld";
-import { SymptomChecklist } from "@/components/finch/solutions/SymptomChecklist";
-import { HUB, SOLUTION_ORDER } from "@/lib/marketing/solutions";
+import { Shell } from "@/components/vyso/Shell";
+import { Section } from "@/components/vyso/Section";
+import { SolutionCard } from "@/components/vyso/solutions/SolutionCard";
+import { SolutionClose } from "@/components/vyso/solutions/SolutionClose";
+import { buildSolutionsHubSchema } from "@/components/vyso/solutions/solutions-jsonld";
+import { HUB, SOLUTION_LIST } from "@/lib/marketing/solutions";
 import { SITE } from "@/lib/marketing/site";
 
-/* Root layout supplies the `%s | Vyso` suffix, so the title here is the page
-   half only (Workstream D, phase 1). */
+/* `/solutions` — the problem-first hub (plan §7.4: "overview grid of the 8,
+   problem-first framing, audit CTA"). Root layout supplies the `%s | Vyso`
+   title suffix, so `title` here is the page half only. */
 export const metadata: Metadata = {
   title: HUB.title,
   description: HUB.description,
@@ -32,73 +31,37 @@ export const metadata: Metadata = {
   },
 };
 
-/* `/solutions` — the problem-led hub. One widget (the symptom checklist), one
-   finding card (the one the checklist writes), and the four cards. `.finch-site`
-   scopes the `--fn-*` tokens and opts the route out of the site-wide blend
-   surface, exactly as `/` and `/pricing` do. */
 export default function SolutionsPage() {
   return (
-    <div className="finch-site min-h-screen bg-fn-bg font-fn-sans text-fn-ink antialiased">
+    <Shell active="solutions">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
           __html: JSON.stringify(buildSolutionsHubSchema()).replace(/</g, "\\u003c"),
         }}
       />
-      <FinchNav />
 
-      <main id="main">
-        <section className="mx-auto max-w-[1160px] px-[20px] pt-[36px] lg:px-[40px] lg:pt-[56px]">
-          <Breadcrumb
-            trail={[
-              { label: "Home", href: "/" },
-              { label: "Solutions", href: "/solutions" },
-            ]}
-          />
-          <Eyebrow>{HUB.eyebrow}</Eyebrow>
-          <h1 className="m-0 mb-[18px] max-w-[820px] font-fn-serif text-[36px] font-medium leading-[1.1] tracking-[-0.02em] text-pretty lg:mb-[22px] lg:text-[56px] lg:leading-[1.06] lg:tracking-[-0.025em]">
-            {HUB.h1Plain} <span className="text-fn-ink-3">{HUB.h1Accent}</span>
+      <section className="px-[var(--vy-gutter)] pt-[44px] pb-[16px] md:px-[40px] md:pt-[72px]">
+        <div className="mx-auto max-w-[var(--vy-content)]">
+          <p className="vy-label mb-[18px] text-[color:var(--vy-ink-3)]">{HUB.eyebrow}</p>
+          <h1 className="vy-h1 max-w-[820px] text-[color:var(--vy-ink)]">
+            {HUB.heading} <span className="text-[color:var(--vy-ink-3)]">{HUB.continuation}</span>
           </h1>
-          <p className="m-0 max-w-[600px] text-[15px] leading-[1.65] text-fn-ink-2 text-pretty lg:text-[17px]">
+          <p className="vy-body-lg mt-[22px] max-w-[640px] text-[color:var(--vy-ink-3)]">
             {HUB.lead}
           </p>
-        </section>
+        </div>
+      </section>
 
-        {/* The signature visual. */}
-        <section
-          className="mx-auto max-w-[1160px] px-[20px] pt-[48px] lg:px-[40px] lg:pt-[72px]"
-          aria-labelledby="symptoms-heading"
-        >
-          <h2 id="symptoms-heading" className="sr-only">
-            Match the symptom
-          </h2>
-          <SymptomChecklist />
-        </section>
+      <Section spacing="tight" divider>
+        <ul className="m-0 grid list-none grid-cols-1 gap-[20px] p-0 md:grid-cols-2 lg:grid-cols-3">
+          {SOLUTION_LIST.map((solution) => (
+            <SolutionCard key={solution.slug} solution={solution} />
+          ))}
+        </ul>
+      </Section>
 
-        <section
-          className="mx-auto max-w-[1160px] px-[20px] pt-[72px] lg:px-[40px] lg:pt-[110px]"
-          aria-labelledby="solutions-heading"
-        >
-          <Eyebrow>FOUR PLACES TO START</Eyebrow>
-          <h2
-            id="solutions-heading"
-            className="m-0 mb-[16px] font-fn-serif text-[28px] font-medium leading-[1.15] tracking-[-0.02em] lg:text-[38px]"
-          >
-            What Finch fixes.
-          </h2>
-          <p className="m-0 mb-[32px] max-w-[620px] text-[15px] leading-[1.65] text-fn-ink-3 lg:mb-[44px] lg:text-[15.5px]">
-            Each page names the problem, the agents that would work it, and what Finch can honestly
-            do about it today. They overlap — most operations recognise more than one.
-          </p>
-          <SolutionCards slugs={SOLUTION_ORDER} />
-        </section>
-
-        <AuditBand />
-      </main>
-
-      <div className="pt-[40px] lg:pt-[68px]">
-        <FinchFooter />
-      </div>
-    </div>
+      <SolutionClose page="solutions-hub" />
+    </Shell>
   );
 }

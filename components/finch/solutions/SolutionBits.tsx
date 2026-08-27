@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import type { RelatedLink, SolutionAgent } from "@/lib/marketing/solutions";
+import type { RelatedLink } from "@/lib/marketing/solutions";
 
 /* ── Small shared pieces for /solutions ──────────────────────────────────────
    Server components, all of them: nothing here needs state, and keeping them
@@ -54,51 +54,15 @@ export function StatusChip({ status }: { status: string }) {
   );
 }
 
-/** Compact agent chips for the hub's solution cards — label only, no link (the
-    whole card is already one). */
-export function AgentChipRow({ agents }: { agents: readonly SolutionAgent[] }) {
-  return (
-    <div className="flex flex-wrap items-center gap-[6px]">
-      {agents.map((agent) => (
-        <span
-          key={agent.label}
-          className="inline-flex items-center gap-[6px] rounded-[99px] border border-fn-line-2 bg-fn-bg px-[9px] py-[3px] font-fn-mono text-[9.5px] tracking-[0.1em] text-fn-ink-3"
-        >
-          <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-fn-orange" />
-          {agent.label}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-/** The full agent row used by "How Finch fixes it": a link to the roster on
-    `/finch#agents`, the job this agent does for *this* problem, and its status. */
-export function AgentList({ agents }: { agents: readonly SolutionAgent[] }) {
-  return (
-    <ul className="m-0 grid list-none grid-cols-1 gap-[12px] p-0 md:grid-cols-2">
-      {agents.map((agent) => (
-        <li key={agent.label}>
-          <Link
-            href="/finch#agents"
-            className="group flex h-full flex-col rounded-[10px] border border-fn-line bg-fn-surface px-[20px] py-[18px] transition-colors duration-150 hover:border-fn-line-hover"
-          >
-            <span className="mb-[10px] flex items-center gap-[8px]">
-              <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-fn-orange" />
-              <span className="font-fn-mono text-[10.5px] tracking-[0.12em] text-fn-ink-2 transition-colors duration-150 group-hover:text-fn-orange-deep">
-                {agent.label}
-              </span>
-              <span className="ml-auto">
-                <StatusChip status={agent.status} />
-              </span>
-            </span>
-            <span className="text-[14px] leading-[1.55] text-fn-ink-3">{agent.role}</span>
-          </Link>
-        </li>
-      ))}
-    </ul>
-  );
-}
+/* `AgentChipRow` and `AgentList` (agent-roster chips typed against the old
+   `lib/marketing/solutions.ts`'s `SolutionAgent`) were removed here: Phase 2c
+   of `.ai/plan_vyso_redesign_2026.md` rewrote that file's `Solution` type
+   without an `agents` field (the redesign has no "agent roster" concept —
+   see that file's header), which orphaned both functions. Neither had a
+   second importer (`components/finch/industries/IndustryBits.tsx` defines
+   its OWN, differently-shaped `AgentChipRow` locally, and never imported
+   this one) — confirmed by grep before removal, same rule plan §10 applies
+   to `components/finch/*` deletions in general. */
 
 /** The quiet arrow link used everywhere a section points somewhere else. */
 export function ArrowLink({
