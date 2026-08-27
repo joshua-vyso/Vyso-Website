@@ -1,28 +1,31 @@
-/* `/about`'s OG image. Every line is `lib/marketing/site.ts` or the published
-   price — the same facts the page's `<h1>` and its schema carry, and the only
-   location claim the site makes anywhere. */
+/* `/about`'s OG image, rebuilt on the `--vy-*` template (`lib/og/vyso.tsx`).
+   The previous version of this file read "The company behind Finch." — the
+   exact phrase plan §7.6 flagged for Phase 2b to fix. Every line below is
+   `lib/marketing/site.ts` or a fact this page itself states. */
 
-import { renderOgImage, OG_CONTENT_TYPE, OG_SIZE } from "@/lib/og/render";
-import { SITE } from "@/lib/marketing/site";
+import { renderVysoOgImage, OG_SIZE, OG_CONTENT_TYPE } from "@/lib/og/vyso";
 
 export const runtime = "nodejs";
-export const alt = "About Vyso — the company behind Finch";
+export const alt = "About Vyso, an AI operations company in Johannesburg";
 export const size = OG_SIZE;
 export const contentType = OG_CONTENT_TYPE;
 
-export default function Image() {
-  return renderOgImage({
+export default async function Image() {
+  return renderVysoOgImage({
     eyebrow: "ABOUT VYSO",
-    title: "The company behind Finch.",
-    lead: SITE.description,
-    finding: {
-      agent: "VYSO",
-      observation:
-        "One product, priced per customer and per scope, and a free audit that says so if the answer is that you don’t need software.",
-      impact: "Fixed after a free audit",
-      evidence: `Founded by ${SITE.founder.name}`,
-      meta: `${SITE.address.addressLocality.toUpperCase()} · ${SITE.locale.toUpperCase()}`,
-    },
-    state: null,
+    title: "One company,",
+    continuation: "not a platform or a product line.",
+    lead: "The founder story, how we work as one team, and how we handle data and POPIA.",
+    frameTitle: "Vyso",
+    feed: [
+      { time: "THEN", text: "Started inside a family wholesale business, not a whiteboard." },
+      {
+        time: "NOW",
+        text: "One team runs the audit, builds the system and keeps watching it.",
+        accent: true,
+        label: "ONE COMPANY, NOT A PRODUCT LINE",
+      },
+    ],
+    footerNote: "Johannesburg, South Africa",
   });
 }

@@ -1,32 +1,40 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
-import { AuditBand } from "@/components/finch/AuditBand";
-import { FinchFooter } from "@/components/finch/FinchFooter";
-import { FinchNav } from "@/components/finch/FinchNav";
-import { AboutTimeline } from "@/components/finch/about/AboutTimeline";
+import { Button } from "@/components/vyso/Button";
+import { Reveal } from "@/components/vyso/Reveal";
+import { Section } from "@/components/vyso/Section";
+import { Shell } from "@/components/vyso/Shell";
+import { TrustPoints } from "@/components/vyso/company/TrustPoints";
 import { buildAboutSchema } from "@/components/finch/about/about-jsonld";
-import { PRICE } from "@/components/finch/pricing/pricing-data";
 import { SITE } from "@/lib/marketing/site";
 
-/* `/about` rebuild — `.ai/vyso_v2.md` §2.3, `.ai/plan_phase3_company_
-   verticals_content.md` Workstream C. Every fact below is either in
-   `lib/marketing/site.ts` (name, location, founder) or grounded in the
-   published case study / pricing (Turn 'n Slice as the first founding
-   customer, the academy seat price) — nothing invented. Finch's own price and
-   the audit fee left this page with `.ai/plan_home_only.md`: pricing is per
-   customer and per scope now, fixed after a free audit, and nothing on the
-   site publishes an amount for either. The one open
-   item is the founder photo/bio, marked with a `TODO(user)` below. */
+/* ── /about ───────────────────────────────────────────────────────────────────
+   Rebuilt for the 2026 redesign (`.ai/plan_vyso_redesign_2026.md` §7.6): the
+   founder story expanded honestly, one cohesive company (no Finch, no module
+   brands, no "the company behind X"), South African identity, and a trust
+   section covering POPIA awareness, plain language data handling and human
+   approval of actions. Everything the old page said about Finch, OrderFlow,
+   the Academy and a founding cohort with waived setup fees is gone: Vyso is
+   presented as one team building operational systems, not a company whose
+   whole story is a single named product.
 
-const TITLE = "About Vyso — the company behind Finch";
+   `buildAboutSchema()` is untouched (`components/finch/about/about-jsonld.ts`)
+   because it only ever asserted a `Person` node for the founder plus this
+   page's `BreadcrumbList`, both sourced from `lib/marketing/site.ts` — nothing
+   in it depended on Finch or needed a rewrite.
+
+   No demo, no timeline, no FindingCard on this page. Every other Vyso page
+   argues the product's case with a vignette; this one is about the people and
+   the principles behind it, and a demo here would be the wrong kind of proof. */
+
+const TITLE = "The team building Vyso's operational systems";
 const DESCRIPTION =
-  "Vyso is a Johannesburg company. Founder Josh Moreira. Finch, its AI operations agent for South African food SMEs, is priced per customer and per scope.";
+  "Vyso is a Johannesburg based AI operations company: the founder story, how we work as one team, and how we handle data and POPIA.";
 
 export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
-  alternates: { canonical: "/about" },
+  alternates: { canonical: `${SITE.url}/about` },
   openGraph: {
     title: TITLE,
     description: DESCRIPTION,
@@ -42,215 +50,157 @@ export const metadata: Metadata = {
   },
 };
 
-const PRINCIPLES = [
-  {
-    label: "Evidence first",
-    body: "Every finding Finch surfaces points at the invoice, statement or delivery note it came from. Nothing is asserted without the source attached.",
-  },
-  {
-    label: "Rand, not vibes",
-    body: "Impact is quantified in rand wherever the numbers support it. Where they don't yet, the page says so rather than round up.",
-  },
-  {
-    label: "Your tools, not ours",
-    body: "Finch reads what a business already runs — invoices, spreadsheets, WhatsApp, Xero, Sage — instead of asking anyone to migrate to a new system.",
-  },
-  {
-    label: "We tell you if you don't need us",
-    body: "The Operations Audit is delivered whether or not a business signs up afterward. If there's nothing worth automating yet, that's the finding.",
-  },
+const FOUNDER_STORY: readonly string[] = [
+  "Vyso began inside a wholesale business, not in front of a whiteboard. Its founder, Josh Moreira, grew up working in his father's: early mornings, a phone that never stopped with WhatsApp orders, spreadsheets that held the real picture of the business, invoices that needed checking by hand, stock that ran short without warning, and supplier prices that changed more often than anyone had time to track.",
+  "Most of what mattered was already there, somewhere. It was just scattered across chats, sheets and someone's memory, and the decisions that shaped a week often got made because a person happened to remember the right fact at the right moment rather than because the business could see it clearly.",
+  "The question that started Vyso was a small one: could technology give some of that time back? Not to a large corporate with a systems team already in place, but to an owner running the business themselves, most of it in their head.",
+  "Vyso is that question, scaled to other people carrying the same weight: owners, founders, partners and operators who built something real and now spend too much of it on admin that a system could be watching instead.",
 ];
-
-const rand = (value: number) => `R${String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 
 export default function AboutPage() {
   return (
-    <div className="finch-site min-h-screen bg-fn-bg font-fn-sans text-fn-ink antialiased">
+    <Shell active="about">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(buildAboutSchema()).replace(/</g, "\\u003c") }}
       />
 
-      <FinchNav />
+      <Section
+        eyebrow="About Vyso"
+        heading="One company,"
+        continuation="not a platform, a fractional executive or a product line."
+        lead="We don't sell one size fits all software. We build systems around the way your business actually works, and one team sees that work through from the first audit to the system that's still running a year later."
+        headingLevel={1}
+      >
+        <div className="flex flex-wrap items-center gap-[16px]">
+          <Button href="/operations-audit" event="book_audit_click" eventProps={{ page: "about-hero" }}>
+            Get your free Operations Audit
+          </Button>
+          <Button href="/contact" variant="secondary">
+            Talk to Vyso
+          </Button>
+        </div>
+      </Section>
 
-      <main id="main">
-        {/* Hero */}
-        <section className="mx-auto max-w-[1160px] px-[20px] pt-[56px] lg:px-[40px] lg:pt-[88px]">
-          <p className="mb-[14px] font-fn-mono text-[11px] tracking-[0.14em] text-fn-muted">ABOUT VYSO</p>
-          <h1 className="m-0 mb-[18px] font-fn-serif text-[40px] font-medium leading-[1.05] tracking-[-0.02em] lg:text-[54px]">
-            Vyso, the company.
-          </h1>
-          <p className="m-0 max-w-[620px] text-[15.5px] leading-[1.65] text-fn-ink-3 lg:text-[16px]">
-            Finch is the product — a company&rsquo;s own COO, built from AI agents. Vyso is who
-            built it, who runs the audits, who teaches the Academy, and whose name is on the
-            invoice.
-          </p>
-        </section>
-
-        {/* Founder */}
-        <section className="mx-auto max-w-[1160px] px-[20px] pt-[64px] lg:px-[40px] lg:pt-[96px]">
-          <div className="grid grid-cols-1 gap-[32px] lg:grid-cols-[160px_1fr] lg:gap-[48px]">
-            {/* TODO(user): replace with a real photo (160×160, object-cover).
-                Placeholder is an honest initials mark, not a stand-in photo —
-                nothing here pretends to be a picture of Josh. */}
-            <div
-              aria-hidden
-              className="flex h-[120px] w-[120px] items-center justify-center rounded-full border border-fn-line bg-fn-surface font-fn-serif text-[34px] font-medium text-fn-muted lg:h-[160px] lg:w-[160px] lg:text-[44px]"
-            >
-              JM
-            </div>
-            <div>
-              <p className="mb-[10px] font-fn-mono text-[11px] tracking-[0.14em] text-fn-muted">FOUNDER</p>
-              <h2 className="m-0 mb-[12px] font-fn-serif text-[26px] font-medium tracking-[-0.02em] lg:text-[30px]">
-                Josh Moreira, Johannesburg.
-              </h2>
-              <p className="m-0 max-w-[600px] text-[15px] leading-[1.65] text-fn-ink-3">
-                Josh founded Vyso and leads it from Johannesburg — the operations audits, the
-                Finch build, and Vyso Academy.
+      <Section
+        id="founder"
+        eyebrow="Why Vyso exists"
+        heading="Your business should give you a life."
+        continuation="Not consume one."
+        width="narrow"
+        divider
+      >
+        <Reveal>
+          <div className="flex flex-col gap-[20px]">
+            {FOUNDER_STORY.map((paragraph) => (
+              <p key={paragraph.slice(0, 24)} className="vy-body-lg text-[color:var(--vy-ink-2)] text-pretty">
+                {paragraph}
               </p>
-              {/* TODO(user): a two-line bio goes here — background, why food
-                  operations, whatever's true and worth a reader's ten seconds.
-                  Left out rather than invented. */}
-            </div>
-          </div>
-        </section>
-
-        {/* Why Finch */}
-        <section className="mx-auto max-w-[1160px] px-[20px] pt-[64px] lg:px-[40px] lg:pt-[96px]">
-          <div className="max-w-[680px]">
-            <p className="mb-[10px] font-fn-mono text-[11px] tracking-[0.14em] text-fn-muted">WHY FINCH</p>
-            <h2 className="m-0 mb-[16px] font-fn-serif text-[26px] font-medium tracking-[-0.02em] lg:text-[30px]">
-              Most operations software wasn&rsquo;t built for how South African food businesses
-              actually run.
-            </h2>
-            <p className="m-0 mb-[14px] text-[15px] leading-[1.65] text-fn-ink-3">
-              They run on WhatsApp, spreadsheets and a manager who remembers the price of
-              butternut from three suppliers ago. A fractional or full-time COO is out of reach
-              for most of them, and generic dashboards need someone to fill them in every day —
-              which is the job that&rsquo;s already not getting done.
-            </p>
-            <p className="m-0 text-[15px] leading-[1.65] text-fn-ink-3">
-              Finch reads what&rsquo;s already there — invoices, stock, suppliers, debtors,
-              margins — and tells the owner, in rand, where it&rsquo;s leaking. That&rsquo;s the
-              whole idea: a company&rsquo;s own COO, at a tenth of the cost, watching all day
-              instead of waiting to be asked.
-            </p>
-          </div>
-        </section>
-
-        {/* Honest stage */}
-        <section className="mx-auto max-w-[1160px] px-[20px] pt-[64px] lg:px-[40px] lg:pt-[96px]">
-          <div className="max-w-[680px]">
-            <p className="mb-[10px] font-fn-mono text-[11px] tracking-[0.14em] text-fn-muted">
-              WHERE WE ARE RIGHT NOW
-            </p>
-            <h2 className="m-0 mb-[16px] font-fn-serif text-[26px] font-medium tracking-[-0.02em] lg:text-[30px]">
-              A small founding cohort, not a finished company.
-            </h2>
-            <p className="m-0 mb-[14px] text-[15px] leading-[1.65] text-fn-ink-3">
-              Vyso is taking on founding clients rather than claiming a track record it
-              doesn&rsquo;t have yet.{" "}
-              <Link
-                href="/case-studies/turn-n-slice"
-                className="font-medium text-fn-ink underline decoration-fn-line-3 underline-offset-2 transition-colors duration-150 hover:text-fn-orange-deep hover:decoration-fn-orange-deep"
-              >
-                Turn &rsquo;n Slice
-              </Link>
-              , a Johannesburg food business, is the first — OrderFlow is already replacing
-              QuickBooks as its invoicing system.
-            </p>
-            <p className="m-0 text-[15px] leading-[1.65] text-fn-ink-3">
-              Founding clients get setup waived, the first month free and their rate locked. See{" "}
-              <Link
-                href="/founding-client"
-                className="font-medium text-fn-ink underline decoration-fn-line-3 underline-offset-2 transition-colors duration-150 hover:text-fn-orange-deep hover:decoration-fn-orange-deep"
-              >
-                the founding client terms
-              </Link>
-              .
-            </p>
-          </div>
-        </section>
-
-        {/* Beyond Finch */}
-        <section className="mx-auto max-w-[1160px] px-[20px] pt-[64px] lg:px-[40px] lg:pt-[96px]">
-          <p className="mb-[10px] font-fn-mono text-[11px] tracking-[0.14em] text-fn-muted">
-            BEYOND FINCH
-          </p>
-          <h2 className="m-0 mb-[24px] font-fn-serif text-[26px] font-medium tracking-[-0.02em] lg:text-[30px]">
-            What Vyso does beyond Finch.
-          </h2>
-          <div className="grid grid-cols-1 gap-[20px] sm:grid-cols-2">
-            <Link
-              href="/operations-audit"
-              className="block rounded-[12px] border border-fn-line bg-fn-surface px-[22px] py-[22px] transition-colors duration-150 hover:border-fn-line-hover"
-            >
-              <div className="mb-[8px] font-fn-mono text-[10.5px] tracking-[0.12em] text-fn-muted">
-                THE OPERATIONS AUDIT
-              </div>
-              <div className="mb-[8px] font-fn-serif text-[19px] font-medium tracking-[-0.01em] text-fn-ink">
-                Free, about an hour with you.
-              </div>
-              <p className="m-0 text-[14px] leading-[1.6] text-fn-ink-3">
-                Vyso finds where the money and the time are leaking, and hands back a roadmap of
-                what to automate first, whether or not a business goes on to run Finch.
-              </p>
-            </Link>
-            <Link
-              href="/academy"
-              className="block rounded-[12px] border border-fn-line bg-fn-surface px-[22px] py-[22px] transition-colors duration-150 hover:border-fn-line-hover"
-            >
-              <div className="mb-[8px] font-fn-mono text-[10.5px] tracking-[0.12em] text-fn-muted">
-                VYSO ACADEMY
-              </div>
-              <div className="mb-[8px] font-fn-serif text-[19px] font-medium tracking-[-0.01em] text-fn-ink">
-                {rand(PRICE.academySeat)} / seat — the DIY option.
-              </div>
-              <p className="m-0 text-[14px] leading-[1.6] text-fn-ink-3">
-                For teams who&rsquo;d rather run the operating method themselves — workshops,
-                templates, the weekly-brief discipline. Coming soon.
-              </p>
-            </Link>
-          </div>
-        </section>
-
-        {/* Principles */}
-        <section className="mx-auto max-w-[1160px] px-[20px] pt-[64px] lg:px-[40px] lg:pt-[96px]">
-          <p className="mb-[10px] font-fn-mono text-[11px] tracking-[0.14em] text-fn-muted">
-            HOW WE WORK
-          </p>
-          <h2 className="m-0 mb-[24px] font-fn-serif text-[26px] font-medium tracking-[-0.02em] lg:text-[30px]">
-            Four principles, applied the same way every time.
-          </h2>
-          <div className="grid grid-cols-1 gap-[24px] sm:grid-cols-2">
-            {PRINCIPLES.map((p) => (
-              <div key={p.label} className="border-t border-fn-line pt-[16px]">
-                <div className="mb-[8px] font-fn-serif text-[17px] font-medium tracking-[-0.01em] text-fn-ink">
-                  {p.label}
-                </div>
-                <p className="m-0 text-[14px] leading-[1.6] text-fn-ink-3">{p.body}</p>
-              </div>
             ))}
           </div>
-        </section>
-
-        {/* Timeline — the signature visual */}
-        <section className="mx-auto max-w-[1160px] px-[20px] pt-[64px] lg:px-[40px] lg:pt-[96px]">
-          <p className="mb-[10px] font-fn-mono text-[11px] tracking-[0.14em] text-fn-muted">
-            SO FAR
+          <p className="vy-label mt-[28px] text-[color:var(--vy-ink-4)]">
+            Josh Moreira, founder, Johannesburg
           </p>
-          <h2 className="m-0 mb-[32px] font-fn-serif text-[26px] font-medium tracking-[-0.02em] lg:mb-[44px] lg:text-[30px]">
-            Milestones.
-          </h2>
-          <AboutTimeline />
-        </section>
+        </Reveal>
+      </Section>
 
-        <div className="pt-[64px] lg:pt-[96px]">
-          <AuditBand />
+      <Section
+        id="one-company"
+        eyebrow="How we're structured"
+        heading="One team, one system."
+        continuation="No separate products to learn, and no module names to keep track of."
+        width="narrow"
+        divider
+      >
+        <Reveal>
+          <p className="vy-body-lg text-[color:var(--vy-ink-2)] text-pretty">
+            Vyso doesn&rsquo;t sell a suite of branded tools. The same team that runs your
+            Operations Audit designs the system, builds it, and keeps watching it once it&rsquo;s
+            live, evolving it as your business changes. There&rsquo;s one relationship to manage,
+            not a handful of vendors each responsible for a different piece.
+          </p>
+          <Button href="/how-it-works" variant="quiet" className="mt-[20px]">
+            See how the process works
+          </Button>
+        </Reveal>
+      </Section>
+
+      <Section
+        id="south-africa"
+        eyebrow="Where we work"
+        heading="A South African company,"
+        continuation="built for how South African businesses actually run."
+        width="narrow"
+        divider
+      >
+        <Reveal>
+          <p className="vy-body-lg text-[color:var(--vy-ink-2)] text-pretty">
+            Vyso is based in Johannesburg, and we work with businesses across the country. That
+            means building for WhatsApp orders, spreadsheets that carry real operational weight,
+            Sage and Xero as the accounting layer, and pricing, invoicing and payments that happen
+            in rand, rather than translating a workflow built somewhere else.
+          </p>
+          <Button href="/south-africa" variant="quiet" className="mt-[20px]">
+            Read more about Vyso in South Africa
+          </Button>
+        </Reveal>
+      </Section>
+
+      <Section
+        id="trust"
+        eyebrow="Trust"
+        heading="Sensible about data,"
+        continuation="honest about limits."
+        lead="A few things worth stating plainly rather than leaving implied."
+        divider
+      >
+        <TrustPoints />
+      </Section>
+
+      <Section
+        id="proof"
+        eyebrow="Where we've proven this"
+        heading="Built in the real world,"
+        continuation="starting with one real client."
+        width="narrow"
+        divider
+      >
+        <Reveal>
+          <p className="vy-body-lg text-[color:var(--vy-ink-2)] text-pretty">
+            Turn &rsquo;n Slice, a Johannesburg fresh produce wholesaler, is Vyso&rsquo;s first real
+            proof case, and we say that plainly rather than dress it up as something bigger.
+            It&rsquo;s where the procurement visibility, stock management and supplier pricing work
+            described
+            on this site is actually running, not a hypothetical.
+          </p>
+          <Button href="/case-studies/turn-n-slice" variant="quiet" className="mt-[20px]">
+            Read the Turn &rsquo;n Slice case study
+          </Button>
+        </Reveal>
+      </Section>
+
+      <Section
+        id="start"
+        ground="dark"
+        spacing="loose"
+        align="center"
+        heading="Ready to see where your operation leaks time?"
+        lead="Start with a free Operations Audit. Diagnosis first, with no obligation to buy anything afterward."
+      >
+        <div className="flex flex-col items-center justify-center gap-[14px] sm:flex-row sm:gap-[20px]">
+          <Button
+            href="/operations-audit"
+            size="lg"
+            event="book_audit_click"
+            eventProps={{ page: "about-close" }}
+          >
+            Get a free Operations Audit
+          </Button>
+          <Button href="/contact" variant="secondary" size="lg">
+            Talk to Vyso
+          </Button>
         </div>
-      </main>
-
-      <FinchFooter />
-    </div>
+      </Section>
+    </Shell>
   );
 }

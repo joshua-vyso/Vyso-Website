@@ -1,113 +1,100 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
-import { AuditBand } from "@/components/finch/AuditBand";
-import { FinchFooter } from "@/components/finch/FinchFooter";
-import { FinchNav } from "@/components/finch/FinchNav";
-import { FindingCard } from "@/components/finch/FindingCard";
-import { Breadcrumb, Eyebrow } from "@/components/finch/company/CompanyBits";
-import { buildSouthAfricaSchema } from "@/components/finch/company/company-jsonld";
-import { SouthAfricaMap } from "@/components/finch/company/SouthAfricaMap";
+import { Button } from "@/components/vyso/Button";
+import { Card } from "@/components/vyso/Card";
+import { Reveal } from "@/components/vyso/Reveal";
+import { Section } from "@/components/vyso/Section";
+import { Shell } from "@/components/vyso/Shell";
+import { stagger } from "@/components/vyso/stagger";
+import { ChromeFrame, WhatsAppBubble } from "@/components/vyso/demo/ChromeFrame";
+import { FindingCard } from "@/components/vyso/demo/FindingCard";
+import { TrustPoints } from "@/components/vyso/company/TrustPoints";
+import { buildSouthAfricaSchema } from "@/components/vyso/company/company-jsonld";
 import { FAQ_GROUPS, type FaqItem } from "@/lib/marketing/faq";
+import { SITE } from "@/lib/marketing/site";
 
-const TITLE = "South African operations software — Finch by Vyso";
+/* ── /south-africa ────────────────────────────────────────────────────────────
+   Rewritten for the 2026 redesign (`.ai/plan_vyso_redesign_2026.md` §7.6):
+   AI automation for South African businesses specifically, not a Finch
+   feature list translated into rand. Every claim below is either the same
+   honesty line already carried on the homepage (`components/vyso/home/
+   HomeTools.tsx`: Xero and WhatsApp Business connect directly today,
+   everything else is designed around) or a plain description of how South
+   African SMEs actually operate, grounded in the brief's own list: WhatsApp
+   heavy ordering, Excel heavy record keeping, Sage and Xero as the finance
+   layer, rand, VAT, EFT, POPIA, and processes that grew informally rather
+   than being designed.
+
+   The AEO answer this page opens with — "is Vyso based in South Africa" — is
+   the hero's lead sentence, so an answer engine gets it without following a
+   link. The FAQ subset below quotes `lib/marketing/faq.ts` verbatim, by id,
+   so a South African claim can never read differently on the two pages that
+   make it. */
+
+const TITLE = "Built for South African operations";
 const DESCRIPTION =
-  "Finch runs ZAR pricing, VAT-aware invoices and EFT, cash and card payments for South African food SMEs. Priced per scope, after a free audit.";
+  "Vyso builds automation for South African businesses running on WhatsApp, Excel, Sage and Xero, priced around the problem and built around POPIA.";
 
 export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
-  alternates: { canonical: "/south-africa" },
+  alternates: { canonical: `${SITE.url}/south-africa` },
   openGraph: {
     title: TITLE,
     description: DESCRIPTION,
-    url: "https://vyso.co.za/south-africa",
-    siteName: "Vyso",
+    url: `${SITE.url}/south-africa`,
+    siteName: SITE.name,
     locale: "en_ZA",
     type: "website",
   },
-  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+  },
 };
 
-/* ── Local capabilities ────────────────────────────────────────────────────
-   Every line below is checked against real code before it's kept — grep
-   citations in the comment, not a claim taken on faith from the pre-rebuild
-   copy. Nothing here is a rewording of a claim the platform can't back:
-   - ZAR pricing:        components/finch/pricing/pricing-data.ts (`PRICE.currency`)
-   - VAT treatment:      lib/platform/orderflow-from-doc.ts (`vat_treatment`,
-                          `vat_rate`), lib/platform/import-schema.ts
-   - EFT/cash/card:      lib/platform/orderflow.ts `PaymentMethod`
-                          ('eft' | 'cash' | 'card' | 'other')
-   - Rebates/credit terms/customer PO/delivery addresses:
-                          lib/platform/orderflow.ts (`rebate_pct`,
-                          `credit_limit`, `customer_po`, `delivery_address_id`),
-                          lib/platform/orderflow-data.ts (`cd_payment_terms`,
-                          `cd_delivery_addresses`)
-   - WhatsApp/email/PDF/photo intake:
-                          lib/platform/whatsapp-ingest.ts, Doc-U (see
-                          lib/marketing/faq.ts's own grounded answer, imported
-                          below rather than restated)
-   Two claims from the pre-rebuild page were dropped, not carried forward:
-   "load-shedding-tolerant" (no code claim to check it against — grep for the
-   term returns nothing in `lib/platform`) and a `LocalBusiness`/street-address
-   schema (no public address exists to publish, per `lib/marketing/site.ts`). */
-const LOCAL_CAPABILITIES = [
+const LOCAL_REALITIES: readonly { title: string; body: string }[] = [
   {
-    title: "Rands at the centre",
-    copy: "Customer pricing, quotes, invoices, payments and account balances stay in ZAR — nothing translated from a foreign-first workflow.",
+    title: "WhatsApp is where orders happen",
+    body: "A lot of South African SMEs take orders over WhatsApp, not through a web form. Vyso reads orders sent to a WhatsApp Business number automatically, instead of asking your team or your customers to switch channels.",
   },
   {
-    title: "VAT-aware documents",
-    copy: "Finch captures seller and customer VAT details and applies standard, zero-rated or exempt treatment to tax invoices and credit notes.",
+    title: "Spreadsheets hold the business",
+    body: "Stock counts, price lists and margins often live in Excel or Google Sheets, built up over years by whoever needed them next. Vyso works with those sheets rather than asking you to abandon them for a new system.",
   },
   {
-    title: "Local payment reality",
-    copy: "Record EFT, cash, card or other payments with a reference, then keep outstanding and overdue balances visible to the team.",
+    title: "Sage and Xero are the finance layer",
+    body: "Xero connects directly today: invoices, bills, contacts and balances, kept in sync during onboarding. Sage isn't a live connection yet. We design around it and scope a direct connection if it's your system of record.",
   },
   {
-    title: "Customer-specific trade",
-    copy: "Price lists, rebates, customer purchase orders, account terms, credit limits and delivery addresses live in the same commercial record.",
+    title: "Rand, VAT and EFT by default",
+    body: "Pricing, invoicing and payments happen in rand. VAT treatment is part of every invoice, and EFT is how most business accounts actually get settled. Vyso's systems are built around that reality, not translated from a foreign template.",
   },
   {
-    title: "Messy orders, cleaner intake",
-    copy: "Upload WhatsApp screenshots, email captures, PDFs or photographed orders so the information can be extracted and reviewed before it moves forward.",
+    title: "Processes that grew informally",
+    body: "Most operational knowledge lives with the people running the business, not in a written manual. We start by learning how your team actually works, not by handing over a process they're expected to adopt.",
   },
   {
-    title: "Implemented with local context",
-    copy: "Vyso combines the software with workflow mapping, data preparation, rollout and support for South African operating teams.",
+    title: "Local support, not an offshore queue",
+    body: "Vyso is based in Johannesburg. When something needs a person, you're talking to someone who understands the South African context your business runs in.",
   },
 ] as const;
 
-const MIGRATION_STEPS = [
-  {
-    title: "Choose one operational problem",
-    copy: "Start with the repeated admin costing the team the most time or creating the most uncertainty.",
-  },
-  {
-    title: "Move only the data the workflow needs",
-    copy: "Agree which customer, product and price-list records belong in the first rollout instead of a risky big-bang migration.",
-  },
-  {
-    title: "Run, learn and expand",
-    copy: "Put the focused workflow into real use, refine it with the team, and add the next module only once the next need is clear.",
-  },
-] as const;
-
-/* Imported, not restated — the same grounded answers `/faq` already carries,
-   so a South African claim can never read differently on the two pages that
-   make it. Sourced across three of `/faq`'s groups (finch, data,
-   integrations), picked for local relevance rather than in group order. */
+/* Quoted, not restated — the same grounded answers `/faq` already carries, so
+   a South African claim can never read differently on the two pages that
+   make it. */
 function southAfricaFaqs(): FaqItem[] {
   const byId = new Map<string, FaqItem>();
   for (const group of FAQ_GROUPS) {
     for (const item of group.questions) byId.set(item.id, item);
   }
   const ids = [
-    "vat-aware-invoices",
-    "eft-cash-card-payments",
-    "whatsapp-email-orders",
-    "does-finch-make-us-popia-compliant",
-    "does-finch-replace-accounting-software",
+    "where-is-vyso-based",
+    "does-vyso-work-outside-south-africa",
+    "can-vyso-work-with-whatsapp",
+    "can-vyso-connect-to-sage",
+    "is-our-data-secure",
   ];
   return ids.map((id) => {
     const item = byId.get(id);
@@ -116,17 +103,11 @@ function southAfricaFaqs(): FaqItem[] {
   });
 }
 
-const SECTORS = [
-  { title: "Food suppliers", copy: "Customer-specific pricing, repeat orders, delivery and accounts.", href: "/industries/food-suppliers" },
-  { title: "Farms & producers", copy: "Availability, wholesale buyers and order-to-cash visibility.", href: "/industries/farms" },
-  { title: "Restaurants", copy: "Purchasing, waste, staffing and margin routines.", href: "/industries/restaurants" },
-] as const;
-
 export default function SouthAfricaPage() {
   const faqs = southAfricaFaqs();
 
   return (
-    <div className="finch-site min-h-screen bg-fn-bg font-fn-sans text-fn-ink antialiased">
+    <Shell>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -134,254 +115,122 @@ export default function SouthAfricaPage() {
         }}
       />
 
-      <FinchNav />
+      <Section
+        eyebrow="Vyso in South Africa"
+        heading="Built for how South African businesses"
+        continuation="actually run, not the workflow a software vendor imagined."
+        headingLevel={1}
+      >
+        <p className="vy-body-lg max-w-[640px] text-[color:var(--vy-ink-2)] text-pretty">
+          Yes, Vyso is a South African company. We&rsquo;re based in Johannesburg and we build
+          automated operational systems for South African SMEs: businesses running on WhatsApp,
+          spreadsheets and finance software like Sage and Xero, pricing and invoicing in rand.
+        </p>
+        <div className="mt-[28px] flex flex-wrap gap-[16px]">
+          <Button href="/operations-audit" event="book_audit_click" eventProps={{ page: "south-africa-hero" }}>
+            Get your free Operations Audit
+          </Button>
+          <Button href="/how-it-works" variant="secondary">
+            See how Vyso works
+          </Button>
+        </div>
+      </Section>
 
-      <main id="main">
-        <header className="mx-auto max-w-[1160px] px-[20px] pt-[56px] lg:px-[40px] lg:pt-[100px]">
-          <Breadcrumb trail={[{ label: "Home", href: "/" }, { label: "South Africa", href: "/south-africa" }]} />
-          <div className="grid grid-cols-1 gap-[40px] lg:grid-cols-[1fr_360px] lg:items-center lg:gap-[56px]">
-            <div>
-              <Eyebrow>VYSO IN SOUTH AFRICA</Eyebrow>
-              <h1 className="m-0 mb-[16px] font-fn-serif text-[38px] font-medium leading-[1.08] tracking-[-0.02em] lg:mb-[20px] lg:text-[54px]">
-                Built for how South African operations actually run.
-              </h1>
-              <p className="m-0 mb-[16px] max-w-[560px] text-[15.5px] leading-[1.65] text-fn-ink-3 text-pretty lg:text-[16px]">
-                Finch keeps customer accounts, price lists, quotes, orders, VAT-aware invoices,
-                delivery notes and payments out of disconnected WhatsApp chats and spreadsheets and
-                into one working flow, in rand.
-              </p>
-              <p className="m-0 mb-[32px] font-fn-mono text-[11px] tracking-[0.1em] text-fn-muted lg:mb-[40px]">
-                JOHANNESBURG HQ · WORKING WITH BUSINESSES NATIONALLY
-              </p>
-              <div className="flex flex-wrap gap-[14px]">
-                <Link
-                  href="/operations-audit"
-                  className="rounded-[10px] bg-fn-orange-cta px-[24px] py-[13px] text-[14.5px] font-semibold text-[#FFF7F0] transition-colors duration-150 hover:bg-fn-orange hover:text-white"
-                >
-                  Book your audit
-                </Link>
-                <Link
-                  href="/platform/modules/orderflow"
-                  className="rounded-[10px] border border-fn-line-3 bg-fn-surface px-[24px] py-[13px] text-[14.5px] font-semibold text-fn-ink transition-colors duration-150 hover:border-fn-line-hover"
-                >
-                  Explore OrderFlow
-                </Link>
-              </div>
+      <Section
+        id="local-realities"
+        eyebrow="Local proof, not local wallpaper"
+        heading="Built around how South African operations"
+        continuation="actually move, not just labelled for the market."
+        lead={'"Built for South Africa" should show up in the currency, the documents, the channel orders arrive on and the way work actually gets done, not just a flag in the corner.'}
+        divider
+      >
+        <ul className="m-0 grid list-none grid-cols-1 gap-[16px] p-0 md:grid-cols-2 lg:grid-cols-3">
+          {LOCAL_REALITIES.map((item, i) => (
+            <Reveal key={item.title} as="li" delay={stagger(i)}>
+              <Card padding="lg" className="h-full">
+                <h3 className="vy-h3 mb-[8px] text-[color:var(--vy-ink)]">{item.title}</h3>
+                <p className="vy-body text-[color:var(--vy-ink-3)] text-pretty">{item.body}</p>
+              </Card>
+            </Reveal>
+          ))}
+        </ul>
+      </Section>
+
+      <Section
+        id="example"
+        eyebrow="What this looks like"
+        heading="A VAT line caught before it reached the ledger."
+        lead="An illustrative example: a supplier invoice charging VAT at the wrong rate on a zero rated line item, the kind of thing that's easy to miss across dozens of invoices a month."
+        divider
+      >
+        <div className="mx-auto flex max-w-[520px] flex-col gap-[16px]">
+          <ChromeFrame variant="whatsapp" title="Fresh Fields Produce" subtitle="supplier" flat>
+            <WhatsAppBubble time="14:12">Invoice INV-2291 attached for this week&rsquo;s order.</WhatsAppBubble>
+          </ChromeFrame>
+          <FindingCard
+            state="alert"
+            observation="Invoice INV-2291 applied standard rate VAT to a line item that's normally zero rated. Every other line matches the agreed terms."
+            impact="One line flagged"
+            evidence="INVOICE INV-2291"
+            meta="VAT REVIEW"
+            actions={["Review the line item", "Query the supplier"]}
+          />
+        </div>
+      </Section>
+
+      <Section
+        id="trust"
+        eyebrow="Trust, locally"
+        heading="Sensible about data,"
+        continuation="honest about limits."
+        divider
+      >
+        <TrustPoints />
+      </Section>
+
+      <Section
+        id="faq"
+        eyebrow="Straight answers"
+        heading="South African operations,"
+        continuation="without vague promises."
+        width="narrow"
+        divider
+      >
+        <dl className="m-0 grid grid-cols-1 gap-[26px] md:gap-x-[48px] md:gap-y-[30px]">
+          {faqs.map(({ question, answer }) => (
+            <div key={question}>
+              <dt className="vy-h3 mb-[7px] text-[color:var(--vy-ink)]">{question}</dt>
+              <dd className="vy-body m-0 text-[color:var(--vy-ink-3)] text-pretty">{answer}</dd>
             </div>
-            <div className="flex justify-center lg:justify-end">
-              <SouthAfricaMap />
-            </div>
-          </div>
-        </header>
+          ))}
+        </dl>
+        <Button href="/faq" variant="quiet" className="mt-[24px]">
+          Read the full FAQ
+        </Button>
+      </Section>
 
-        <section
-          aria-labelledby="local-capabilities-heading"
-          className="mx-auto max-w-[1160px] px-[20px] pt-[72px] lg:px-[40px] lg:pt-[110px]"
-        >
-          <div className="mb-[32px] max-w-[680px] lg:mb-[44px]">
-            <Eyebrow>LOCAL PROOF, NOT LOCAL WALLPAPER</Eyebrow>
-            <h2
-              id="local-capabilities-heading"
-              className="m-0 mb-[12px] font-fn-serif text-[26px] font-medium tracking-[-0.02em] lg:text-[32px]"
-            >
-              Built around how South African B2B trade actually moves.
-            </h2>
-            <p className="m-0 text-[15px] leading-[1.65] text-fn-ink-3 text-pretty">
-              &ldquo;Built for South Africa&rdquo; should show up in the currency, documents, payment
-              methods, customer terms and imperfect order inputs your team handles every day — not
-              just a flag in the corner.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 gap-[16px] md:grid-cols-2 lg:grid-cols-3">
-            {LOCAL_CAPABILITIES.map(({ title, copy }) => (
-              <article key={title} className="rounded-[10px] border border-fn-line bg-fn-surface px-[20px] py-[22px]">
-                <h3 className="m-0 mb-[8px] text-[16px] font-medium text-fn-ink">{title}</h3>
-                <p className="m-0 text-[14px] leading-[1.55] text-fn-ink-3">{copy}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section
-          aria-labelledby="boundary-heading"
-          className="mx-auto max-w-[1160px] px-[20px] pt-[72px] lg:px-[40px] lg:pt-[110px]"
-        >
-          <div className="grid grid-cols-1 gap-[32px] lg:grid-cols-[1fr_460px] lg:items-start lg:gap-[56px]">
-            <div>
-              <Eyebrow>A CLEAR OPERATING BOUNDARY</Eyebrow>
-              <h2
-                id="boundary-heading"
-                className="m-0 mb-[12px] font-fn-serif text-[26px] font-medium tracking-[-0.02em] lg:text-[32px]"
-              >
-                Operational control, not a claim to be your accountant.
-              </h2>
-              <p className="m-0 mb-[16px] text-[15px] leading-[1.65] text-fn-ink-3 text-pretty">
-                OrderFlow manages the commercial work before and around accounting: the customer
-                request, agreed price, order, delivery document, invoice, payment and account
-                history. It is not presented as a VAT return, statutory filing or full
-                general-ledger product.
-              </p>
-              <Link href="/faq#data" className="text-[14.5px] font-medium text-fn-ink-2 transition-colors duration-150 hover:text-fn-orange-deep">
-                Read the data &amp; POPIA FAQs →
-              </Link>
-            </div>
-
-            <div className="rounded-[12px] border border-fn-line bg-fn-surface px-[24px] py-[24px]">
-              <h3 className="m-0 mb-[10px] text-[16px] font-medium text-fn-ink">
-                Support for compliance work, not a magic badge.
-              </h3>
-              <p className="m-0 mb-[18px] text-[14px] leading-[1.6] text-fn-ink-3">
-                Consistent records, VAT-aware documents and controlled access can support better
-                operating discipline. Your business and its advisers remain responsible for tax
-                treatment, recordkeeping, privacy duties and other legal obligations.
-              </p>
-              <p className="m-0 mb-[10px] font-fn-mono text-[10px] tracking-[0.12em] text-fn-muted">
-                OFFICIAL GUIDANCE
-              </p>
-              <div className="flex flex-col gap-[8px]">
-                <a
-                  href="https://www.sars.gov.za/types-of-tax/value-added-tax/"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[13.5px] text-fn-ink-2 underline decoration-fn-line-3 underline-offset-2 transition-colors duration-150 hover:text-fn-orange-deep hover:decoration-fn-orange-deep"
-                >
-                  SARS VAT guidance ↗
-                </a>
-                <a
-                  href="https://inforegulator.org.za/popia/"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[13.5px] text-fn-ink-2 underline decoration-fn-line-3 underline-offset-2 transition-colors duration-150 hover:text-fn-orange-deep hover:decoration-fn-orange-deep"
-                >
-                  Information Regulator (POPIA) ↗
-                </a>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section
-          aria-labelledby="finding-heading"
-          className="mx-auto max-w-[1160px] px-[20px] pt-[72px] lg:px-[40px] lg:pt-[110px]"
-        >
-          <h2 id="finding-heading" className="sr-only">
-            What a South African finding looks like
-          </h2>
-          <div className="flex justify-center">
-            <FindingCard
-              agent="PRICE WATCH"
-              observation="Cooking oil up 6% at a Johannesburg supplier — three invoices running, same product code."
-              impact="≈ R2,340/mo at current order volumes"
-              evidence="3 invoices"
-              meta="JOHANNESBURG · ILLUSTRATIVE EXAMPLE"
-              state="new"
-              className="max-w-[460px]"
-            />
-          </div>
-        </section>
-
-        <section
-          aria-labelledby="migration-heading"
-          className="mx-auto max-w-[1160px] px-[20px] pt-[72px] lg:px-[40px] lg:pt-[110px]"
-        >
-          <div className="mb-[32px] max-w-[680px] lg:mb-[44px]">
-            <Eyebrow>A LOWER-RISK STARTING POINT</Eyebrow>
-            <h2
-              id="migration-heading"
-              className="m-0 mb-[12px] font-fn-serif text-[26px] font-medium tracking-[-0.02em] lg:text-[32px]"
-            >
-              Improve one workflow before replacing everything.
-            </h2>
-            <p className="m-0 text-[15px] leading-[1.65] text-fn-ink-3 text-pretty">
-              A local system only helps if the team can put it into practice. Finch starts with a
-              defined operational problem and a controlled rollout, not an all-at-once software
-              upheaval.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 gap-[16px] md:grid-cols-3">
-            {MIGRATION_STEPS.map((step, index) => (
-              <article key={step.title} className="rounded-[10px] border border-fn-line bg-fn-surface px-[20px] py-[22px]">
-                <p className="m-0 mb-[8px] font-fn-mono text-[10px] tracking-[0.12em] text-fn-muted">
-                  STEP {index + 1}
-                </p>
-                <h3 className="m-0 mb-[8px] text-[16px] font-medium text-fn-ink">{step.title}</h3>
-                <p className="m-0 text-[14px] leading-[1.55] text-fn-ink-3">{step.copy}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section
-          aria-labelledby="south-africa-faq-heading"
-          id="faq"
-          className="mx-auto max-w-[860px] px-[20px] pt-[72px] lg:px-[40px] lg:pt-[110px]"
-        >
-          <h2
-            id="south-africa-faq-heading"
-            className="m-0 mb-[24px] font-fn-serif text-[26px] font-medium tracking-[-0.02em] lg:mb-[32px] lg:text-[30px]"
+      <Section
+        id="start"
+        ground="dark"
+        spacing="loose"
+        align="center"
+        heading="Start where the return is highest."
+        lead="A free Operations Audit tells you honestly where your South African operation is leaking time, in the currency and the tools you already use."
+      >
+        <div className="flex flex-col items-center justify-center gap-[14px] sm:flex-row sm:gap-[20px]">
+          <Button
+            href="/operations-audit"
+            size="lg"
+            event="book_audit_click"
+            eventProps={{ page: "south-africa-close" }}
           >
-            South African operations, without vague promises.
-          </h2>
-          <dl className="m-0 grid grid-cols-1 gap-[26px] md:grid-cols-2 md:gap-x-[48px] md:gap-y-[30px]">
-            {faqs.map(({ question, answer }) => (
-              <div key={question}>
-                <dt className="mb-[7px] font-fn-serif text-[16.5px] font-medium text-fn-ink">{question}</dt>
-                <dd className="m-0 text-[14.5px] leading-[1.6] text-fn-ink-3 text-pretty">{answer}</dd>
-              </div>
-            ))}
-          </dl>
-          <Link
-            href="/faq"
-            className="mt-[24px] inline-block text-[14.5px] font-medium text-fn-ink-2 transition-colors duration-150 hover:text-fn-orange-deep"
-          >
-            Full FAQ →
-          </Link>
-        </section>
-
-        <section
-          aria-labelledby="sectors-heading"
-          className="mx-auto max-w-[1160px] px-[20px] pt-[72px] lg:px-[40px] lg:pt-[110px]"
-        >
-          <div className="mb-[32px] max-w-[680px] lg:mb-[44px]">
-            <Eyebrow>CURRENT OPERATING FOCUS</Eyebrow>
-            <h2 id="sectors-heading" className="m-0 mb-[12px] font-fn-serif text-[26px] font-medium tracking-[-0.02em] lg:text-[32px]">
-              Starting where the workflow is tangible.
-            </h2>
-            <p className="m-0 text-[15px] leading-[1.65] text-fn-ink-3 text-pretty">
-              Finch can serve SMEs across sectors. Our beachhead is food, where pricing, repeat
-              orders, delivery documents, payments and margin pressure make connected operations
-              especially valuable.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 gap-[16px] md:grid-cols-3">
-            {SECTORS.map(({ title, copy, href }) => (
-              <Link
-                key={title}
-                href={href}
-                className="group rounded-[10px] border border-fn-line bg-fn-surface px-[20px] py-[22px] transition-colors duration-150 hover:border-fn-line-hover"
-              >
-                <h3 className="m-0 mb-[8px] text-[16px] font-medium text-fn-ink">{title}</h3>
-                <p className="m-0 mb-[14px] text-[14px] leading-[1.55] text-fn-ink-3">{copy}</p>
-                <span className="inline-flex items-center gap-[6px] text-[13.5px] font-medium text-fn-ink-2 transition-colors duration-150 group-hover:text-fn-orange-deep">
-                  Explore the workflow
-                  <span aria-hidden="true" className="transition-transform duration-150 ease-out group-hover:translate-x-[2px]">
-                    →
-                  </span>
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
-
-        <AuditBand />
-      </main>
-
-      <div className="pt-[40px] lg:pt-[68px]">
-        <FinchFooter />
-      </div>
-    </div>
+            Get a free Operations Audit
+          </Button>
+          <Button href="/industries" variant="secondary" size="lg">
+            See who we build for
+          </Button>
+        </div>
+      </Section>
+    </Shell>
   );
 }

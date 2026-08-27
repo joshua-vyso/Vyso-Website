@@ -8,10 +8,14 @@ import { track } from "@/lib/analytics";
    The server renders every group and question in full — the page is a
    complete, working FAQ with JavaScript off. This wrapper hydrates around
    that static markup and, on input, walks the DOM directly (no React state,
-   no re-render of ~30 accordion items) to hide non-matching questions and
+   no re-render of ~25 accordion items) to hide non-matching questions and
    collapse groups that end up with nothing showing. `data-faq-item` /
    `data-faq-text` / `data-faq-group` are the only contract with the server
-   markup below. */
+   markup below.
+
+   Restyled to `--vy-*` for the 2026 redesign (`.ai/plan_vyso_redesign_2026.md`
+   §7.6) — the DOM contract and every `track()` call are unchanged, so this is
+   a class-name swap, not a rewrite of the logic. */
 export function FaqFilter({ children }: { children: React.ReactNode }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -66,7 +70,7 @@ export function FaqFilter({ children }: { children: React.ReactNode }) {
           <svg
             aria-hidden="true"
             viewBox="0 0 16 16"
-            className="pointer-events-none absolute left-[14px] top-1/2 h-[14px] w-[14px] -translate-y-1/2 text-fn-muted"
+            className="pointer-events-none absolute left-[14px] top-1/2 h-[14px] w-[14px] -translate-y-1/2 text-[color:var(--vy-ink-4)]"
           >
             <circle cx="7" cy="7" r="5.25" fill="none" stroke="currentColor" strokeWidth="1.4" />
             <path d="M11 11 L14.5 14.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
@@ -76,7 +80,7 @@ export function FaqFilter({ children }: { children: React.ReactNode }) {
             type="search"
             placeholder="Search the FAQ"
             onChange={(event) => handleChange(event.currentTarget.value)}
-            className="w-full rounded-[10px] border border-fn-line bg-fn-surface py-[11px] pl-[38px] pr-[14px] text-[14.5px] text-fn-ink placeholder:text-fn-muted focus:border-fn-line-hover focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C9DEF7]"
+            className="w-full rounded-[var(--vy-radius)] border border-[color:var(--vy-line)] bg-[color:var(--vy-surface)] py-[11px] pl-[38px] pr-[14px] text-[14.5px] text-[color:var(--vy-ink)] placeholder:text-[color:var(--vy-ink-4)] outline-none transition-colors duration-150 focus:border-[color:var(--vy-ink-3)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--vy-focus)]"
           />
         </span>
       </label>
@@ -105,7 +109,7 @@ export function FaqDeepLinkHandler() {
 
     const flashEl = target instanceof HTMLDetailsElement ? target : (target.closest("details") ?? target);
     flashEl.style.transition = "none";
-    flashEl.style.backgroundColor = "#F5F2EA";
+    flashEl.style.backgroundColor = "var(--vy-surface-2)";
 
     const raf = requestAnimationFrame(() => {
       flashEl.style.transition = "background-color 600ms ease-out";

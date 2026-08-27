@@ -1,25 +1,22 @@
 /* ── FAQ content ───────────────────────────────────────────────────────────
-   Every answer on `/faq` — merged from the old `FAQ_GROUPS` (app/faq) and
-   `PRICING_FAQS` (app/pricing-faq, now retired to a 301 → /faq#pricing) and
-   rewritten from scratch against the single settled offer
-   (`.ai/vyso_v2.md` §0, revised by `.ai/plan_home_only.md`: Finch is priced
-   per customer and per scope, fixed after a free audit, rather than at one
-   published monthly rate);
-   the free operations audit (`.ai/plan_home_only.md`, change 4: it was a paid
-   week credited to month one and is now a free hour); founding terms (setup
-   waived, first
-   month free, rate locked); 30 days' notice; expanded mandates priced on
-   scope. None of the retired three-tier pricing model survives here — no
-   once-off/monthly tier pairs, no per-module add-on rate, no old product
-   codename. Grounded product facts that were true before (VAT
-   handling, ZAR, OrderFlow, POPIA, role-based access, EFT/cash/card capture)
-   are kept, reframed from "the Vyso platform" to "Finch, by Vyso" where that
-   reads naturally.
+   Rewritten for the 2026 redesign (`.ai/plan_vyso_redesign_2026.md` §7.6,
+   `.ai/brief_redesign_2026_copy.md`'s FAQ question set). This file previously
+   answered questions about Finch, OrderFlow, founding-client terms and a
+   published academy price; none of that survives here. Vyso is now presented
+   as one AI operations company, not the company behind a named product, and
+   every answer below is written against that positioning.
 
-   Every answer opens with a sentence that directly answers the question and
-   stays at or under 90 words total. The same question/answer strings feed
-   the FAQPage JSON-LD on `/faq` (`ALL_FAQ_QUESTIONS` below) — schema and
-   on-page text can never drift apart because there is only one copy. */
+   Every answer opens with a sentence that directly answers the question
+   (AEO: an answer engine or a skimming reader gets the fact in the first
+   clause) and stays concise. No prices or rand figures for Vyso's own fees
+   anywhere (copy rule §3.1): "How much does Vyso cost?" is answered as
+   philosophy, never a figure. "Does Vyso work outside South Africa?" is
+   answered honestly rather than left vague: primarily South Africa.
+
+   The same question/answer strings feed the FAQPage JSON-LD on `/faq`
+   (`ALL_FAQ_QUESTIONS` below) and the subset `/south-africa` quotes by id —
+   schema, `/faq` and `/south-africa` can never drift apart because there is
+   only one copy of each answer. */
 
 export type FaqItem = {
   /** Stable slug — the `<details id>` a deep link (`/faq#<id>`) opens. */
@@ -40,218 +37,181 @@ export type FaqGroup = {
 
 export const FAQ_GROUPS: readonly FaqGroup[] = [
   {
-    id: "finch",
-    eyebrow: "Finch",
-    title: "What Finch is",
-    description:
-      "The product, who it's for, and what it watches today versus what comes from your audit roadmap.",
+    id: "vyso",
+    eyebrow: "Vyso",
+    title: "What Vyso is",
+    description: "The basics: who Vyso is, who it's built for, and where we operate.",
     questions: [
       {
-        id: "what-is-finch",
-        question: "What is Finch?",
+        id: "what-is-vyso",
+        question: "What is Vyso?",
         answer:
-          "Finch is Vyso's AI operations assistant — your company's own COO. It watches invoices, stock, suppliers, debtors and margins, and briefs you on WhatsApp. Vyso is the company that builds and runs it; Finch is the product you use every day.",
+          "Vyso is an AI operations company that builds automated systems for South African businesses. We connect the tools you already use, automate the repetitive parts of your operation, and tell you when something needs attention before it becomes a bigger problem.",
       },
       {
-        id: "who-is-finch-for",
-        question: "Who is Finch for?",
+        id: "what-does-vyso-automate",
+        question: "What does Vyso automate?",
         answer:
-          "Finch is built for South African food and produce SMEs — suppliers, farms, restaurants, caterers, wholesalers and hospitality businesses running on WhatsApp, spreadsheets and gut feel. It's most useful once repeated admin or missing information is slowing the business down.",
+          "Vyso automates the repetitive operational work that eats a team's time: capturing orders, generating invoices, checking stock, processing supplier documents and pulling together reports. Exactly what gets automated first depends on your operation, which is what the free Operations Audit works out.",
       },
       {
-        id: "only-food-businesses",
-        question: "Does Finch only work for food businesses?",
+        id: "is-vyso-suitable-for-small-businesses",
+        question: "Is Vyso suitable for small businesses?",
         answer:
-          "Food and produce SMEs are the primary focus, and every agent is tuned to that trade — VAT-aware documents, rand pricing, delivery-note reconciliation. We're also running quiet pilots in a couple of adjacent industries. If you're unsure whether Finch fits, the audit will tell you honestly.",
+          "Yes. Vyso is built for South African SMEs specifically: businesses running on WhatsApp, spreadsheets and a handful of connected tools rather than an enterprise software stack. Every system is scoped to the size of the problem, not to a minimum company size.",
       },
       {
-        id: "what-is-orderflow",
-        question: "What is OrderFlow?",
+        id: "where-is-vyso-based",
+        question: "Where is Vyso based?",
         answer:
-          "OrderFlow is the order-management module Finch runs on for most food businesses — customers, quotes, orders, invoices, delivery notes, payments and price lists in one connected workflow. It's especially useful for farms, producers, caterers, bakeries, suppliers and distributors who sell repeatedly to other businesses.",
+          "Vyso is based in Johannesburg, South Africa. We work with businesses across the country, in person where that helps and by call everywhere else.",
       },
       {
-        id: "which-agents-are-live",
-        question: "Which agents are live today?",
+        id: "does-vyso-work-outside-south-africa",
+        question: "Does Vyso work outside South Africa?",
         answer:
-          "Document intelligence (Doc-U) already reads invoices, statements and delivery notes into structured, reviewable line items. Price Watch is rolling out. Recon, Debtors, Stock Sense and The Brief are activated in priority order from your audit roadmap — your roster is set in the audit, not a fixed catalogue.",
-      },
-      {
-        id: "whatsapp-email-orders",
-        question: "Can customers keep sending orders through WhatsApp or email?",
-        answer:
-          "Yes. Finch accepts WhatsApp screenshots, email captures, PDFs and photographed orders for extraction and review. A direct WhatsApp or email integration is confirmed during onboarding.",
-      },
-      {
-        id: "eft-cash-card-payments",
-        question: "Can Finch record EFT, cash and card payments?",
-        answer:
-          "Yes. Your team can record EFT, cash, card and other payments, add a reference, and see what's paid, outstanding and overdue. This records payments and account status — it doesn't mean Finch processes every payment method directly.",
-      },
-    ],
-  },
-  {
-    id: "pricing",
-    eyebrow: "Pricing & terms",
-    title: "What it costs",
-    description:
-      "One model, no tiers. How Finch is priced, what is included, the founding terms, and how cancelling works.",
-    questions: [
-      {
-        id: "how-much-does-finch-cost",
-        question: "How much does Finch cost?",
-        answer:
-          "Per customer and per scope, fixed after a free audit. Every item on your roadmap carries a fixed build price and a monthly run price, quoted to you directly once we know what you actually need. The monthly fee covers every module and agent activated from that roadmap, plus a monthly ops review with your Vyso lead.",
-      },
-      {
-        id: "is-there-a-setup-cost",
-        question: "Is there a setup cost?",
-        answer:
-          "Not for founding clients — setup is waived, the first month is free, and your rate is locked for as long as you stay. Every engagement starts with the operations audit, which is free and takes about an hour.",
-      },
-      {
-        id: "founding-terms",
-        question: "What are the founding terms?",
-        answer:
-          "Setup waived, first month free, rate locked. That's the full offer — no fine print — and it's how Vyso builds its first cohort honestly, rather than with a limited-time discount.",
-      },
-      {
-        id: "several-locations-custom-integrations",
-        question: "What if we have several locations or need custom integrations?",
-        answer:
-          "Both are part of what the audit scopes. Multi-location groups and integrations beyond the standard roster widen the mandate, so they widen the price — book the free audit and we'll quote both against your roadmap.",
-      },
-      {
-        id: "can-we-cancel",
-        question: "Can we cancel?",
-        answer: "Yes — 30 days' notice, no lock-in. There's no long-term contract to break.",
-      },
-      {
-        id: "what-does-r6000-include",
-        question: "What does the monthly fee actually include?",
-        answer:
-          "Every module Finch runs on, every agent activated from your audit roadmap, your current tools connected, and a monthly ops review with your Vyso lead. There's no separate module fee and no hidden tier above it.",
-      },
-    ],
-  },
-  {
-    id: "audit",
-    eyebrow: "The audit & onboarding",
-    title: "How it starts",
-    description: "What the free operations audit involves, what we need from you, and what happens next.",
-    questions: [
-      {
-        id: "what-happens-during-the-audit",
-        question: "What happens during the operations audit?",
-        answer:
-          "It is about an hour with you. We walk through how the work actually moves through your business and come back with where the money and the time are leaking, and a roadmap of what to automate first, whether you go ahead with us or not. It is free.",
-      },
-      {
-        id: "what-do-you-need-from-us",
-        question: "What do you need from us?",
-        answer:
-          "About an hour, and whoever actually runs the day in the room with us. Nothing to prepare and nothing to send through first. If it helps to look at a few real documents while we talk, bring them, but the hour works without them.",
-      },
-      {
-        id: "what-if-we-dont-sign",
-        question: "What if we don't sign up after the audit?",
-        answer:
-          "Nothing owed. The audit is free and you keep the roadmap either way — what we found and what we would do about it first.",
-      },
-      {
-        id: "how-soon-can-it-start",
-        question: "How soon can the audit start?",
-        answer: "We confirm the time when you book. It is one sitting of about an hour, in person in Johannesburg or on a call anywhere in South Africa.",
-      },
-      {
-        id: "how-does-onboarding-work",
-        question: "How does Finch get set up after the audit?",
-        answer:
-          "You get a rand-quantified leak report with evidence, then agents and modules are activated in priority order, then your monthly ops review starts with your Vyso lead. Your existing tools are connected during onboarding — nothing to migrate.",
-      },
-    ],
-  },
-  {
-    id: "data",
-    eyebrow: "Data, POPIA & security",
-    title: "Data & compliance",
-    description: "What Finch does and doesn't do for your compliance obligations, and who can see what.",
-    questions: [
-      {
-        id: "does-finch-make-us-popia-compliant",
-        question: "Does using Finch make us POPIA compliant?",
-        answer:
-          "No software makes a business POPIA compliant on its own. Finch supports more consistent records and role-aware access, while compliance still depends on how your business collects, uses, retains, shares and protects personal information.",
-      },
-      {
-        id: "vat-aware-invoices",
-        question: "Can Finch create VAT-aware South African tax invoices?",
-        answer:
-          "Yes. Finch, through OrderFlow, supports seller and customer details, VAT numbers, document numbering, line items and standard, zero-rated or exempt VAT treatment. Your accountant or tax practitioner remains responsible for confirming the correct tax treatment for your business.",
-      },
-      {
-        id: "role-based-access",
-        question: "Who can see what inside Finch?",
-        answer:
-          "Access is organisation-scoped and role-aware, so people only see the workflows and data their role needs. Full detail on how we collect, use, retain and protect information sits in our Privacy Policy.",
-      },
-    ],
-  },
-  {
-    id: "integrations",
-    eyebrow: "Integrations & your tools",
-    title: "Your current tools",
-    description: "Finch is built to read what you already run, not to replace it wholesale.",
-    questions: [
-      {
-        id: "connect-current-tools",
-        question: "Can Finch connect to the tools we already use?",
-        answer:
-          "Yes — Finch reads what you already run: Xero, Sage, WhatsApp, Yoco and more, connected during onboarding. Integrations beyond the standard roster are scoped and priced separately.",
-      },
-      {
-        id: "does-finch-replace-accounting-software",
-        question: "Does Finch replace Xero, Sage or QuickBooks?",
-        answer:
-          "Finch replaces the operational workflow around them — pricing, order capture, invoicing, reconciliation — not your accounting ledger or tax submissions. Any accounting connection or migration boundary is agreed during onboarding.",
-      },
-      {
-        id: "keep-current-pos-or-stock-system",
-        question: "Can we keep using our current POS or stock system?",
-        answer:
-          "In most cases, yes — Finch reads from your existing POS or stock export rather than requiring you to replace it. What gets connected, and how, is confirmed during onboarding.",
+          "Vyso is built primarily for South African businesses, and that is where our attention and local context are strongest. If you operate outside South Africa, tell us during an audit conversation and we'll be honest about whether we're the right fit.",
       },
     ],
   },
   {
     id: "fit",
-    eyebrow: "Comparison & fit",
-    title: "Fit & alternatives",
-    description: "Whether Finch is the right next step, and how it differs from the obvious alternatives.",
+    eyebrow: "Fit and comparison",
+    title: "How Vyso compares",
+    description: "Where Vyso sits next to the alternatives you've probably already considered.",
     questions: [
       {
-        id: "finch-vs-hiring-a-coo",
-        question: "How is Finch different from hiring a COO?",
+        id: "vyso-vs-zapier-or-make",
+        question: "How is Vyso different from Zapier or Make?",
         answer:
-          "A COO's job is watching invoices, stock, suppliers, debtors and margins, and telling you what matters. Finch does that watching for a fraction of a salary, with evidence attached to every finding — you still make the calls.",
+          "Zapier and Make are tools you configure yourself, one automation at a time. Vyso is a team that designs and builds the system around your operation, connects the tools involved, and keeps watching after the automation runs so problems surface before they cost you money.",
       },
       {
-        id: "when-finch-isnt-the-right-fit",
-        question: "When might Finch not be the right fit?",
+        id: "vyso-vs-an-erp",
+        question: "How is Vyso different from an ERP?",
         answer:
-          "If a simple off-the-shelf tool already matches your workflow, or you need a full enterprise ERP rollout, Finch may not be the right first step. The audit tests that fit honestly before you commit to anything.",
+          "An ERP asks your business to move its workflows into one large platform, usually with significant setup and training. Vyso builds around the systems you already use and adds the layer that automates and monitors them, so there's no wholesale platform migration to plan for.",
       },
       {
-        id: "finch-vs-a-point-tool",
-        question: "How is Finch different from a single-purpose tool?",
+        id: "vyso-vs-hiring-an-admin-employee",
+        question: "How is Vyso different from hiring another admin employee?",
         answer:
-          "A point tool usually solves one part of the operation. Finch connects several — invoices, stock, suppliers, debtors, margins — into one weekly brief, set up hands-on by Vyso rather than a dashboard you configure alone.",
+          "An admin hire can do the same repetitive work, at the pace and hours of one person. Vyso automates that repetitive work directly and then keeps watching for problems around the clock, so an admin hire and Vyso often solve different halves of the same problem rather than compete for the same one.",
       },
       {
-        id: "which-plan-should-we-choose",
-        question: "Which plan should we choose?",
+        id: "does-vyso-replace-our-current-software",
+        question: "Does Vyso replace our current software?",
         answer:
-          "There are no plans to pick between. The free audit tells us which agents and modules matter most for your business and sets the order they're switched on in, and the price follows that scope: a fixed build price and a monthly run price per item, quoted to you directly.",
+          "Not usually. Vyso is designed to work with the software you already run, such as Xero, Sage, WhatsApp and Excel, rather than replace it. We connect and automate around your existing tools instead of asking you to migrate to new ones.",
+      },
+    ],
+  },
+  {
+    id: "pricing",
+    eyebrow: "Pricing and how it works",
+    title: "Cost, the audit and timelines",
+    description:
+      "How pricing works, what the free Operations Audit includes, and how long a project usually takes.",
+    questions: [
+      {
+        id: "how-much-does-vyso-cost",
+        question: "How much does Vyso cost?",
+        answer:
+          "There's no fixed price list, because every operation is different. Every system Vyso builds is scoped around the specific problem it needs to solve: we start with the problem, quantify the opportunity, then recommend the smallest system capable of producing the outcome you need. A salon asking Vyso to automate enquiries is a different job from a distributor asking Vyso to redesign stock, procurement and wastage workflows, and the two are priced accordingly, after an audit rather than off a rate card.",
+      },
+      {
+        id: "whats-included-in-the-free-operations-audit",
+        question: "What is included in the free Operations Audit?",
+        answer:
+          "The free Operations Audit is time spent understanding how your operation actually works: where time and information get lost, which admin repeats itself, and where the highest return sits. You leave with a clear picture of what to automate first, whether or not you go ahead with Vyso afterwards, and there's no obligation to buy anything.",
+      },
+      {
+        id: "how-long-does-a-project-take",
+        question: "How long does a project take?",
+        answer:
+          "It depends on the scope agreed after your audit. A single automated workflow can be built and running in weeks, while a wider system covering several parts of your operation takes longer and is usually rolled out in stages, starting with whatever has the highest return.",
+      },
+      {
+        id: "does-vyso-offer-ongoing-support",
+        question: "Does Vyso offer ongoing support?",
+        answer:
+          "Yes. Vyso monitors the systems it builds and evolves them as your business changes, rather than handing over a finished product and leaving. Ongoing support is part of every engagement, not a separate add on.",
+      },
+    ],
+  },
+  {
+    id: "tools",
+    eyebrow: "Your tools",
+    title: "What Vyso connects to",
+    description: "What Vyso connects to today, and how it works with everything else.",
+    questions: [
+      {
+        id: "can-vyso-work-with-whatsapp",
+        question: "Can Vyso work with WhatsApp?",
+        answer:
+          "Yes. WhatsApp is one of the few tools Vyso connects to directly, so orders and messages sent to a WhatsApp Business number can be captured automatically instead of retyped by hand.",
+      },
+      {
+        id: "can-vyso-work-with-excel",
+        question: "Can Vyso work with Excel?",
+        answer:
+          "Yes. Spreadsheets are a normal input for Vyso, whether that means reading stock sheets, price lists or reports your team already keeps in Excel or Google Sheets. We design around the sheet rather than asking you to give it up.",
+      },
+      {
+        id: "can-vyso-work-with-email",
+        question: "Can Vyso work with email?",
+        answer:
+          "Yes. Vyso can read emailed orders, supplier statements, invoices and attachments, so information arriving by email gets captured instead of sitting in an inbox until someone has time to act on it.",
+      },
+      {
+        id: "can-vyso-connect-to-sage",
+        question: "Can Vyso connect to Sage?",
+        answer:
+          "We can design a system around Sage as your accounting record, though a direct Sage connection isn't live today. Tell us during your audit if Sage is your system of record and we'll scope what's possible.",
+      },
+      {
+        id: "can-vyso-connect-to-xero",
+        question: "Can Vyso connect to Xero?",
+        answer:
+          "Yes. Xero is one of the two tools Vyso connects to directly today, reading invoices, bills, contacts and account balances so your operational systems stay lined up with your books.",
+      },
+      {
+        id: "can-vyso-work-with-custom-internal-systems",
+        question: "Can Vyso work with custom internal systems?",
+        answer:
+          "In many cases, yes. If your business runs an internal database, a supplier portal or a system built specifically for you, we assess it during the audit and design the connection around what it can actually provide.",
+      },
+    ],
+  },
+  {
+    id: "trust",
+    eyebrow: "Data, security and autonomy",
+    title: "Security and human control",
+    description: "How your data is handled, and who stays in control of what Vyso does.",
+    questions: [
+      {
+        id: "is-our-data-secure",
+        question: "Is our data secure?",
+        answer:
+          "Yes. Access to your data is scoped to your organisation and to the roles that need it, and we're conscious of our obligations under POPIA in how we collect, use and store information. We're happy to explain our data handling in plain language before you commit to anything.",
+      },
+      {
+        id: "does-vyso-make-autonomous-decisions",
+        question: "Does Vyso make autonomous decisions?",
+        answer:
+          "No. Vyso surfaces findings, drafts and recommendations. It doesn't act on your business, your money or your customers without a person reviewing it first.",
+      },
+      {
+        id: "can-humans-approve-actions-before-they-happen",
+        question: "Can humans approve actions before they happen?",
+        answer:
+          "Yes, and that's the default. Every action a Vyso system proposes, from sending an invoice to flagging a supplier, is designed to be reviewed and approved by someone on your team before it happens.",
+      },
+      {
+        id: "can-vyso-notify-staff-when-something-goes-wrong",
+        question: "Can Vyso notify staff when something goes wrong?",
+        answer:
+          "Yes. Alerting the right person when something needs attention, a shortage, an overcharge, a margin slipping, is much of what Vyso is built to do. Notifications go to whoever on your team needs to see them.",
       },
     ],
   },
