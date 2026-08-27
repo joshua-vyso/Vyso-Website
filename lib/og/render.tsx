@@ -106,8 +106,12 @@ export type OgImageSpec = {
 /* The wordmark, from `public/finch/vyso-wordmark.svg`. Paths verbatim; the
    file's `<clipPath>` wrapper is dropped because its rect (1254×1254) is larger
    than the artwork's viewBox and clips nothing — and `<defs>` support is the
-   kind of thing satori is not obliged to have. */
-function Wordmark({ height = 30 }: { height?: number }) {
+   kind of thing satori is not obliged to have.
+
+   Exported so `lib/og/vyso.tsx` can draw the same mark in its own ink rather
+   than keep a second copy of eight path strings in sync with this one. `fill`
+   defaults to this template's ink, so every existing call site is unchanged. */
+export function Wordmark({ height = 30, fill = C.ink }: { height?: number; fill?: string }) {
   return (
     <svg
       width={Math.round((height * 825) / 210)}
@@ -116,21 +120,21 @@ function Wordmark({ height = 30 }: { height?: number }) {
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <path d="M221 504L338 694L455 504H417L338 632L261.5 504H221Z" fill={C.ink} />
-      <path d="M467 504L536.5 618H538.5L556.5 588L502 504H467Z" fill={C.ink} />
-      <path d="M658.5 504H620.097L473 752L510 751L658.5 504Z" fill={C.ink} />
+      <path d="M221 504L338 694L455 504H417L338 632L261.5 504H221Z" fill={fill} />
+      <path d="M467 504L536.5 618H538.5L556.5 588L502 504H467Z" fill={fill} />
+      <path d="M658.5 504H620.097L473 752L510 751L658.5 504Z" fill={fill} />
       <path
         d="M853 519.5H715.922C688.275 519.5 673.529 535.533 673.529 557.674C673.529 581.827 690.118 597.93 717.765 597.93H777.667C805.314 597.93 820.98 615.039 820.98 638.186C820.98 661.334 803.471 676.5 778.588 676.5C699.863 676.5 579 676.5 579 676.5"
-        stroke={C.ink}
+        stroke={fill}
         strokeWidth="33"
         strokeMiterlimit="10"
         strokeLinejoin="round"
       />
-      <path d="M892.5 503.5H853V535.5C865.982 519.464 878.253 512.228 892.5 503.5Z" fill={C.ink} />
-      <path d="M580 692.5L578.5 660.5L559 692.5H559.512H580Z" fill={C.ink} />
+      <path d="M892.5 503.5H853V535.5C865.982 519.464 878.253 512.228 892.5 503.5Z" fill={fill} />
+      <path d="M580 692.5L578.5 660.5L559 692.5H559.512H580Z" fill={fill} />
       <path
         d="M938.5 696C991.243 696 1034 652.795 1034 599.5C1034 546.205 991.243 503 938.5 503C885.757 503 843 546.205 843 599.5C843 652.795 885.757 696 938.5 696Z"
-        fill={C.ink}
+        fill={fill}
       />
     </svg>
   );

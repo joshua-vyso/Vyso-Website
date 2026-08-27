@@ -3,44 +3,47 @@
    *and* all of its descendants, so this one covers `/`, `/contact`,
    `/case-studies/*`, `/resources/*` and anything else added later that doesn't
    ship a generator of its own. That is why no page's metadata hard-codes an
-   image any more — the convention resolves the nearest one.
+   image — the convention resolves the nearest one.
 
-   Regenerated around the agency line (`.ai/plan_home_only.md`, change 2) rather
-   than around the old home hero, so a shared link previews as what Vyso is
-   rather than as one product's headline. No bird: `renderOgImage` never drew
-   one, and none is added here. The Finch treatment moved with its page — see
-   `app/finch/opengraph-image.tsx`.
+   Rebuilt on the `--vy-*` template (`.ai/plan_vyso_redesign_2026.md` §8, Phase
+   1): the positioning line in its two-tier form, and the first three beats of
+   the homepage's own hero script in window chrome. The routes that still render
+   the Finch-era template keep it until Phase 3 rebuilds them; this is the first
+   image on the new system, not a sweep of them all.
 
-   `footerNote` is passed explicitly because the helper still defaults to the
-   old published monthly price for the routes that have not been repositioned;
-   this image is not one of them. */
+   The feed is the homepage's demo, abbreviated to three rows because a 470px
+   card in a feed thumbnail cannot carry six. Every timestamp is a STATIC
+   string, and R91 per kg is an OPERATIONAL figure (what a distributor pays a
+   supplier), never a Vyso fee. */
 
-import { renderOgImage, OG_CONTENT_TYPE, OG_SIZE } from "@/lib/og/render";
-import { FLAGSHIP } from "@/lib/marketing/findings";
+import { renderVysoOgImage, OG_CONTENT_TYPE, OG_SIZE } from "@/lib/og/vyso";
 
 export const runtime = "nodejs";
 
-const TITLE = "An AI automation agency for South African businesses.";
+const TITLE = "Automation that knows";
+const CONTINUATION = "what happens next.";
 
-export const alt = TITLE;
+export const alt = `${TITLE} ${CONTINUATION}`;
 export const size = OG_SIZE;
 export const contentType = OG_CONTENT_TYPE;
 
 export default function Image() {
-  return renderOgImage({
-    eyebrow: "VYSO · AI AUTOMATION AGENCY · JOHANNESBURG",
+  return renderVysoOgImage({
+    eyebrow: "VYSO · AI OPERATIONS · JOHANNESBURG",
     title: TITLE,
-    /* The proof section's card, read from the findings library rather than
-       hand-copied. `lib/marketing/findings.ts` carries no `"use client"`
-       directive precisely so a server route can read it. */
-    finding: {
-      agent: FLAGSHIP.agent,
-      observation: FLAGSHIP.observation,
-      impact: FLAGSHIP.impact,
-      evidence: FLAGSHIP.evidence,
-      meta: FLAGSHIP.meta,
-    },
-    caption: "ILLUSTRATIVE EXAMPLE",
-    footerNote: "Start with a free audit, vyso.co.za/operations-audit",
+    continuation: CONTINUATION,
+    lead: "Operational systems that automate the repetitive work, then tell you when something needs your attention.",
+    frameTitle: "Operations feed",
+    feed: [
+      { time: "09:41", text: "An order arrives on WhatsApp and is captured automatically." },
+      { time: "09:42", text: "Inventory checked. Available: 31. Required: 40." },
+      {
+        time: "09:43",
+        accent: true,
+        label: "VYSO RECOMMENDS",
+        text: "You are 9 boxes short for tomorrow. Supplier A has stock at R91 per kg.",
+      },
+    ],
+    footerNote: "Free operations audit",
   });
 }

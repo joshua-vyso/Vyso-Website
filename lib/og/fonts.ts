@@ -32,7 +32,8 @@ export type OgFont = {
   style: "normal";
 };
 
-/* The three faces the design uses, and nothing else:
+/* The three faces the Finch-era template (`lib/og/render.tsx`) uses, and
+   nothing else:
    - STIX Two Text 500 — the editorial title (`--font-stix` on the site).
    - DM Sans 400/600 — the finding card's observation and impact (`--font-body`).
    - IBM Plex Mono 400 — agent label, evidence chip, meta and the footer. */
@@ -41,6 +42,19 @@ const FONT_CSS_URL =
   "?family=DM+Sans:wght@400;600" +
   "&family=IBM+Plex+Mono:wght@400" +
   "&family=STIX+Two+Text:wght@500";
+
+/* The redesign's three faces (`.ai/plan_vyso_redesign_2026.md` §4), for
+   `lib/og/vyso.tsx`:
+   - Instrument Sans 500/600 — display and headings (`--vy-font-display`).
+   - Inter 400 — body (`--vy-font-body`).
+   - IBM Plex Mono 400 — eyebrows, timestamps, the footer (`--vy-font-mono`).
+   A second URL rather than a longer first one: loading five families to draw
+   two would make every existing OG image pay for the new template's faces. */
+const VYSO_FONT_CSS_URL =
+  "https://fonts.googleapis.com/css2" +
+  "?family=IBM+Plex+Mono:wght@400" +
+  "&family=Instrument+Sans:wght@500;600" +
+  "&family=Inter:wght@400";
 
 /* Chrome would be served WOFF2. This UA is deliberately one Google's font API
    has no modern-format rule for, so every `src` comes back `format('truetype')`. */
@@ -54,27 +68,40 @@ const FACE_FAMILY = /font-family:\s*'([^']+)'/;
 const FACE_WEIGHT = /font-weight:\s*(\d+)/;
 const FACE_SRC = /src:\s*url\((https:\/\/[^)]+)\)/;
 
-let cache: Promise<OgFont[]> | null = null;
+/* One entry per stylesheet URL, so the two templates cache independently and
+   neither can strand the other in the fallback face. */
+const cache = new Map<string, Promise<OgFont[]>>();
 
 /**
  * The fonts for `ImageResponse`, or `[]` if they could not be loaded.
  * Resolved once per server process; a failure is not cached.
  */
 export function loadOgFonts(): Promise<OgFont[]> {
-  if (!cache) {
-    cache = fetchOgFonts().catch((error: unknown) => {
-      // Let a later request retry rather than pinning the process to the
-      // fallback face for as long as it lives.
-      cache = null;
-      console.warn("[og] font load failed, falling back to the default face:", error);
-      return [];
-    });
-  }
-  return cache;
+  return loadFontsFrom(FONT_CSS_URL);
 }
 
-async function fetchOgFonts(): Promise<OgFont[]> {
-  const css = await fetchText(FONT_CSS_URL);
+/** The same, for the `--vy-*` template (`lib/og/vyso.tsx`). */
+export function loadVysoOgFonts(): Promise<OgFont[]> {
+  return loadFontsFrom(VYSO_FONT_CSS_URL);
+}
+
+function loadFontsFrom(url: string): Promise<OgFont[]> {
+  const hit = cache.get(url);
+  if (hit) return hit;
+
+  const pending = fetchOgFonts(url).catch((error: unknown) => {
+    // Let a later request retry rather than pinning the process to the
+    // fallback face for as long as it lives.
+    cache.delete(url);
+    console.warn("[og] font load failed, falling back to the default face:", error);
+    return [];
+  });
+  cache.set(url, pending);
+  return pending;
+}
+
+async function fetchOgFonts(cssUrl: string): Promise<OgFont[]> {
+  const css = await fetchText(cssUrl);
 
   const faces: { name: string; weight: OgFont["weight"]; url: string }[] = [];
   for (const [, body] of css.matchAll(FACE_BLOCK)) {
