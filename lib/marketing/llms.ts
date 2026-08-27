@@ -28,26 +28,18 @@
    phase rewrote `faq.ts` without one. `/solutions` and `/industries` already
    read `SOLUTION_LIST`/`INDUSTRY_LIST` (their registries), so the eight
    solutions and three industries this redesign settled on appear with no
-   further edit. The Modules/Compare/Founding sections further down are left
-   exactly as they were, Finch branding included, because Phase 4 deletes
-   those sections together with the routes they describe (plan §12's
+   further edit. Phase 4 deleted the Modules/Compare/Founding routes and,
+   in this file, the sections and imports that described them (plan §12's
    same-phase rule for a sitemap/llms.ts entry and its redirect). */
 
 import { SITE } from "./site";
 import { INDUSTRY_LIST, HUB as INDUSTRIES_HUB } from "./industries";
 import { SOLUTION_LIST, HUB as SOLUTIONS_HUB } from "./solutions";
-import { HUB as COMPARE_HUB, COO, ERP, SPREADSHEETS, SALARY } from "./compare";
-import { MARKETING_MODULES } from "./modules";
 import { INTEGRATION_DETAILS, DONT_SEE_YOUR_TOOL } from "./integrations";
 import { FAQ_GROUPS } from "./faq";
 import { GLOSSARY_ALPHABETICAL, GLOSSARY_HUB, firstSentence } from "./glossary";
 import { LEARN_ARTICLES } from "./learn-articles";
 import { RESOURCES } from "./resources";
-import {
-  CANONICAL_URL as FOUNDING_URL,
-  TITLE as FOUNDING_TITLE,
-  DESCRIPTION as FOUNDING_DESCRIPTION,
-} from "./founding";
 import { ORBIT_ARTICLES } from "@/lib/orbit/articles";
 import { ORBIT_COMPARISONS } from "@/lib/orbit/compare";
 import { ORBIT_FAQ_GROUPS } from "@/lib/orbit/faq";
@@ -57,10 +49,6 @@ import { TRADES } from "@/lib/orbit/trades";
 
 const BASE_URL = SITE.url;
 const url = (path: string) => `${BASE_URL}${path}`;
-
-/** "R6,000" — the comma-thousands form the site's own copy uses throughout
-    (deck findings, pricing page, FAQ), not `Intl`'s en-ZA space separator. */
-const rand = (amount: number) => `R${amount.toLocaleString("en-US")}`;
 
 /* ── Shared building blocks ──────────────────────────────────────────────── */
 
@@ -108,14 +96,13 @@ const AUDIT_FIRST_SENTENCE = firstSentence(AUDIT_TERM.definition.join(" "));
 
 type PageEntry = { label: string; url: string };
 
-/** The full page index both files share. Industries, solutions, compare,
-    modules and the glossary are generated from their registries — a slug
-    added there appears here automatically; nothing is listed twice. */
+/** The full page index both files share. Industries, solutions and the
+    glossary are generated from their registries — a slug added there appears
+    here automatically; nothing is listed twice. */
 function buildPageIndex(): PageEntry[] {
   return [
     { label: "Home: Vyso, AI operations company in South Africa", url: url("/") },
     { label: "How it works", url: url("/how-it-works") },
-    { label: "Finch: the superseded product page", url: url("/finch") },
     { label: "Operations Audit: free, about an hour", url: url("/operations-audit") },
     /* The two tools under the audit. Listed by hand rather than generated: this
        index is built from the content registries (industries, solutions,
@@ -126,23 +113,15 @@ function buildPageIndex(): PageEntry[] {
     ...INDUSTRY_LIST.map((i) => ({ label: i.name, url: url(`/industries/${i.slug}`) })),
     { label: SOLUTIONS_HUB.title, url: url("/solutions") },
     ...SOLUTION_LIST.map((s) => ({ label: s.name, url: url(`/solutions/${s.slug}`) })),
-    { label: COMPARE_HUB.h1, url: COMPARE_HUB.canonical },
-    { label: COO.h1, url: COO.canonical },
-    { label: ERP.h1, url: ERP.canonical },
-    { label: SPREADSHEETS.h1, url: SPREADSHEETS.canonical },
-    { label: "All modules", url: url("/platform/modules") },
-    ...MARKETING_MODULES.map((m) => ({ label: `${m.name} — ${m.role}`, url: url(`/platform/modules/${m.slug}`) })),
     { label: "Integrations", url: url("/integrations") },
     { label: "FAQ", url: url("/faq") },
     { label: "About Vyso", url: url("/about") },
-    { label: "Academy (coming soon)", url: url("/academy") },
     { label: "Case studies", url: url("/case-studies") },
     { label: "Case study: Turn 'n Slice", url: url("/case-studies/turn-n-slice") },
     { label: "Vyso in South Africa", url: url("/south-africa") },
     { label: "Insights: operations articles", url: url("/learn") },
     { label: GLOSSARY_HUB.title, url: url("/learn/glossary") },
     { label: "Resources", url: url("/resources") },
-    { label: FOUNDING_TITLE, url: FOUNDING_URL },
     { label: "Contact", url: url("/contact") },
 
     /* Orbit — the second product surface, at `/orbit`. Generated from the same
@@ -240,27 +219,11 @@ function buildSolutionsSection(): string {
   ).join("\n\n");
 }
 
-function buildModulesSection(): string {
-  return MARKETING_MODULES.map(
-    (m) => `### ${m.name} — ${m.role}\n${m.tagline}\n${url(`/platform/modules/${m.slug}`)}`,
-  ).join("\n\n");
-}
-
 function buildIntegrationsSection(): string {
   const rows = INTEGRATION_DETAILS.map((i) => `### ${i.name}: ${i.status}\n${i.reads}`).join(
     "\n\n",
   );
   return `${rows}\n\n${DONT_SEE_YOUR_TOOL}`;
-}
-
-function buildCompareSection(): string {
-  const rows = [COO, ERP, SPREADSHEETS]
-    .map((c) => `### ${c.h1.replace(/\.$/, "")}\n${c.answer}\n${c.canonical}`)
-    .join("\n\n");
-  const salary = `The only external number in this cluster: ${SALARY.role} average base salary in South Africa is ${rand(
-    SALARY.monthlyLow ?? 0,
-  )}–${rand(SALARY.monthlyHigh ?? 0)} per month (${SALARY.detail.toLowerCase()}), per ${SALARY.publisher} (${SALARY.year}). Source: ${SALARY.url}`;
-  return `${COMPARE_HUB.answer}\n\n${rows}\n\n${salary}`;
 }
 
 function buildLearnSection(): string {
@@ -358,17 +321,9 @@ ${buildIndustriesSection()}
 
 ${buildSolutionsSection()}
 
-## Modules
-
-${buildModulesSection()}
-
 ## Integrations
 
 ${buildIntegrationsSection()}
-
-## Compare
-
-${buildCompareSection()}
 
 ## Learn articles
 
@@ -377,11 +332,6 @@ ${buildLearnSection()}
 ## Resources
 
 ${buildResourcesSection()}
-
-## Founding client
-
-${FOUNDING_DESCRIPTION}
-${FOUNDING_URL}
 
 ${buildOrbitSection()}
 `;

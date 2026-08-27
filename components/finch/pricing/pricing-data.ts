@@ -9,7 +9,6 @@
    (`pricing-jsonld.ts`), so the structured data can never drift from the page. */
 
 import { INTEGRATIONS } from "../integrations";
-import { MARKETING_MODULES } from "@/lib/marketing/modules";
 
 /* ── The offer ───────────────────────────────────────────────────────────── */
 
@@ -105,20 +104,16 @@ const AGENTS: IncludedItem[] = [
   },
 ];
 
-/* ServiceDen is gated to a single internal Vyso account and described on
-   `/platform/modules` as internal/limited-rollout rather than GA (see the copy
-   rules at the top of `lib/marketing/modules.ts`) — so it is the one module
-   that cannot be listed here unqualified. */
-const MODULE_CHIPS: Record<string, string> = { serviceden: "LIMITED ROLLOUT" };
-
-/* Names + one-line capabilities come straight from the module registry, in
-   registry order, so the pricing page can never list a module the rest of the
-   site does not. */
-const MODULES: IncludedItem[] = MARKETING_MODULES.map((module) => ({
-  label: module.name,
-  note: module.tagline,
-  ...(MODULE_CHIPS[module.slug] ? { chip: MODULE_CHIPS[module.slug] } : {}),
-}));
+/* `lib/marketing/modules.ts` and `/platform/modules` were deleted in
+   `.ai/plan_vyso_redesign_2026.md` Phase 4 (the module-codename showcase is
+   retired site-wide). This file survives Phase 4 only because `/terms`
+   still imports `FOUNDING_TERMS` below, and `WhatsIncluded.tsx` (the only
+   consumer of `INCLUDED_GROUPS`, hence of this constant) has had zero
+   importers since `/pricing` itself was deleted in an earlier phase — so
+   nothing renders this list today. Left as an empty, correctly-typed
+   placeholder rather than deleted, to avoid rewriting page copy that isn't
+   this phase's scope. */
+const MODULES: IncludedItem[] = [];
 
 /* Same roster, same order as the homepage orbit — one source of truth, so a
    tool can never be promised here and missing there. */

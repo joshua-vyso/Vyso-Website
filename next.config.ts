@@ -35,47 +35,110 @@ const nextConfig: NextConfig = {
         destination: "https://vyso.co.za/:path*",
         permanent: true,
       },
-      // `/about` redirect removed (phase 3, Workstream C): the page is
-      // rebuilt and returns again — see `app/about/page.tsx`.
-      // `/platform` and its old product sub-pages consolidate onto the
-      // homepage, which IS the product page (phase 1b). Exact-path sources
-      // only — `/platform/modules*` is untouched and keeps its own tree.
+      // `.ai/plan_vyso_redesign_2026.md` §6/§11 (Phase 4): the full redirect
+      // map for every route the 2026 redesign deletes. All permanent (308,
+      // matching the rest of this file). No chains — every source below
+      // resolves to a real, 200-returning page in one hop. Grouped in the
+      // table's own order; see the plan for the full source-of-truth mapping.
+
+      // `/finch`, `/platform*` and `/apps`: the old product/platform pages
+      // consolidate onto `/how-it-works`, which explains the model and
+      // absorbs the pricing-philosophy and compare-page intent (plan §7.2).
+      {
+        source: "/finch",
+        destination: "/how-it-works",
+        permanent: true,
+      },
       {
         source: "/platform",
-        destination: "/",
+        destination: "/how-it-works",
         permanent: true,
       },
       {
         source: "/platform/finch",
-        destination: "/",
+        destination: "/how-it-works",
         permanent: true,
       },
       {
         source: "/platform/vyso-for-smes",
-        destination: "/",
+        destination: "/how-it-works",
         permanent: true,
       },
-      // Old product codename slug.
       {
         source: "/platform/vyso-ai",
-        destination: "/",
+        destination: "/how-it-works",
         permanent: true,
       },
-      // `/finch` is a real page again (`.ai/plan_home_only.md`, change 1): the
-      // product page that lived at `/` moved there whole, so the redirect that
-      // used to fold it into the homepage is gone.
       {
         source: "/apps",
-        destination: "/platform/vyso-for-smes",
+        destination: "/how-it-works",
         permanent: true,
       },
-      // `/pricing` is deleted (change 3). Nothing on the site publishes a price
-      // now: pricing is per customer and per scope, quoted directly after the
-      // free audit, so the page a visitor wants is the one that books it.
-      // `/services` chained through `/pricing` and lands there directly.
+      // `/platform/modules` (the hub) also lands on `/how-it-works`; each
+      // module codename below 301s to whichever new solution slug now covers
+      // that capability (plan §6's per-module mapping).
+      {
+        source: "/platform/modules",
+        destination: "/how-it-works",
+        permanent: true,
+      },
+      {
+        source: "/platform/modules/orderflow",
+        destination: "/solutions/whatsapp-order-automation",
+        permanent: true,
+      },
+      {
+        source: "/platform/modules/doc-u",
+        destination: "/solutions/document-processing",
+        permanent: true,
+      },
+      {
+        source: "/platform/modules/procurepulse",
+        destination: "/solutions/procurement-automation",
+        permanent: true,
+      },
+      {
+        source: "/platform/modules/pricepilot",
+        destination: "/solutions/reduce-money-leakage",
+        permanent: true,
+      },
+      {
+        source: "/platform/modules/wastewatch",
+        destination: "/solutions/reduce-money-leakage",
+        permanent: true,
+      },
+      {
+        source: "/platform/modules/supplysync",
+        destination: "/solutions/inventory-automation",
+        permanent: true,
+      },
+      {
+        source: "/platform/modules/planwise",
+        destination: "/solutions/reporting-automation",
+        permanent: true,
+      },
+      {
+        source: "/platform/modules/insightgen",
+        destination: "/solutions/reporting-automation",
+        permanent: true,
+      },
+      {
+        source: "/platform/modules/shiftboard",
+        destination: "/how-it-works",
+        permanent: true,
+      },
+      {
+        source: "/platform/modules/serviceden",
+        destination: "/how-it-works",
+        permanent: true,
+      },
+      // `/pricing` is deleted. Nothing on the site publishes a price now:
+      // pricing is per customer and per scope, quoted directly after the
+      // free audit, so the page a visitor wants is the one that explains the
+      // philosophy. `/services` and `/roi-calculator` are kept as they were.
       {
         source: "/pricing",
-        destination: "/operations-audit",
+        destination: "/how-it-works",
         permanent: true,
       },
       {
@@ -90,27 +153,98 @@ const nextConfig: NextConfig = {
         destination: "/faq#pricing",
         permanent: true,
       },
-      // The margin/time calculator lives under the audit page now. 6b sent this
-      // to `/operations-audit#calculator`, an anchor two thirds of the way down
-      // a booking page; 6b fixes r2 gave the tool a page of its own, so the
-      // redirect points at the page rather than at a fragment. A 308 that lands
-      // on a real URL is also the only version a search engine can consolidate.
+      // The margin/time calculator lives under the audit page now.
       {
         source: "/roi-calculator",
         destination: "/operations-audit/calculator",
         permanent: true,
       },
-      // The comparisons are named after the product now, not the company —
-      // people search "Finch vs …", and Vyso is who invoices them. Content
-      // ported page-for-page, so these are true equivalents (§3).
+      // `/founding-client`: the founding-cohort offer page is gone; the
+      // audit is the conversion point now.
+      {
+        source: "/founding-client",
+        destination: "/operations-audit",
+        permanent: true,
+      },
+      // `/academy`: folded into Insights.
+      {
+        source: "/academy",
+        destination: "/learn",
+        permanent: true,
+      },
+      // `/compare` and all five variants (the two legacy `finch-vs-*` slugs
+      // and the three `vyso-vs-*` aliases that used to chain through them)
+      // now land directly on `/how-it-works`, which absorbs the compare-page
+      // intent (plan §7.2) — no more two-hop chain through `/compare/finch-vs-*`.
+      {
+        source: "/compare",
+        destination: "/how-it-works",
+        permanent: true,
+      },
+      {
+        source: "/compare/finch-vs-hiring-a-coo",
+        destination: "/how-it-works",
+        permanent: true,
+      },
+      {
+        source: "/compare/finch-vs-spreadsheets",
+        destination: "/how-it-works",
+        permanent: true,
+      },
+      {
+        source: "/compare/finch-vs-erp",
+        destination: "/how-it-works",
+        permanent: true,
+      },
       {
         source: "/compare/vyso-vs-erp-systems",
-        destination: "/compare/finch-vs-erp",
+        destination: "/how-it-works",
         permanent: true,
       },
       {
         source: "/compare/vyso-vs-spreadsheets",
-        destination: "/compare/finch-vs-spreadsheets",
+        destination: "/how-it-works",
+        permanent: true,
+      },
+      // The retired `/solutions/operations-dashboard` slug (Phase 2c) now
+      // 301s to the slug that replaced it.
+      {
+        source: "/solutions/operations-dashboard",
+        destination: "/solutions/reporting-automation",
+        permanent: true,
+      },
+      // The five industry verticals trimmed in Phase 2d fold into whichever
+      // of the three surviving verticals (or the hub) covers them.
+      {
+        source: "/industries/restaurants",
+        destination: "/industries/hospitality",
+        permanent: true,
+      },
+      {
+        source: "/industries/catering-companies",
+        destination: "/industries/hospitality",
+        permanent: true,
+      },
+      {
+        source: "/industries/farms",
+        destination: "/industries/food-suppliers",
+        permanent: true,
+      },
+      {
+        source: "/industries/security-companies",
+        destination: "/industries",
+        permanent: true,
+      },
+      {
+        source: "/industries/insurance-brokers",
+        destination: "/industries",
+        permanent: true,
+      },
+      // `/insights` is a nav LABEL only (plan §5) — the URLs stay `/learn/**`
+      // for SEO equity, so a visitor who types the literal label lands there.
+      {
+        source: "/insights",
+        destination: "/learn",
         permanent: true,
       },
     ];

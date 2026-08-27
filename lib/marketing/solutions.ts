@@ -24,23 +24,19 @@
    distributor invoices a customer, what a supplier charges, what a delivery
    was short. Vyso's own fees appear nowhere in this file.
 
-   ── Two things outside this file that a change here touches ────────────────
-   1. `lib/marketing/llms.ts` reads `SOLUTION_LIST` and each solution's
-      `.name` / `.slug` / `.summary`, and `HUB.title` — all three still exist
-      with the same names, so Phase 3's llms/sitemap pass has real, current
-      data to regenerate from without needing this file touched again.
-   2. `components/finch/industries/IndustrySections.tsx` does
-      `SOLUTIONS[slug].shortName`, where `slug` is
-      `lib/marketing/industries.ts`'s OWN `SolutionSlug` union (it does not
-      import this file's type). At the time this phase ran, Phase 2d's
-      in-progress rewrite of `industries.ts` had already narrowed that union
-      to the same eight slugs `SOLUTION_ORDER` below uses — so nothing in the
-      current tree still needs the retired `"operations-dashboard"` key. As a
-      defensive margin against ordering (Phase 2d's file was mid-edit,
-      uncommitted, while this phase ran), `SOLUTIONS` still carries a
-      compatibility alias for it — see the registry comment below. It costs
-      nothing and can be deleted once Phase 2d's industries rewrite lands and
-      Phase 4's redirect (plan §6) makes the URL itself unreachable.          */
+   ── One thing outside this file that a change here touches ─────────────────
+   `lib/marketing/llms.ts` reads `SOLUTION_LIST` and each solution's
+   `.name` / `.slug` / `.summary`, and `HUB.title` — all three still exist
+   with the same names, so Phase 3's llms/sitemap pass has real, current
+   data to regenerate from without needing this file touched again.
+
+   `.ai/plan_vyso_redesign_2026.md` Phase 4: the `"operations-dashboard"`
+   compatibility alias Phase 2c left in `SOLUTIONS` below (for
+   `components/finch/industries/IndustrySections.tsx`'s wider, pre-trim
+   `SolutionSlug` union) is removed — that component was deleted this phase
+   (confirmed zero remaining importers repo-wide before deletion), and the
+   old `/solutions/operations-dashboard` URL now 301s to
+   `/solutions/reporting-automation` in `next.config.ts` instead.          */
 
 export type SolutionSlug =
   | "whatsapp-order-automation"
@@ -1145,14 +1141,11 @@ export const SOLUTION_ORDER: readonly SolutionSlug[] = [
 ];
 
 /* `Record<string, Solution>`, not `Record<SolutionSlug, Solution>`: kept loose
-   deliberately, matching the shape the file this replaces had, because
-   `components/finch/industries/IndustrySections.tsx` indexes it with its OWN
-   (wider, pre-trim) `SolutionSlug` union from `lib/marketing/industries.ts`.
-   The `"operations-dashboard"` entry below is that compatibility bridge — see
-   the file header. It is NOT in `SOLUTION_ORDER`, is not statically generated
-   by `app/solutions/[slug]/page.tsx`, and is not linked from anywhere in this
-   file. Remove it once `lib/marketing/industries.ts` (Phase 2d) stops naming
-   it and `next.config.ts`'s redirect (Phase 4, plan §6) is live. */
+   deliberately, matching the shape the file this replaces had. The
+   `"operations-dashboard"` compatibility alias that used to live here (for
+   `components/finch/industries/IndustrySections.tsx`'s wider, pre-trim
+   `SolutionSlug` union) is gone — that component was deleted in Phase 4
+   (zero remaining importers), and the URL 301s via `next.config.ts` now. */
 export const SOLUTIONS: Record<string, Solution> = {
   "whatsapp-order-automation": whatsappOrderAutomation,
   "invoice-automation": invoiceAutomation,
@@ -1162,7 +1155,6 @@ export const SOLUTIONS: Record<string, Solution> = {
   "reporting-automation": reportingAutomation,
   "document-processing": documentProcessing,
   "reduce-money-leakage": reduceMoneyLeakage,
-  "operations-dashboard": reportingAutomation,
 };
 
 export const SOLUTION_LIST: readonly Solution[] = SOLUTION_ORDER.map((slug) => SOLUTIONS[slug]);

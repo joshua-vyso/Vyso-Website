@@ -7,7 +7,6 @@ import { ORBIT_ARTICLES } from "@/lib/orbit/articles";
 import { ORBIT_PUBLISHED, ORBIT_STATIC_ROUTES } from "@/lib/orbit/site";
 import { TRADES } from "@/lib/orbit/trades";
 import { LEARN_ARTICLES } from "@/lib/marketing/learn-articles";
-import { MARKETING_MODULE_SLUGS } from "@/lib/marketing/modules";
 
 const BASE_URL = "https://vyso.co.za";
 
@@ -17,8 +16,8 @@ const BASE_URL = "https://vyso.co.za";
       itself derived from git log — see that file's comment).
    2. `CONTENT_LAST_MODIFIED`, for every section whose data file carries no
       date of its own (`lib/marketing/{solutions,industries,integrations,
-      resources}.ts`, `app/south-africa`, `app/founding-client`,
-      `app/case-studies`, `app/privacy`) — this phase's date, per
+      resources}.ts`, `app/south-africa`, `app/case-studies`, `app/privacy`)
+      — this phase's date, per
       `.ai/plan_phase4_search_ai_visibility.md` §A.3 ("use a
       CONTENT_LAST_MODIFIED constant per data file, set to today's date").
       One shared constant rather than one per file: they'd all hold the same
@@ -52,11 +51,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
     // Core marketing pages. `/` is the homepage and `/how-it-works` is the new
     // 2026-redesign route (plan §7.2) that explains the model, absorbs the
     // compare-page intent and states the pricing philosophy. `/finch`,
-    // `/platform*`, `/founding-client`, `/academy` and `/compare*` are still
-    // real, indexable routes until Phase 4 deletes and redirects them
-    // (plan §11) — left listed here for exactly that long, per plan §12's
-    // instruction that a sitemap entry and its redirect land in the same
-    // phase.
+    // `/platform*`, `/founding-client`, `/academy` and `/compare*` are gone —
+    // Phase 4 deleted the routes and 301s each of their URLs (plan §6), so the
+    // redirect table carries them now, not this file (plan §12's same-phase
+    // rule).
     {
       url: BASE_URL,
       lastModified: new Date("2026-08-27"),
@@ -70,35 +68,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.95,
     },
     {
-      // The old product page. Superseded by `/how-it-works`; 301s there once
-      // Phase 4 lands (plan §6).
-      url: `${BASE_URL}/finch`,
-      lastModified: new Date("2026-08-27"),
-      changeFrequency: "weekly",
-      priority: 0.9,
-    },
-    {
-      url: `${BASE_URL}/platform/modules`,
-      lastModified: CONTENT_LAST_MODIFIED,
-      changeFrequency: "monthly",
-      priority: 0.8,
-    },
-    ...MARKETING_MODULE_SLUGS.map((slug) => ({
-      url: `${BASE_URL}/platform/modules/${slug}`,
-      lastModified: CONTENT_LAST_MODIFIED,
-      changeFrequency: "monthly" as const,
-      priority: 0.6,
-    })),
-    {
       url: `${BASE_URL}/south-africa`,
       lastModified: CONTENT_LAST_MODIFIED,
       changeFrequency: "monthly",
-      priority: 0.9,
-    },
-    {
-      url: `${BASE_URL}/founding-client`,
-      lastModified: CONTENT_LAST_MODIFIED,
-      changeFrequency: "weekly",
       priority: 0.9,
     },
     {
@@ -152,14 +124,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "monthly",
       priority: 0.7,
     },
-    // New this phase. COMING SOON, but the page itself is real and indexed.
-    {
-      url: `${BASE_URL}/academy`,
-      lastModified: new Date("2026-08-15"),
-      changeFrequency: "monthly",
-      priority: 0.6,
-    },
-
     // Solutions: the hub plus the eight current slugs, generated from
     // `lib/marketing/solutions.ts`'s own `SOLUTION_LIST` (plan §8: "make it
     // registry-driven from lib/marketing/solutions.ts if hardcoded" — it was,
@@ -337,34 +301,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.7,
     },
 
-    // Comparisons. The two `vyso-vs-*` URLs 308 to these (see `next.config.ts`)
-    // and the sitemap lists finals only, per `.ai/vyso_v2.md` §3.
-    {
-      url: `${BASE_URL}/compare`,
-      lastModified: new Date("2026-08-15"),
-      changeFrequency: "monthly",
-      priority: 0.7,
-    },
-    {
-      // The flagship: the "AI COO / fractional COO" intent cluster from §7,
-      // and the only page carrying a sourced salary figure.
-      url: `${BASE_URL}/compare/finch-vs-hiring-a-coo`,
-      lastModified: new Date("2026-08-15"),
-      changeFrequency: "monthly",
-      priority: 0.8,
-    },
-    {
-      url: `${BASE_URL}/compare/finch-vs-spreadsheets`,
-      lastModified: new Date("2026-08-15"),
-      changeFrequency: "monthly",
-      priority: 0.6,
-    },
-    {
-      url: `${BASE_URL}/compare/finch-vs-erp`,
-      lastModified: new Date("2026-08-15"),
-      changeFrequency: "monthly",
-      priority: 0.6,
-    },
+    // Comparisons. `/compare` and its five variants are deleted (plan §11);
+    // all six 301 to `/how-it-works`, which absorbs the compare-page intent
+    // (plan §7.2) — see `next.config.ts`.
 
     /* ── Orbit ────────────────────────────────────────────────────────────
        The `/orbit` subsite (`.ai/plan_orbit_site.md`). Generated from the same
@@ -375,12 +314,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
        All of them share `ORBIT_PUBLISHED`: the subsite was written in one
        sitting and every page's real `lastmod` is that date. Same reasoning as
        `CONTENT_LAST_MODIFIED` above, with a constant of its own because these
-       pages will move on a different clock to the Finch ones.
+       pages will move on a different clock to the main-site ones.
 
-       Priorities are below the Finch money pages deliberately. Orbit is a
-       waitlist for an unreleased product; `/pricing` and `/founding-client`
-       sell something that exists today, and the sitemap should not suggest
-       otherwise. */
+       Priorities are below the main-site money pages deliberately. Orbit is a
+       waitlist for an unreleased product; `/operations-audit` sells something
+       that exists today, and the sitemap should not suggest otherwise. */
     ...ORBIT_STATIC_ROUTES.map((route) => ({
       url: `${BASE_URL}${route.path}`,
       lastModified: new Date(ORBIT_PUBLISHED),
