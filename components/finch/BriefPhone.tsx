@@ -22,6 +22,25 @@ function FinchAvatar({ size }: { size: number }) {
   );
 }
 
+/* ── Whose brief this is ─────────────────────────────────────────────────────
+   The agency home page (`app/page.tsx`) reuses this mock as its hero visual,
+   relabelled "Vyso" and with the bird removed, **on that page only**. `/finch`
+   keeps the bird and the Finch name, so this is a prop with the current
+   wording as its default rather than an edit to the component's own copy —
+   `<BriefPhone />` with no props renders exactly what it rendered before.
+
+   The bird is dropped by the same switch rather than by a second flag: on this
+   surface the mark and the name are one lockup, and a Finch bird beside the
+   word "Vyso" would be the confusion the relabel exists to avoid. Nothing here
+   is a channel logo — the avatar's only job is to say who is sending, so its
+   absence needs no replacement. */
+export type BriefSender = "finch" | "vyso";
+
+const SENDER: Record<BriefSender, { name: string; bird: boolean }> = {
+  finch: { name: "Finch", bird: true },
+  vyso: { name: "Vyso", bird: false },
+};
+
 /* ── The three findings ──────────────────────────────────────────────────────
    "3 things need your attention" has to be literally true on screen, so the
    brief carries all three — the PRICE WATCH card the sequence already builds
@@ -97,6 +116,9 @@ export function BriefPhone({
   cardSlot = "bubble",
   cardSlotHeight = 0,
   height,
+  /** Who the brief is from. See `BriefSender` above. */
+  sender = "finch",
+  className = "",
 }: {
   bubbleStyle?:    MotionStyle;
   debtorsStyle?:   MotionStyle;
@@ -104,21 +126,27 @@ export function BriefPhone({
   cardSlot?:       "bubble" | "spacer";
   cardSlotHeight?: number;
   height?:         number;
+  sender?:         BriefSender;
+  className?:      string;
 }) {
   const sequenced = cardSlot === "spacer";
+  const { name, bird } = SENDER[sender];
   return (
     /* Fixed height only in the sequence, where the stage geometry depends on
        it. Standing on its own the phone grows to its four bubbles rather than
        clipping them — the frame was sized for a one-bubble brief. */
     <div
-      className="w-[300px] rounded-[42px] border border-fn-line-3 bg-fn-surface p-[12px] shadow-[var(--fn-shadow-phone)]"
+      className={
+        "w-[300px] rounded-[42px] border border-fn-line-3 bg-fn-surface p-[12px] shadow-[var(--fn-shadow-phone)] " +
+        className
+      }
       style={height ? { height } : undefined}
     >
       <div className="flex h-full flex-col overflow-hidden rounded-[32px] bg-fn-surface-2 pb-[14px]">
         <div className="flex items-center gap-[10px] border-b border-fn-line bg-fn-surface px-[16px] pt-[16px] pb-[12px]">
-          <FinchAvatar size={30} />
+          {bird ? <FinchAvatar size={30} /> : null}
           <div>
-            <div className="text-[13.5px] font-semibold">Finch</div>
+            <div className="text-[13.5px] font-semibold">{name}</div>
             <div className="font-fn-mono text-[9.5px] text-fn-blue">● ONLINE · 06:45</div>
           </div>
         </div>

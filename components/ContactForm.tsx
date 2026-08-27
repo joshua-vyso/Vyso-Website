@@ -139,7 +139,7 @@ export default function ContactForm({
         <FindingCardFrame state="new" className="max-w-none">
           <FindingHeader agent="AUDIT" state="new" />
           <FindingObservation>
-            Your audit request landed. We&rsquo;ll reply within one business day to confirm the week.
+            Your audit request landed. We&rsquo;ll reply within one business day to confirm the time.
           </FindingObservation>
           <FindingImpact>A week from now you&rsquo;ll know where the money goes.</FindingImpact>
         </FindingCardFrame>
@@ -355,7 +355,7 @@ export default function ContactForm({
         {status === "loading"
           ? "Sending…"
           : isAudit
-            ? "Book your audit"
+            ? "Book your free audit"
             : isAcademy
               ? "Register interest"
               : "Send"}
@@ -363,7 +363,7 @@ export default function ContactForm({
 
       <p className="m-0 text-center text-[12px] text-fn-muted">
         {isAudit
-          ? "R2,000, credited to your first month. We confirm the start date when you book."
+          ? "Free, about an hour, no obligation. We confirm the time when you book."
           : isAcademy
             ? "No payment now — just interest. We'll write when the first cohort opens."
             : "We reply within one business day."}

@@ -10,13 +10,13 @@ import { AuditWeek } from "@/components/finch/audit/AuditWeek";
 import { buildAuditSchema } from "@/components/finch/audit/audit-jsonld";
 import { CANONICAL_URL } from "@/components/finch/audit/audit-content";
 
-const title = "Operations Audit — one week, R2,000, credited | Vyso";
-/* 154 chars. Leads with the thing being searched for, carries the price and the
-   credit, then the two things you can do before you book. Those two are pages
+const title = "Free operations audit, about an hour | Vyso";
+/* 152 chars. Leads with the thing being searched for, carries the offer and the
+   output, then the two things you can do before you book. Those two are pages
    of their own now (`/score`, `/calculator`), and the sentence reads the same
-   either way — it describes what is on offer, not where the widget sits. */
+   either way: it describes what is on offer, not where the widget sits. */
 const description =
-  "A one-week Operations Audit for South African food businesses. R2,000, credited to your first month. Score yourself or run the numbers, then book the week.";
+  "A free operations audit for South African businesses. About an hour with you, and a roadmap of what to automate first. Score yourself or run the numbers.";
 
 export const metadata: Metadata = {
   /* `absolute` because the sitewide title template appends "| Vyso" — this
@@ -41,12 +41,18 @@ export const metadata: Metadata = {
    the top row, then the week is explained for anyone who wants it explained,
    then the two ways to look at your own operation before you commit. Server
    component apart from the form; `.finch-site` scopes the `--fn-*` tokens as on
-   `/` and `/pricing`.
+   every other marketing route.
+
+   `.ai/plan_home_only.md`, change 4: the audit is free and takes about an hour.
+   It was a paid week credited against the first month, and every mention of the
+   fee, the credit and the week is rewritten here and in `audit-content.ts`,
+   which is the one place the page's strings live. What follows the audit is
+   priced per customer and per scope, quoted directly, never published.
 
    ── Ground sequence (`.ai/vyso_v3_design.md` §7) ────────────────────────────
-   **paper** (hero + form, one blue glow) → **blue** (how the week runs,
-   oscillating dots, the 7-day rail) → **paper** (the two-ways card straddling
-   the seam) → **ink** ("R2,000. Credited.", the wave field, type riding it) →
+   **paper** (hero + form, one blue glow) → **blue** (how the hour runs,
+   oscillating dots, the step rail) → **paper** (the two-ways card straddling
+   the seam) → **ink** ("Free. An hour.", the wave field, type riding it) →
    **paper** (FAQs). Adjacent bands never share a ground and no band carries two
    devices.
 
@@ -59,8 +65,8 @@ export const metadata: Metadata = {
    links to them any more, and `/roi-calculator` 308s to the calculator's page
    rather than to a fragment on this one.
 
-   The anchors that remain: `#book` (the hero form — every "Book your audit" on
-   the site is one of these, including the two inside the tools), `#assess`, and
+   The anchors that remain: `#book` (the hero form — every "Book your free
+   audit" on the site is one of these, including the two inside the tools), `#assess`, and
    the `#step-01…04` targets the HowTo schema points at, which live in
    `WeekRail`'s list, once each.                                               */
 export default function OperationsAuditPage() {

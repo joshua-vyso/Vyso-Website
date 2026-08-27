@@ -117,12 +117,41 @@ function slotRotation(offset: number) {
   return 90 - (DOCK_ANGLE + STEP_ANGLE * offset + gap);
 }
 
+/* ── The hub, as a prop ──────────────────────────────────────────────────────
+   The agency home page runs this widget too, and there the thing your tools
+   plug into is **Vyso**, not Finch — the bird belongs to the product, and the
+   agency page carries no bird.
+
+   So the hub is one optional prop with the current values as its default, the
+   same shape `BriefPhone`'s `sender` took for the same reason. `/finch` passes
+   nothing and is byte-identical to what it rendered before. `label: ""` omits
+   the mono caption entirely, which is what a hub whose mark is already a
+   wordmark wants — a wordmark with "VYSO" written under it says it twice. */
+export type OrbitHub = {
+  src: string;
+  /** Rendered inside the 120px disc, in canvas px. */
+  width: number;
+  height: number;
+  /** The mono caption under the disc. Empty string draws none. */
+  label: string;
+};
+
+const FINCH_HUB: OrbitHub = {
+  src: "/finch/finch-bird.svg",
+  width: 44,
+  height: 44,
+  label: "FINCH",
+};
+
 export function IntegrationsOrbit({
   onActiveChange,
+  hub = FINCH_HUB,
 }: {
   /** Reports the docked index up so `Senses.tsx` can drive `IntegrationPrompt`
       off the same number — one timer, two renderers, per the v4 plan. */
   onActiveChange?: (index: number) => void;
+  /** What sits in the middle. Defaults to Finch's bird — see above. */
+  hub?: OrbitHub;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion();
@@ -226,11 +255,11 @@ export function IntegrationsOrbit({
           }}
         >
           <Image
-            src="/finch/finch-bird.svg"
+            src={hub.src}
             alt=""
-            width={44}
-            height={44}
-            style={{ width: u(44), height: u(44) }}
+            width={hub.width}
+            height={hub.height}
+            style={{ width: u(hub.width), height: u(hub.height) }}
           />
         </span>
 
@@ -254,17 +283,19 @@ export function IntegrationsOrbit({
           />
         ) : null}
 
-        <span
-          className="absolute z-[4] -translate-x-1/2 font-fn-mono text-fn-muted"
-          style={{
-            left:          u(FINCH.cx),
-            top:           u(LABEL_Y),
-            fontSize:      `max(9px, ${u(10)})`,
-            letterSpacing: "0.14em",
-          }}
-        >
-          FINCH
-        </span>
+        {hub.label ? (
+          <span
+            className="absolute z-[4] -translate-x-1/2 font-fn-mono text-fn-muted"
+            style={{
+              left:          u(FINCH.cx),
+              top:           u(LABEL_Y),
+              fontSize:      `max(9px, ${u(10)})`,
+              letterSpacing: "0.14em",
+            }}
+          >
+            {hub.label}
+          </span>
+        ) : null}
 
         {INTEGRATIONS.map((it, i) => {
           const offset   = slotOffset(i, active);

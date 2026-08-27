@@ -72,7 +72,7 @@ export function AuditTools() {
           Two ways to see it before we start.
         </h2>
         <p className="m-0 max-w-[620px] text-[15px] leading-[1.65] text-fn-ink-3 text-pretty lg:text-[15.5px]">
-          Score your operation in a minute, or put your own numbers in — both are estimates; the audit
+          Score your operation in a minute, or put your own numbers in. Both are estimates. The hour
           is where we find out for real.
         </p>
 

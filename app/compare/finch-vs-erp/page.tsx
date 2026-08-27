@@ -41,7 +41,7 @@ export default function FinchVsErpPage() {
       ]}
       tableLabel="A traditional ERP compared with Finch"
       faqTitle="Before you buy the programme."
-      secondary={{ label: "See the pricing", href: "/pricing" }}
+      secondary={{ label: "Book your free audit", href: "/operations-audit" }}
       sideLinks={[
         { label: "Finch vs hiring a COO", href: "/compare/finch-vs-hiring-a-coo" },
         { label: "Finch vs spreadsheets", href: "/compare/finch-vs-spreadsheets" },

@@ -14,14 +14,14 @@ export const SITE = {
   url: "https://vyso.co.za",
   email: "joshua@vyso.co.za",
 
-  /* The §7.4 entity statement, trimmed to fit a meta description (≤155 chars):
-     "Vyso is a Johannesburg-based company whose product, Finch, is an AI
-     operations assistant — a company's own COO — for South African food and
-     produce SMEs, at R6,000 per location per month." → dropped "-based" and
-     the "own COO" aside (carried elsewhere in the copy, e.g. the homepage H1)
-     to land at 154 characters without changing any fact. */
+  /* `.ai/plan_home_only.md`, change 2: the entity statement leads with what
+     Vyso *is* — an AI automation agency — because that is both the truth and
+     the query the home page is written to answer ("AI automation agency South
+     Africa"). It also carried the old published monthly price, which nothing on
+     the site quotes any more. Counted: 149 characters, inside the 155 the
+     meta-description budget allows. */
   description:
-    "Vyso is a Johannesburg company whose product, Finch, is an AI operations assistant for South African food and produce SMEs. R6,000 per location per month.",
+    "Vyso is an AI automation agency in Johannesburg building operational automation for South African SMEs: orders, invoices, stock, quotes and debtors.",
 
   locale: "en-ZA",
 

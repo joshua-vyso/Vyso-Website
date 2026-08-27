@@ -149,7 +149,7 @@ export function WhatFinchWatchesHere({ industry }: { industry: Industry }) {
             <span className="flex items-center gap-[8px]">
               <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-fn-orange" />
               <Link
-                href="/#agents"
+                href="/finch#agents"
                 className="font-fn-mono text-[10.5px] tracking-[0.12em] text-fn-ink-2 transition-colors duration-150 hover:text-fn-orange-deep"
               >
                 {agent.label}

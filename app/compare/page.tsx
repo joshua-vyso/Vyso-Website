@@ -66,7 +66,7 @@ export default function ComparePage() {
           eyebrow="CHOOSING WELL"
           title={HUB.h1}
           answer={HUB.answer}
-          secondary={{ label: "See the pricing", href: "/pricing" }}
+          secondary={{ label: "Book your free audit", href: "/operations-audit" }}
         />
 
         <section className="mx-auto max-w-[1160px] px-[20px] pt-[64px] lg:px-[40px] lg:pt-[96px]">
@@ -105,8 +105,8 @@ export default function ComparePage() {
         <section className="mx-auto max-w-[1160px] px-[20px] pt-[64px] lg:px-[40px] lg:pt-[96px]">
           <div className="flex flex-wrap items-center gap-x-[28px] gap-y-[14px] border-t border-fn-line pt-[28px]">
             <ArrowLink href="/faq#fit">The full fit-and-alternatives FAQ</ArrowLink>
-            <ArrowLink href="/pricing">What R6,000 per location includes</ArrowLink>
-            <ArrowLink href="/operations-audit">How the one-week audit works</ArrowLink>
+            <ArrowLink href="/finch">What Finch does</ArrowLink>
+            <ArrowLink href="/operations-audit">How the free audit works</ArrowLink>
           </div>
         </section>
 

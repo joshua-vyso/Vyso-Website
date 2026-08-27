@@ -73,14 +73,14 @@ export function AgentChipRow({ agents }: { agents: readonly SolutionAgent[] }) {
 }
 
 /** The full agent row used by "How Finch fixes it": a link to the roster on
-    `/#agents`, the job this agent does for *this* problem, and its status. */
+    `/finch#agents`, the job this agent does for *this* problem, and its status. */
 export function AgentList({ agents }: { agents: readonly SolutionAgent[] }) {
   return (
     <ul className="m-0 grid list-none grid-cols-1 gap-[12px] p-0 md:grid-cols-2">
       {agents.map((agent) => (
         <li key={agent.label}>
           <Link
-            href="/#agents"
+            href="/finch#agents"
             className="group flex h-full flex-col rounded-[10px] border border-fn-line bg-fn-surface px-[20px] py-[18px] transition-colors duration-150 hover:border-fn-line-hover"
           >
             <span className="mb-[10px] flex items-center gap-[8px]">

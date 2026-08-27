@@ -25,7 +25,6 @@ import {
   PRICE,
   DIRECT_ANSWER,
   FOUNDING_TERMS,
-  CANONICAL_URL as PRICING_URL,
   STRAIGHT_ANSWERS,
 } from "@/components/finch/pricing/pricing-data";
 import { INDUSTRY_LIST, HUB as INDUSTRIES_HUB } from "./industries";
@@ -82,9 +81,9 @@ type PageEntry = { label: string; url: string };
     added there appears here automatically; nothing is listed twice. */
 function buildPageIndex(): PageEntry[] {
   return [
-    { label: "Home — Finch, the product", url: url("/") },
-    { label: "Pricing", url: PRICING_URL },
-    { label: "Operations Audit", url: url("/operations-audit") },
+    { label: "Home — Vyso, the AI automation agency", url: url("/") },
+    { label: "Finch — the product", url: url("/finch") },
+    { label: "Operations Audit — free, about an hour", url: url("/operations-audit") },
     /* The two tools under the audit. Listed by hand rather than generated: this
        index is built from the content registries (industries, solutions,
        modules, glossary), and these two are pages, not registry entries. */
@@ -148,14 +147,14 @@ ${SITE.description}
 ## Product
 - What Finch is: ${WHAT_IS_FINCH}
 - Price: ${DIRECT_ANSWER}
-- Operations Audit: ${AUDIT_FIRST_SENTENCE} It costs ${rand(PRICE.audit)}, credited against the first month.
+- Operations Audit: ${AUDIT_FIRST_SENTENCE} Vyso's is free and takes about an hour with you.
 
 ## Pages
 ${formatPages(pages)}
 
 ## Facts
 - ${rand(PRICE.finch)} per location per month, everything included — every module and agent, activated in priority order from the operations audit, plus a monthly ops review with a Vyso lead.
-- Operations Audit: ${rand(PRICE.audit)}, one week, credited to the first month.
+- Operations Audit: free, about an hour, no obligation. What follows is priced per customer and per scope, quoted directly, never published.
 - Founding-client terms: ${FOUNDING_TERMS.join(", ")}.
 - ${CAN_WE_CANCEL}
 - Expanded mandates (multi-entity groups, custom integrations) are priced on scope.

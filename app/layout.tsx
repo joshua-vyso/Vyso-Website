@@ -3,7 +3,6 @@ import { Barlow_Condensed, DM_Sans, IBM_Plex_Mono, Inter, Instrument_Sans, Space
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { NavGround } from "@/components/finch/NavGround";
-import { PRICE } from "@/components/finch/pricing/pricing-data";
 import { RouteFade } from "@/components/finch/RouteFade";
 import { SkipLink } from "@/components/finch/SkipLink";
 import { SmoothScroll } from "@/components/finch/SmoothScroll";
@@ -73,12 +72,16 @@ const ibmPlexMono = IBM_Plex_Mono({
 /* Root metadata for the whole site. `title.template` means every page's own
    `title: "…"` string gets ` | Vyso` appended automatically — a page that
    wants a different final title (or already spells out "| Vyso" itself) must
-   set `title: { absolute: "…" }` instead. `/pricing` was the one page already
-   shipping a self-contained "…| Vyso" title; it is trimmed to a plain string
-   here so the template doesn't double the suffix (see that file's comment). */
+   set `title: { absolute: "…" }` instead — `/finch` and `/operations-audit`
+   are the pages that do. */
 export const metadata: Metadata = {
+  /* `.ai/plan_home_only.md`, change 2: the default title is the entity plus the
+     category and the country, because `/` is the page that has to answer
+     "AI automation agency South Africa" and the old default carried one
+     product's headline. The template is unchanged, so every other page still
+     appends " | Vyso". */
   title: {
-    default: "Vyso — Finch, your company's own COO at a tenth of the cost",
+    default: "Vyso, AI automation agency in South Africa",
     template: "%s | Vyso",
   },
   description: SITE.description,
@@ -91,7 +94,7 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: "Vyso — Finch, your company's own COO at a tenth of the cost",
+    title: "Vyso, AI automation agency in South Africa",
     description: SITE.description,
     url:      SITE.url,
     siteName: SITE.name,
@@ -106,7 +109,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Vyso — Finch, your company's own COO at a tenth of the cost",
+    title: "Vyso, AI automation agency in South Africa",
     description: SITE.description,
     /* Same reason: the file convention emits `twitter:image` too. */
   },
@@ -129,10 +132,16 @@ export const metadata: Metadata = {
    Replaces the old two-node (Organization + WebSite) graph with the full
    phase-1 set from `.ai/vyso_v2.md` §7.3: Organization (with its founder as
    a Person), WebSite, the Finch SoftwareApplication and the Operations Audit
-   Service. Price figures come from `PRICE` in `components/finch/pricing/
-   pricing-data.ts` — the same constants `/pricing`'s own JSON-LD reads — so
-   this graph can never quote a number the pricing page doesn't. Pages that
-   emit their own graph (`/pricing`, `/operations-audit`) reference
+   Service.
+
+   `.ai/plan_home_only.md`, change 3: this graph used to read its figures from
+   `components/finch/pricing/pricing-data.ts`, the constants `/pricing`'s own
+   JSON-LD read. `/pricing` is deleted, and there are no monetary offers left
+   in the site's structured data: the audit is genuinely free and says so with
+   a zero-price `Offer`, and everything else is quoted per customer and per
+   scope after that audit, which is not a number schema.org should be given.
+
+   Pages that emit their own graph (`/operations-audit`) reference
    `#organization` rather than redeclaring it; no `@id` collides with this
    one. No address beyond Johannesburg/ZA (no street exists to publish) and
    no ratings, per the phase-1 decision. `sameAs` is included only once
@@ -145,8 +154,14 @@ const siteSchema = {
       "@type": "Organization",
       "@id": `${SITE.url}/#organization`,
       name: SITE.name,
+      /* The category, said in the one field a knowledge panel reads it from.
+         `description` says it in prose; `alternateName` is what an engine
+         matches "AI automation agency" against when it is looking for an
+         entity rather than a sentence. */
+      alternateName: "Vyso AI automation agency",
       url: SITE.url,
       logo: `${SITE.url}/icon.svg`,
+      description: SITE.description,
       email: SITE.email,
       founder: {
         "@type": "Person",
@@ -189,37 +204,34 @@ const siteSchema = {
       name: "Finch",
       applicationCategory: "BusinessApplication",
       operatingSystem: "Web",
-      // The homepage is the product page; there is no separate `/finch`.
-      url: `${SITE.url}/`,
+      // Finch has a page of its own again — see `app/finch/page.tsx`.
+      url: `${SITE.url}/finch`,
       provider: { "@id": `${SITE.url}/#organization` },
-      offers: {
-        "@type": "Offer",
-        price: String(PRICE.finch),
-        priceCurrency: PRICE.currency,
-        availability: "https://schema.org/InStock",
-        priceSpecification: {
-          "@type": "UnitPriceSpecification",
-          price: PRICE.finch,
-          priceCurrency: PRICE.currency,
-          unitCode: "MON",
-          referenceQuantity: {
-            "@type": "QuantitativeValue",
-            value: 1,
-            unitText: "location",
-          },
-        },
-      },
+      description:
+        "The catering and wholesale experience built by Vyso: supplier invoices read overnight, prices watched line by line, one morning brief.",
+      /* No `offers` on this node, for a settled reason: Finch is priced per
+         customer and per scope, quoted privately from an audit roadmap rather
+         than published. An `Offer` here would have to invent a figure the site
+         never states. */
     },
     {
+      /* The audit is free, so this is a real zero-price `Offer` rather than an
+         omitted one: "free" is a claim worth making in structured data, and
+         `price: "0"` is the valid way to make it. `priceCurrency` stays the ISO
+         code "ZAR" because schema.org requires one alongside a price; the
+         visible copy never says "ZAR". */
       "@type": "Service",
       "@id": `${SITE.url}/#audit`,
-      name: "Operations Audit",
+      name: "Free operations audit",
+      serviceType: "AI automation consulting",
+      description:
+        "About an hour with a South African business owner, free: we find where money and time leak, then quote a fixed price per scope privately.",
       provider: { "@id": `${SITE.url}/#organization` },
       areaServed: "ZA",
       offers: {
         "@type": "Offer",
-        price: String(PRICE.audit),
-        priceCurrency: PRICE.currency,
+        price: "0",
+        priceCurrency: "ZAR",
         availability: "https://schema.org/InStock",
       },
     },

@@ -206,7 +206,7 @@ export default function FinchVsHiringACooPage() {
             { label: "Finch vs an ERP", href: "/compare/finch-vs-erp" },
             { label: "Finch vs spreadsheets", href: "/compare/finch-vs-spreadsheets" },
             { label: "All three comparisons", href: "/compare" },
-            { label: "What R6,000 per location includes", href: "/pricing" },
+            { label: "What Finch does", href: "/finch" },
             { label: "Fit & alternatives FAQ", href: "/faq#fit" },
           ]}
         />

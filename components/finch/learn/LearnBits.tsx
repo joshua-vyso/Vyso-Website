@@ -203,7 +203,7 @@ export function SourcesBlock({ sources }: { sources: readonly ArticleSource[] })
 }
 
 /* ── Related agents ───────────────────────────────────────────────────────────
-   Links to `/#agents`, the homepage roster — the one place the agents are
+   Links to `/finch#agents`, the homepage roster — the one place the agents are
    listed. Statuses are the §4 chips verbatim, so a roadmap agent can never
    read as shipped from inside an article. */
 
@@ -215,7 +215,7 @@ export function ArticleAgents({ agents }: { agents: readonly ArticleAgent[] }) {
         {agents.map((agent) => (
           <li key={agent.label}>
             <Link
-              href="/#agents"
+              href="/finch#agents"
               className="group flex flex-col rounded-[10px] border border-fn-line bg-fn-surface px-[18px] py-[16px] transition-colors duration-150 hover:border-fn-line-hover"
             >
               <span className="mb-[8px] flex flex-wrap items-center gap-[8px]">

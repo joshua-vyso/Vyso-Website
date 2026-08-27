@@ -1,6 +1,6 @@
 /* `/operations-audit`'s OG image. Title is the page's own H1
-   (`components/finch/audit/AuditHero.tsx`); the card restates what the week
-   trades — both from `audit-content.ts`, which is where the page reads them.
+   (`components/finch/audit/AuditHero.tsx`); the card restates what the hour
+   trades, both from `audit-content.ts`, which is where the page reads them.
    The picture itself lives in `audit-og.tsx`, shared with the two tool routes
    under this one. */
 

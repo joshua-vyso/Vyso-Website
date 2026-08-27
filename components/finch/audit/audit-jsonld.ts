@@ -8,11 +8,11 @@
    The Service deliberately reuses the sitewide graph's `#audit` @id rather than
    minting a page-scoped one: same @id means the two nodes merge into a single
    entity, where a second id would assert that Vyso sells two different audits.
-   The price lives in the sitewide node only, for the same reason — one offer,
-   stated once. Everything else here is page-scoped (`#faq`, `#howto`,
-   `#breadcrumbs`) and cannot collide. */
+   The zero-price `Offer` lives in the sitewide node only, for the same reason —
+   one offer, stated once. Everything else here is page-scoped (`#faq`,
+   `#howto`, `#breadcrumbs`) and cannot collide. */
 
-import { AUDIT_FAQS, AUDIT_STEPS, CANONICAL_URL, DIRECT_ANSWER, PRICE } from "./audit-content";
+import { AUDIT_FAQS, AUDIT_STEPS, CANONICAL_URL, DIRECT_ANSWER } from "./audit-content";
 
 const ORIGIN = "https://vyso.co.za";
 
@@ -50,7 +50,7 @@ export function buildAuditSchema() {
       {
         "@type": "Service",
         "@id": `${ORIGIN}/#audit`,
-        name: "Operations Audit",
+        name: "Free operations audit",
         serviceType: "Operations audit",
         description: DIRECT_ANSWER,
         url: CANONICAL_URL,
@@ -68,13 +68,17 @@ export function buildAuditSchema() {
       {
         "@type": "HowTo",
         "@id": `${CANONICAL_URL}#howto`,
-        name: "How the Operations Audit works",
+        name: "How the free operations audit works",
         description: DIRECT_ANSWER,
-        totalTime: "P7D",
+        /* About an hour, and free (`.ai/plan_home_only.md`, change 4). A zero
+           `estimatedCost` is the valid way to state "free"; what follows the
+           audit is priced per customer and per scope and is never published,
+           so it is not in this graph at all. */
+        totalTime: "PT1H",
         estimatedCost: {
           "@type": "MonetaryAmount",
-          currency: PRICE.currency,
-          value: String(PRICE.audit),
+          currency: "ZAR",
+          value: "0",
         },
         step: AUDIT_STEPS.map((s, i) => ({
           "@type": "HowToStep",

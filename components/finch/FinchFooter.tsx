@@ -12,10 +12,13 @@ const COLUMNS: { title: string; links: [string, string][] }[] = [
     title: "Finch",
     links: [
       ["Home",               "/"],
-      ["What Finch watches", "/#agents"],
+      // `.ai/plan_home_only.md`: Finch's page moved off `/` to `/finch`, so the
+      // roster anchor moves with it and the deleted `/pricing` link becomes the
+      // link to the product page itself. The rest of this column is untouched.
+      ["What Finch watches", "/finch#agents"],
       ["Under the hood",     "/platform/modules"],
       ["Integrations",       "/integrations"],
-      ["Pricing",            "/pricing"],
+      ["Finch",              "/finch"],
       ["Compare",            "/compare"],
     ],
   },

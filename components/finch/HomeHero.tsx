@@ -63,8 +63,8 @@ export function HomeHero() {
         <p className="mb-[24px] max-w-[520px] text-[15px] leading-[1.65] text-fn-ink-2 text-pretty lg:mb-[32px] lg:text-[17px]">
           Your business runs on WhatsApp, spreadsheets and gut feel. Finch&rsquo;s AI agents watch your
           invoices, stock, suppliers and margins — catch money leaking, and tell you what to do about
-          it. Built by Vyso for South African food businesses. R6,000 per location, everything
-          included.
+          it. Built by Vyso for South African food businesses. Priced per customer and per scope,
+          fixed after a free audit.
         </p>
         <div className="lg:flex lg:items-center lg:gap-[18px]">
           <MagneticButton
@@ -73,10 +73,10 @@ export function HomeHero() {
             eventProps={{ page: "home" }}
             className="w-full text-[16px] lg:w-auto lg:text-[15.5px]"
           >
-            Book your audit
+            Book your free audit
           </MagneticButton>
           <span className="mt-[12px] block text-center font-fn-mono text-[10.5px] tracking-[0.06em] text-fn-muted lg:mt-0 lg:inline lg:text-left lg:text-[11.5px]">
-            ONE-WEEK OPERATIONS AUDIT · R2,000
+            FREE OPERATIONS AUDIT · ABOUT AN HOUR
           </span>
         </div>
       </div>

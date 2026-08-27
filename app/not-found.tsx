@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 
 const ACTIONS: [string, string][] = [
   ["Go home",              "/"],
-  ["See how Finch works",  "/#agents"],
+  ["See how Finch works",  "/finch#agents"],
   ["Book your audit",      "/operations-audit"],
 ];
 

@@ -1,15 +1,20 @@
 import { Band } from "@/components/finch/ground/Band";
 import { OscillatingGrid } from "@/components/finch/ground/OscillatingGrid";
 
-import { AUDIT_WEEK_NOTE } from "./audit-content";
+import { AUDIT_HOUR_NOTE } from "./audit-content";
 import { WeekRail } from "./WeekRail";
 
-/* ── How the week runs — the page's blue band ────────────────────────────────
-   `.ai/vyso_v3_design.md` §7: `/operations-audit`'s deep band is "how the week
-   runs" on blue with an `OscillatingGrid` in light-blue dots, the four steps
-   drawn as day-dots along a rail. This is the ground sequence's first cut from
-   paper, and it is the only place on the page where the week is a *picture*
+/* ── How the hour runs — the page's blue band ────────────────────────────────
+   `.ai/vyso_v3_design.md` §7: `/operations-audit`'s deep band is "how it runs"
+   on blue with an `OscillatingGrid` in light-blue dots, the four steps drawn
+   along a rail. This is the ground sequence's first cut from paper, and it is
+   the only place on the page where the shape of the audit is a *picture*
    rather than a list.
+
+   `.ai/plan_home_only.md`, change 4: this band described a paid week and a
+   Mon→Sun rail. The audit is a free hour now, so the rail carries the four
+   steps themselves rather than seven days (`WeekRail.tsx`) and the copy says
+   an hour.
 
    Device discipline (§3): light-blue dots, **cursor attraction off** — the plan
    reserves the cursor-aware field for the pricing hero, and a section this far
@@ -39,8 +44,7 @@ export function AuditWeek() {
          a breath — the rule for an intended straddle is ≥48px of clear ground
          above the straddler's top edge on the dark side, the same 48 the seam
          itself is worth. Measured after: the mono "THE SHAPE OF THE WEEK" note
-         now ends 48px above the card's top edge (both breakpoints), matching
-         `/pricing`'s two straddles (56px each). Total bottom clearance is
+         now ends 48px above the card's top edge (both breakpoints). Total bottom clearance is
          48+68=116 / 48+104=152 — the overhang plus the clearance, still not a
          second helping of the preset. */
       paddingClassName="pt-[52px] pb-[48px] lg:pt-[88px] lg:pb-[48px]"
@@ -50,7 +54,7 @@ export function AuditWeek() {
           color="--fn-blue-300"
           colorFallback="#3E7BC4"
           /* 0.28, not §2's 0.40 ceiling: measured, a crest passing directly
-             under the 11px mono day labels took `--fn-blue-mono` on them from
+             under the 11px mono step labels took `--fn-blue-mono` on them from
              6.9:1 to 4.1:1 — below AA. At 0.28 the worst pixel under any text
              on this band clears 4.5, and the wave is still plainly a wave. */
           opacity={0.28}
@@ -59,20 +63,20 @@ export function AuditWeek() {
       }
     >
       <div className="mb-[14px] font-fn-mono text-[10px] tracking-[0.14em] text-fn-blue-mono lg:text-[11px]">
-        HOW THE WEEK RUNS
+        HOW THE HOUR RUNS
       </div>
       <h2 className="m-0 mb-[16px] max-w-[620px] font-fn-serif text-[28px] font-medium leading-[1.15] tracking-[-0.02em] text-fn-blue-text lg:text-[38px]">
-        Four steps, start to report.
+        Four steps, start to roadmap.
       </h2>
       <p className="m-0 mb-[30px] max-w-[560px] text-[15px] leading-[1.65] text-fn-blue-text-2 text-pretty lg:mb-[44px] lg:text-[15.5px]">
-        One week from the day your documents are in. The work sits on the working
-        days; the weekend is not a working day here either.
+        One sitting of about an hour, and then the roadmap. Nothing to prepare
+        beforehand and nothing owed afterwards.
       </p>
 
       <WeekRail />
 
       <div className="mt-[26px] font-fn-mono text-[10px] tracking-[0.12em] text-fn-blue-mono lg:mt-[34px]">
-        {AUDIT_WEEK_NOTE}
+        {AUDIT_HOUR_NOTE}
       </div>
 
       {/* The straddle allowance. A spacer rather than a `pb-*` in `className`:

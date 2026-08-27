@@ -91,7 +91,7 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     relatedArticles: ["15-signs-your-business-has-operational-chaos"],
     relatedPages: [
       { label: "Finch vs hiring a COO", href: "/compare/finch-vs-hiring-a-coo" },
-      { label: "Pricing", href: "/pricing" },
+      { label: "The free operations audit", href: "/operations-audit" },
     ],
   },
 
@@ -107,15 +107,15 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     ],
     whyItMatters: [
       "Most operational advice fails because it starts from a description of the business rather than its paperwork. Owners describe the process they designed; the invoices describe the process that is running. Where those two differ is where the money goes.",
-      "Vyso runs an audit over one week for R2,000, credited against the first month if you go ahead. You bring a week of invoices, statements and stock sheets; you get a leak report with the evidence and a priority roadmap. If the finding is that you do not need software, that is what the report says.",
+      "Vyso runs its audit free, in about an hour with you. You walk us through how the work actually moves; you get where the money and the time are leaking and a roadmap of what to automate first, with a fixed build price and a monthly run price against each item, quoted to you directly. If the finding is that you do not need software, that is what the roadmap says.",
     ],
     example: {
       agent: "AUDIT",
-      observation: "Four leaks found in one week of documents. Two of them are the same supplier.",
+      observation: "Four leaks found in one hour with the owner. Two of them are the same supplier.",
       impact: "≈ R11,200/yr at current volumes",
-      evidence: "1 week of documents",
-      meta: "AUDIT · 4 FINDINGS · WK 1",
-      actions: ["Open the roadmap", "Book your audit", "Dismiss"],
+      evidence: "1 hour, no documents needed",
+      meta: "AUDIT · 4 FINDINGS · FREE",
+      actions: ["Open the roadmap", "Book your free audit", "Dismiss"],
     },
     relatedTerms: ["money-leakage", "price-creep", "fractional-coo"],
     relatedArticles: [
@@ -123,7 +123,7 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
       "15-signs-your-business-has-operational-chaos",
     ],
     relatedPages: [
-      { label: "The one-week Operations Audit", href: "/operations-audit" },
+      { label: "The free operations audit", href: "/operations-audit" },
       { label: "Operations audit checklist", href: "/resources/operations-audit-checklist" },
     ],
   },

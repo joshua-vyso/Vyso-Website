@@ -15,7 +15,7 @@ export function AgentChips({ agents, className = "" }: { agents: readonly string
       {agents.map((agent) => (
         <Link
           key={agent}
-          href="/#agents"
+          href="/finch#agents"
           className="inline-flex items-center gap-[6px] rounded-[99px] border border-fn-line bg-fn-surface px-[10px] py-[5px] font-fn-mono text-[10.5px] tracking-[0.08em] text-fn-ink-2 transition-colors duration-150 hover:border-fn-line-hover hover:text-fn-orange-deep"
         >
           <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-fn-orange" aria-hidden="true" />

@@ -5,7 +5,7 @@ import { MobileMenu } from "./MobileMenu";
 import { TrackedLink } from "./TrackedLink";
 
 /** Which nav item the current page is, so it can carry the active ink colour. */
-export type FinchNavSection = "industries" | "pricing" | "learn" | "orbit" | "none";
+export type FinchNavSection = "industries" | "finch" | "learn" | "orbit" | "none";
 
 export type FinchNavLink = { section: FinchNavSection; href: string; label: string };
 
@@ -13,12 +13,14 @@ export type FinchNavLink = { section: FinchNavSection; href: string; label: stri
    server component, so a client import here would drag the whole nav into the
    client bundle. Plain data crosses the boundary as props for free.
 
-   No "Finch" link: the homepage *is* the product page, so the wordmark on the
-   left is already that link and a second one would point at the page you are
-   most often already on. */
+   "Finch" is a link again, and it takes the slot "Pricing" had: `/` is the
+   agency page now and `/pricing` is deleted (`.ai/plan_home_only.md`, changes
+   2 and 3), so the wordmark on the left no longer lands on the product and the
+   one page that would have quoted a price no longer exists. Everything else in
+   this row is untouched. */
 export const FINCH_NAV_LINKS: FinchNavLink[] = [
   { section: "industries", href: "/industries", label: "Industries" },
-  { section: "pricing",    href: "/pricing",    label: "Pricing"    },
+  { section: "finch",      href: "/finch",      label: "Finch"      },
   { section: "learn",      href: "/learn",      label: "Learn"      },
   /* Orbit — the second product surface (`.ai/plan_orbit_site.md`). One link,
      no mega-menu: this nav has none, and Orbit's own subsite carries the

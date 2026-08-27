@@ -41,7 +41,7 @@ export default function FinchVsSpreadsheetsPage() {
       ]}
       tableLabel="Spreadsheets compared with Finch"
       faqTitle="Before you close the workbook."
-      secondary={{ label: "See the pricing", href: "/pricing" }}
+      secondary={{ label: "Book your free audit", href: "/operations-audit" }}
       sideLinks={[
         { label: "Finch vs hiring a COO", href: "/compare/finch-vs-hiring-a-coo" },
         { label: "Finch vs an ERP", href: "/compare/finch-vs-erp" },

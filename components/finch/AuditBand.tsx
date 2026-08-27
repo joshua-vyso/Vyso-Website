@@ -44,10 +44,13 @@ import { MagneticButton } from "./text/MagneticButton";
    original strip used — see `GradientRibbon.tsx` for why the two
    reduced-motion forms differ by `dim`.                                        */
 
+/* `.ai/plan_home_only.md`, change 4: the audit is free. It was a paid week
+   credited against the first month; it is about an hour with you now, and the
+   credit language goes with the fee. */
 const COPY = {
-  h2: "Start with a one-week Operations Audit.",
+  h2: "Start with a free operations audit.",
   body:
-    "R2,000, credited to your first month. We tell you where the money is leaking — whether you sign or not.",
+    "About an hour with you, free. We tell you where the money is leaking whether you work with us or not.",
 } as const;
 
 /** The one lockup the three closing CTAs on the site share (`AuditBand`,
@@ -82,7 +85,7 @@ function Cta({ page, href }: { page: string; href: string }) {
       eventProps={{ page }}
       className="shrink-0 whitespace-nowrap text-[16px]"
     >
-      Book your audit
+      Book your free audit
     </MagneticButton>
   );
 }

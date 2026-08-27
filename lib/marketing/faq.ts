@@ -3,7 +3,9 @@
    `PRICING_FAQS` (app/pricing-faq, now retired to a 301 → /faq#pricing) and
    rewritten from scratch against the single settled offer
    (`.ai/vyso_v2.md` §0): R6,000 per location per month, everything included;
-   the R2,000 Operations Audit, credited; founding terms (setup waived, first
+   the free operations audit (`.ai/plan_home_only.md`, change 4: it was a paid
+   week credited to month one and is now a free hour); founding terms (setup
+   waived, first
    month free, rate locked); 30 days' notice; expanded mandates priced on
    scope. None of the retired three-tier pricing model survives here — no
    once-off/monthly tier pairs, no per-module add-on rate, no old product
@@ -103,7 +105,7 @@ export const FAQ_GROUPS: readonly FaqGroup[] = [
         id: "is-there-a-setup-cost",
         question: "Is there a setup cost?",
         answer:
-          "Not for founding clients — setup is waived, the first month is free, and your rate is locked for as long as you stay. Every engagement starts with the R2,000 Operations Audit, credited to your first month.",
+          "Not for founding clients — setup is waived, the first month is free, and your rate is locked for as long as you stay. Every engagement starts with the operations audit, which is free and takes about an hour.",
       },
       {
         id: "founding-terms",
@@ -134,30 +136,30 @@ export const FAQ_GROUPS: readonly FaqGroup[] = [
     id: "audit",
     eyebrow: "The audit & onboarding",
     title: "How it starts",
-    description: "What the one-week Operations Audit involves, what we need from you, and what happens next.",
+    description: "What the free operations audit involves, what we need from you, and what happens next.",
     questions: [
       {
         id: "what-happens-during-the-audit",
-        question: "What happens during the Operations Audit?",
+        question: "What happens during the operations audit?",
         answer:
-          "Over one week, we take a month of your invoices, statements and stock sheets and come back with where the money is leaking, in rand, with the evidence attached — whether you sign up for Finch or not. It costs R2,000, credited to your first month.",
+          "It is about an hour with you. We walk through how the work actually moves through your business and come back with where the money and the time are leaking, and a roadmap of what to automate first, whether you go ahead with us or not. It is free.",
       },
       {
         id: "what-do-you-need-from-us",
         question: "What do you need from us?",
         answer:
-          "Last month's supplier invoices, your bank or creditor statements, a current stock sheet or POS export, and 30 minutes of the owner's time. That's enough for us to find the leaks and put a rand figure on them.",
+          "About an hour, and whoever actually runs the day in the room with us. Nothing to prepare and nothing to send through first. If it helps to look at a few real documents while we talk, bring them, but the hour works without them.",
       },
       {
         id: "what-if-we-dont-sign",
         question: "What if we don't sign up after the audit?",
         answer:
-          "Nothing owed beyond the R2,000. You keep the leak report and the evidence either way — it's a paid diagnostic, not a sales pitch dressed up as one.",
+          "Nothing owed. The audit is free and you keep the roadmap either way — what we found and what we would do about it first.",
       },
       {
         id: "how-soon-can-it-start",
         question: "How soon can the audit start?",
-        answer: "We confirm the start date when you book, depending on our current audit queue.",
+        answer: "We confirm the time when you book. It is one sitting of about an hour, in person in Johannesburg or on a call anywhere in South Africa.",
       },
       {
         id: "how-does-onboarding-work",

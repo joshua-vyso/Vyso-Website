@@ -61,21 +61,26 @@ const nextConfig: NextConfig = {
         destination: "/",
         permanent: true,
       },
-      // `/finch` existed for one day in phase 1 and may have been shared; the
-      // homepage absorbed it whole.
-      {
-        source: "/finch",
-        destination: "/",
-        permanent: true,
-      },
+      // `/finch` is a real page again (`.ai/plan_home_only.md`, change 1): the
+      // product page that lived at `/` moved there whole, so the redirect that
+      // used to fold it into the homepage is gone.
       {
         source: "/apps",
         destination: "/platform/vyso-for-smes",
         permanent: true,
       },
+      // `/pricing` is deleted (change 3). Nothing on the site publishes a price
+      // now: pricing is per customer and per scope, quoted directly after the
+      // free audit, so the page a visitor wants is the one that books it.
+      // `/services` chained through `/pricing` and lands there directly.
+      {
+        source: "/pricing",
+        destination: "/operations-audit",
+        permanent: true,
+      },
       {
         source: "/services",
-        destination: "/pricing",
+        destination: "/operations-audit",
         permanent: true,
       },
       // `/pricing-faq` content is absorbed into the "Pricing & terms" group

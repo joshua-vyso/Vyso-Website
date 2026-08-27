@@ -41,14 +41,21 @@ function learnDate(slug: string): Date {
 
 export default function sitemap(): MetadataRoute.Sitemap {
   return [
-    // Core marketing pages. The homepage IS the product page — `/platform*`
-    // and the retired `/finch` all 308 here (see `next.config.ts`), and the
+    // Core marketing pages. `/` is the agency page and `/finch` is the product
+    // page (`.ai/plan_home_only.md`); `/platform*` still 308s to `/`, and the
     // sitemap only lists the final URL, per `.ai/vyso_v2.md` §3.
     {
       url: BASE_URL,
-      lastModified: new Date("2026-08-15"),
+      lastModified: new Date("2026-08-27"),
       changeFrequency: "weekly",
       priority: 1,
+    },
+    {
+      // The product page, moved off `/` this change.
+      url: `${BASE_URL}/finch`,
+      lastModified: new Date("2026-08-27"),
+      changeFrequency: "weekly",
+      priority: 0.9,
     },
     {
       url: `${BASE_URL}/platform/modules`,
@@ -98,14 +105,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "yearly",
       priority: 0.8,
     },
-    {
-      url: `${BASE_URL}/pricing`,
-      // Rebuilt around the single R6,000 offer — the only entry here carrying a
-      // date, so crawlers see the pricing change rather than re-reading tiers.
-      lastModified: new Date("2026-08-15"),
-      changeFrequency: "monthly",
-      priority: 0.9,
-    },
+    // `/pricing` is deleted and 308s to `/operations-audit`, which is listed
+    // below; the sitemap carries the destination only.
     {
       // Rebuilt this phase — absorbed `/pricing-faq` (removed below).
       url: `${BASE_URL}/faq`,

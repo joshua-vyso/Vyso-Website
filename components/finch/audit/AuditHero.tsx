@@ -73,14 +73,14 @@ export function AuditHero() {
         />
 
         <div className="mb-[16px] font-fn-mono text-[10px] leading-[1.6] tracking-[0.14em] text-fn-muted lg:mb-[20px] lg:text-[11px]">
-          THE OPERATIONS AUDIT · R2,000 · CREDITED TO YOUR FIRST MONTH
+          THE OPERATIONS AUDIT · FREE · ABOUT AN HOUR WITH YOU
         </div>
 
         {/* §4.4's split-word reveal. Transform only — the words start 10px low
             and never fade, so a reader whose JS never runs still gets the
             headline (`Statement.tsx` has the long version of that argument). */}
         <h1 className="m-0 mb-[18px] font-fn-serif text-[34px] font-medium leading-[1.1] tracking-[-0.02em] text-pretty lg:mb-[22px] lg:text-[46px] lg:leading-[1.06] lg:tracking-[-0.025em] xl:text-[50px]">
-          <SplitReveal text={"One week. Let’s find out where you’re leaking money and time."} />
+          <SplitReveal text={"An hour, free. Let’s find out where you’re leaking money and time."} />
         </h1>
 
         <p className="m-0 mb-[28px] max-w-[520px] text-[15px] leading-[1.65] text-fn-ink-2 text-pretty lg:mb-[34px] lg:text-[16.5px]">
@@ -98,7 +98,7 @@ export function AuditHero() {
 
       <div>
         <div className="mb-[12px] font-fn-mono text-[10px] tracking-[0.14em] text-fn-muted lg:text-[11px]">
-          ONE WEEK · R2,000 · CREDITED
+          FREE · ABOUT AN HOUR · NO OBLIGATION
         </div>
         {/* `#book` stays on the card itself: every "Book your audit" elsewhere
             on the site is an anchor to it, and those links predate this layout. */}
