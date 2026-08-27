@@ -1,94 +1,93 @@
 import type { Metadata } from "next";
 
-import { FinchFooter } from "@/components/finch/FinchFooter";
-import { FinchNav } from "@/components/finch/FinchNav";
-import { AuditFaqs } from "@/components/finch/audit/AuditFaqs";
-import { AuditHero } from "@/components/finch/audit/AuditHero";
-import { AuditStatement } from "@/components/finch/audit/AuditStatement";
-import { AuditTools } from "@/components/finch/audit/AuditTools";
-import { AuditWeek } from "@/components/finch/audit/AuditWeek";
-import { buildAuditSchema } from "@/components/finch/audit/audit-jsonld";
-import { CANONICAL_URL } from "@/components/finch/audit/audit-content";
+import { Shell } from "@/components/vyso/Shell";
+import { AuditClose } from "@/components/vyso/audit/AuditClose";
+import { AuditHero } from "@/components/vyso/audit/AuditHero";
+import { AuditHonesty } from "@/components/vyso/audit/AuditHonesty";
+import { AuditOutcomes } from "@/components/vyso/audit/AuditOutcomes";
+import { AuditSteps } from "@/components/vyso/audit/AuditSteps";
+import { AuditTools } from "@/components/vyso/audit/AuditTools";
+import { AUDIT_CANONICAL_URL } from "@/components/vyso/audit/audit-content";
+import { buildAuditSchema } from "@/components/vyso/audit/audit-jsonld";
+import { SITE } from "@/lib/marketing/site";
 
-const title = "Free operations audit, about an hour | Vyso";
-/* 152 chars. Leads with the thing being searched for, carries the offer and the
-   output, then the two things you can do before you book. Those two are pages
-   of their own now (`/score`, `/calculator`), and the sentence reads the same
-   either way: it describes what is on offer, not where the widget sits. */
-const description =
-  "A free operations audit for South African businesses. About an hour with you, and a roadmap of what to automate first. Score yourself or run the numbers.";
+/* ── /operations-audit ───────────────────────────────────────────────────────
+   Rewritten on the `--vy-*` system (plan §7.3, Phase 2a). What stood here was
+   the Finch-era booking page: same offer, same URL, same free hour, in the old
+   visual language and the old positioning.
+
+   The URL keeps its equity, so the rewrite keeps everything that made it rank —
+   the free audit as the page's subject, the `HowTo` steps, the two tool pages
+   under it, the `#book` anchor every CTA on the site points at — and changes
+   the copy, the design and the form.
+
+   ── The order ───────────────────────────────────────────────────────────────
+     hero       the offer, the direct answer, and the form, in one row
+     steps      the brief's five, and the ids the HowTo schema points at
+     outcomes   what the report contains, and one example of a finding
+     honesty    diagnosis first, and the better-spreadsheet line
+     tools      the self-assessment and the calculator, both still live
+     close      the one dark band, back up to the form
+
+   ── The three unenforced rules, and where they are spent ────────────────────
+   1. ONE `h1`: `AuditHero`. The form's own "Book your audit" is an `h2`, which
+      is what makes it a peer of the sections below rather than a heading
+      floating outside the outline.
+   2. ONE dark section: `AuditClose`.
+   3. The shadow: nowhere. This page has no window chrome and no hero demo, so
+      the system's one ambient shadow goes unspent. The form is a flat `Card`.
+
+   Accent budget: the single `FindingCard` in `AuditOutcomes`, and nothing else.
+
+   ── The old components are left in place ────────────────────────────────────
+   `components/finch/audit/**` and `components/marketing/OperationsAudit.tsx`
+   are no longer imported by THIS file, but `/operations-audit/score` and
+   `/operations-audit/calculator` still render them, and those two routes are
+   out of scope this phase. Phase 4 deletes whatever is genuinely orphaned then,
+   under the Orbit-grep rule. */
+
+const TITLE = "Free operations audit";
+
+/* 149 characters. The offer, the cost (an hour, nothing else), and the output,
+   in the new positioning: the old description sold "a roadmap of what to
+   automate first", this one leads with what the audit finds. */
+const DESCRIPTION =
+  "A free operations audit for South African businesses. About an hour, then a written report of where time and money leak and what to automate first.";
 
 export const metadata: Metadata = {
-  /* `absolute` because the sitewide title template appends "| Vyso" — this
-     title already carries it, and "| Vyso | Vyso" is how that gets shipped. */
-  title: { absolute: title },
-  description,
-  alternates: { canonical: CANONICAL_URL },
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: { canonical: AUDIT_CANONICAL_URL },
   robots: { index: true, follow: true },
+  /* Restated in full: Next replaces the layout's `openGraph` rather than
+     merging into it. No `images` key — `opengraph-image.tsx` in this segment
+     emits both `og:image` and `twitter:image` through the file convention. */
   openGraph: {
-    title,
-    description,
-    url: CANONICAL_URL,
-    siteName: "Vyso",
+    title: TITLE,
+    description: DESCRIPTION,
+    url: AUDIT_CANONICAL_URL,
+    siteName: SITE.name,
     locale: "en_ZA",
     type: "website",
   },
-  twitter: { card: "summary_large_image", title, description },
+  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION },
 };
 
-/* `/operations-audit` — the front door. Every "Book your audit" on the site
-   lands here, so the page puts the decision first: the offer and the form share
-   the top row, then the week is explained for anyone who wants it explained,
-   then the two ways to look at your own operation before you commit. Server
-   component apart from the form; `.finch-site` scopes the `--fn-*` tokens as on
-   every other marketing route.
-
-   `.ai/plan_home_only.md`, change 4: the audit is free and takes about an hour.
-   It was a paid week credited against the first month, and every mention of the
-   fee, the credit and the week is rewritten here and in `audit-content.ts`,
-   which is the one place the page's strings live. What follows the audit is
-   priced per customer and per scope, quoted directly, never published.
-
-   ── Ground sequence (`.ai/vyso_v3_design.md` §7) ────────────────────────────
-   **paper** (hero + form, one blue glow) → **blue** (how the hour runs,
-   oscillating dots, the step rail) → **paper** (the two-ways card straddling
-   the seam) → **ink** ("Free. An hour.", the wave field, type riding it) →
-   **paper** (FAQs). Adjacent bands never share a ground and no band carries two
-   devices.
-
-   ── 6b fixes r2: the tools left ─────────────────────────────────────────────
-   The self-assessment and the calculator used to be embedded in `AuditTools`,
-   which made this page 5,700px tall and gave neither tool a URL anybody could
-   send. They are `/operations-audit/score` and `/operations-audit/calculator`
-   now; `AuditTools` keeps the straddling card and becomes the doorway. The
-   `#score` and `#calculator` anchors are gone with them — nothing on the site
-   links to them any more, and `/roi-calculator` 308s to the calculator's page
-   rather than to a fragment on this one.
-
-   The anchors that remain: `#book` (the hero form — every "Book your free
-   audit" on the site is one of these, including the two inside the tools), `#assess`, and
-   the `#step-01…04` targets the HowTo schema points at, which live in
-   `WeekRail`'s list, once each.                                               */
 export default function OperationsAuditPage() {
   return (
-    <div className="finch-site min-h-screen bg-fn-bg font-fn-sans text-fn-ink antialiased">
+    <Shell>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
           __html: JSON.stringify(buildAuditSchema()).replace(/</g, "\\u003c"),
         }}
       />
-      <FinchNav />
-      <main id="main">
-        <AuditHero />
-        <AuditWeek />
-        <AuditTools />
-        <AuditStatement />
-        <AuditFaqs />
-      </main>
-      <div className="pt-[56px] lg:pt-[88px]">
-        <FinchFooter />
-      </div>
-    </div>
+      <AuditHero />
+      <AuditSteps />
+      <AuditOutcomes />
+      <AuditHonesty />
+      <AuditTools />
+      <AuditClose />
+    </Shell>
   );
 }
