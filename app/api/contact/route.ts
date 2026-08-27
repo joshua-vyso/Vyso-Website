@@ -68,10 +68,25 @@ function escapeHtml(s: string): string {
 const RATE_MAX = 5;
 const RATE_WINDOW_SECONDS = 10 * 60;
 
+/* ── The dev gate (`.ai/plan_vyso_redesign_2026.md` §9) ──────────────────────
+   `.env.local` holds LIVE keys — a real Resend key that sends from Vyso's own
+   SPF/DKIM domain, and real Supabase credentials behind `rateLimitAllowed`. A
+   redesign is reviewed by clicking through every page on localhost, forms
+   included, so without this a QA pass mails Josh (and whatever address the
+   tester typed) and burns rate-limit rows for a submission nobody made.
+
+   Off in production by construction, and `ALLOW_REAL_SENDS=1` is the escape
+   hatch for deliberately testing delivery locally. Everything the production
+   path does — validation, length caps, email shape, the JSON it answers with —
+   is unchanged and runs in exactly the same order; the gate only decides
+   whether the two network calls happen. */
+const devGate =
+  process.env.NODE_ENV !== "production" && process.env.ALLOW_REAL_SENDS !== "1";
+
 export async function POST(req: Request) {
   try {
     const ip = (req.headers.get("x-forwarded-for")?.split(",")[0] ?? "unknown").trim();
-    if (!(await rateLimitAllowed(`contact:${ip}`, RATE_MAX, RATE_WINDOW_SECONDS))) {
+    if (!devGate && !(await rateLimitAllowed(`contact:${ip}`, RATE_MAX, RATE_WINDOW_SECONDS))) {
       return NextResponse.json({ error: "Too many messages. Please try again later." }, { status: 429 });
     }
 
@@ -126,6 +141,24 @@ export async function POST(req: Request) {
     // an invalid one.
     if (email && !EMAIL_RE.test(email)) {
       return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
+    }
+
+    /* Validated, so the shape of the submission is known to be good — which is
+       the whole point of gating here rather than at the top: local QA still
+       exercises every 400 the real form can return. What it does not do is
+       send. The summary is redacted (address local-part and phone digits
+       masked) so a terminal transcript pasted into a plan file or a bug report
+       cannot carry a real person's contact details out of the machine. */
+    if (devGate) {
+      const maskedEmail = email ? email.replace(/^[^@]+/, "***") : "(none)";
+      const maskedWhatsapp = whatsapp ? `***${whatsapp.slice(-3)}` : "(none)";
+      console.log(
+        `[contact] dev gate: not sent. variant=${variant || "general"}` +
+          ` name=${name.length}ch business=${business.length}ch challenge=${challenge.length}ch` +
+          ` email=${maskedEmail} whatsapp=${maskedWhatsapp}` +
+          " — set ALLOW_REAL_SENDS=1 to send for real.",
+      );
+      return NextResponse.json({ success: true });
     }
 
     // Header-safe versions for the subject line (strip CR/LF so nothing can smuggle a
