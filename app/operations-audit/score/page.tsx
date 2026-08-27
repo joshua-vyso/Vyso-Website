@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 
-import { AuditToolPage } from "@/components/finch/audit/AuditToolPage";
-import { SCORE_CANONICAL_URL } from "@/components/finch/audit/audit-content";
-import { buildAuditToolSchema } from "@/components/finch/audit/audit-jsonld";
+import { AuditToolPage } from "@/components/vyso/audit/AuditToolPage";
+import { SCORE_CANONICAL_URL } from "@/components/vyso/audit/audit-content";
+import { buildAuditToolSchema } from "@/components/vyso/audit/audit-jsonld";
 import OperationsAudit from "@/components/marketing/OperationsAudit";
 
 const NAME = "Operations self-assessment";
-const title = "Operations self-assessment — score your business in a minute";
+const title = "Operations self-assessment: score your business in a minute";
 /* 148 chars. Says what it does, what it costs you (a minute, nothing else) and
-   what it is not — the honesty rule the tool itself repeats on screen. */
+   what it is not: the honesty rule the tool itself repeats on screen. */
 const description =
   "Ten questions about how your operation runs today, scored out of 100 with the one thing worth fixing first. A minute, nothing sent anywhere, not the audit.";
 

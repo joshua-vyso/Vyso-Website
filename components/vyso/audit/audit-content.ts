@@ -19,10 +19,14 @@ const ORIGIN = "https://vyso.co.za";
 export const AUDIT_PATH = "/operations-audit";
 export const AUDIT_CANONICAL_URL = `${ORIGIN}${AUDIT_PATH}`;
 
-/* The two tools that live under this route. Their pages are untouched by this
-   phase (Phase 5 restyles them); this page is what links to them. */
+/* The two tools that live under this route. Restyled onto this same shell in
+   Phase 5 (`components/vyso/audit/AuditToolPage.tsx`), so their canonical URLs
+   are derived from the one path above rather than duplicated as string
+   literals in each tool page. */
 export const SCORE_PATH = `${AUDIT_PATH}/score`;
 export const CALCULATOR_PATH = `${AUDIT_PATH}/calculator`;
+export const SCORE_CANONICAL_URL = `${ORIGIN}${SCORE_PATH}`;
+export const CALCULATOR_CANONICAL_URL = `${ORIGIN}${CALCULATOR_PATH}`;
 
 /** The in-page anchor every "book the audit" on this page and in the two tools
     points at. The form is in the hero. */

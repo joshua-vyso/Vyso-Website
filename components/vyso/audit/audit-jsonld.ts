@@ -18,6 +18,35 @@ import { AUDIT_CANONICAL_URL, AUDIT_STEPS, DIRECT_ANSWER } from "./audit-content
 
 const ORIGIN = "https://vyso.co.za";
 
+/* ── The two tool pages ──────────────────────────────────────────────────────
+   `/operations-audit/score` and `/operations-audit/calculator` carry a
+   `BreadcrumbList` and nothing else, mirroring the Phase 0 era
+   `components/finch/audit/audit-jsonld.ts#buildAuditToolSchema` this replaces
+   now that both tool pages render on the `--vy-*` shell (Phase 5). Neither tool
+   asks a question the page answers in prose, so there is no FAQ to mark up,
+   and neither is a `SoftwareApplication` in any sense worth telling a search
+   engine — they are two forms that do arithmetic in the browser.
+
+   The trail is three deep (Home › Operations Audit › this page), which is what
+   makes the parent page the thing that ranks and these the pages that support
+   it rather than compete with it. */
+export function buildAuditToolSchema({ url, name }: { url: string; name: string }) {
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "BreadcrumbList",
+        "@id": `${url}#breadcrumbs`,
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Home", item: ORIGIN },
+          { "@type": "ListItem", position: 2, name: "Operations Audit", item: AUDIT_CANONICAL_URL },
+          { "@type": "ListItem", position: 3, name, item: url },
+        ],
+      },
+    ],
+  };
+}
+
 export function buildAuditSchema() {
   return {
     "@context": "https://schema.org",

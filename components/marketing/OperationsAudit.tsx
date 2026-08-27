@@ -52,14 +52,14 @@ const QUESTIONS: readonly Question[] = [
     category: "Operational visibility",
     prompt: "Can you see stock, purchases and wastage in one place?",
     reversed: false,
-    solutionHref: "/solutions/operations-dashboard",
-    solutionLabel: "Operations dashboard",
+    solutionHref: "/solutions/reporting-automation",
+    solutionLabel: "Reporting automation",
   },
   {
     id: "supplier-issues",
     category: "Supplier management",
     prompt:
-      "Are supplier issues — late deliveries, price errors, quality problems — tracked consistently?",
+      "Are supplier issues, such as late deliveries, price errors and quality problems, tracked consistently?",
     reversed: false,
     solutionHref: "/solutions/procurement-automation",
     solutionLabel: "Procurement automation",
@@ -78,8 +78,8 @@ const QUESTIONS: readonly Question[] = [
     prompt:
       "Can leadership see operational performance without asking staff for updates?",
     reversed: false,
-    solutionHref: "/solutions/operations-dashboard",
-    solutionLabel: "Operations dashboard",
+    solutionHref: "/solutions/reporting-automation",
+    solutionLabel: "Reporting automation",
   },
   {
     id: "inventory-counts",
@@ -94,8 +94,8 @@ const QUESTIONS: readonly Question[] = [
     category: "Finance visibility",
     prompt: "Does finance have real-time visibility into operational costs and margins?",
     reversed: false,
-    solutionHref: "/solutions/operations-dashboard",
-    solutionLabel: "Operations dashboard",
+    solutionHref: "/solutions/reporting-automation",
+    solutionLabel: "Reporting automation",
   },
   {
     id: "wastage-tracking",
@@ -143,12 +143,12 @@ const RECOMMENDED_STEPS: Record<RiskLevel, readonly string[]> = {
     "Revisit this assessment every few months as the business grows.",
   ],
   Medium: [
-    "Pick the single lowest-scoring area below and fix that workflow first — don't try to fix everything at once.",
+    "Pick the single lowest-scoring area below and fix that workflow first. Don't try to fix everything at once.",
     "Move the highest-risk approvals or reporting step off WhatsApp or spreadsheets into one source of truth.",
     "Give leadership a way to see performance without asking staff to compile it manually.",
   ],
   High: [
-    "Start with a structured operations audit — several core processes are running on manual work and informal messages.",
+    "Start with a structured operations audit. Several core processes are running on manual work and informal messages.",
     "Prioritise the areas below where spreadsheets, WhatsApp or memory are the only record of what happened.",
     "Get an outside view before the next busy period, while these gaps are still cheap to fix.",
   ],
@@ -157,7 +157,7 @@ const RECOMMENDED_STEPS: Record<RiskLevel, readonly string[]> = {
 const RISK_COPY: Record<RiskLevel, string> = {
   Low: "Your operation already has solid habits. A few gaps are worth tightening as you grow.",
   Medium: "Several manual handovers are creating room for cost, time or information to leak.",
-  High: "Multiple core processes are still running on spreadsheets, memory and WhatsApp — this is the profile most likely to be losing money without realising it.",
+  High: "Multiple core processes are still running on spreadsheets, memory and WhatsApp. This is the profile most likely to be losing money without realising it.",
 };
 
 function safeScore(value: number): number {
@@ -206,7 +206,7 @@ function computeAudit(
    answers would be exactly the thing this page says nobody should do.        */
 const TOP_RISK_OBSERVATION: Record<string, string> = {
   "spreadsheets":
-    "Daily operations are tracked in spreadsheets — the real record lives in one person's file.",
+    "Daily operations are tracked in spreadsheets, and the real record lives in one person's file.",
   "weekly-reports":
     "Managers are still assembling the weekly report by hand, every week.",
   "stock-visibility":
@@ -480,7 +480,7 @@ export default function OperationsAudit() {
                   className="flex gap-[10px] text-[14.5px] leading-[1.6] text-fn-ink-3 text-pretty"
                 >
                   <span aria-hidden="true" className="shrink-0 text-fn-line-3">
-                    —
+                    ·
                   </span>
                   <span>{step}</span>
                 </li>

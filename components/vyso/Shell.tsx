@@ -42,7 +42,19 @@ export function Shell({
       className={`vyso-site min-h-screen antialiased ${className}`.trim()}
     >
       <Nav active={active} />
-      <main id="main">{children}</main>
+      {/* `tabIndex={-1}`: the root `SkipLink` (`app/layout.tsx`) is a plain
+          `href="#main"` anchor with no client JS, which is enough to move the
+          browser's scroll position here but not enough, on its own, to move
+          keyboard focus onto an element that is not natively focusable — a
+          `<main>` has no tabindex by default, so the jump landed the viewport
+          here while focus stayed on `<body>`, and a keyboard user's next Tab
+          press resumed from the top of the document instead of from the
+          content they just skipped to. `-1` makes the element focus-target-able
+          (`element.focus()`, and the browser's own post-fragment-navigation
+          focus step) without adding it to the normal Tab order. */}
+      <main id="main" tabIndex={-1}>
+        {children}
+      </main>
       {footer ? <Footer /> : null}
     </div>
   );

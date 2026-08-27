@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
-import { AuditToolPage } from "@/components/finch/audit/AuditToolPage";
-import { CALCULATOR_CANONICAL_URL } from "@/components/finch/audit/audit-content";
-import { buildAuditToolSchema } from "@/components/finch/audit/audit-jsonld";
+import { AuditToolPage } from "@/components/vyso/audit/AuditToolPage";
+import { CALCULATOR_CANONICAL_URL } from "@/components/vyso/audit/audit-content";
+import { buildAuditToolSchema } from "@/components/vyso/audit/audit-jsonld";
 import RoiCalculator from "@/components/marketing/RoiCalculator";
 
 const NAME = "Manual work calculator";
@@ -29,14 +29,15 @@ export const metadata: Metadata = {
 };
 
 /* `/operations-audit/calculator` — the margin/time calculator. It was a page
-   once (`/roi-calculator`), became a widget on `/operations-audit` in 6b, and
-   is a page again: it asks for eight numbers, which is a task, and a task
-   embedded under somebody else's booking form is a task nobody finishes. The
-   old `/roi-calculator` URL now 308s here rather than to an anchor
+   once (`/roi-calculator`), became a widget on `/operations-audit`, and is a
+   page again: it asks for eight numbers, which is a task, and a task embedded
+   under somebody else's booking form is a task nobody finishes. The old
+   `/roi-calculator` URL now 308s here rather than to an anchor
    (`next.config.ts`).
 
-   Everything structural lives in `AuditToolPage`. `RoiCalculator` is a client
-   component and brings its own white cards.                                   */
+   Everything structural lives in `AuditToolPage` (Phase 5, restyled onto the
+   `--vy-*` shell). `RoiCalculator` is a client component and brings its own
+   white cards.                                                                */
 export default function OperationsAuditCalculatorPage() {
   return (
     <>
@@ -51,7 +52,7 @@ export default function OperationsAuditCalculatorPage() {
       <AuditToolPage
         eyebrow="BEFORE YOU BOOK · CALCULATOR"
         title="What is manual work costing you?"
-        sub="Rough numbers are fine — every figure below can be adjusted, and the estimate updates as you type."
+        sub="Rough numbers are fine. Every figure below can be adjusted, and the estimate updates as you type."
       >
         <RoiCalculator />
       </AuditToolPage>

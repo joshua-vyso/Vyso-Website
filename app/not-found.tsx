@@ -1,71 +1,54 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
-import { BirdHop } from "@/components/finch/BirdHop";
-import { FinchFooter } from "@/components/finch/FinchFooter";
-import { FinchNav } from "@/components/finch/FinchNav";
-import {
-  FindingCardFrame,
-  FindingEvidence,
-  FindingHeader,
-  FindingImpact,
-  FindingObservation,
-} from "@/components/finch/FindingCard";
+import { Button } from "@/components/vyso/Button";
+import { Shell } from "@/components/vyso/Shell";
 
 export const metadata: Metadata = {
   title: "Page not found",
   robots: { index: false },
 };
 
-const ACTIONS: [string, string][] = [
-  ["Go home",              "/"],
-  ["See how Finch works",  "/finch#agents"],
-  ["Book your audit",      "/operations-audit"],
-];
+/* ── The global 404 ───────────────────────────────────────────────────────────
+   Phase 5 finding: this file was never touched by Phases 0 to 4, so every
+   route on the rebuilt site was still shipping the Finch-era 404 underneath
+   it — `.finch-site` chrome, `FinchNav`/`FinchFooter`, a "See how Finch
+   works" link to the retired `/finch#agents` anchor, and an on-page sentence
+   naming Finch directly ("or it moved when we rebuilt around Finch"). Next
+   embeds this boundary's RSC payload on every page (it is how the framework
+   pre-wires client-side 404 handling), so the old copy and class names were
+   present in the rendered HTML of every route on the site, not just on a
+   404 hit. Rewritten onto the `--vy-*` shell with the same job: say the page
+   is gone, and offer three real ways back in.
 
-/* Next returns the 404 status for this file; the page only has to say so in the
-   site's own voice. The finding card is the Finch atom, so a dead URL is
-   reported the way every other observation is. */
+   No bird mascot: `BirdHop` renders `/finch/finch-bird.svg`, the Finch brand
+   mark, which has no place on a site that has fully repositioned away from
+   Finch (plan §2, §3.2). Dropped rather than replaced — a 404 page earns its
+   personality from the copy, not from a mascot the new brand doesn't have. */
 export default function NotFound() {
   return (
-    <div className="finch-site min-h-screen bg-fn-bg font-fn-sans text-fn-ink antialiased">
-      <FinchNav />
-      <main className="mx-auto flex max-w-[1160px] flex-col items-center px-[20px] pt-[72px] pb-[96px] text-center lg:px-[40px] lg:pt-[120px] lg:pb-[140px]">
-        <BirdHop className="mb-[24px]" />
-        <div className="mb-[12px] font-fn-mono text-[10.5px] tracking-[0.14em] text-fn-muted">
-          404
-        </div>
-        <h1 className="m-0 mb-[36px] font-fn-serif text-[28px] tracking-[-0.02em] lg:text-[34px]">
-          Page not found.
-        </h1>
+    <Shell>
+      {/* `Shell` already renders `<main id="main">`; this is that main's only
+          child, not a second landmark. */}
+      <div className="mx-auto flex max-w-[560px] flex-col items-center px-[var(--vy-gutter)] pt-[96px] pb-[140px] text-center md:px-[40px] md:pt-[140px] md:pb-[180px]">
+        <p className="vy-label mb-[20px] text-[color:var(--vy-ink-4)]">404</p>
+        <h1 className="vy-h2 text-[color:var(--vy-ink)]">Page not found.</h1>
+        <p className="vy-body-lg mt-[16px] max-w-[440px] text-[color:var(--vy-ink-3)] text-pretty">
+          This page doesn&rsquo;t exist, or it moved when we rebuilt the site. Nothing to recover
+          here.
+        </p>
 
-        <FindingCardFrame tilt={false} className="w-full max-w-[460px] text-left">
-          <FindingHeader agent="PAGE WATCH" />
-          <FindingObservation>
-            This page doesn&rsquo;t exist — or it moved when we rebuilt around Finch.
-          </FindingObservation>
-          <FindingImpact>&asymp; R0 at stake</FindingImpact>
-          <FindingEvidence evidence="1 URL" meta="404 · NOTHING TO RECOVER" />
-          {/* The card's real actions: these are links, not the label-only row
-              the illustrative cards use, so `FindingActions` is composed here. */}
-          <div className="flex flex-wrap items-center gap-x-[6px] gap-y-[4px] border-t border-fn-line-2 pt-[13px] max-[399px]:gap-x-[14px]">
-            {ACTIONS.map(([label, href], i) => (
-              <span key={href} className="inline-flex items-center gap-[6px]">
-                {i > 0 ? (
-                  <span className="text-[12px] text-fn-line-3 max-[399px]:hidden">·</span>
-                ) : null}
-                <Link
-                  href={href}
-                  className="rounded-[5px] px-[6px] py-[3px] text-[13px] font-medium whitespace-nowrap text-fn-ink-2 transition-all duration-[120ms] hover:bg-[#F5F2EA] hover:text-fn-ink"
-                >
-                  {label}
-                </Link>
-              </span>
-            ))}
-          </div>
-        </FindingCardFrame>
-      </main>
-      <FinchFooter />
-    </div>
+        <div className="mt-[36px] flex flex-wrap items-center justify-center gap-[12px]">
+          <Button href="/" size="md">
+            Go home
+          </Button>
+          <Button href="/how-it-works" variant="secondary" size="md">
+            See how it works
+          </Button>
+          <Button href="/operations-audit" variant="secondary" size="md">
+            Book your audit
+          </Button>
+        </div>
+      </div>
+    </Shell>
   );
 }

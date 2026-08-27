@@ -87,8 +87,11 @@ const INITIAL_ASSUMPTIONS: Assumptions = {
   locationOverheadPct: "10",
 };
 
-// Illustrative starting investment used only for payback framing — Vyso's
-// published Start tier (see /pricing, referenced in ContactForm's tier list).
+// Illustrative starting investment used only for internal payback framing.
+// Never surfaced as a figure on screen (2026 redesign, plan §3.1: no price for
+// Vyso's own fees appears anywhere on the site) — only used to shape whether
+// the payback copy above reads as "clears quickly", "takes a while" or
+// "doesn't clear at these inputs".
 const START_TIER_SETUP = 10000;
 const START_TIER_MONTHLY = 8000;
 const WEEKS_PER_MONTH = 52 / 12;
@@ -318,10 +321,10 @@ export default function RoiCalculator() {
 
   const paybackText =
     results.paybackMonths === null
-      ? "Based on Vyso's Start tier (R 10 000 once-off + R 8 000/month), your estimated savings don't yet clear the monthly retainer at these inputs — a working session will help pinpoint the highest-impact starting workflow."
+      ? "At these inputs, your estimated savings don't yet clear a typical starting build and monthly run cost. A working session will help pinpoint the highest-impact starting workflow."
       : results.paybackMonths > 60
-        ? "More than 5 years at the Start tier's investment — increase the automatable-hours or wastage-recovery assumptions below to see how that changes, or talk to us about a tighter scope."
-        : `Roughly ${results.paybackMonths.toFixed(1)} months, based on Vyso's Start tier (R 10 000 once-off + R 8 000/month).`;
+        ? "More than five years against a typical starting investment. Increase the automatable-hours or wastage-recovery assumptions below to see how that changes, or talk to us about a tighter scope."
+        : `Roughly ${results.paybackMonths.toFixed(1)} months, against a typical starting build and monthly run cost. Pricing is scoped to your problem and quoted directly, not published here.`;
 
   return (
     <div className="flex flex-col gap-[20px] lg:gap-[24px]">

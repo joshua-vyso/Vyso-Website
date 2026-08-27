@@ -47,7 +47,7 @@ const INITIAL_STATE = {
   businessType: "",
 };
 
-const LOCATION_OPTIONS = ["1", "2–3", "4+"] as const;
+const LOCATION_OPTIONS = ["1", "2 to 3", "4+"] as const;
 
 /* The vocabulary already used by the site's verticals (`.ai/vyso_v2.md` §2.2) —
    nothing invented here, just the same six primary verticals plus "Other" so
@@ -162,7 +162,7 @@ export default function ContactForm({
           MESSAGE RECEIVED
         </div>
         <h3 className="m-0 mb-[10px] font-fn-serif text-[24px] font-medium tracking-[-0.02em]">
-          Thanks — that came through.
+          Thanks. That came through.
         </h3>
         <p className="m-0 mb-[20px] max-w-[420px] text-[15px] leading-[1.6] text-fn-ink-3 text-pretty">
           We&rsquo;ll reply within one business day. There&rsquo;s a confirmation in your inbox with a
@@ -313,8 +313,8 @@ export default function ContactForm({
             name="challenge"
             placeholder={
               isAudit
-                ? "Supplier prices creeping, stock going missing, debtors running late — a sentence is enough."
-                : "Tell us what is breaking down — stock, wastage, suppliers, or no view of your margins."
+                ? "Supplier prices creeping, stock going missing, debtors running late. A sentence is enough."
+                : "Tell us what is breaking down: stock, wastage, suppliers, or no view of your margins."
             }
             value={fields.challenge}
             onChange={handleChange}
