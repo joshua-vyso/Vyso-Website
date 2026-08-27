@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { BRAND_LABEL, BrandLockup } from "./BrandLockup";
+import { BRAND_LABEL, BrandLockup, type BrandName } from "./BrandLockup";
 import { usePathname } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
 
@@ -50,12 +50,16 @@ export function MobileMenu({
   links,
   login,
   cta,
+  /** Mirrors `FinchNav`'s prop of the same name — the sheet's top-left has to
+      name the same thing the nav row above it does. */
+  brand = "finch",
   className = "",
 }: {
   active?:   FinchNavSection;
   links:     FinchNavLink[];
   login:     NavTarget;
   cta:       NavTarget;
+  brand?:    BrandName;
   className?: string;
 }) {
   const pathname = usePathname();
@@ -159,10 +163,10 @@ export function MobileMenu({
             <Link
               href="/"
               onClick={close}
-              aria-label={BRAND_LABEL.finch}
+              aria-label={BRAND_LABEL[brand]}
               className="flex items-center"
             >
-              <BrandLockup product="finch" size="sheet" />
+              <BrandLockup product={brand} size="sheet" />
             </Link>
             <button
               type="button"

@@ -33,9 +33,9 @@ const MILESTONES: Milestone[] = [
     body: "A Johannesburg food business. OrderFlow is already replacing QuickBooks as its invoicing system — price lists, customer accounts, quotes, orders and payments in one place.",
   },
   {
-    label: "The homepage and pricing move to Finch",
+    label: "Vyso becomes the front door, Finch becomes the product",
     date: "August 2026",
-    body: "One offer — R6,000 per location per month, everything included — and the Operations Audit as the front door. Finch becomes the name for what the agents do.",
+    body: "The homepage becomes the agency, Finch gets a page of its own, and pricing stops being published: every engagement is priced per customer and per scope, fixed after a free audit.",
   },
   {
     label: "Founding client terms open",

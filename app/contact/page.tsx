@@ -12,7 +12,7 @@ const title = "Contact Vyso — Johannesburg | Vyso";
 /* 141 chars. The page's job in search is to answer "how do I reach Vyso", so
    the description leads with the address and points the audit intent away. */
 const description =
-  "Email Vyso in Johannesburg about Finch, pricing or how your operation runs. Booking the one-week Operations Audit? Start on the audit page.";
+  "Email Vyso in Johannesburg about Finch, pricing or how your operation runs. Booking the free operations audit? Start on the audit page.";
 
 export const metadata: Metadata = {
   /* Absolute for the same reason as /operations-audit: the sitewide template
@@ -120,14 +120,15 @@ export default function ContactPage() {
                   WANT THE AUDIT?
                 </div>
                 <p className="m-0 mb-[14px] text-[15px] leading-[1.6] text-fn-ink-3 text-pretty">
-                  The one-week Operations Audit is R2,000, credited to your first month. It is booked
-                  on its own page, with the details we need to start.
+                  The operations audit is free and takes about an hour with you. You come out of it
+                  with a roadmap: what to automate first, with a fixed build price and a monthly run
+                  price against each item, quoted to you directly. It is booked on its own page.
                 </p>
                 <Link
                   href="/operations-audit"
                   className="text-[14px] font-semibold text-fn-orange-deep transition-colors duration-150 hover:text-fn-orange-cta"
                 >
-                  Book your audit <span aria-hidden="true">→</span>
+                  Book your free audit <span aria-hidden="true">→</span>
                 </Link>
               </div>
             </div>

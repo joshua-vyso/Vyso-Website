@@ -36,6 +36,13 @@ import Image from "next/image";
 
 export type BrandProduct = "finch" | "orbit";
 
+/** What the lockup names. `"vyso"` is the company on its own — no divider and
+    no product word — which is what the agency home page wants: `/` is not a
+    product page, and "Vyso | Finch" over an agency headline names the wrong
+    thing (`.ai/plan_home_only.md`). Every other marketing route still passes a
+    product and is unchanged. */
+export type BrandName = BrandProduct | "vyso";
+
 /** `nav` is the responsive one — the desktop nav steps up above `lg`; `sheet`
     and `footer` are fixed, because a mobile sheet is only ever mobile and a
     footer brand row does not want to grow. */
@@ -75,12 +82,14 @@ const GAP: Record<BrandLockupSize, string> = {
 };
 
 export function BrandLockup({
-  product,
+  product = "finch",
   size = "nav",
   tone = product === "orbit" ? "paper" : "ink",
   className = "",
 }: {
-  product: BrandProduct;
+  /** `"vyso"` draws the wordmark alone. Defaults to `"finch"`, so every
+      existing call site renders exactly what it rendered before. */
+  product?: BrandName;
   size?: BrandLockupSize;
   /** Which company wordmark artwork to load. Defaults by product, because
       Finch is a paper site and Orbit is a dark one; overridable for the one
@@ -89,16 +98,31 @@ export function BrandLockup({
   className?: string;
 }) {
   const paper = tone === "paper";
+  const wordmark = (
+    <Image
+      src={paper ? "/orbit/vyso-wordmark-paper.svg" : "/finch/vyso-wordmark.svg"}
+      alt=""
+      width={59}
+      height={15}
+      priority={size === "nav"}
+      className={`block w-auto ${VYSO_H[size]}`}
+    />
+  );
+
+  /* The company on its own. A lockup of one part is not a lockup, so there is
+     no divider to draw and nothing after it — same wordmark, same heights, same
+     inversion behaviour over a dark band. */
+  if (product === "vyso") {
+    return (
+      <span aria-hidden className={`flex items-center ${className}`}>
+        {wordmark}
+      </span>
+    );
+  }
+
   return (
     <span aria-hidden className={`flex items-center ${GAP[size]} ${className}`}>
-      <Image
-        src={paper ? "/orbit/vyso-wordmark-paper.svg" : "/finch/vyso-wordmark.svg"}
-        alt=""
-        width={59}
-        height={15}
-        priority={size === "nav"}
-        className={`block w-auto ${VYSO_H[size]}`}
-      />
+      {wordmark}
       {/* `bg-fn-line-3` is load-bearing on the Finch side — see the header. On
           Orbit `--fn-line-3` is remapped to `--ob-line`, which is a step too
           dark to read as a rule against the ground, so the subsite states its
@@ -122,7 +146,8 @@ export function BrandLockup({
 
 /** The accessible name for the link the lockup sits inside. An em dash rather
     than the pipe the eye reads, because a screen reader says "vertical bar". */
-export const BRAND_LABEL: Record<BrandProduct, string> = {
+export const BRAND_LABEL: Record<BrandName, string> = {
+  vyso:  "Vyso",
   finch: "Vyso — Finch",
   orbit: "Vyso — Orbit",
 };

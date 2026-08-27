@@ -2,7 +2,6 @@
    price — the same facts the page's `<h1>` and its schema carry, and the only
    location claim the site makes anywhere. */
 
-import { PRICE } from "@/components/finch/pricing/pricing-data";
 import { renderOgImage, OG_CONTENT_TYPE, OG_SIZE } from "@/lib/og/render";
 import { SITE } from "@/lib/marketing/site";
 
@@ -19,8 +18,8 @@ export default function Image() {
     finding: {
       agent: "VYSO",
       observation:
-        "One product, one price, and an audit that says so if the answer is that you don’t need software.",
-      impact: `R${PRICE.finch.toLocaleString("en-US")} per location per month`,
+        "One product, priced per customer and per scope, and a free audit that says so if the answer is that you don’t need software.",
+      impact: "Fixed after a free audit",
       evidence: `Founded by ${SITE.founder.name}`,
       meta: `${SITE.address.addressLocality.toUpperCase()} · ${SITE.locale.toUpperCase()}`,
     },

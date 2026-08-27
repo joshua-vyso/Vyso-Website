@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { BriefPhone } from "@/components/finch/BriefPhone";
 import { FinchFooter } from "@/components/finch/FinchFooter";
-import { FinchNav } from "@/components/finch/FinchNav";
+import { FINCH_NAV_CTA_FREE, FinchNav } from "@/components/finch/FinchNav";
 import { Band } from "@/components/finch/ground/Band";
 import { FacetPlane } from "@/components/finch/ground/FacetPlane";
 import { Glow } from "@/components/finch/ground/Glow";
@@ -193,7 +193,10 @@ const PRODUCT_CARD =
 export default function Home() {
   return (
     <div className="finch-site min-h-screen bg-fn-bg font-fn-sans text-fn-ink antialiased">
-      <FinchNav />
+      {/* The one nav on the site that names the company alone and says the
+          audit is free: `/` is the agency, not a product page. Every other
+          route keeps `Vyso | Finch` and "Book your audit". */}
+      <FinchNav brand="vyso" ctaLabel={FINCH_NAV_CTA_FREE} />
 
       <main id="main">
         {/* ── Hero (paper, one glow) ─────────────────────────────────────── */}
@@ -521,7 +524,7 @@ export default function Home() {
       </main>
 
       <div className="pt-[40px] lg:pt-[68px]">
-        <FinchFooter />
+        <FinchFooter brand="vyso" />
       </div>
     </div>
   );

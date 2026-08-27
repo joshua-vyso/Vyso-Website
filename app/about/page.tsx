@@ -13,12 +13,15 @@ import { SITE } from "@/lib/marketing/site";
    verticals_content.md` Workstream C. Every fact below is either in
    `lib/marketing/site.ts` (name, location, founder) or grounded in the
    published case study / pricing (Turn 'n Slice as the first founding
-   customer, R6,000/R2,000/R500 figures) — nothing invented. The one open
+   customer, the academy seat price) — nothing invented. Finch's own price and
+   the audit fee left this page with `.ai/plan_home_only.md`: pricing is per
+   customer and per scope now, fixed after a free audit, and nothing on the
+   site publishes an amount for either. The one open
    item is the founder photo/bio, marked with a `TODO(user)` below. */
 
 const TITLE = "About Vyso — the company behind Finch";
 const DESCRIPTION =
-  "Vyso is a Johannesburg company. Founder Josh Moreira. Finch, its AI operations agent for South African food SMEs, costs R6,000 per location per month.";
+  "Vyso is a Johannesburg company. Founder Josh Moreira. Finch, its AI operations agent for South African food SMEs, is priced per customer and per scope.";
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -186,11 +189,11 @@ export default function AboutPage() {
                 THE OPERATIONS AUDIT
               </div>
               <div className="mb-[8px] font-fn-serif text-[19px] font-medium tracking-[-0.01em] text-fn-ink">
-                One week, {rand(PRICE.audit)}, credited to your first month.
+                Free, about an hour with you.
               </div>
               <p className="m-0 text-[14px] leading-[1.6] text-fn-ink-3">
-                Vyso finds where the money is leaking, in rand, with the evidence attached —
-                whether or not a business goes on to run Finch.
+                Vyso finds where the money and the time are leaking, and hands back a roadmap of
+                what to automate first, whether or not a business goes on to run Finch.
               </p>
             </Link>
             <Link

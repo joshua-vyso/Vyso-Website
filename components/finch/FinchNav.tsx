@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BRAND_LABEL, BrandLockup } from "./BrandLockup";
+import { BRAND_LABEL, BrandLockup, type BrandName } from "./BrandLockup";
 
 import { MobileMenu } from "./MobileMenu";
 import { TrackedLink } from "./TrackedLink";
@@ -32,11 +32,28 @@ export const FINCH_NAV_LINKS: FinchNavLink[] = [
 ];
 
 export const FINCH_NAV_CTA = { href: "/operations-audit", label: "Book your audit" };
+/** `/`'s label. The audit is free everywhere; the agency home is the one page
+    whose whole argument turns on that, so it is the one nav that says so.
+    Every other route keeps `FINCH_NAV_CTA.label` unchanged. */
+export const FINCH_NAV_CTA_FREE = "Book your free audit";
 export const FINCH_NAV_LOGIN = { href: "/login", label: "Log in" };
 
 /* The nav for every marketing route. Desktop shows every link inline — there is
    no hamburger above `lg`; the hamburger and its sheet only exist below it. */
-export function FinchNav({ active = "none" }: { active?: FinchNavSection }) {
+export function FinchNav({
+  active = "none",
+  /* Whose site the top-left names. Defaults to `"finch"`, so every route that
+     was rendering `Vyso | Finch` still is; `/` passes `"vyso"` because the
+     agency home is not a product page (`.ai/plan_home_only.md`). */
+  brand = "finch",
+  /* Overrides the CTA label for the one page that wants it — see
+     `FINCH_NAV_CTA_FREE`. */
+  ctaLabel = FINCH_NAV_CTA.label,
+}: {
+  active?: FinchNavSection;
+  brand?: BrandName;
+  ctaLabel?: string;
+}) {
   return (
     <nav
       aria-label="Primary"
@@ -47,11 +64,11 @@ export function FinchNav({ active = "none" }: { active?: FinchNavSection }) {
          page — the nav is the topmost element there anyway. */
       className="relative z-30 mx-auto flex max-w-[1160px] items-center gap-[36px] px-[20px] py-[18px] lg:px-[40px] lg:py-[26px]"
     >
-      {/* The company lockup, not a Finch wordmark: `Vyso | Finch`, the same
-          component the Orbit nav draws as `Vyso | Orbit`. One link, one
-          accessible name — see `BrandLockup`. */}
-      <Link href="/" aria-label={BRAND_LABEL.finch} className="flex items-center">
-        <BrandLockup product="finch" size="nav" />
+      {/* The company lockup: `Vyso | Finch` by default, the same component the
+          Orbit nav draws as `Vyso | Orbit`, and the bare wordmark on `/`. One
+          link, one accessible name — see `BrandLockup`. */}
+      <Link href="/" aria-label={BRAND_LABEL[brand]} className="flex items-center">
+        <BrandLockup product={brand} size="nav" />
       </Link>
 
       <div className="ml-auto flex items-center gap-[14px] text-[14px] font-medium lg:gap-[26px]">
@@ -87,13 +104,14 @@ export function FinchNav({ active = "none" }: { active?: FinchNavSection }) {
           data-nav-cta
           className="rounded-[8px] bg-fn-orange-cta px-[14px] py-[8px] text-[13px] font-semibold text-[#FFF7F0] transition-colors duration-150 hover:bg-fn-orange-deep hover:text-white lg:px-[18px] lg:py-[9px] lg:text-[14px]"
         >
-          {FINCH_NAV_CTA.label}
+          {ctaLabel}
         </TrackedLink>
         <MobileMenu
           active={active}
           links={FINCH_NAV_LINKS}
           login={FINCH_NAV_LOGIN}
-          cta={FINCH_NAV_CTA}
+          cta={{ href: FINCH_NAV_CTA.href, label: ctaLabel }}
+          brand={brand}
           className="lg:hidden"
         />
       </div>

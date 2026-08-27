@@ -2,11 +2,11 @@ import type { Metadata } from "next";
 
 import { buildLegalSchema } from "@/components/finch/legal/legal-jsonld";
 import { DraftChip, LegalCrossLinks, LegalHeader, LegalSection, LegalShell } from "@/components/finch/legal/LegalReading";
-import { FOUNDING_TERMS, PRICE } from "@/components/finch/pricing/pricing-data";
+import { FOUNDING_TERMS } from "@/components/finch/pricing/pricing-data";
 
 /* TODO(user): this page is a first draft, assembled only from facts already
-   published elsewhere on the site (the R6,000/location/month offer, the
-   R2,000 audit credited to month one, 30 days' notice, the founding terms,
+   published elsewhere on the site (per-customer, per-scope pricing fixed after
+   a free audit, 30 days' notice, the founding terms,
    and the POPIA statement from `/privacy`) — per `.ai/vyso_v2.md` §2.3
    ("draft from FACTS ONLY already on the site"). It has NOT been reviewed by
    a lawyer and does not cover liability, warranties, intellectual property,
@@ -17,7 +17,7 @@ import { FOUNDING_TERMS, PRICE } from "@/components/finch/pricing/pricing-data";
 
 const TITLE = "Terms of Service (Draft) | Vyso";
 const DESCRIPTION =
-  "Draft terms for Finch by Vyso: R6,000/location/month, the R2,000 Operations Audit, founding terms and 30 days' notice. Under legal review.";
+  "Draft terms for Finch by Vyso: per-customer, per-scope pricing, the free operations audit, founding terms and 30 days' notice. Under legal review.";
 
 export const metadata: Metadata = {
   // `absolute`: TITLE already ends in "| Vyso" — see `/privacy`'s comment.
@@ -28,12 +28,6 @@ export const metadata: Metadata = {
 };
 
 const CONTACT_EMAIL = "joshua@vyso.co.za";
-
-/* Same regex-based formatter `compare/CostBars.tsx` uses — guaranteed
-   comma-thousands regardless of the runtime's ICU data, rather than trusting
-   `toLocaleString("en-ZA")` to be available/consistent everywhere this
-   renders. */
-const rand = (value: number) => `R${String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 
 export default function TermsPage() {
   return (
@@ -71,18 +65,19 @@ export default function TermsPage() {
       <LegalSection title="2. The service">
         <p>
           Finch is Vyso&rsquo;s AI operations service: agents that watch a customer&rsquo;s invoices,
-          stock, suppliers, debtors and margins, and report on them. The published price is{" "}
-          {rand(PRICE.finch)} per location per month, everything included — every module and agent,
-          activated in priority order from the customer&rsquo;s operations audit, plus a monthly ops
-          review with their Vyso lead.
+          stock, suppliers, debtors and margins, and report on them. It is priced per customer and
+          per scope: each item on the customer&rsquo;s audit roadmap carries a fixed build price and
+          a monthly run price, quoted directly and agreed before any work starts. The monthly fee
+          covers every module and agent activated from that roadmap, plus a monthly ops review with
+          their Vyso lead. No price is published.
         </p>
       </LegalSection>
 
       <LegalSection title="3. The Operations Audit">
         <p>
-          Engagements typically begin with a one-week Operations Audit, priced at {rand(PRICE.audit)}.
-          That amount is credited toward the customer&rsquo;s first month of Finch if they go on to
-          sign up. The audit is delivered whether or not the customer proceeds.
+          Engagements typically begin with an operations audit. It is free, takes about an hour,
+          and carries no obligation. The customer keeps its output &mdash; where money and time are
+          leaking, and a roadmap of what to automate first &mdash; whether or not they proceed.
         </p>
       </LegalSection>
 

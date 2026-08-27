@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BrandLockup } from "./BrandLockup";
+import { BrandLockup, type BrandName } from "./BrandLockup";
 
 import { TrackedLink } from "./TrackedLink";
 
@@ -61,7 +61,13 @@ const COLUMNS: { title: string; links: [string, string][] }[] = [
 
 /* The footer for every marketing route. The wordmark is pure black artwork, so
    it is quietened with opacity rather than a colour swap. */
-export function FinchFooter() {
+export function FinchFooter({
+  /* Mirrors `FinchNav`'s prop. Defaults to `"finch"`, so every route that was
+     drawing `Vyso | Finch` in the brand row still is; `/` passes `"vyso"`. */
+  brand = "finch",
+}: {
+  brand?: BrandName;
+} = {}) {
   const year = new Date().getFullYear();
 
   return (
@@ -90,9 +96,11 @@ export function FinchFooter() {
         </div>
 
         <div className="mt-[48px] flex flex-wrap items-center gap-x-[22px] gap-y-[10px] border-t border-fn-line-2 pt-[28px] text-[12.5px] text-fn-muted lg:mt-[64px] lg:text-[13px]">
-          {/* The same lockup as the nav. A footer that says only "Vyso" leaves
-              the reader to guess which of the two products they were on. */}
-          <BrandLockup product="finch" size="footer" className="opacity-75" />
+          {/* The same lockup as the nav: on a product page it names the
+              product, because a footer that says only "Vyso" leaves the reader
+              to guess which of the two they were on. On `/` there is no product
+              to name. */}
+          <BrandLockup product={brand} size="footer" className="opacity-75" />
           <span>Built by Vyso in Johannesburg.</span>
           <TrackedLink
             href={`mailto:${CONTACT_EMAIL}`}

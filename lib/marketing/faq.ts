@@ -2,7 +2,9 @@
    Every answer on `/faq` — merged from the old `FAQ_GROUPS` (app/faq) and
    `PRICING_FAQS` (app/pricing-faq, now retired to a 301 → /faq#pricing) and
    rewritten from scratch against the single settled offer
-   (`.ai/vyso_v2.md` §0): R6,000 per location per month, everything included;
+   (`.ai/vyso_v2.md` §0, revised by `.ai/plan_home_only.md`: Finch is priced
+   per customer and per scope, fixed after a free audit, rather than at one
+   published monthly rate);
    the free operations audit (`.ai/plan_home_only.md`, change 4: it was a paid
    week credited to month one and is now a free hour); founding terms (setup
    waived, first
@@ -93,13 +95,13 @@ export const FAQ_GROUPS: readonly FaqGroup[] = [
     eyebrow: "Pricing & terms",
     title: "What it costs",
     description:
-      "One offer, no tiers. What R6,000 a month includes, the founding terms, and how cancelling works.",
+      "One model, no tiers. How Finch is priced, what is included, the founding terms, and how cancelling works.",
     questions: [
       {
         id: "how-much-does-finch-cost",
         question: "How much does Finch cost?",
         answer:
-          "R6,000 per location per month, everything included: every module and agent, activated in priority order from your Operations Audit, plus a monthly ops review with your Vyso lead.",
+          "Per customer and per scope, fixed after a free audit. Every item on your roadmap carries a fixed build price and a monthly run price, quoted to you directly once we know what you actually need. The monthly fee covers every module and agent activated from that roadmap, plus a monthly ops review with your Vyso lead.",
       },
       {
         id: "is-there-a-setup-cost",
@@ -117,7 +119,7 @@ export const FAQ_GROUPS: readonly FaqGroup[] = [
         id: "several-locations-custom-integrations",
         question: "What if we have several locations or need custom integrations?",
         answer:
-          "Each location is billed at R6,000 a month. Multi-location groups and integrations beyond the standard roster are expanded mandates, priced on scope — book the audit and we'll quote it in your roadmap.",
+          "Both are part of what the audit scopes. Multi-location groups and integrations beyond the standard roster widen the mandate, so they widen the price — book the free audit and we'll quote both against your roadmap.",
       },
       {
         id: "can-we-cancel",
@@ -126,7 +128,7 @@ export const FAQ_GROUPS: readonly FaqGroup[] = [
       },
       {
         id: "what-does-r6000-include",
-        question: "What does R6,000 actually include?",
+        question: "What does the monthly fee actually include?",
         answer:
           "Every module Finch runs on, every agent activated from your audit roadmap, your current tools connected, and a monthly ops review with your Vyso lead. There's no separate module fee and no hidden tier above it.",
       },
@@ -231,7 +233,7 @@ export const FAQ_GROUPS: readonly FaqGroup[] = [
         id: "finch-vs-hiring-a-coo",
         question: "How is Finch different from hiring a COO?",
         answer:
-          "A COO's job is watching invoices, stock, suppliers, debtors and margins, and telling you what matters. Finch does that watching for R6,000 per location a month, with evidence attached to every finding — you still make the calls.",
+          "A COO's job is watching invoices, stock, suppliers, debtors and margins, and telling you what matters. Finch does that watching for a fraction of a salary, with evidence attached to every finding — you still make the calls.",
       },
       {
         id: "when-finch-isnt-the-right-fit",
@@ -249,7 +251,7 @@ export const FAQ_GROUPS: readonly FaqGroup[] = [
         id: "which-plan-should-we-choose",
         question: "Which plan should we choose?",
         answer:
-          "There's one offer: R6,000 per location per month, everything included. The Operations Audit tells us which agents and modules matter most for your business, and sets the order they're switched on in — no tier to pick beforehand.",
+          "There are no plans to pick between. The free audit tells us which agents and modules matter most for your business and sets the order they're switched on in, and the price follows that scope: a fixed build price and a monthly run price per item, quoted to you directly.",
       },
     ],
   },

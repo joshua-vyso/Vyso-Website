@@ -55,10 +55,10 @@ export function IndustryHero({ industry }: { industry: Industry }) {
             eventProps={{ page: "industries", vertical: industry.slug }}
             className="block min-h-[44px] rounded-[10px] bg-fn-orange-cta px-[26px] py-[15px] text-center text-[16px] font-semibold text-[#FFF7F0] transition-colors duration-150 hover:bg-fn-orange-deep hover:text-white lg:inline-block lg:min-h-0 lg:rounded-[9px] lg:py-[14px] lg:text-[15.5px]"
           >
-            Book your audit
+            Book your free audit
           </TrackedLink>
           <span className="mt-[12px] block text-center font-fn-mono text-[10.5px] tracking-[0.06em] text-fn-muted lg:mt-0 lg:inline lg:text-left lg:text-[11.5px]">
-            ONE-WEEK OPERATIONS AUDIT · R2,000
+            FREE OPERATIONS AUDIT · ABOUT AN HOUR
           </span>
         </div>
       </div>
@@ -232,10 +232,10 @@ export function IndustryAudit({ industry }: { industry: Industry }) {
           eventProps={{ page: "industries", vertical: industry.slug }}
           className="inline-flex min-h-[44px] items-center rounded-[9px] bg-fn-orange-cta px-[24px] text-[15.5px] font-semibold text-[#FFF7F0] transition-colors duration-150 hover:bg-fn-orange-deep hover:text-white"
         >
-          Book your audit
+          Book your free audit
         </TrackedLink>
         <span className="ml-0 mt-[12px] block font-fn-mono text-[10.5px] tracking-[0.06em] text-fn-muted lg:ml-[18px] lg:mt-0 lg:inline">
-          R2,000 · CREDITED TO YOUR FIRST MONTH
+          FREE · ABOUT AN HOUR · NO OBLIGATION
         </span>
       </div>
     </Section>
