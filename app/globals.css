@@ -1345,3 +1345,273 @@ html.lenis, html.lenis body { height: auto; }
 .orbit-site main > [data-ground].bg-ob-bg-2 + [data-ground].bg-ob-bg-2 { --ob-fade-t: 0px; }
 /* …and none between the last band and the footer, which is the same fill. */
 .orbit-site main > [data-ground]:last-child { --ob-fade-b: 0px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   VYSO — the 2026 redesign token set (`.ai/plan_vyso_redesign_2026.md` §4)
+   ══════════════════════════════════════════════════════════════════════════
+   Scoped by convention to the `.vyso-site` wrapper (`components/vyso/Shell.tsx`).
+   ADDITIVE ONLY: `--fn-*` is still the whole Finch/Orbit surface and `--pf-*`
+   is still the platform, and both are consumed by ~70 components that this
+   redesign does not touch. Nothing above this block is edited, reordered or
+   removed — a new page opts in by wearing `.vyso-site`, and every existing
+   page keeps the palette it already had.
+
+   The palette is monochrome plus ONE accent, and the accent is deliberately
+   not the CTA colour: buttons are solid ink, and burnt orange is rationed to
+   what happens INSIDE a product demo (an alert, a "Vyso noticed" card, a
+   status dot). That is the "neutral shell, colourful product" rule from the
+   inspiration research, and it is the reason the shell can stay this quiet. */
+:root {
+  /* ── Grounds ──────────────────────────────────────────────────────────── */
+  --vy-bg: #FAFAF7;          /* the page: warm off-white, a half-step cooler
+                                than `--fn-bg` so the two surfaces are related
+                                rather than identical */
+  --vy-surface: #FFFFFF;     /* cards, window chrome content */
+  --vy-surface-2: #F3F3EF;   /* recessed panels, chrome bars, mockup sidebars */
+
+  /* ── Ink ramp ─────────────────────────────────────────────────────────────
+     Four steps, and the hierarchy is carried by this ramp rather than by size
+     alone. Measured on `--vy-bg` (relative luminance 0.9557):
+       --vy-ink    18.6:1   headings, primary body
+       --vy-ink-2   9.9:1   body copy
+       --vy-ink-3   4.9:1   captions, the two-tier headline's second clause
+       --vy-ink-4   2.7:1   NON-TEXT ONLY: rules, disabled glyphs, hairline
+                            labels ≥ 24px. It fails AA as body copy on purpose;
+                            reach for `--vy-ink-3` the moment it is a sentence. */
+  --vy-ink: #101010;
+  --vy-ink-2: #3D3D3A;
+  --vy-ink-3: #6E6E68;
+  --vy-ink-4: #9C9C95;
+
+  /* ── Hairlines ────────────────────────────────────────────────────────── */
+  --vy-line: #E7E7E2;        /* card borders, section dividers */
+  --vy-line-2: #D9D9D3;      /* the stronger rule: input borders, chrome edges */
+
+  /* ── The one accent ───────────────────────────────────────────────────────
+     `--vy-accent` is a FILL, not a text colour: 3.63:1 on `--vy-bg`, which
+     clears AA for large/bold display type and for non-text (dots, bars, the
+     left rule on an alert card) and fails it for anything smaller. Accent text
+     therefore uses `--vy-accent-ink` (5.9:1 on `--vy-bg`, 6.1:1 on white) and,
+     on an ink band, `--vy-accent-on-dark` (8:1 on `--vy-dark-bg`) — the same
+     three-way split the Finch ramp settled on, for the same measured reason. */
+  --vy-accent: #E05E1F;
+  --vy-accent-ink: #A8410C;
+  --vy-accent-on-dark: #FFB27A;
+  --vy-accent-tint: #FBEDE4;  /* chip and alert-card ground on paper */
+
+  /* ── The dark closing band (one per page, §4) ─────────────────────────────
+     Measured on `--vy-dark-bg`: text 17.4:1, text-2 8.6:1, mono 5.1:1. */
+  --vy-dark-bg: #101010;
+  --vy-dark-surface: #1B1B19;  /* a card standing on the band */
+  --vy-dark-line: #2A2A27;
+  --vy-dark-text: #FAFAF7;
+  --vy-dark-text-2: #B4B4AD;
+  --vy-dark-mono: #8C8C85;
+
+  /* ── Shape ────────────────────────────────────────────────────────────────
+     TWO radii and no third. 10px is the enterprise register — cards, buttons,
+     inputs, window chrome, mockup rows, everything. 999px is for eyebrow pills
+     and status chips ONLY. A component that wants 6px or 16px is a component
+     that has drifted; there is no token for it because there is no case. */
+  --vy-radius: 10px;
+  --vy-radius-pill: 999px;
+
+  /* Cards are flat by default (1px `--vy-line`, no shadow). This is the ONE
+     ambient shadow the system allows, and only the hero demo and window-chrome
+     mockups may wear it — it is what makes a mockup read as a real window
+     floating above the page rather than a picture printed on it. */
+  --vy-shadow-float: 0 1px 2px rgba(16,16,16,0.04), 0 18px 46px rgba(16,16,16,0.09);
+
+  /* The content column and the section rhythm, so a page never invents its own. */
+  --vy-content: 1120px;
+  --vy-gutter: 20px;
+
+  /* Focus rings. The paper ring is invisible on the dark band, so the band
+     supplies its own — see the `[data-vy-ground="dark"]` rule below. */
+  --vy-focus: #101010;
+  --vy-focus-dark: #C9DEF7;
+
+  /* ── Faces ────────────────────────────────────────────────────────────────
+     All three are already loaded in `app/layout.tsx`; this redesign adds no
+     font and removes none (the platform and Orbit still need Barlow, DM Sans
+     and STIX). Declared here as ordinary custom properties — NOT only in the
+     `@theme` block below — because the type-scale classes read them with a
+     plain `var()`, and a Tailwind theme key is a promise about utility class
+     names, not about a variable being resolvable from hand-written CSS. */
+  --vy-font-display: var(--font-instrument), "Instrument Sans", system-ui, sans-serif;
+  --vy-font-body: var(--font-inter), "Inter", system-ui, sans-serif;
+  --vy-font-mono: var(--font-plex-mono), "IBM Plex Mono", ui-monospace, monospace;
+}
+
+@theme inline {
+  --color-vy-bg: var(--vy-bg);
+  --color-vy-surface: var(--vy-surface);
+  --color-vy-surface-2: var(--vy-surface-2);
+  --color-vy-ink: var(--vy-ink);
+  --color-vy-ink-2: var(--vy-ink-2);
+  --color-vy-ink-3: var(--vy-ink-3);
+  --color-vy-ink-4: var(--vy-ink-4);
+  --color-vy-line: var(--vy-line);
+  --color-vy-line-2: var(--vy-line-2);
+  --color-vy-accent: var(--vy-accent);
+  --color-vy-accent-ink: var(--vy-accent-ink);
+  --color-vy-accent-on-dark: var(--vy-accent-on-dark);
+  --color-vy-accent-tint: var(--vy-accent-tint);
+  --color-vy-dark-bg: var(--vy-dark-bg);
+  --color-vy-dark-surface: var(--vy-dark-surface);
+  --color-vy-dark-line: var(--vy-dark-line);
+  --color-vy-dark-text: var(--vy-dark-text);
+  --color-vy-dark-text-2: var(--vy-dark-text-2);
+  --color-vy-dark-mono: var(--vy-dark-mono);
+
+  /* Display is Instrument Sans, body is Inter, IBM Plex Mono is for data:
+     timestamps, metadata, eyebrow labels. The values live on `:root` above. */
+  --font-vy-display: var(--vy-font-display);
+  --font-vy-body: var(--vy-font-body);
+  --font-vy-mono: var(--vy-font-mono);
+}
+
+/* ── The type scale ───────────────────────────────────────────────────────────
+   Fluid clamps so a page never writes its own `text-[clamp(…)]`, and in
+   `@layer components` so a Tailwind utility still wins where a one-off genuinely
+   needs to override one. Tight tracking is on the two DISPLAY steps only —
+   negative tracking on a long heading or on body copy is the failure mode the
+   research called out, so `.vy-h3` and everything below it stay at normal. */
+@layer components {
+  .vy-display {
+    font-family: var(--vy-font-display);
+    font-size: clamp(2.6rem, 6.5vw, 5rem);
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    font-weight: 600;
+  }
+  .vy-h1 {
+    font-family: var(--vy-font-display);
+    font-size: clamp(2.2rem, 4.5vw, 3.4rem);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    font-weight: 600;
+  }
+  .vy-h2 {
+    font-family: var(--vy-font-display);
+    font-size: clamp(1.7rem, 3vw, 2.4rem);
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    font-weight: 600;
+  }
+  .vy-h3 {
+    font-family: var(--vy-font-display);
+    font-size: 1.25rem;
+    line-height: 1.3;
+    font-weight: 600;
+  }
+  .vy-body-lg {
+    font-family: var(--vy-font-body);
+    font-size: 1.125rem;
+    line-height: 1.6;
+  }
+  .vy-body {
+    font-family: var(--vy-font-body);
+    font-size: 1rem;
+    line-height: 1.65;
+  }
+  .vy-small {
+    font-family: var(--vy-font-body);
+    font-size: 0.875rem;
+    line-height: 1.55;
+  }
+  /* The mono FACE on its own, with no case or tracking opinion — for a demo
+     timestamp, a rand figure in a column, an invoice number. `.vy-label` is the
+     same face dressed as a label; a timestamp is data, not a label, and
+     uppercasing "09:41" does nothing but widen it. */
+  .vy-mono {
+    font-family: var(--vy-font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  /* Eyebrows, table headers, status chips. Uppercase and tracked out; the size
+     floor is 11px because tracked-out mono below that stops being readable
+     before it stops being decorative. */
+  .vy-label {
+    font-family: var(--vy-font-mono);
+    font-size: 0.75rem;
+    line-height: 1.3;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+}
+
+/* The shell paints its own ground: `html, body { background: transparent }`
+   higher up in this file means an unpainted wrapper shows the page through. */
+.vyso-site {
+  background: var(--vy-bg);
+  color: var(--vy-ink);
+  font-family: var(--vy-font-body);
+}
+
+/* A dark band re-points the ramp rather than restating it, so every primitive
+   inside one is the same component under a different palette — the mechanism
+   `FindingCard`'s ink variant proved on the Finch surface. A band opts in with
+   `data-vy-ground="dark"`. */
+[data-vy-ground="dark"] {
+  --vy-bg: var(--vy-dark-bg);
+  --vy-surface: var(--vy-dark-surface);
+  --vy-surface-2: #232320;
+  --vy-line: var(--vy-dark-line);
+  --vy-line-2: #3A3A35;
+  --vy-ink: var(--vy-dark-text);
+  --vy-ink-2: var(--vy-dark-text-2);
+  --vy-ink-3: var(--vy-dark-text-2);
+  --vy-ink-4: var(--vy-dark-mono);
+  --vy-accent-ink: var(--vy-accent-on-dark);
+  --vy-accent-tint: rgba(224, 94, 31, 0.14);
+  --vy-shadow-float: none;
+  background: var(--vy-dark-bg);
+  color: var(--vy-dark-text);
+}
+[data-vy-ground="dark"] :focus-visible {
+  outline: 2px solid var(--vy-focus-dark);
+  outline-offset: 2px;
+}
+
+/* Same reset, and the same reason, as `.finch-site`'s: written unlayered it
+   would outrank every Tailwind utility and silently kill `text-vy-ink-2` and
+   every `hover:text-*` on an `<a>`. In `base` the default applies wherever a
+   link sets no colour of its own, and a utility wins when one does. */
+@layer base {
+  .vyso-site a { color: inherit; text-decoration: none; }
+}
+
+.vyso-site ::selection { background: var(--vy-accent-tint); }
+
+/* `html, body { overflow-x: hidden }` higher up turns both into scroll
+   containers, which disables `position: sticky` inside them. `clip` gives the
+   same "never scroll sideways" guarantee without creating a scroll container —
+   same fix, same scoping trick, as the `.finch-site` rule above. */
+html:has(.vyso-site),
+body:has(.vyso-site) {
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
+/* The global mobile rule (`section { padding-inline: 1rem !important }`) was
+   written for the old homepage. The Vyso layout carries its own gutter, so it
+   is restated at the same weight rather than fought. */
+@media (max-width: 767px) {
+  .vyso-site section {
+    padding-left: var(--vy-gutter) !important;
+    padding-right: var(--vy-gutter) !important;
+  }
+}
+
+/* Motion on this surface is diegetic and small — events arriving in a timeline,
+   a finding sliding in — and every piece of it is gated in JS on
+   `useStaticMotion()`. This is the CSS half of the same contract: nothing on a
+   Vyso page loops, and under the OS setting nothing transitions either. */
+@media (prefers-reduced-motion: reduce) {
+  .vyso-site *,
+  .vyso-site *::before,
+  .vyso-site *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
