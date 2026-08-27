@@ -1,33 +1,35 @@
-/* `/integrations`'s OG image. The two counts are derived from
-   `INTEGRATION_DETAILS`' status field — the roster's own honesty chips — so the
-   image moves with the product rather than with whoever last edited a caption.
-   `LIMITED ROLLOUT` (Gmail) is counted with neither: it is a real connection,
-   but a gated one, and rounding it either way would misstate it. */
+/* `/integrations`'s own OG image, on the `--vy-*` template. Two rows are the
+   real connections; the third names the honesty rule itself rather than
+   picking one roadmap tool to feature over another. */
 
-import { renderOgImage, OG_CONTENT_TYPE, OG_SIZE } from "@/lib/og/render";
-import { INTEGRATION_DETAILS } from "@/lib/marketing/integrations";
+import { renderVysoOgImage, OG_CONTENT_TYPE, OG_SIZE } from "@/lib/og/vyso";
 
 export const runtime = "nodejs";
-export const alt = "Integrations — Xero, Sage, WhatsApp, Yoco, Loyverse & more";
+
+const TITLE = "Connect what you";
+const CONTINUATION = "already run.";
+
+export const alt = `${TITLE} ${CONTINUATION}`;
 export const size = OG_SIZE;
 export const contentType = OG_CONTENT_TYPE;
 
-const connected = INTEGRATION_DETAILS.filter(
-  (integration) => integration.status === "CONNECTED IN ONBOARDING",
-).length;
-
 export default function Image() {
-  return renderOgImage({
-    eyebrow: "SENSES, NOT INTEGRATIONS",
-    title: "Finch reads the tools you already run.",
-    finding: {
-      agent: "WHAT CONNECTS",
-      observation:
-        "Xero and WhatsApp Business connect during onboarding. The rest are scoped in your audit, in the order they earn.",
-      impact: `${connected} connected in onboarding`,
-      evidence: `${INTEGRATION_DETAILS.length} tools on the roster`,
-      meta: "STATUS CHECKED AGAINST THE PRODUCT",
-    },
-    state: null,
+  return renderVysoOgImage({
+    eyebrow: "VYSO · INTEGRATIONS",
+    title: TITLE,
+    continuation: CONTINUATION,
+    lead: "Nothing to migrate. Read, not replaced, and only once you say so.",
+    frameTitle: "Reading table",
+    feed: [
+      { time: "01", text: "Xero: invoices, bills, contacts and balances. Connected." },
+      { time: "02", text: "WhatsApp Business: order intake. Connected." },
+      {
+        time: "03",
+        accent: true,
+        label: "EVERYTHING ELSE",
+        text: "Designed around, or roadmap, scoped in your audit.",
+      },
+    ],
+    footerNote: "Free operations audit",
   });
 }

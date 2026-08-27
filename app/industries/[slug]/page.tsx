@@ -1,31 +1,17 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { AuditBand } from "@/components/finch/AuditBand";
-import { FinchFooter } from "@/components/finch/FinchFooter";
-import { FinchNav } from "@/components/finch/FinchNav";
-import {
-  ExperimentalNote,
-  IndustryAudit,
-  IndustryFaqs,
-  IndustryGaps,
-  IndustryHero,
-  IndustryModules,
-  IndustryRelated,
-  WhatFinchWatchesHere,
-} from "@/components/finch/industries/IndustrySections";
-import { buildIndustrySchema } from "@/components/finch/industries/industries-jsonld";
 import { INDUSTRY_ORDER, getIndustry } from "@/lib/marketing/industries";
+import { IndustryBody } from "@/components/vyso/industries/IndustryBody";
+import { Shell } from "@/components/vyso/Shell";
 import { SITE } from "@/lib/marketing/site";
 
-/* `/industries/[slug]` in the Finch design language. The content moved to
-   `lib/marketing/industries.ts` (Phase 3, workstream A) — this file used to
-   hold the whole `INDUSTRIES` object inline, which meant the hub could not
-   read a word of it without importing a route module.
-
-   Eight verticals: six primary, plus `security-companies` and
-   `insurance-brokers`, which are indexed and in the sitemap but linked only
-   from the hub's "Also watching" row (`.ai/vyso_v2.md` §2.2). */
+/* ── /industries/[slug] ──────────────────────────────────────────────────────
+   Plan §7.5. Three verticals: `food-suppliers` (retitled "Food distributors
+   and fresh produce", the deepest page), `wholesale` (retitled
+   "Wholesalers"), `hospitality`. All three slugs are the existing live URLs,
+   kept for SEO equity — nothing here is a new route. */
 
 export function generateStaticParams() {
   return INDUSTRY_ORDER.map((slug) => ({ slug }));
@@ -42,14 +28,9 @@ export async function generateMetadata({
 
   const url = `${SITE.url}/industries/${slug}`;
   return {
-    /* Plain string, not `absolute`: the root layout's `%s | Vyso` template
-       supplies the suffix and these titles don't carry it themselves. */
     title: industry.title,
     description: industry.description,
     alternates: { canonical: url },
-    /* Indexed, including the experimental pair — they are real pages with real
-       (clearly framed) content, and §2.2 says indexed. */
-    robots: { index: true, follow: true },
     openGraph: {
       title: industry.title,
       description: industry.description,
@@ -75,31 +56,63 @@ export default async function IndustryPage({
   const industry = getIndustry(slug);
   if (!industry) notFound();
 
+  const url = `${SITE.url}/industries/${slug}`;
+  const jsonld = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "BreadcrumbList",
+        "@id": `${url}#breadcrumbs`,
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Home", item: SITE.url },
+          { "@type": "ListItem", position: 2, name: "Industries", item: `${SITE.url}/industries` },
+          { "@type": "ListItem", position: 3, name: industry.shortName, item: url },
+        ],
+      },
+      {
+        "@type": "Service",
+        "@id": `${url}#service`,
+        name: `${industry.name} with Vyso`,
+        serviceType: "Operational automation and implementation",
+        description: industry.description,
+        provider: { "@id": `${SITE.url}/#organization` },
+        areaServed: { "@type": "Country", name: "South Africa" },
+        audience: { "@type": "BusinessAudience", audienceType: industry.shortName },
+      },
+      {
+        "@type": "FAQPage",
+        "@id": `${url}#faq`,
+        mainEntity: industry.faqs.map(({ question, answer }) => ({
+          "@type": "Question",
+          name: question,
+          acceptedAnswer: { "@type": "Answer", text: answer },
+        })),
+      },
+    ],
+  };
+
   return (
-    <div className="finch-site min-h-screen bg-fn-bg font-fn-sans text-fn-ink antialiased">
+    <Shell active="none">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify(buildIndustrySchema(industry)).replace(/</g, "\\u003c"),
-        }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonld).replace(/</g, "\\u003c") }}
       />
-      <FinchNav active="industries" />
 
-      <main id="main">
-        <IndustryHero industry={industry} />
-        <ExperimentalNote industry={industry} />
-        <IndustryGaps industry={industry} />
-        <WhatFinchWatchesHere industry={industry} />
-        <IndustryModules industry={industry} />
-        <IndustryAudit industry={industry} />
-        <IndustryRelated industry={industry} />
-        <IndustryFaqs industry={industry} />
-        <AuditBand />
-      </main>
+      <nav aria-label="Breadcrumb" className="mx-auto max-w-[var(--vy-content)] px-[var(--vy-gutter)] pt-[24px] md:px-[40px]">
+        <ol className="m-0 flex list-none flex-wrap items-center gap-[6px] p-0 text-[12px] text-[color:var(--vy-ink-4)]">
+          <li>
+            <Link href="/" className="hover:text-[color:var(--vy-ink-2)]">Home</Link>
+          </li>
+          <li aria-hidden="true">/</li>
+          <li>
+            <Link href="/industries" className="hover:text-[color:var(--vy-ink-2)]">Industries</Link>
+          </li>
+          <li aria-hidden="true">/</li>
+          <li className="text-[color:var(--vy-ink-3)]">{industry.shortName}</li>
+        </ol>
+      </nav>
 
-      <div className="pt-[40px] lg:pt-[68px]">
-        <FinchFooter />
-      </div>
-    </div>
+      <IndustryBody industry={industry} />
+    </Shell>
   );
 }
