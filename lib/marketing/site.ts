@@ -14,14 +14,18 @@ export const SITE = {
   url: "https://vyso.co.za",
   email: "joshua@vyso.co.za",
 
-  /* `.ai/plan_home_only.md`, change 2: the entity statement leads with what
-     Vyso *is* — an AI automation agency — because that is both the truth and
-     the query the home page is written to answer ("AI automation agency South
-     Africa"). It also carried the old published monthly price, which nothing on
-     the site quotes any more. Counted: 149 characters, inside the 155 the
-     meta-description budget allows. */
+  /* `.ai/plan_vyso_redesign_2026.md` §2/§8: the entity statement is now the
+     positioning's own support line, because that sentence is what the site is
+     built to prove and what every page repeats. It is the brief's line with one
+     adverb ("proactively") removed, which is what brings it from 160 to 148
+     characters, inside the 155 the meta-description budget allows.
+
+     Deliberately category-first rather than location-first: Johannesburg and
+     South Africa are stated in the Organization node's `address` and
+     `areaServed` and in the ProfessionalService node beside it (both in
+     `app/layout.tsx`), which is where a knowledge panel reads them from. */
   description:
-    "Vyso is an AI automation agency in Johannesburg building operational automation for South African SMEs: orders, invoices, stock, quotes and debtors.",
+    "Vyso builds tailored operational systems that automate repetitive work, connect your business data and tell you when something needs your attention.",
 
   locale: "en-ZA",
 

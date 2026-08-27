@@ -129,10 +129,14 @@ export const metadata: Metadata = {
 };
 
 /* ── Structured data graph ────────────────────────────────────────────────
-   Replaces the old two-node (Organization + WebSite) graph with the full
-   phase-1 set from `.ai/vyso_v2.md` §7.3: Organization (with its founder as
-   a Person), WebSite, the Finch SoftwareApplication and the Operations Audit
-   Service.
+   Four nodes: Organization (with its founder as a Person), WebSite, the
+   ProfessionalService that says what kind of company this is, and the
+   Operations Audit Service.
+
+   `.ai/plan_vyso_redesign_2026.md` §8: the Finch `SoftwareApplication` node was
+   removed here and the `ProfessionalService` took its place. Nothing public
+   names Finch any more, and Vyso is a company that builds operational systems
+   rather than a product with a page.
 
    `.ai/plan_home_only.md`, change 3: this graph used to read its figures from
    `components/finch/pricing/pricing-data.ts`, the constants `/pricing`'s own
@@ -156,9 +160,11 @@ const siteSchema = {
       name: SITE.name,
       /* The category, said in the one field a knowledge panel reads it from.
          `description` says it in prose; `alternateName` is what an engine
-         matches "AI automation agency" against when it is looking for an
-         entity rather than a sentence. */
-      alternateName: "Vyso AI automation agency",
+         matches the category against when it is looking for an entity rather
+         than a sentence. Repositioned with the site
+         (`.ai/plan_vyso_redesign_2026.md` §2): Vyso is an AI operations
+         company, not an automation agency and not a SaaS platform. */
+      alternateName: "Vyso AI operations company",
       url: SITE.url,
       logo: `${SITE.url}/icon.svg`,
       description: SITE.description,
@@ -199,20 +205,37 @@ const siteSchema = {
       },
     },
     {
-      "@type": "SoftwareApplication",
-      "@id": `${SITE.url}/#finch`,
-      name: "Finch",
-      applicationCategory: "BusinessApplication",
-      operatingSystem: "Web",
-      // Finch has a page of its own again — see `app/finch/page.tsx`.
-      url: `${SITE.url}/finch`,
-      provider: { "@id": `${SITE.url}/#organization` },
+      /* `.ai/plan_vyso_redesign_2026.md` §8. This node replaces the Finch
+         `SoftwareApplication` that stood here: Vyso is not a software product
+         with a page, it is a company that builds operational systems, and the
+         schema type for that is `ProfessionalService`. Nothing public names
+         Finch any more, so a `SoftwareApplication` node would have described an
+         entity with no page behind it.
+
+         `ProfessionalService` is a `LocalBusiness`, so it carries the same
+         locality and country the Organization does rather than referring to
+         them; `parentOrganization` is the link back, and the `@id` is distinct
+         so nothing collides. No `priceRange`: the site publishes no fees, and
+         inventing a band for a rich result is exactly the kind of number plan
+         §3.1 forbids. */
+      "@type": "ProfessionalService",
+      "@id": `${SITE.url}/#professional-service`,
+      name: "Vyso",
+      url: SITE.url,
+      email: SITE.email,
       description:
-        "The catering and wholesale experience built by Vyso: supplier invoices read overnight, prices watched line by line, one morning brief.",
-      /* No `offers` on this node, for a settled reason: Finch is priced per
-         customer and per scope, quoted privately from an audit roadmap rather
-         than published. An `Offer` here would have to invent a figure the site
-         never states. */
+        "An AI operations company in Johannesburg: tailored operational systems that automate repetitive work, connect business data and flag what needs attention.",
+      serviceType: "AI operations and automation",
+      parentOrganization: { "@id": `${SITE.url}/#organization` },
+      address: {
+        "@type": "PostalAddress",
+        addressLocality: SITE.address.addressLocality,
+        addressCountry: SITE.address.addressCountry,
+      },
+      areaServed: {
+        "@type": "Country",
+        name: "South Africa",
+      },
     },
     {
       /* The audit is free, so this is a real zero-price `Offer` rather than an
