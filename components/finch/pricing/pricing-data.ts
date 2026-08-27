@@ -22,9 +22,12 @@ export const PRICE = {
 
 export const CANONICAL_URL = "https://vyso.co.za/pricing";
 
-/** The AEO direct answer: one sentence, complete on its own, with units. */
+/** The AEO direct answer: one sentence, complete on its own. `/pricing` is
+    deleted, but this string still ships to readers through `/llms.txt`
+    (`lib/marketing/llms.ts`), so it carries the current model rather than the
+    published monthly rate it used to quote (`.ai/plan_home_only.md`). */
 export const DIRECT_ANSWER =
-  "Finch costs R6,000 per location per month, everything included: every module and agent, activated in priority order from your operations audit, a monthly ops review with your Vyso lead, and 30 days’ notice to cancel.";
+  "Finch is priced per customer and per scope: every item on your audit roadmap carries a fixed build price and a monthly run price, quoted to you directly after a free audit of about an hour. The monthly fee covers every module and agent activated from that roadmap, a monthly ops review with your Vyso lead, and 30 days’ notice to cancel.";
 
 export const FOUNDING_TERMS = ["Setup waived", "First month free", "Rate locked"] as const;
 

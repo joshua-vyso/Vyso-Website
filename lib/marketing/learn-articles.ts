@@ -374,13 +374,13 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
       {
         heading: "How Finch helps",
         body: [
-          /* Rewritten in Phase 3. The paragraph this replaces named the old
-             entry-level package and its "up to five automations" cap — pricing
-             the business no longer sells (`.ai/vyso_v2.md` §0: one offer,
-             R6,000 per location per month, everything included). The claims
-             below are the ones `/pricing`, `/operations-audit` and `/faq`
-             already make. */
-          "Finch is built for exactly this first step: agents that watch the tools your team already uses — WhatsApp, Xero, spreadsheets, email — without a platform migration. The one-week Operations Audit ranks where the repeatable work actually is in your operation, and agents are activated against that roadmap in the order the findings justify, rather than by a package you picked before anyone had looked. One price per location per month, everything included.",
+          /* Rewritten in Phase 3, repriced by `.ai/plan_home_only.md`. The
+             paragraph this replaces named the old entry-level package and its
+             "up to five automations" cap, then the one published monthly rate
+             that succeeded it — pricing the business no longer sells. The
+             claims below are the ones `/operations-audit` and `/faq` already
+             make. */
+          "Finch is built for exactly this first step: agents that watch the tools your team already uses — WhatsApp, Xero, spreadsheets, email — without a platform migration. The free operations audit ranks where the repeatable work actually is in your operation, and agents are activated against that roadmap in the order the findings justify, rather than by a package you picked before anyone had looked. Each item on the roadmap is priced on its own scope, quoted to you directly.",
           "As the highest-value workflow becomes clear, it moves into a dedicated module like OrderFlow or Doc-U, with Finch giving your team a lighter interface to work from day to day.",
           "Our procurement automation and reporting automation solution pages go into more detail on the two areas where South African SMEs typically see the fastest time savings.",
         ],

@@ -77,7 +77,7 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     ],
     whyItMatters: [
       "A food supplier turning over a few million rand a year has the problems of a much larger business and none of the head count to solve them. Somebody has to watch prices, deliveries, stock and debtors every week, and in most SMEs that somebody is the owner, at night.",
-      "A fractional COO is one answer to that. Software that watches the same things every day and briefs you on a Monday is another, and it is the one Finch is priced as: R6,000 per location per month, everything included. The two are not the same purchase, and the comparison page sets them side by side rather than pretending one replaces judgement.",
+      "A fractional COO is one answer to that. Software that watches the same things every day and briefs you on a Monday is another, and it is the one Finch is priced as: per customer and per scope, fixed after a free audit, rather than as a share of a salary. The two are not the same purchase, and the comparison page sets them side by side rather than pretending one replaces judgement.",
     ],
     example: {
       agent: "THE BRIEF",

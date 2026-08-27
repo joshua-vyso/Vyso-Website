@@ -9,8 +9,8 @@
    `/compare/vyso-vs-spreadsheets` pages, reframed into the Finch language
    (Vyso is the company, Finch is the product) and onto the single offer —
    the old copy's "scoped to the workflow", "add modules once the next need is
-   clear" and "high upfront cost" framing predates R6,000 per location per
-   month, everything included.
+   clear" and "high upfront cost" framing predates the current per-scope
+   pricing.
 
    No number in this file is invented. The salary range carries its publisher,
    its year and its URL; if that cannot be verified the range is `null` and the
@@ -19,7 +19,17 @@
 export const COMPARE_ORIGIN = "https://vyso.co.za";
 
 /** Finch's price, in rand per location per month. The one number the whole
-    cluster is arguing about. */
+    cluster used to argue about.
+
+    `.ai/plan_home_only.md` repriced Finch to per-customer, per-scope, and every
+    price sentence in this file moved with it EXCEPT the ones on
+    `/compare/finch-vs-hiring-a-coo`. That page's argument is a chart:
+    `components/finch/compare/CostBars.tsx` draws this number as a bar against a
+    sourced salary, and `COO.cost`'s title, note and table cell are that chart's
+    own labels. Repricing the words while the bar still reads R6,000 would leave
+    the page contradicting itself, and removing the bar is a redesign rather
+    than a copy edit. The cluster's cost section is a single open decision —
+    flagged, not half-done. */
 export const FINCH_MONTHLY = 6000;
 
 export type Crumb = { label: string; href: string };
@@ -103,7 +113,7 @@ export const HUB = {
   h1:        "Which is right for your stage?",
   /* ≤ 45 words: the answer to the page's question, before the cards. */
   answer:
-    "Three honest comparisons. Finch is R6,000 per location per month and does a COO’s reading, checking and chasing. A COO decides. An ERP records. A spreadsheet holds whatever you last typed. Each of the three is the right answer for someone.",
+    "Three honest comparisons. Finch does a COO’s reading, checking and chasing, priced per customer and per scope. A COO decides. An ERP records. A spreadsheet holds whatever you last typed. Each of the three is the right answer for someone.",
   cards: [
     {
       href:    "/compare/finch-vs-hiring-a-coo",
@@ -130,7 +140,7 @@ export const HUB = {
       verdict:
         "Spreadsheets are fine until more than one person needs the same number on the same day — or until nobody notices a price moved.",
       notTheAnswer:
-        "One person, one stable process, one sheet: keep the sheet. R6,000 a month would buy you nothing you don’t already have.",
+        "One person, one stable process, one sheet: keep the sheet. Paying anything a month would buy you nothing you don’t already have.",
     },
   ] as const satisfies readonly HubCard[],
 } as const;
@@ -297,7 +307,7 @@ export const COO = {
       {
         criterion: "Time before it is useful",
         theirs:    "A search, a notice period, then learning your business.",
-        finch:     "One week: the Operations Audit, R2,000, credited.",
+        finch:     "About an hour: the free operations audit.",
       },
       {
         criterion: "What happens when they leave",
@@ -425,7 +435,7 @@ export const ERP = {
       "Connects to the tools you already use — no migration, nothing to move first.",
       "Reads the documents that already exist: invoices, statements, delivery notes, stock sheets.",
       "Every finding carries a rand figure and the evidence behind it.",
-      "One offer, R6,000 per location per month — the agents you need are switched on from your audit roadmap, at the same price.",
+      "One model, priced per customer and per scope — the agents you need are switched on from your audit roadmap, with a fixed build price and a monthly run price against each item.",
     ],
   },
 
@@ -457,7 +467,7 @@ export const ERP = {
       {
         criterion: "What it costs",
         theirs:    "Licensing, consulting and configuration, quoted per programme.",
-        finch:     "R6,000 per location per month, everything included.",
+        finch:     "Per customer and per scope, fixed after a free audit.",
       },
       {
         criterion: "Fit to your process",
@@ -674,12 +684,12 @@ export const SPREADSHEETS = {
       {
         criterion: "Scaling past one location",
         theirs:    "Tends to fork into many versions.",
-        finch:     "R6,000 per location per month; each location reads its own documents.",
+        finch:     "Priced per scope as locations are added; each reads its own documents.",
       },
       {
         criterion: "Effort and cost to start",
         theirs:    "Free and instant.",
-        finch:     "A one-week audit at R2,000, credited to your first month.",
+        finch:     "A free audit, about an hour with you.",
       },
     ],
   } satisfies CompareTableSpec,

@@ -22,7 +22,6 @@
 
 import { SITE } from "./site";
 import {
-  PRICE,
   DIRECT_ANSWER,
   FOUNDING_TERMS,
   STRAIGHT_ANSWERS,
@@ -153,7 +152,7 @@ ${SITE.description}
 ${formatPages(pages)}
 
 ## Facts
-- ${rand(PRICE.finch)} per location per month, everything included — every module and agent, activated in priority order from the operations audit, plus a monthly ops review with a Vyso lead.
+- Finch is priced per customer and per scope: a fixed build price and a monthly run price against each item on the audit roadmap, quoted directly, never published. The monthly fee covers every module and agent activated from that roadmap, plus a monthly ops review with a Vyso lead.
 - Operations Audit: free, about an hour, no obligation. What follows is priced per customer and per scope, quoted directly, never published.
 - Founding-client terms: ${FOUNDING_TERMS.join(", ")}.
 - ${CAN_WE_CANCEL}

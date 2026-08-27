@@ -57,9 +57,9 @@ export default function FoundingClientPage() {
             Founding client terms.
           </h1>
           <p className="m-0 mb-[36px] max-w-[620px] text-[15.5px] leading-[1.65] text-fn-ink-3 text-pretty lg:mb-[48px] lg:text-[16px]">
-            Same offer — R6,000 per location per month, everything included — on terms that reward
-            being early: setup waived, your first month free, and your rate locked for as long as
-            you stay.
+            Same offer — priced per customer and per scope, fixed after a free audit — on terms that
+            reward being early: setup waived, your first month free, and your rate locked for as long
+            as you stay.
           </p>
 
           <TermsStrip terms={FOUNDING_TERMS} />

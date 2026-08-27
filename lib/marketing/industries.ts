@@ -311,7 +311,7 @@ const foodSuppliers: Industry = {
     {
       question: "What does Finch cost for a food supplier?",
       answer:
-        "R6,000 per location per month, everything included. It starts with the one-week Operations Audit at R2,000, credited to your first month — you get the written leak report either way.",
+        "Per customer and per scope. It starts with a free operations audit, about an hour with you, and every item on the roadmap that comes out of it carries a fixed build price and a monthly run price, quoted to you directly — you get the roadmap either way.",
     },
   ],
 };
@@ -468,7 +468,7 @@ const farms: Industry = {
     {
       question: "What does Finch cost for a farm?",
       answer:
-        "R6,000 per location per month, everything included. It starts with the one-week Operations Audit at R2,000, credited to your first month — you get the written leak report either way.",
+        "Per customer and per scope. It starts with a free operations audit, about an hour with you, and every item on the roadmap that comes out of it carries a fixed build price and a monthly run price, quoted to you directly — you get the roadmap either way.",
     },
   ],
 };
@@ -618,7 +618,7 @@ const restaurants: Industry = {
     {
       question: "What does Finch cost for a restaurant?",
       answer:
-        "R6,000 per location per month, everything included. It starts with the one-week Operations Audit at R2,000, credited to your first month — you get the written leak report either way.",
+        "Per customer and per scope. It starts with a free operations audit, about an hour with you, and every item on the roadmap that comes out of it carries a fixed build price and a monthly run price, quoted to you directly — you get the roadmap either way.",
     },
   ],
 };
@@ -768,7 +768,7 @@ const cateringCompanies: Industry = {
     {
       question: "What does Finch cost for a catering business?",
       answer:
-        "R6,000 per location per month, everything included. It starts with the one-week Operations Audit at R2,000, credited to your first month — you get the written leak report either way.",
+        "Per customer and per scope. It starts with a free operations audit, about an hour with you, and every item on the roadmap that comes out of it carries a fixed build price and a monthly run price, quoted to you directly — you get the roadmap either way.",
     },
   ],
 };
@@ -924,7 +924,7 @@ const wholesale: Industry = {
     {
       question: "What does Finch cost for a wholesaler?",
       answer:
-        "R6,000 per location per month, everything included. It starts with the one-week Operations Audit at R2,000, credited to your first month — you get the written leak report either way.",
+        "Per customer and per scope. It starts with a free operations audit, about an hour with you, and every item on the roadmap that comes out of it carries a fixed build price and a monthly run price, quoted to you directly — you get the roadmap either way.",
     },
   ],
 };
@@ -1075,7 +1075,7 @@ const hospitality: Industry = {
     {
       question: "What does Finch cost for a hospitality operation?",
       answer:
-        "R6,000 per location per month, everything included. It starts with the one-week Operations Audit at R2,000, credited to your first month — you get the written leak report either way.",
+        "Per customer and per scope. It starts with a free operations audit, about an hour with you, and every item on the roadmap that comes out of it carries a fixed build price and a monthly run price, quoted to you directly — you get the roadmap either way.",
     },
   ],
 };
