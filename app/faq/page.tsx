@@ -141,7 +141,7 @@ export default function FaqPage() {
                             <svg
                               aria-hidden="true"
                               viewBox="0 0 12 12"
-                              className="h-[11px] w-[11px] shrink-0 text-[color:var(--vy-ink-4)] transition-transform duration-150 ease-out group-open:rotate-90"
+                              className="h-[11px] w-[11px] shrink-0 text-[color:var(--vy-ink-3)] transition-transform duration-150 ease-out group-open:rotate-90"
                             >
                               <path
                                 d="M4 2.5 L8 6 L4 9.5"

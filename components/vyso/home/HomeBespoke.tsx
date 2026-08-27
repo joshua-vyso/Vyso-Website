@@ -71,7 +71,7 @@ function Flow() {
 function Column({ label, items }: { label: string; items: readonly string[] }) {
   return (
     <div>
-      <p className="vy-label mb-[12px] text-[color:var(--vy-ink-4)]">{label}</p>
+      <p className="vy-label mb-[12px] text-[color:var(--vy-ink-3)]">{label}</p>
       <ul className="m-0 flex list-none flex-col gap-[8px] p-0">
         {items.map((item) => (
           <li
@@ -108,7 +108,7 @@ export function HomeBespoke() {
             <Flow />
 
             <div className="rounded-[var(--vy-radius)] border border-[color:var(--vy-line-2)] bg-[color:var(--vy-surface-2)] px-[22px] py-[24px] md:mx-[10px] md:mt-[26px] md:self-center">
-              <p className="vy-label mb-[10px] text-[color:var(--vy-ink-4)]">The Vyso layer</p>
+              <p className="vy-label mb-[10px] text-[color:var(--vy-ink-3)]">The Vyso layer</p>
               <p className="vy-h3 text-[color:var(--vy-ink)]">
                 One operational system, built for your business.
               </p>

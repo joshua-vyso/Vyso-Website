@@ -69,7 +69,7 @@ export default function TurnNSliceCaseStudyPage() {
       />
 
       <nav aria-label="Breadcrumb" className="mx-auto max-w-[var(--vy-content)] px-[var(--vy-gutter)] pt-[24px] md:px-[40px]">
-        <ol className="m-0 flex list-none flex-wrap items-center gap-[6px] p-0 text-[12px] text-[color:var(--vy-ink-4)]">
+        <ol className="m-0 flex list-none flex-wrap items-center gap-[6px] p-0 text-[12px] text-[color:var(--vy-ink-3)]">
           <li>
             <Link href="/" className="hover:text-[color:var(--vy-ink-2)]">Home</Link>
           </li>

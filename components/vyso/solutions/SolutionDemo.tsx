@@ -43,7 +43,7 @@ export function SolutionDemo({ solution }: { solution: Solution }) {
             />
           </div>
         </ChromeFrame>
-        <p className="vy-label mt-[12px] text-right text-[10.5px] text-[color:var(--vy-ink-4)]">
+        <p className="vy-label mt-[12px] text-right text-[10.5px] text-[color:var(--vy-ink-3)]">
           {CAPTION}
         </p>
       </div>
@@ -72,7 +72,7 @@ export function SolutionDemo({ solution }: { solution: Solution }) {
           </Reveal>
         ))}
       </ul>
-      <p className="vy-label mt-[16px] text-right text-[10.5px] text-[color:var(--vy-ink-4)]">
+      <p className="vy-label mt-[16px] text-right text-[10.5px] text-[color:var(--vy-ink-3)]">
         {CAPTION}
       </p>
     </div>

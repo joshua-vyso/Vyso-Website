@@ -24,7 +24,7 @@ export function PriceListPeek() {
       <div className="px-[16px] py-[14px]">
         <div className="grid grid-cols-[1fr_70px_54px_64px] gap-[10px] border-b border-[color:var(--vy-line)] pb-[8px]">
           {["Item", "Cost", "Margin", "Terms"].map((label) => (
-            <span key={label} className="vy-label text-[9.5px] text-[color:var(--vy-ink-4)]">
+            <span key={label} className="vy-label text-[9.5px] text-[color:var(--vy-ink-3)]">
               {label}
             </span>
           ))}

@@ -30,7 +30,7 @@ export default function NotFound() {
       {/* `Shell` already renders `<main id="main">`; this is that main's only
           child, not a second landmark. */}
       <div className="mx-auto flex max-w-[560px] flex-col items-center px-[var(--vy-gutter)] pt-[96px] pb-[140px] text-center md:px-[40px] md:pt-[140px] md:pb-[180px]">
-        <p className="vy-label mb-[20px] text-[color:var(--vy-ink-4)]">404</p>
+        <p className="vy-label mb-[20px] text-[color:var(--vy-ink-3)]">404</p>
         <h1 className="vy-h2 text-[color:var(--vy-ink)]">Page not found.</h1>
         <p className="vy-body-lg mt-[16px] max-w-[440px] text-[color:var(--vy-ink-3)] text-pretty">
           This page doesn&rsquo;t exist, or it moved when we rebuilt the site. Nothing to recover

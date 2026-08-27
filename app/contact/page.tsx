@@ -100,7 +100,7 @@ export default function ContactPage() {
         <ul className="m-0 grid list-none grid-cols-1 gap-[16px] p-0 md:grid-cols-3">
           {INTENTS.map((intent) => (
             <Card key={intent.title} as="li" padding="lg" className="flex h-full flex-col">
-              <span className="vy-label text-[color:var(--vy-ink-4)]">{intent.eyebrow}</span>
+              <span className="vy-label text-[color:var(--vy-ink-3)]">{intent.eyebrow}</span>
               <h3 className="vy-h3 mt-[12px] mb-[10px] text-[color:var(--vy-ink)]">{intent.title}</h3>
               <p className="vy-body flex-1 text-[color:var(--vy-ink-3)] text-pretty">{intent.body}</p>
               <Button href={intent.href} variant="quiet" className="mt-[18px] self-start">

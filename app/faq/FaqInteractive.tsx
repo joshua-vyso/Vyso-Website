@@ -70,7 +70,7 @@ export function FaqFilter({ children }: { children: React.ReactNode }) {
           <svg
             aria-hidden="true"
             viewBox="0 0 16 16"
-            className="pointer-events-none absolute left-[14px] top-1/2 h-[14px] w-[14px] -translate-y-1/2 text-[color:var(--vy-ink-4)]"
+            className="pointer-events-none absolute left-[14px] top-1/2 h-[14px] w-[14px] -translate-y-1/2 text-[color:var(--vy-ink-3)]"
           >
             <circle cx="7" cy="7" r="5.25" fill="none" stroke="currentColor" strokeWidth="1.4" />
             <path d="M11 11 L14.5 14.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
@@ -80,7 +80,7 @@ export function FaqFilter({ children }: { children: React.ReactNode }) {
             type="search"
             placeholder="Search the FAQ"
             onChange={(event) => handleChange(event.currentTarget.value)}
-            className="w-full rounded-[var(--vy-radius)] border border-[color:var(--vy-line)] bg-[color:var(--vy-surface)] py-[11px] pl-[38px] pr-[14px] text-[14.5px] text-[color:var(--vy-ink)] placeholder:text-[color:var(--vy-ink-4)] outline-none transition-colors duration-150 focus:border-[color:var(--vy-ink-3)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--vy-focus)]"
+            className="w-full rounded-[var(--vy-radius)] border border-[color:var(--vy-line)] bg-[color:var(--vy-surface)] py-[11px] pl-[38px] pr-[14px] text-[14.5px] text-[color:var(--vy-ink)] placeholder:text-[color:var(--vy-ink-3)] outline-none transition-colors duration-150 focus:border-[color:var(--vy-ink-3)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--vy-focus)]"
           />
         </span>
       </label>

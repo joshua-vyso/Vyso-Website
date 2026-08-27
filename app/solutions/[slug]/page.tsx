@@ -76,7 +76,7 @@ export default async function SolutionPage({
       {/* ── Hero: the problem answer, first (plan §7.4 item 1, AEO-quotable) ── */}
       <section className="px-[var(--vy-gutter)] pt-[44px] pb-[16px] md:px-[40px] md:pt-[72px]">
         <div className="mx-auto max-w-[var(--vy-content)]">
-          <nav aria-label="Breadcrumb" className="vy-label mb-[24px] flex flex-wrap items-center gap-[8px] text-[color:var(--vy-ink-4)]">
+          <nav aria-label="Breadcrumb" className="vy-label mb-[24px] flex flex-wrap items-center gap-[8px] text-[color:var(--vy-ink-3)]">
             <Link href="/solutions" className="hover:text-[color:var(--vy-ink-2)]">
               Solutions
             </Link>
@@ -118,7 +118,7 @@ export default async function SolutionPage({
         <ol className="m-0 grid list-none grid-cols-1 gap-[28px] p-0 md:grid-cols-3 md:gap-[32px]">
           {solution.approachSteps.map((step, i) => (
             <li key={step.title}>
-              <span aria-hidden="true" className="vy-mono text-[13px] text-[color:var(--vy-ink-4)]">
+              <span aria-hidden="true" className="vy-mono text-[13px] text-[color:var(--vy-ink-3)]">
                 {String(i + 1).padStart(2, "0")}
               </span>
               <h3 className="vy-h3 mt-[8px] text-[color:var(--vy-ink)]">{step.title}</h3>

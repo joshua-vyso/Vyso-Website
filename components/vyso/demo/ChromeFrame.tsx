@@ -106,7 +106,7 @@ export function ChromeFrame({
           </span>
         ) : null}
         {meta ? (
-          <span className="vy-label ml-auto shrink-0 text-[11px] text-[color:var(--vy-ink-4)]">
+          <span className="vy-label ml-auto shrink-0 text-[11px] text-[color:var(--vy-ink-3)]">
             {meta}
           </span>
         ) : null}

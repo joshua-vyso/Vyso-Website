@@ -3,9 +3,10 @@
 Branch: `redesign/operations-2026` (verified, unchanged). Dev server reused on
 port 3000 throughout, left running at the end per instructions.
 
-Status: **PASS**, with one intentionally-unfixed accessibility contrast
-finding and a short list of off-limits/out-of-scope items documented for
-Josh below.
+Status: **PASS**. The one open accessibility contrast finding from the
+original sweep (`--vy-ink-4` failing AA as text) was resolved in a follow-up
+pass — see "Follow-up: ink-4 contrast" at the end of this report. A short
+list of off-limits/out-of-scope items remains documented for Josh below.
 
 ---
 
@@ -314,21 +315,15 @@ content, not a blank section waiting on an animation.
   | `--vy-ink-4` (#9C9C95) | 2.64:1 | 2.76:1 | **fail** (fails even AA-large's 3:1) |
   | `--vy-accent` (#E05E1F) | 3.47:1 | 3.63:1 | fails normal text; **passes** AA-large text and the 3:1 non-text/UI-component threshold |
 
-  **This is a real finding, not fixed.** Lighthouse's `color-contrast` audit
-  independently caught the same failure on the live homepage: the hero
-  demo's mono timestamp ("09:41", 2.76:1) and date label ("TUE 26 AUG",
-  2.48:1 — `--vy-ink-4` on `--vy-surface-2`) both render below AA for
-  normal-size text. `--vy-ink-4` is used sitewide for exactly this kind of
-  small mono/meta label, so this isn't a one-off — it's the token itself.
-  I did not change `--vy-ink-4`'s value: it's a deliberate palette choice
-  in the approved plan (§4), used in dozens of places, and darkening it is
-  a design-system decision (how much of the "quiet ink ramp" character to
-  trade for AA compliance), not a mechanical copy/link fix — exactly the
-  "ambiguous, document don't fix" case in this task's own instructions.
-  Two options for whoever owns that call: darken the token itself (affects
-  every use sitewide), or restrict `--vy-ink-4` to genuinely decorative/
-  non-text uses and bump today's text usages (timestamps, meta labels) to
-  `--vy-ink-3`, which already clears AA at 4.9–5.1:1.
+  Lighthouse's `color-contrast` audit independently caught the same failure
+  on the live homepage: the hero demo's mono timestamp ("09:41", 2.76:1) and
+  date label ("TUE 26 AUG", 2.48:1 — `--vy-ink-4` on `--vy-surface-2`) both
+  rendered below AA for normal-size text.
+
+  **Update: resolved.** WCAG AA is an acceptance criterion (plan §1.6), so
+  this was escalated from "documented, not fixed" to a follow-up fix — full
+  detail, remedy chosen, files touched, and re-measured ratios are in
+  "Follow-up: ink-4 contrast" at the end of this report.
 
 ### 8. Forms — PASS
 
@@ -425,9 +420,9 @@ other errors.
 | 4 | JSON-LD | **PASS** — 0 invalid JSON across 91 pages; all expected types present |
 | 5 | Responsive 375/768/1440 | **PASS** — 19/19 pages, 0 horizontal overflow; mobile nav confirmed |
 | 6 | Reduced motion | **PASS** — timeline content fully present in SSR HTML |
-| 7 | Accessibility spot pass | **PASS**, with one documented, unfixed finding: `--vy-ink-4` fails AA contrast for text use |
+| 7 | Accessibility spot pass | **PASS** — `--vy-ink-4`-as-text contrast finding resolved in follow-up, a11y now 100 on `/`, `/how-it-works`, `/solutions/reduce-money-leakage` |
 | 8 | Forms (dev gate) | **PASS** — both variants, redacted log, no real send |
-| 9 | Performance (Lighthouse) | **PASS** on stated targets — desktop perf 90/99/100, a11y 96, SEO 100 |
+| 9 | Performance (Lighthouse) | **PASS** on stated targets — desktop perf 90/99/100 (99/99/100 after follow-up), a11y 96→100, SEO 100 |
 | 10 | `test` / `tsc` / `eslint` | **PASS** — 1118/1118, 29 pre-existing free-scan errors only, 0 new lint issues |
 | 11 | Console | **PASS** — only the known PostHog `/ingest` 404 |
 
@@ -435,11 +430,8 @@ other errors.
 
 ## Open items for Josh
 
-1. **`--vy-ink-4` contrast (§7 above).** Fails WCAG AA for any text use
-   (2.64–2.76:1 vs the 4.5:1 normal-text / 3:1 large-text thresholds); used
-   sitewide for small mono/meta labels. Needs a design-system decision:
-   darken the token, or move today's text usages to `--vy-ink-3` (already
-   AA-compliant at 4.9–5.1:1) and keep `--vy-ink-4` for non-text only.
+1. ~~`--vy-ink-4` contrast~~ — **resolved**, see "Follow-up: ink-4 contrast"
+   at the end of this report.
 2. **`/terms`** still contains "Finch" and a "4. Founding client terms"
    section (Phase 4's own flagged, unresolved item — this phase changes
    nothing here). Needs your or counsel's sign-off on rewrite vs. removal.
@@ -500,3 +492,163 @@ curl -X POST http://localhost:3000/api/contact -d '{"variant":"audit",...}'
 ```
 
 Dev server left running on port 3000.
+
+---
+
+### Follow-up: ink-4 contrast
+
+Architect-approved follow-up (WCAG AA is an acceptance criterion, plan
+§1.6/brief §47 — not a design call to defer). Resolves the open finding
+above: `--vy-ink-4` (#9C9C95) failing AA (2.6–2.8:1) wherever it was used
+as text.
+
+**Chosen remedy: reclassify usages, not darken the token.** `app/globals.css`
+already documents the intended rule in its own ink-ramp comment (written
+when the token was introduced, ahead of this finding):
+
+> `--vy-ink-4   2.7:1   NON-TEXT ONLY: rules, disabled glyphs, hairline
+> labels ≥ 24px. It fails AA as body copy on purpose; reach for `--vy-ink-3`
+> the moment it is a sentence.`
+
+So the token's own spec already rejects darkening it (failing AA as body
+copy is intentional — it's meant to never be read as a sentence) and
+already names the fallback. Reclassifying is also the more surgical fix:
+`--vy-ink-3` was independently already measured passing (4.9–5.1:1) in the
+original sweep, so moving genuine text off `--vy-ink-4` needed no new
+colour, no dark-mode recompute, and no risk to the ~50 other things
+`--vy-ink-4` is *correctly* used for (hairlines, dots, disabled glyphs) had
+the token itself moved instead.
+
+**Classification.** Grepped every `--vy-ink-4` usage across
+`components/vyso` and `app` (`app/design/vyso/page.tsx` excluded — the
+internal, noindex token-swatch reference page, which must keep showing
+each token's *real* colour to be useful as a reference):
+
+- **Text → moved to `--vy-ink-3`:** every `text-[color:var(--vy-ink-4)]`
+  and `placeholder:text-[color:var(--vy-ink-4)]` instance where the element
+  carries real words a reader is meant to read — eyebrow labels, mono
+  timestamps and meta lines, breadcrumbs, `dt`/`dd` pairs, italic quoted
+  prompts, form placeholders, and (for extra safety, since WCAG 1.4.11's
+  3:1 non-text/UI-component threshold also covers them and the visual cost
+  is negligible) two functional SVG icons — the FAQ accordion chevron and
+  the FAQ search icon. **62 instances across 36 files.**
+- **Non-text → left on `--vy-ink-4`:** solid-fill status/bullet dots
+  (`bg-[color:var(--vy-ink-4)]`, 4 places), one input's `hover:border`
+  affordance (`AuditForm.tsx`), and one `aria-hidden="true"` decorative
+  flow glyph (↓/→ between diagram blocks, `HomeBespoke.tsx`) — none of
+  these carry meaning on their own; the content next to them does. **6
+  places, unchanged.**
+
+**Files touched (37):**
+
+```
+app/about/page.tsx
+app/case-studies/page.tsx
+app/case-studies/turn-n-slice/page.tsx
+app/contact/page.tsx
+app/faq/FaqInteractive.tsx
+app/faq/page.tsx
+app/industries/[slug]/page.tsx
+app/industries/page.tsx
+app/integrations/page.tsx
+app/not-found.tsx
+app/solutions/[slug]/page.tsx
+components/vyso/audit/AuditForm.tsx
+components/vyso/audit/AuditOutcomes.tsx
+components/vyso/audit/AuditSteps.tsx
+components/vyso/audit/AuditTools.tsx
+components/vyso/case/CaseCard.tsx
+components/vyso/case/CaseTemplate.tsx
+components/vyso/case/PriceListPeek.tsx
+components/vyso/demo/ChromeFrame.tsx
+components/vyso/demo/EventTimeline.tsx
+components/vyso/demo/FindingCard.tsx
+components/vyso/home/HomeBespoke.tsx
+components/vyso/home/HomeCase.tsx
+components/vyso/home/HomeDifferentiation.tsx
+components/vyso/home/HomeExamples.tsx
+components/vyso/home/HomeFounder.tsx
+components/vyso/home/HomeHero.tsx
+components/vyso/home/HomeProcess.tsx
+components/vyso/how/HowAutomation.tsx
+components/vyso/how/HowExisting.tsx
+components/vyso/how/HowLoop.tsx
+components/vyso/how/HowProactive.tsx
+components/vyso/industries/IndustryBody.tsx
+components/vyso/industries/IndustryCard.tsx
+components/vyso/integrations/IntegrationSection.tsx
+components/vyso/solutions/SolutionCard.tsx
+components/vyso/solutions/SolutionDemo.tsx
+```
+
+(`components/vyso/home/HomeBespoke.tsx` is in this list for the 3 text
+usages it also had — its 1 decorative arrow-glyph usage was deliberately
+reverted back to `--vy-ink-4` after the bulk pass, per the classification
+above.)
+
+**A second, distinct bug this surfaced.** Re-running Lighthouse after the
+bulk fix still failed `color-contrast`, on a different element:
+`EventTimeline.tsx`'s meta line inside the accent-tint "NEEDS ATTENTION" /
+"VYSO RECOMMENDS" boxed cards used `--vy-ink-3` — correct against
+`--vy-bg`/`--vy-surface`, but that card's background is `--vy-accent-tint`
+(#FBEDE4), a warmer/lighter ground where `--vy-ink-3` only measures
+4.47:1 (fails by a hair). Bumped that one instance to `--vy-ink-2`
+(9.52:1 on `--vy-accent-tint` — comfortably clears AA). This was the only
+place in the codebase where `--vy-ink-3` (or `-4`) sits directly on
+`--vy-accent-tint` — every other accent-tint usage (`Card.tsx`'s accent
+`Pill`, `FindingCard.tsx`'s accent `chip`) already used `--vy-accent-ink`
+(5.35:1 on accent-tint), which is why they didn't also fail.
+
+**Dark-band analogue — verified, no change needed.** `--vy-ink-4` remaps to
+`--vy-dark-mono` (#8C8C85) under `[data-vy-ground="dark"]`. Recomputed:
+5.62:1 on `--vy-dark-bg` (#101010), 5.10:1 on `--vy-dark-surface` (#1B1B19,
+matching the value already documented in `globals.css`) — both clear AA
+comfortably as text, so the dark-ground ramp had no equivalent bug to fix.
+
+**Re-measured ratios** (WCAG 2.1 relative luminance, spot-checked against
+every ground the fix touches):
+
+| Pair | Ground | Ratio | AA (4.5:1 normal text) |
+|---|---|---|---|
+| `--vy-ink-3` on `--vy-bg` | #FAFAF7 | 4.91:1 | pass |
+| `--vy-ink-3` on `--vy-surface` | #FFFFFF | 5.13:1 | pass |
+| `--vy-ink-3` on `--vy-surface-2` | #F3F3EF | 4.61:1 | pass |
+| `--vy-ink-3` on `--vy-accent-tint` | #FBEDE4 | 4.48:1 | **fail** → that one instance moved to `--vy-ink-2` |
+| `--vy-ink-2` on `--vy-accent-tint` | #FBEDE4 | 9.52:1 | pass |
+| `--vy-dark-mono` on `--vy-dark-bg` | #101010 | 5.62:1 | pass |
+| `--vy-dark-mono` on `--vy-dark-surface` | #1B1B19 | 5.10:1 | pass |
+| `--vy-ink-4` (remaining non-text uses) | n/a | 2.64–2.76:1 | n/a — no longer used as text anywhere in scope |
+
+**Lighthouse a11y, before → after** (desktop, `next dev`):
+
+| Page | a11y before | a11y after | color-contrast audit |
+|---|---|---|---|
+| `/` | 96 | **100** | 2 failing nodes → 0 |
+| `/how-it-works` | 96 | **100** | 2 failing nodes → 0 |
+| `/solutions/reduce-money-leakage` (spot-checked, not required) | 96 | **100** | 0 → 0 |
+
+Performance/SEO/best-practices were unaffected by this change (perf desktop
+99/99/100 across the three pages on this run; run-to-run dev-server
+variance, not attributable to the fix).
+
+**Verification re-run:**
+
+```
+npx tsc --noEmit                                    → 29 errors, unchanged (all pre-existing free-scan)
+npx eslint components/vyso app --no-error-on-unmatched-pattern
+                                                     → same 12 pre-existing app/app/** problems, 0 new
+npm run test                                        → 1118 pass, 0 fail
+npx lighthouse http://localhost:3000/ --preset=desktop              → a11y 100 (was 96)
+npx lighthouse http://localhost:3000/how-it-works --preset=desktop  → a11y 100 (was 96)
+```
+
+Screenshot sanity check (homepage at 1440px, in-transcript): the hierarchy
+still reads correctly after the change — headline (`--vy-ink`) → body
+(`--vy-ink-2`) → timestamps/eyebrows/meta (`--vy-ink-3`, now slightly less
+faint than before but still clearly the lightest *readable* tier) → accent
+callouts unchanged. Nothing looks flattened; the "NEEDS ATTENTION" /
+"VYSO RECOMMENDS" cards remain the most visually distinct elements on the
+page.
+
+Committed to `redesign/operations-2026`, not pushed. Dev server left
+running on port 3000.

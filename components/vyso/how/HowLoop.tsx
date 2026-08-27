@@ -58,7 +58,7 @@ export function HowLoop() {
         {LOOP.map((step, i) => (
           <Reveal key={step.n} as="li" delay={stagger(i)}>
             <div className="h-full border-t border-[color:var(--vy-line-2)] py-[22px] md:py-[26px]">
-              <span aria-hidden="true" className="vy-label block text-[color:var(--vy-ink-4)]">
+              <span aria-hidden="true" className="vy-label block text-[color:var(--vy-ink-3)]">
                 {step.n}
               </span>
               <h3 className="vy-h3 mt-[12px] text-[color:var(--vy-ink)]">{step.title}</h3>

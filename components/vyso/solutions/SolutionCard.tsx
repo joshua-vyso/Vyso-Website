@@ -13,7 +13,7 @@ export function SolutionCard({ solution }: { solution: Solution }) {
   return (
     <Card as="li" padding="lg" interactive className="flex flex-col">
       <Link href={`/solutions/${solution.slug}`} className="flex flex-1 flex-col no-underline">
-        <span className="vy-label text-[color:var(--vy-ink-4)]">{solution.eyebrow}</span>
+        <span className="vy-label text-[color:var(--vy-ink-3)]">{solution.eyebrow}</span>
         <h3 className="vy-h3 mt-[14px] text-[color:var(--vy-ink)]">{solution.name}</h3>
         <p className="vy-body mt-[10px] flex-1 text-[color:var(--vy-ink-3)] text-pretty">
           {solution.summary}

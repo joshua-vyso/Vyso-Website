@@ -52,12 +52,12 @@ export function HowExisting() {
         {GROUPS.map((group, i) => (
           <Reveal key={group.label} as="li" delay={stagger(i)}>
             <div className="border-t border-[color:var(--vy-line-2)] pt-[18px]">
-              <span className="vy-label block text-[color:var(--vy-ink-4)]">{group.label}</span>
+              <span className="vy-label block text-[color:var(--vy-ink-3)]">{group.label}</span>
               <h3 className="vy-h3 mt-[14px] text-[color:var(--vy-ink)]">{group.heading}</h3>
               <p className="vy-body mt-[10px] text-[color:var(--vy-ink-3)] text-pretty">
                 {group.body}
               </p>
-              <p className="vy-label mt-[16px] text-[10.5px] leading-[1.7] text-[color:var(--vy-ink-4)]">
+              <p className="vy-label mt-[16px] text-[10.5px] leading-[1.7] text-[color:var(--vy-ink-3)]">
                 {group.items}
               </p>
             </div>

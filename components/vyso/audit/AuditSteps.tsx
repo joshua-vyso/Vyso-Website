@@ -31,7 +31,7 @@ export function AuditSteps() {
               id={`step-${step.n}`}
               className="grid scroll-mt-[100px] grid-cols-1 gap-[8px] border-t border-[color:var(--vy-line)] py-[22px] md:grid-cols-[64px_minmax(0,0.85fr)_minmax(0,1.15fr)] md:items-baseline md:gap-[28px] md:py-[26px]"
             >
-              <span aria-hidden="true" className="vy-label text-[color:var(--vy-ink-4)]">
+              <span aria-hidden="true" className="vy-label text-[color:var(--vy-ink-3)]">
                 {step.n}
               </span>
               <h3 className="vy-h3 text-[color:var(--vy-ink)]">{step.label}</h3>

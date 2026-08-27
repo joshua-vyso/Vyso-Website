@@ -51,7 +51,7 @@ const INITIAL = {
 const FIELD =
   "w-full rounded-[var(--vy-radius)] border border-[color:var(--vy-line-2)] bg-[color:var(--vy-surface)] " +
   "px-[14px] py-[11px] text-[14.5px] text-[color:var(--vy-ink)] " +
-  "placeholder:text-[color:var(--vy-ink-4)] outline-none transition-colors duration-150 " +
+  "placeholder:text-[color:var(--vy-ink-3)] outline-none transition-colors duration-150 " +
   "hover:border-[color:var(--vy-ink-4)] " +
   "focus-visible:border-[color:var(--vy-ink-3)] focus-visible:outline focus-visible:outline-2 " +
   "focus-visible:outline-offset-2 focus-visible:outline-[color:var(--vy-focus)]";

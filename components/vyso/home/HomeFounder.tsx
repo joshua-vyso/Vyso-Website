@@ -46,7 +46,7 @@ export function HomeFounder() {
         </div>
 
         <div className="mt-[32px] flex flex-wrap items-center gap-x-[24px] gap-y-[12px] border-t border-[color:var(--vy-line)] pt-[24px]">
-          <span className="vy-label text-[color:var(--vy-ink-4)]">
+          <span className="vy-label text-[color:var(--vy-ink-3)]">
             Josh Moreira, founder, Johannesburg
           </span>
           <Button href="/about" variant="quiet" className="ml-auto">

@@ -61,7 +61,7 @@ export function HowAutomation() {
         {STAGES.map((stage, i) => (
           <Reveal key={stage.n} as="li" delay={stagger(i)}>
             <div className="grid grid-cols-1 gap-[6px] border-t border-[color:var(--vy-line)] py-[22px] md:grid-cols-[64px_1fr_200px] md:items-baseline md:gap-[28px] md:py-[26px]">
-              <span aria-hidden="true" className="vy-label text-[color:var(--vy-ink-4)]">
+              <span aria-hidden="true" className="vy-label text-[color:var(--vy-ink-3)]">
                 {stage.n}
               </span>
               <div>
@@ -70,7 +70,7 @@ export function HowAutomation() {
                   {stage.body}
                 </p>
               </div>
-              <span className="vy-label mt-[8px] text-[10.5px] text-[color:var(--vy-ink-4)] md:mt-0">
+              <span className="vy-label mt-[8px] text-[10.5px] text-[color:var(--vy-ink-3)] md:mt-0">
                 {stage.meta}
               </span>
             </div>

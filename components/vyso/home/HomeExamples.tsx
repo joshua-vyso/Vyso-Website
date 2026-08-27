@@ -44,7 +44,7 @@ export function HomeExamples() {
       <ul className="m-0 grid list-none grid-cols-1 gap-[36px] p-0 md:grid-cols-2 md:gap-x-[32px] md:gap-y-[48px]">
         {/* ── 1. Orders ─────────────────────────────────────────────────── */}
         <Reveal as="li" delay={stagger(0)} className="flex flex-col">
-          <span className="vy-label text-[color:var(--vy-ink-4)]">Orders</span>
+          <span className="vy-label text-[color:var(--vy-ink-3)]">Orders</span>
           <h3 className="vy-h3 mt-[12px] mb-[18px] text-[color:var(--vy-ink)]">
             A shortage found on Tuesday, not on the loading bay.
           </h3>
@@ -66,7 +66,7 @@ export function HomeExamples() {
 
         {/* ── 2. Margin ─────────────────────────────────────────────────── */}
         <Reveal as="li" delay={stagger(1)} className="flex flex-col">
-          <span className="vy-label text-[color:var(--vy-ink-4)]">Margin</span>
+          <span className="vy-label text-[color:var(--vy-ink-3)]">Margin</span>
           <h3 className="vy-h3 mt-[12px] mb-[18px] text-[color:var(--vy-ink)]">
             An order that earns less than this customer usually does.
           </h3>
@@ -83,7 +83,7 @@ export function HomeExamples() {
 
         {/* ── 3. Supplier invoices ──────────────────────────────────────── */}
         <Reveal as="li" delay={stagger(2)} className="flex flex-col">
-          <span className="vy-label text-[color:var(--vy-ink-4)]">Supplier invoices</span>
+          <span className="vy-label text-[color:var(--vy-ink-3)]">Supplier invoices</span>
           <h3 className="vy-h3 mt-[12px] mb-[18px] text-[color:var(--vy-ink)]">
             The one invoice out of twenty three worth reading.
           </h3>
@@ -99,7 +99,7 @@ export function HomeExamples() {
 
         {/* ── 4. Client relationships ───────────────────────────────────── */}
         <Reveal as="li" delay={stagger(3)} className="flex flex-col">
-          <span className="vy-label text-[color:var(--vy-ink-4)]">Client relationships</span>
+          <span className="vy-label text-[color:var(--vy-ink-3)]">Client relationships</span>
           <h3 className="vy-h3 mt-[12px] mb-[18px] text-[color:var(--vy-ink)]">
             A meeting you walk into already prepared.
           </h3>

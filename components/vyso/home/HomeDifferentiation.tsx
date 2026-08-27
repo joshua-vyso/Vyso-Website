@@ -46,7 +46,7 @@ export function HomeDifferentiation() {
         {STEPS.map((step, i) => (
           <Reveal key={step.n} as="li" delay={stagger(i)}>
             <div className="border-t border-[color:var(--vy-line-2)] pt-[18px]">
-              <span className="vy-label block text-[color:var(--vy-ink-4)]">{step.n}</span>
+              <span className="vy-label block text-[color:var(--vy-ink-3)]">{step.n}</span>
               <h3 className="vy-h3 mt-[14px] text-[color:var(--vy-ink)]">{step.title}</h3>
               <p className="vy-body mt-[10px] text-[color:var(--vy-ink-3)] text-pretty">
                 {step.body}

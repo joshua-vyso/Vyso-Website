@@ -24,7 +24,7 @@ export function CaseCard({ data }: { data: CaseStudyData }) {
         />
       </div>
       <div>
-        <p className="vy-label mb-[10px] text-[color:var(--vy-ink-4)]">{data.eyebrow}</p>
+        <p className="vy-label mb-[10px] text-[color:var(--vy-ink-3)]">{data.eyebrow}</p>
         <h3 className="vy-h3 mb-[10px] text-[color:var(--vy-ink)]">{data.h1}</h3>
         <p className="vy-body mb-[18px] max-w-[560px] text-[color:var(--vy-ink-3)] text-pretty">
           {data.lead}

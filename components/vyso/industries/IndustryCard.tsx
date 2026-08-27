@@ -16,7 +16,7 @@ export function IndustryCard({ industry }: { industry: Industry }) {
     >
       <Pill className="self-start">{industry.shortName}</Pill>
       <p className="vy-h3 mt-[16px] text-[color:var(--vy-ink)]">{industry.cardFinding}</p>
-      <p className="vy-small mt-[10px] text-[color:var(--vy-ink-4)]">
+      <p className="vy-small mt-[10px] text-[color:var(--vy-ink-3)]">
         {industry.cardAgents.join(" · ")}
       </p>
       <span className="mt-auto inline-flex items-center gap-[6px] pt-[20px] text-[14px] font-medium text-[color:var(--vy-ink-2)] transition-colors duration-150 group-hover:text-[color:var(--vy-ink)]">

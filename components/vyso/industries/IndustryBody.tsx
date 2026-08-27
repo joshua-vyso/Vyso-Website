@@ -83,7 +83,7 @@ export function IndustryBody({ industry }: { industry: Industry }) {
         <ol className="m-0 grid list-none grid-cols-1 gap-[20px] p-0 md:grid-cols-3 md:gap-[28px]">
           {industry.audit.map((sentence, index) => (
             <li key={sentence} className="flex flex-col gap-[10px]">
-              <span className="vy-mono text-[13px] text-[color:var(--vy-ink-4)]">
+              <span className="vy-mono text-[13px] text-[color:var(--vy-ink-3)]">
                 0{index + 1}
               </span>
               <p className="vy-body text-[color:var(--vy-ink-2)] text-pretty">{sentence}</p>
@@ -115,7 +115,7 @@ export function IndustryBody({ industry }: { industry: Industry }) {
             Read the Turn &rsquo;n Slice case study
           </Button>
           {industry.siblings.length > 0 ? (
-            <span className="vy-small text-[color:var(--vy-ink-4)]">
+            <span className="vy-small text-[color:var(--vy-ink-3)]">
               Also see{" "}
               {industry.siblings.map((slug, i) => (
                 <span key={slug}>

@@ -54,7 +54,7 @@ export function HomeProcess() {
         {STEPS.map((step, i) => (
           <Reveal key={step.n} as="li" delay={stagger(i)}>
             <div className="grid grid-cols-1 gap-[6px] border-t border-[color:var(--vy-line)] py-[22px] md:grid-cols-[80px_220px_1fr] md:items-baseline md:gap-[24px] md:py-[26px]">
-              <span aria-hidden="true" className="vy-label text-[color:var(--vy-ink-4)]">
+              <span aria-hidden="true" className="vy-label text-[color:var(--vy-ink-3)]">
                 {step.n}
               </span>
               <h3 className="vy-h3 text-[color:var(--vy-ink)]">{step.title}</h3>

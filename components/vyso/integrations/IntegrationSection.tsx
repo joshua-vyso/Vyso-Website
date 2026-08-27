@@ -69,15 +69,15 @@ export function IntegrationSection({ integration }: { integration: IntegrationDe
 
       <dl className="grid grid-cols-1 gap-[16px] md:grid-cols-3 md:gap-[24px]">
         <div>
-          <dt className="vy-label text-[color:var(--vy-ink-4)]">What Vyso reads</dt>
+          <dt className="vy-label text-[color:var(--vy-ink-3)]">What Vyso reads</dt>
           <dd className="vy-body mt-[6px] text-[color:var(--vy-ink-2)]">{integration.reads}</dd>
         </div>
         <div>
-          <dt className="vy-label text-[color:var(--vy-ink-4)]">What Vyso can do with it</dt>
+          <dt className="vy-label text-[color:var(--vy-ink-3)]">What Vyso can do with it</dt>
           <dd className="vy-body mt-[6px] text-[color:var(--vy-ink-2)]">{integration.canDo}</dd>
         </div>
         <div>
-          <dt className="vy-label text-[color:var(--vy-ink-4)]">Setup</dt>
+          <dt className="vy-label text-[color:var(--vy-ink-3)]">Setup</dt>
           <dd className="vy-body mt-[6px] text-[color:var(--vy-ink-2)]">{integration.setup}</dd>
         </div>
       </dl>
@@ -87,7 +87,7 @@ export function IntegrationSection({ integration }: { integration: IntegrationDe
           fetch our books from Xero." A plain string replace keeps the prompt's
           own words instead of duplicating all eleven of them here, while
           keeping the one name this whole redesign retires off the page. */}
-      <p className="vy-small mt-[16px] text-[color:var(--vy-ink-4)] italic">
+      <p className="vy-small mt-[16px] text-[color:var(--vy-ink-3)] italic">
         {integration.prompt.replace(/Finch/g, "Vyso")}
       </p>
     </article>

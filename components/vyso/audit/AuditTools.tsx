@@ -51,7 +51,7 @@ export function AuditTools() {
                 the whole card: one anchor, one focus stop, the entire card as
                 its hit area. */}
             <Card padding="lg" interactive className="relative h-full">
-              <span className="vy-label block text-[color:var(--vy-ink-4)]">{tool.label}</span>
+              <span className="vy-label block text-[color:var(--vy-ink-3)]">{tool.label}</span>
               <h3 className="vy-h3 mt-[14px] text-[color:var(--vy-ink)]">
                 <Link
                   href={tool.href}

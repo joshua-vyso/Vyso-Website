@@ -175,7 +175,7 @@ export function EventTimeline({
               <motion.span
                 variants={ROW}
                 transition={{ duration, ease: EASE }}
-                className="vy-mono pt-[2px] text-[11.5px] text-[color:var(--vy-ink-4)] md:text-[12px]"
+                className="vy-mono pt-[2px] text-[11.5px] text-[color:var(--vy-ink-3)] md:text-[12px]"
               >
                 {item.time}
               </motion.span>
@@ -217,7 +217,7 @@ export function EventTimeline({
                         </p>
                       ) : null}
                       {item.meta ? (
-                        <p className="vy-label mt-[9px] text-[10px] text-[color:var(--vy-ink-3)]">
+                        <p className="vy-label mt-[9px] text-[10px] text-[color:var(--vy-ink-2)]">
                           {item.meta}
                         </p>
                       ) : null}
@@ -233,7 +233,7 @@ export function EventTimeline({
                         </p>
                       ) : null}
                       {item.meta ? (
-                        <p className="vy-label mt-[7px] text-[10px] text-[color:var(--vy-ink-4)]">
+                        <p className="vy-label mt-[7px] text-[10px] text-[color:var(--vy-ink-3)]">
                           {item.meta}
                         </p>
                       ) : null}

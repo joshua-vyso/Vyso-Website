@@ -57,13 +57,13 @@ export function HomeCase() {
                 key={row.label}
                 className="grid grid-cols-1 gap-[6px] border-t border-[color:var(--vy-line)] py-[18px] md:grid-cols-[180px_1fr] md:gap-[24px]"
               >
-                <dt className="vy-label text-[color:var(--vy-ink-4)]">{row.label}</dt>
+                <dt className="vy-label text-[color:var(--vy-ink-3)]">{row.label}</dt>
                 <dd className="vy-body m-0 text-[color:var(--vy-ink-2)] text-pretty">{row.body}</dd>
               </div>
             ))}
 
             <div className="grid grid-cols-1 gap-[6px] border-t border-[color:var(--vy-line)] py-[18px] md:grid-cols-[180px_1fr] md:gap-[24px]">
-              <dt className="vy-label text-[color:var(--vy-ink-4)]">Results</dt>
+              <dt className="vy-label text-[color:var(--vy-ink-3)]">Results</dt>
               <dd className="m-0">
                 <ul className="m-0 flex list-none flex-col gap-[6px] p-0">
                   {RESULTS.map((result) => (
@@ -72,7 +72,7 @@ export function HomeCase() {
                     </li>
                   ))}
                 </ul>
-                <p className="vy-label mt-[12px] text-[10px] text-[color:var(--vy-ink-4)]">
+                <p className="vy-label mt-[12px] text-[10px] text-[color:var(--vy-ink-3)]">
                   Figures being confirmed with the client before publication
                 </p>
               </dd>

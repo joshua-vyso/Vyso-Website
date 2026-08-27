@@ -98,7 +98,7 @@ export default function AboutPage() {
               </p>
             ))}
           </div>
-          <p className="vy-label mt-[28px] text-[color:var(--vy-ink-4)]">
+          <p className="vy-label mt-[28px] text-[color:var(--vy-ink-3)]">
             Josh Moreira, founder, Johannesburg
           </p>
         </Reveal>

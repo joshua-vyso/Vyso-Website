@@ -44,7 +44,7 @@ const STATE: Record<FindingState, { label: string; rule: string; dot: string; ch
     label: "RESOLVED",
     rule: "bg-[color:var(--vy-line)]",
     dot: "bg-[color:var(--vy-line-2)]",
-    chip: "border-[color:var(--vy-line)] text-[color:var(--vy-ink-4)]",
+    chip: "border-[color:var(--vy-line)] text-[color:var(--vy-ink-3)]",
   },
 };
 
@@ -128,7 +128,7 @@ export function FindingCard({
             </span>
           ) : null}
           {meta ? (
-            <span className="vy-label whitespace-nowrap text-[10.5px] text-[color:var(--vy-ink-4)]">
+            <span className="vy-label whitespace-nowrap text-[10.5px] text-[color:var(--vy-ink-3)]">
               {meta}
             </span>
           ) : null}

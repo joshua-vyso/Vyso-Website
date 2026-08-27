@@ -101,7 +101,7 @@ export function CaseTemplate({ data }: { data: CaseStudyData }) {
             {data.stats.map(([value, label]) => (
               <Card key={label} as="article">
                 <p className="vy-h3 m-0 text-[19px] text-[color:var(--vy-ink)]">{value}</p>
-                <p className="vy-label mt-[6px] text-[color:var(--vy-ink-4)]">{label}</p>
+                <p className="vy-label mt-[6px] text-[color:var(--vy-ink-3)]">{label}</p>
               </Card>
             ))}
           </div>
@@ -118,24 +118,24 @@ export function CaseTemplate({ data }: { data: CaseStudyData }) {
         <div className="grid grid-cols-1 gap-[28px] lg:grid-cols-2 lg:gap-[40px]">
           <div className="flex flex-col gap-[18px]">
             <div>
-              <p className="vy-label text-[color:var(--vy-ink-4)]">Industry</p>
+              <p className="vy-label text-[color:var(--vy-ink-3)]">Industry</p>
               <p className="vy-body mt-[6px] text-[color:var(--vy-ink-2)]">{data.industry}</p>
             </div>
             <div>
-              <p className="vy-label text-[color:var(--vy-ink-4)]">Situation</p>
+              <p className="vy-label text-[color:var(--vy-ink-3)]">Situation</p>
               <p className="vy-body mt-[6px] text-[color:var(--vy-ink-2)] text-pretty">
                 {data.situation}
               </p>
             </div>
             <div>
-              <p className="vy-label text-[color:var(--vy-ink-4)]">Operational problem</p>
+              <p className="vy-label text-[color:var(--vy-ink-3)]">Operational problem</p>
               <p className="vy-body mt-[6px] text-[color:var(--vy-ink-2)] text-pretty">
                 {data.problem}
               </p>
             </div>
           </div>
           <Card as="article" padding="lg">
-            <p className="vy-label text-[color:var(--vy-ink-4)]">Before Vyso</p>
+            <p className="vy-label text-[color:var(--vy-ink-3)]">Before Vyso</p>
             <ul className="m-0 mt-[14px] flex list-none flex-col gap-[12px] p-0">
               {data.before.map((line) => (
                 <li key={line} className="flex gap-[12px] text-[14.5px] leading-[1.6] text-[color:var(--vy-ink-2)]">
@@ -213,7 +213,7 @@ export function CaseTemplate({ data }: { data: CaseStudyData }) {
               </li>
             ))}
           </ul>
-          <p className="vy-label mt-[16px] border-t border-[color:var(--vy-line)] pt-[14px] text-[10px] text-[color:var(--vy-ink-4)]">
+          <p className="vy-label mt-[16px] border-t border-[color:var(--vy-line)] pt-[14px] text-[10px] text-[color:var(--vy-ink-3)]">
             {data.resultsNote}
           </p>
         </Card>
@@ -227,7 +227,7 @@ export function CaseTemplate({ data }: { data: CaseStudyData }) {
               {data.quote.text}
             </p>
             <p className="vy-label mt-[16px] text-[color:var(--vy-ink-3)]">{data.quote.byline}</p>
-            <p className="vy-small mx-auto mt-[6px] max-w-[460px] text-[color:var(--vy-ink-4)]">
+            <p className="vy-small mx-auto mt-[6px] max-w-[460px] text-[color:var(--vy-ink-3)]">
               {data.quote.note}
             </p>
           </div>
