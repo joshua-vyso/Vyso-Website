@@ -1,6 +1,8 @@
 import type { MetadataRoute } from "next";
 
 import { GLOSSARY_SLUGS } from "@/lib/marketing/glossary";
+import { INDUSTRY_LIST } from "@/lib/marketing/industries";
+import { SOLUTION_LIST } from "@/lib/marketing/solutions";
 import { ORBIT_ARTICLES } from "@/lib/orbit/articles";
 import { ORBIT_PUBLISHED, ORBIT_STATIC_ROUTES } from "@/lib/orbit/site";
 import { TRADES } from "@/lib/orbit/trades";
@@ -25,8 +27,14 @@ const BASE_URL = "https://vyso.co.za";
       itself, the day any one of these sections actually changes without the
       others. Glossary (`lib/marketing/glossary.ts`) and the product/pricing
       pages already carry their own explicit dates below from earlier phases
-      and are left as they were — this constant only fills genuine gaps. */
-const CONTENT_LAST_MODIFIED = new Date("2026-08-16");
+      and are left as they were — this constant only fills genuine gaps.
+
+      Bumped for `.ai/plan_vyso_redesign_2026.md` Phase 3: solutions and
+      industries below are now generated from their registries (`SOLUTION_LIST`,
+      `INDUSTRY_LIST`) instead of hand-typed, so the eight current solution
+      slugs and the three surviving industry slugs are exactly what ships,
+      with no separate list to keep in step. */
+const CONTENT_LAST_MODIFIED = new Date("2026-08-27");
 
 /** Throws rather than silently omitting a date if a learn slug here ever
     drifts from `lib/marketing/learn-articles.ts` — the same fail-loud pattern
@@ -41,9 +49,14 @@ function learnDate(slug: string): Date {
 
 export default function sitemap(): MetadataRoute.Sitemap {
   return [
-    // Core marketing pages. `/` is the agency page and `/finch` is the product
-    // page (`.ai/plan_home_only.md`); `/platform*` still 308s to `/`, and the
-    // sitemap only lists the final URL, per `.ai/vyso_v2.md` §3.
+    // Core marketing pages. `/` is the homepage and `/how-it-works` is the new
+    // 2026-redesign route (plan §7.2) that explains the model, absorbs the
+    // compare-page intent and states the pricing philosophy. `/finch`,
+    // `/platform*`, `/founding-client`, `/academy` and `/compare*` are still
+    // real, indexable routes until Phase 4 deletes and redirects them
+    // (plan §11) — left listed here for exactly that long, per plan §12's
+    // instruction that a sitemap entry and its redirect land in the same
+    // phase.
     {
       url: BASE_URL,
       lastModified: new Date("2026-08-27"),
@@ -51,7 +64,14 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 1,
     },
     {
-      // The product page, moved off `/` this change.
+      url: `${BASE_URL}/how-it-works`,
+      lastModified: CONTENT_LAST_MODIFIED,
+      changeFrequency: "monthly",
+      priority: 0.95,
+    },
+    {
+      // The old product page. Superseded by `/how-it-works`; 301s there once
+      // Phase 4 lands (plan §6).
       url: `${BASE_URL}/finch`,
       lastModified: new Date("2026-08-27"),
       changeFrequency: "weekly",
@@ -80,24 +100,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
       lastModified: CONTENT_LAST_MODIFIED,
       changeFrequency: "weekly",
       priority: 0.9,
-    },
-    {
-      url: `${BASE_URL}/industries/restaurants`,
-      lastModified: CONTENT_LAST_MODIFIED,
-      changeFrequency: "monthly",
-      priority: 0.8,
-    },
-    {
-      url: `${BASE_URL}/industries/food-suppliers`,
-      lastModified: CONTENT_LAST_MODIFIED,
-      changeFrequency: "monthly",
-      priority: 0.9,
-    },
-    {
-      url: `${BASE_URL}/industries/farms`,
-      lastModified: CONTENT_LAST_MODIFIED,
-      changeFrequency: "monthly",
-      priority: 0.8,
     },
     {
       url: `${BASE_URL}/case-studies/turn-n-slice`,
@@ -158,79 +160,45 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.6,
     },
 
-    // Solutions.
+    // Solutions: the hub plus the eight current slugs, generated from
+    // `lib/marketing/solutions.ts`'s own `SOLUTION_LIST` (plan §8: "make it
+    // registry-driven from lib/marketing/solutions.ts if hardcoded" — it was,
+    // as of Phase 2c's rewrite, so a ninth solution or a renamed slug appears
+    // here with no separate edit, and the retired `operations-dashboard` slug
+    // (not in `SOLUTION_LIST`) is gone on its own rather than by hand.
     {
       url: `${BASE_URL}/solutions`,
       lastModified: CONTENT_LAST_MODIFIED,
       changeFrequency: "monthly",
       priority: 0.7,
     },
-    {
-      url: `${BASE_URL}/solutions/reduce-money-leakage`,
+    ...SOLUTION_LIST.map((solution) => ({
+      url: `${BASE_URL}/solutions/${solution.slug}`,
       lastModified: CONTENT_LAST_MODIFIED,
-      changeFrequency: "monthly",
+      changeFrequency: "monthly" as const,
       priority: 0.6,
-    },
-    {
-      url: `${BASE_URL}/solutions/procurement-automation`,
-      lastModified: CONTENT_LAST_MODIFIED,
-      changeFrequency: "monthly",
-      priority: 0.6,
-    },
-    {
-      url: `${BASE_URL}/solutions/reporting-automation`,
-      lastModified: CONTENT_LAST_MODIFIED,
-      changeFrequency: "monthly",
-      priority: 0.6,
-    },
-    {
-      url: `${BASE_URL}/solutions/operations-dashboard`,
-      lastModified: CONTENT_LAST_MODIFIED,
-      changeFrequency: "monthly",
-      priority: 0.6,
-    },
+    })),
 
-    // Industries index + newer industry pages.
+    // Industries: the hub plus the three slugs the 2026 redesign kept
+    // (plan §7.5 — food-suppliers, wholesale, hospitality), generated from
+    // `lib/marketing/industries.ts`'s `INDUSTRY_LIST` for the same reason as
+    // solutions above. The five removed verticals (restaurants,
+    // catering-companies, farms, security-companies, insurance-brokers) are
+    // gone from here; `next.config.ts` 301s each of their URLs to its mapped
+    // destination (plan §6), so the redirect table carries the URL now, not
+    // this file.
     {
       url: `${BASE_URL}/industries`,
       lastModified: CONTENT_LAST_MODIFIED,
       changeFrequency: "monthly",
       priority: 0.7,
     },
-    {
-      url: `${BASE_URL}/industries/catering-companies`,
+    ...INDUSTRY_LIST.map((industry) => ({
+      url: `${BASE_URL}/industries/${industry.slug}`,
       lastModified: CONTENT_LAST_MODIFIED,
-      changeFrequency: "monthly",
+      changeFrequency: "monthly" as const,
       priority: 0.7,
-    },
-    {
-      url: `${BASE_URL}/industries/wholesale`,
-      lastModified: CONTENT_LAST_MODIFIED,
-      changeFrequency: "monthly",
-      priority: 0.7,
-    },
-    {
-      url: `${BASE_URL}/industries/hospitality`,
-      lastModified: CONTENT_LAST_MODIFIED,
-      changeFrequency: "monthly",
-      priority: 0.7,
-    },
-    // The two experimental verticals (Phase 3, workstream A). Indexed and
-    // listed here, but linked from the `/industries` hub only — not the nav,
-    // the homepage or the footer (`.ai/vyso_v2.md` §2.2). Lower priority than
-    // the six primary verticals because that is what they are to us.
-    {
-      url: `${BASE_URL}/industries/security-companies`,
-      lastModified: CONTENT_LAST_MODIFIED,
-      changeFrequency: "monthly",
-      priority: 0.5,
-    },
-    {
-      url: `${BASE_URL}/industries/insurance-brokers`,
-      lastModified: CONTENT_LAST_MODIFIED,
-      changeFrequency: "monthly",
-      priority: 0.5,
-    },
+    })),
 
     // Case studies index.
     {

@@ -1,9 +1,9 @@
 /* ── Resources ───────────────────────────────────────────────────────────────
    Content for `/resources` and `/resources/[slug]`.
 
-   Phase 3 (workstream D) touched three things and nothing else — the preview
+   An earlier phase touched three things and nothing else: the preview
    sections, the "what it helps" bullets and the "who it's for" copy are all
-   exactly what they were, because they describe real documents:
+   exactly what they were, because they describe real documents.
 
    1. **Titles lost their "| Free Resource | Vyso" suffix.** The root layout
       now appends " | Vyso" via `title.template`, so a self-contained title
@@ -11,12 +11,16 @@
       metadata). Each title is rewritten to lead with the query instead.
    2. **A dead Learn link is fixed.** `weekly-operations-report-template`
       pointed at `/learn/12-operational-kpis-every-ceo-should-track`, which has
-      never existed in `lib/marketing/learn-articles.ts` — the same class of bug
+      never existed in `lib/marketing/learn-articles.ts`, the same class of bug
       Phase 2 found nine times in the solutions data. Every `href` in this file
       is now a route that resolves.
    3. **Vyso → Finch** where a sentence describes the product rather than the
-      company. Only `weekly-operations-report-template`'s description carried
-      one.                                                                     */
+      company, fixed in the same earlier pass.
+
+   `.ai/plan_vyso_redesign_2026.md` §7.6 (Phase 3): copy pass for em/en dashes
+   only, since claims and structure here are already Finch-free. Every em dash
+   below is converted to a comma, colon or full stop; no wording otherwise
+   changed.                                                                    */
 
 export type ResourcePreviewSection = {
   readonly heading: string;
@@ -59,9 +63,9 @@ export const RESOURCES: readonly Resource[] = [
     heroPlain: "Find the leaks before",
     heroAccent: "they cost you a season.",
     summary:
-      "A structured, print-and-use checklist that walks an owner or operations manager through the areas where South African SMEs typically lose money without noticing — buying, stock, reporting, staffing and approvals. Use it before you commit to any new tool or process change.",
+      "A structured, print-and-use checklist that walks an owner or operations manager through the areas where South African SMEs typically lose money without noticing: buying, stock, reporting, staffing and approvals. Use it before you commit to any new tool or process change.",
     whoItsFor:
-      "Owners, operations managers and finance leads in growing SMEs — especially restaurants, catering businesses, wholesalers and hospitality operations — who suspect something is leaking but don't yet have proof.",
+      "Owners, operations managers and finance leads in growing SMEs, especially wholesalers, hospitality operations and catering businesses, who suspect something is leaking but don't yet have proof.",
     whatItHelps: [
       "Spot which operational areas rely on memory, WhatsApp or paper instead of a repeatable process.",
       "Identify where stock, purchasing and wastage are tracked in disconnected places.",
@@ -76,7 +80,7 @@ export const RESOURCES: readonly Resource[] = [
           "Every supplier has an agreed price list on file, not just a remembered rate.",
           "Purchase orders exist in writing before stock arrives, not after.",
           "Someone checks delivered quantities and quality against what was ordered.",
-          "Repeat supplier issues — late deliveries, short orders, quality — are tracked over time.",
+          "Repeat supplier issues (late deliveries, short orders, quality) are tracked over time.",
         ],
       },
       {
@@ -133,14 +137,14 @@ export const RESOURCES: readonly Resource[] = [
     shortName: "Weekly Operations Report Template",
     title: "Weekly operations report template for SME owners",
     description:
-      "A free weekly operations report structure — sales, stock, procurement, staffing, risks — for South African owners tired of chasing numbers.",
+      "A free weekly operations report structure: sales, stock, procurement, staffing, risks, for South African owners tired of chasing numbers.",
     eyebrow: "Free resource",
     heroPlain: "One report.",
     heroAccent: "Every Monday, without the chase.",
     summary:
-      "A structured template for the weekly operations report managers should already be sending leadership — covering the numbers that matter and a consistent format, so nobody has to rebuild it from scratch every Friday afternoon.",
+      "A structured template for the weekly operations report managers should already be sending leadership, covering the numbers that matter and a consistent format, so nobody has to rebuild it from scratch every Friday afternoon.",
     whoItsFor:
-      "Operations managers, general managers and owners who currently piece together a weekly update from memory, spreadsheets and WhatsApp threads — or who don't get one at all.",
+      "Operations managers, general managers and owners who currently piece together a weekly update from memory, spreadsheets and WhatsApp threads, or who don't get one at all.",
     whatItHelps: [
       "Standardise what a 'weekly operations report' actually contains, so every manager reports the same things.",
       "Cut the time spent compiling a report from scratch each week.",
@@ -154,7 +158,7 @@ export const RESOURCES: readonly Resource[] = [
         items: [
           "Total revenue for the week vs. previous week and vs. target.",
           "Revenue by site, department or product line.",
-          "Notable one-off events affecting the numbers — weather, public holiday, promotion.",
+          "Notable one-off events affecting the numbers: weather, public holiday, promotion.",
         ],
       },
       {
@@ -197,7 +201,7 @@ export const RESOURCES: readonly Resource[] = [
         href: "/learn/why-weekly-reports-are-usually-too-late",
         title: "Why Weekly Reports Are Usually Too Late",
       },
-      /* Was `/learn/12-operational-kpis-every-ceo-should-track` — a slug that
+      /* Was `/learn/12-operational-kpis-every-ceo-should-track`, a slug that
          has never existed. Replaced with a real article on the same problem
          (the hours the weekly report costs to build). */
       {
@@ -216,7 +220,7 @@ export const RESOURCES: readonly Resource[] = [
     heroPlain: "Score suppliers on",
     heroAccent: "evidence, not memory.",
     summary:
-      "A scoring framework for reviewing suppliers on the things that actually affect your operation — delivery reliability, order accuracy, quality, price and communication — so renewal and negotiation conversations are based on a record rather than whoever complained loudest that month.",
+      "A scoring framework for reviewing suppliers on the things that actually affect your operation: delivery reliability, order accuracy, quality, price and communication, so renewal and negotiation conversations are based on a record rather than whoever complained loudest that month.",
     whoItsFor:
       "Procurement leads, operations managers and owners who manage more than a handful of suppliers and currently judge them on gut feel or the most recent complaint.",
     whatItHelps: [
@@ -231,14 +235,14 @@ export const RESOURCES: readonly Resource[] = [
         heading: "Delivery & fulfilment",
         items: [
           "On-time delivery rate over the review period.",
-          "Order fill rate — delivered in full vs. short-delivered.",
+          "Order fill rate: delivered in full vs. short-delivered.",
           "Lead time consistency vs. quoted lead time.",
         ],
       },
       {
         heading: "Quality & accuracy",
         items: [
-          "Order accuracy — right items, right quantities.",
+          "Order accuracy: right items, right quantities.",
           "Quality consistency and rejection or return rate.",
           "Frequency of quality-related complaints.",
         ],
@@ -264,7 +268,7 @@ export const RESOURCES: readonly Resource[] = [
         items: [
           "Willingness to accommodate urgent or changed orders.",
           "Consistency of account contact and continuity.",
-          "Overall score and recommended action — retain, review or replace.",
+          "Overall score and recommended action: retain, review or replace.",
         ],
       },
     ],

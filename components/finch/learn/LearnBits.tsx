@@ -1,31 +1,109 @@
 import Link from "next/link";
 
-import { FindingCard } from "@/components/finch/FindingCard";
-import { ArrowLink, Eyebrow, StatusChip } from "@/components/finch/solutions/SolutionBits";
+import { FindingCard } from "@/components/vyso/demo/FindingCard";
 import { getGlossaryTerm } from "@/lib/marketing/glossary";
 import type { ArticleAgent, ArticleFinding, ArticleSource, LearnArticle } from "@/lib/marketing/learn-articles";
 import { LEARN_CATEGORIES, type LearnCategory } from "@/lib/marketing/learn-articles";
 import { SITE } from "@/lib/marketing/site";
 
 /* ── Shared pieces for /learn, /learn/glossary and /resources ────────────────
-   All server components. The only client code these three page trees load is
-   `FindingCard` (its pointer tilt), the reading-progress hairline, the TOC's
-   current-heading highlight and the resource cards' hover — four small
-   islands, listed here so the boundary is visible in one place.
+   All server components. `FindingCard` (see its own header) dropped its
+   pointer-tilt going from the Finch original to the Vyso one, so the reading-
+   progress hairline and the TOC's current-heading highlight are the only
+   client islands left in this tree, listed here so the boundary is visible in
+   one place.
 
-   `Breadcrumb`, `Eyebrow`, `StatusChip` and `ArrowLink` are imported from
-   `components/finch/solutions/SolutionBits` rather than copied: they are the
-   generic Finch chrome every rebuilt page uses, and a second copy would be a
-   second thing to keep in step.                                              */
+   `.ai/plan_vyso_redesign_2026.md` §7.6: chrome swap. This file used to import
+   `Breadcrumb`, `Eyebrow`, `StatusChip` and `ArrowLink` from
+   `components/finch/solutions/SolutionBits` (Finch chrome, `--fn-*` tokens).
+   That file is still live for `/compare` (Phase 4's job, not this one), so
+   rather than repaint it and risk moving `/compare` too, this file now carries
+   its own small `--vy-*` equivalents below. It is the only tree that used
+   them, so there is no second copy to keep in step. `FindingCard` moved to
+   `components/vyso/demo/FindingCard`, which already replaces
+   `components/finch/FindingCard` for every new surface. */
 
-export const SECTION = "mx-auto max-w-[1160px] px-[20px] pt-[72px] lg:px-[40px] lg:pt-[110px]";
-export const H2 =
-  "m-0 mb-[16px] font-fn-serif text-[28px] font-medium leading-[1.15] tracking-[-0.02em] lg:text-[38px]";
-export const LEAD = "m-0 max-w-[620px] text-[15px] leading-[1.65] text-fn-ink-3 lg:text-[15.5px]";
+export const SECTION = "mx-auto max-w-[1160px] px-[var(--vy-gutter)] pt-[72px] lg:px-[40px] lg:pt-[110px]";
+export const H2 = "vy-h2 m-0 mb-[16px] text-[color:var(--vy-ink)]";
+export const LEAD = "vy-body m-0 max-w-[620px] text-[color:var(--vy-ink-3)]";
 
-/** The reading column. 720px is `.ai/vyso_v2.md` §2.3's figure for this tree
-    and the legal pages reuse it. */
+/** The reading column, shared with the legal pages. */
 export const READING_COLUMN = "max-w-[720px]";
+
+/** Mono trail above every `<h1>` in this tree. */
+export function Breadcrumb({ trail }: { trail: readonly { label: string; href: string }[] }) {
+  return (
+    <nav aria-label="Breadcrumb" className="mb-[18px]">
+      <ol className="vy-label m-0 flex list-none flex-wrap items-center gap-[7px] p-0 text-[color:var(--vy-ink-3)]">
+        {trail.map((crumb, i) => (
+          <li key={crumb.href} className="flex items-center gap-[7px]">
+            {i > 0 ? <span className="text-[color:var(--vy-line-2)]">/</span> : null}
+            {i === trail.length - 1 ? (
+              <span aria-current="page" className="text-[color:var(--vy-ink-3)]">
+                {crumb.label.toUpperCase()}
+              </span>
+            ) : (
+              <Link
+                href={crumb.href}
+                className="transition-colors duration-150 hover:text-[color:var(--vy-ink)]"
+              >
+                {crumb.label.toUpperCase()}
+              </Link>
+            )}
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
+/** The mono eyebrow every section header in this tree opens with. Local copy
+    of the one pattern `components/vyso/Section.tsx` inlines per-caller: this
+    tree builds its own headers by hand (see the note above), so it needs the
+    same one-liner in a reusable form. */
+export function Eyebrow({ children }: { children: React.ReactNode }) {
+  return <div className="vy-label mb-[14px] text-[color:var(--vy-ink-3)]">{children}</div>;
+}
+
+/** The honesty chip. Same three states as the plan's roadmap language — the
+    label is the status verbatim, so a roadmap capability can never read as
+    shipped. */
+export function StatusChip({ status }: { status: string }) {
+  return (
+    <span className="vy-label shrink-0 whitespace-nowrap rounded-[var(--vy-radius-pill)] border border-[color:var(--vy-line)] px-[9px] py-[3px] text-[color:var(--vy-ink-3)]">
+      {status}
+    </span>
+  );
+}
+
+/** The quiet arrow link used everywhere a section points somewhere else. */
+export function ArrowLink({
+  href,
+  children,
+  className = "",
+}: {
+  href: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className={
+        "group inline-flex items-center gap-[7px] text-[14px] font-medium text-[color:var(--vy-ink-2)] transition-colors duration-150 hover:text-[color:var(--vy-ink)] " +
+        className
+      }
+    >
+      {children}
+      <span
+        aria-hidden="true"
+        className="transition-transform duration-150 ease-out group-hover:translate-x-[2px]"
+      >
+        →
+      </span>
+    </Link>
+  );
+}
 
 export function formatDate(iso: string): string {
   /* Explicit UTC: the server renders in the container's zone and the client in
@@ -56,9 +134,10 @@ export function headingId(heading: string): string {
 
 export function CategoryFilter({ active }: { active: LearnCategory | "All" }) {
   const chip =
-    "inline-block rounded-[99px] border px-[13px] py-[6px] font-fn-mono text-[10.5px] tracking-[0.1em] transition-colors duration-150";
-  const on = "border-fn-ink bg-fn-ink text-fn-bg";
-  const off = "border-fn-line bg-fn-surface text-fn-ink-3 hover:border-fn-line-hover hover:text-fn-ink";
+    "vy-label inline-block rounded-[var(--vy-radius-pill)] border px-[13px] py-[6px] transition-colors duration-150";
+  const on = "border-[color:var(--vy-ink)] bg-[color:var(--vy-ink)] text-[color:var(--vy-bg)]";
+  const off =
+    "border-[color:var(--vy-line)] bg-[color:var(--vy-surface)] text-[color:var(--vy-ink-3)] hover:border-[color:var(--vy-line-2)] hover:text-[color:var(--vy-ink)]";
 
   return (
     <nav aria-label="Filter articles by category">
@@ -95,18 +174,16 @@ export function ArticleCard({ article }: { article: LearnArticle }) {
     <article className="h-full">
       <Link
         href={`/learn/${article.slug}`}
-        className="group flex h-full flex-col rounded-[10px] border border-fn-line bg-fn-surface px-[22px] py-[22px] transition-[border-color,box-shadow,transform] duration-200 ease-out hover:-translate-y-[2px] hover:border-fn-line-hover hover:shadow-[var(--fn-shadow-card)]"
+        className="group flex h-full flex-col rounded-[var(--vy-radius)] border border-[color:var(--vy-line)] bg-[color:var(--vy-surface)] px-[22px] py-[22px] transition-colors duration-150 hover:border-[color:var(--vy-line-2)]"
       >
-        <span className="mb-[12px] font-fn-mono text-[10px] tracking-[0.12em] text-fn-muted">
+        <span className="vy-label mb-[12px] text-[color:var(--vy-ink-3)]">
           {article.category.toUpperCase()}
         </span>
-        <h3 className="m-0 mb-[10px] font-fn-serif text-[20px] font-medium leading-[1.2] tracking-[-0.015em] text-fn-ink transition-colors duration-150 group-hover:text-fn-orange-deep">
-          {article.title}
-        </h3>
-        <p className="m-0 mb-[18px] text-[14px] leading-[1.55] text-fn-ink-3 text-pretty">
+        <h3 className="vy-h3 m-0 mb-[10px] text-[color:var(--vy-ink)]">{article.title}</h3>
+        <p className="vy-small m-0 mb-[18px] text-[color:var(--vy-ink-3)] text-pretty">
           {article.description}
         </p>
-        <span className="mt-auto font-fn-mono text-[10px] tracking-[0.1em] text-fn-faint">
+        <span className="vy-label mt-auto text-[color:var(--vy-ink-3)]">
           {article.readingTime.toUpperCase()}
         </span>
       </Link>
@@ -121,24 +198,22 @@ export function FeaturedArticle({ article }: { article: LearnArticle }) {
     <article>
       <Link
         href={`/learn/${article.slug}`}
-        className="group grid grid-cols-1 gap-[24px] rounded-[12px] border border-fn-line bg-fn-surface px-[24px] py-[28px] transition-[border-color,box-shadow] duration-200 ease-out hover:border-fn-line-hover hover:shadow-[var(--fn-shadow-card)] lg:grid-cols-[1fr_0.85fr] lg:gap-[48px] lg:px-[36px] lg:py-[36px]"
+        className="group grid grid-cols-1 gap-[24px] rounded-[var(--vy-radius)] border border-[color:var(--vy-line)] bg-[color:var(--vy-surface)] px-[24px] py-[28px] transition-colors duration-150 hover:border-[color:var(--vy-line-2)] lg:grid-cols-[1fr_0.85fr] lg:gap-[48px] lg:px-[36px] lg:py-[36px]"
       >
         <div>
-          <span className="mb-[14px] block font-fn-mono text-[10px] tracking-[0.12em] text-fn-muted">
+          <span className="vy-label mb-[14px] block text-[color:var(--vy-ink-3)]">
             START HERE · {article.category.toUpperCase()}
           </span>
-          <h3 className="m-0 mb-[14px] font-fn-serif text-[26px] font-medium leading-[1.15] tracking-[-0.02em] text-pretty transition-colors duration-150 group-hover:text-fn-orange-deep lg:text-[32px]">
+          <h3 className="vy-h3 m-0 mb-[14px] text-pretty text-[color:var(--vy-ink)] lg:text-[28px]">
             {article.title}
           </h3>
-          <p className="m-0 text-[15px] leading-[1.65] text-fn-ink-3 text-pretty lg:text-[15.5px]">
-            {article.heroLead}
-          </p>
+          <p className="vy-body m-0 text-[color:var(--vy-ink-3)] text-pretty">{article.heroLead}</p>
         </div>
         <div className="flex flex-col justify-end">
-          <p className="m-0 mb-[14px] text-[14px] leading-[1.55] text-fn-ink-2 text-pretty">
+          <p className="vy-small m-0 mb-[14px] text-[color:var(--vy-ink-2)] text-pretty">
             {article.description}
           </p>
-          <span className="font-fn-mono text-[10px] tracking-[0.1em] text-fn-faint">
+          <span className="vy-label text-[color:var(--vy-ink-3)]">
             {article.readingTime.toUpperCase()} · {formatDate(article.datePublished).toUpperCase()}
           </span>
         </div>
@@ -155,23 +230,21 @@ export function FeaturedArticle({ article }: { article: LearnArticle }) {
 
 export function AuthorBox({ dateModified }: { dateModified: string }) {
   return (
-    <aside className="rounded-[10px] border border-fn-line bg-fn-surface px-[22px] py-[20px]">
-      <div className="mb-[10px] font-fn-mono text-[10px] tracking-[0.12em] text-fn-muted">
-        WRITTEN BY
-      </div>
-      <div className="mb-[6px] font-fn-serif text-[18px] font-medium tracking-[-0.015em]">
+    <aside className="rounded-[var(--vy-radius)] border border-[color:var(--vy-line)] bg-[color:var(--vy-surface)] px-[22px] py-[20px]">
+      <div className="vy-label mb-[10px] text-[color:var(--vy-ink-3)]">WRITTEN BY</div>
+      <div className="mb-[6px] text-[18px] font-medium tracking-[-0.015em] text-[color:var(--vy-ink)]">
         {SITE.founder.name}
       </div>
-      <div className="mb-[12px] font-fn-mono text-[10.5px] tracking-[0.08em] text-fn-ink-3">
+      <div className="vy-label mb-[12px] text-[color:var(--vy-ink-3)]">
         {SITE.founder.jobTitle.toUpperCase()}, {SITE.name.toUpperCase()} ·{" "}
         {SITE.address.addressLocality.toUpperCase()}
       </div>
-      <p className="m-0 mb-[14px] text-[14px] leading-[1.6] text-fn-ink-3 text-pretty">
+      <p className="vy-small m-0 mb-[14px] text-[color:var(--vy-ink-3)] text-pretty">
         {SITE.description}
       </p>
       <div className="flex flex-wrap items-center gap-x-[14px] gap-y-[6px]">
         <ArrowLink href="/operations-audit">Book an operations audit</ArrowLink>
-        <span className="font-fn-mono text-[10px] tracking-[0.1em] text-fn-faint">
+        <span className="vy-label text-[color:var(--vy-ink-3)]">
           UPDATED {formatDate(dateModified).toUpperCase()}
         </span>
       </div>
@@ -186,15 +259,20 @@ export function AuthorBox({ dateModified }: { dateModified: string }) {
 
 export function SourcesBlock({ sources }: { sources: readonly ArticleSource[] }) {
   return (
-    <section aria-labelledby="sources-heading" className="mt-[44px] border-t border-fn-line pt-[24px]">
-      <h2 id="sources-heading" className="m-0 mb-[14px] font-fn-mono text-[10px] tracking-[0.14em] text-fn-muted">
+    <section
+      aria-labelledby="sources-heading"
+      className="mt-[44px] border-t border-[color:var(--vy-line)] pt-[24px]"
+    >
+      <h2 id="sources-heading" className="vy-label m-0 mb-[14px] text-[color:var(--vy-ink-3)]">
         WHERE THE NUMBERS COME FROM
       </h2>
       <ul className="m-0 flex list-none flex-col gap-[12px] p-0">
         {sources.map((source) => (
           <li key={source.label}>
-            <div className="mb-[4px] text-[14px] font-semibold text-fn-ink">{source.label}</div>
-            <p className="m-0 text-[13.5px] leading-[1.6] text-fn-ink-3 text-pretty">{source.basis}</p>
+            <div className="mb-[4px] text-[14px] font-semibold text-[color:var(--vy-ink)]">
+              {source.label}
+            </div>
+            <p className="vy-small m-0 text-[color:var(--vy-ink-3)] text-pretty">{source.basis}</p>
           </li>
         ))}
       </ul>
@@ -203,38 +281,33 @@ export function SourcesBlock({ sources }: { sources: readonly ArticleSource[] })
 }
 
 /* ── Related agents ───────────────────────────────────────────────────────────
-   Links to `/finch#agents`, the homepage roster — the one place the agents are
-   listed. Statuses are the §4 chips verbatim, so a roadmap agent can never
-   read as shipped from inside an article. */
+   What Vyso would build against this article's problem, using the same
+   worked-example vocabulary as `/solutions` and the homepage demo. No route
+   named here: there is no single "agent roster" page any more (plan §5), so
+   each row is illustrative text, not a link. */
 
 export function ArticleAgents({ agents }: { agents: readonly ArticleAgent[] }) {
   return (
     <div>
-      <Eyebrow>THE AGENTS THAT WOULD WORK THIS</Eyebrow>
+      <Eyebrow>WHAT VYSO WOULD BUILD AGAINST THIS</Eyebrow>
       <ul className="m-0 flex list-none flex-col gap-[10px] p-0">
         {agents.map((agent) => (
           <li key={agent.label}>
-            <Link
-              href="/finch#agents"
-              className="group flex flex-col rounded-[10px] border border-fn-line bg-fn-surface px-[18px] py-[16px] transition-colors duration-150 hover:border-fn-line-hover"
-            >
+            <div className="flex flex-col rounded-[var(--vy-radius)] border border-[color:var(--vy-line)] bg-[color:var(--vy-surface)] px-[18px] py-[16px]">
               <span className="mb-[8px] flex flex-wrap items-center gap-[8px]">
-                <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-fn-orange" />
-                <span className="font-fn-mono text-[10.5px] tracking-[0.12em] text-fn-ink-2 transition-colors duration-150 group-hover:text-fn-orange-deep">
-                  {agent.label}
-                </span>
+                <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-[color:var(--vy-accent)]" />
+                <span className="vy-label text-[color:var(--vy-ink-2)]">{agent.label}</span>
                 <span className="ml-auto">
                   <StatusChip status={agent.status} />
                 </span>
               </span>
-              <span className="text-[13.5px] leading-[1.55] text-fn-ink-3">{agent.role}</span>
-            </Link>
+              <span className="vy-small text-[color:var(--vy-ink-3)]">{agent.role}</span>
+            </div>
           </li>
         ))}
       </ul>
-      <p className="m-0 mt-[12px] text-[12.5px] leading-[1.6] text-fn-muted text-pretty">
-        Examples. Your roster is set in the audit, in the order the findings justify — document
-        intelligence (Doc-U) is live today, Price Watch is rolling out.
+      <p className="vy-small m-0 mt-[12px] text-[color:var(--vy-ink-3)] text-pretty">
+        Examples. Your roster is set in the audit, in the order the findings justify.
       </p>
     </div>
   );
@@ -257,7 +330,7 @@ export function TermChips({ slugs, label = "TERMS IN THIS ARTICLE" }: { slugs: r
           <li key={term.slug}>
             <Link
               href={`/learn/glossary/${term.slug}`}
-              className="inline-block rounded-[99px] border border-fn-line bg-fn-surface px-[13px] py-[6px] text-[13.5px] text-fn-ink-3 transition-colors duration-150 hover:border-fn-line-hover hover:text-fn-orange-deep"
+              className="inline-block rounded-[var(--vy-radius-pill)] border border-[color:var(--vy-line)] bg-[color:var(--vy-surface)] px-[13px] py-[6px] text-[13.5px] text-[color:var(--vy-ink-3)] transition-colors duration-150 hover:border-[color:var(--vy-line-2)] hover:text-[color:var(--vy-ink)]"
             >
               {term.term}
             </Link>
@@ -283,7 +356,7 @@ export function IllustrativeFinding({
   return (
     <div className={className}>
       <FindingCard
-        agent={finding.agent}
+        source={finding.agent}
         observation={finding.observation}
         impact={finding.impact}
         evidence={finding.evidence}
@@ -291,7 +364,7 @@ export function IllustrativeFinding({
         actions={[...finding.actions]}
         className="max-w-none"
       />
-      <div className="mt-[12px] text-right font-fn-mono text-[10px] tracking-[0.1em] text-fn-faint">
+      <div className="vy-label mt-[12px] text-right text-[color:var(--vy-ink-3)]">
         ILLUSTRATIVE EXAMPLE
       </div>
     </div>

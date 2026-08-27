@@ -44,7 +44,7 @@ export default function PopiaPage() {
         chip={<DraftChip />}
       />
 
-      <p className="m-0 mb-[8px] max-w-[560px] text-[14.5px] leading-[1.65] text-fn-ink-3">
+      <p className="m-0 mb-[8px] max-w-[560px] text-[14.5px] leading-[1.65] text-[color:var(--vy-ink-3)]">
         This page is a working draft. It is under legal review — treat it as an early statement of
         intent, not a finished compliance document.
       </p>

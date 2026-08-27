@@ -8,7 +8,7 @@ import type { Resource } from "@/lib/marketing/resources";
 /* ── The page-flip card ──────────────────────────────────────────────────────
    `/resources`'s signature visual, and the only place on the site it appears.
    On hover the card tips 6° about its bottom edge, as if the top of a page has
-   been lifted — 200ms, ease-out, per `.ai/vyso_v2.md` §2.3.
+   been lifted, 200ms, ease-out.
 
    Three details make it read as paper rather than as a tilting rectangle:
 
@@ -17,11 +17,15 @@ import type { Resource } from "@/lib/marketing/resources";
      a different (and, at 6°, slightly seasick) gesture.
    - `transformPerspective: 1000` — without it `rotateX` is an orthographic
      squash and the top edge simply gets shorter.
-   - the shadow deepens on the same 200ms, so the lifted edge has somewhere to
-     lift away from.
+   - the border deepens to `--vy-line-2` on the same 200ms, so the lifted edge
+     has somewhere to lift away from. No shadow: plan §4 keeps every card flat
+     except the hero demo and window-chrome mockups.
 
-   Reduced motion → no rotation at all; the border and shadow still respond,
-   which is the static end state the rest of the site uses for hovers.        */
+   Reduced motion → no rotation at all; the border still responds, which is
+   the static end state the rest of the site uses for hovers.
+
+   `.ai/plan_vyso_redesign_2026.md` §7.6: repainted from `--fn-*` to `--vy-*`.
+   Only this component and `/resources/page.tsx` import it. */
 
 export function ResourceCard({ resource }: { resource: Resource }) {
   const reduceMotion = useReducedMotion();
@@ -35,18 +39,18 @@ export function ResourceCard({ resource }: { resource: Resource }) {
     >
       <Link
         href={`/resources/${resource.slug}`}
-        className="group flex h-full flex-col rounded-[10px] border border-fn-line bg-fn-surface px-[24px] py-[24px] shadow-[var(--fn-shadow-card)] transition-[border-color,box-shadow] duration-200 ease-out hover:border-fn-line-hover hover:shadow-[var(--fn-shadow-card-hover)]"
+        className="group flex h-full flex-col rounded-[var(--vy-radius)] border border-[color:var(--vy-line)] bg-[color:var(--vy-surface)] px-[24px] py-[24px] transition-colors duration-200 ease-out hover:border-[color:var(--vy-line-2)]"
       >
-        <span className="mb-[14px] font-fn-mono text-[10px] tracking-[0.12em] text-fn-muted">
+        <span className="vy-label mb-[14px] text-[color:var(--vy-ink-3)]">
           {resource.eyebrow.toUpperCase()}
         </span>
-        <h3 className="m-0 mb-[10px] font-fn-serif text-[21px] font-medium leading-[1.2] tracking-[-0.015em] transition-colors duration-150 group-hover:text-fn-orange-deep">
+        <h3 className="m-0 mb-[10px] text-[21px] font-medium leading-[1.2] tracking-[-0.015em] text-[color:var(--vy-ink)] transition-colors duration-150 group-hover:text-[color:var(--vy-ink-2)]">
           {resource.shortName}
         </h3>
-        <p className="m-0 mb-[20px] text-[14px] leading-[1.6] text-fn-ink-3 text-pretty">
+        <p className="vy-small m-0 mb-[20px] text-[color:var(--vy-ink-3)] text-pretty">
           {resource.summary}
         </p>
-        <span className="mt-auto flex items-center gap-[7px] text-[13.5px] font-medium text-fn-ink-2">
+        <span className="mt-auto flex items-center gap-[7px] text-[13.5px] font-medium text-[color:var(--vy-ink-2)]">
           Preview &amp; request
           <span
             aria-hidden="true"
@@ -55,7 +59,7 @@ export function ResourceCard({ resource }: { resource: Resource }) {
             →
           </span>
         </span>
-        <span className="mt-[14px] block border-t border-fn-line-2 pt-[12px] font-fn-mono text-[10px] tracking-[0.1em] text-fn-faint">
+        <span className="vy-label mt-[14px] block border-t border-[color:var(--vy-line-2)] pt-[12px] text-[color:var(--vy-ink-3)]">
           {resource.preview.length} SECTIONS · SENT BY EMAIL
         </span>
       </Link>

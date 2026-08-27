@@ -75,13 +75,15 @@ const ibmPlexMono = IBM_Plex_Mono({
    set `title: { absolute: "…" }` instead — `/finch` and `/operations-audit`
    are the pages that do. */
 export const metadata: Metadata = {
-  /* `.ai/plan_home_only.md`, change 2: the default title is the entity plus the
-     category and the country, because `/` is the page that has to answer
-     "AI automation agency South Africa" and the old default carried one
-     product's headline. The template is unchanged, so every other page still
-     appends " | Vyso". */
+  /* `.ai/plan_vyso_redesign_2026.md` §2/§8: the default title is the entity
+     plus the category and the country. It matches the JSON-LD Organization's
+     `alternateName` below ("Vyso AI operations company") and the new
+     positioning: Vyso is an AI operations company, not an automation agency
+     and not a SaaS platform. The template is unchanged, so every other page
+     still appends " | Vyso". `description` is `SITE.description`, which is
+     already the plan §2 support line, dash-free. */
   title: {
-    default: "Vyso, AI automation agency in South Africa",
+    default: "Vyso, AI operations company in South Africa",
     template: "%s | Vyso",
   },
   description: SITE.description,
@@ -94,7 +96,7 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: "Vyso, AI automation agency in South Africa",
+    title: "Vyso, AI operations company in South Africa",
     description: SITE.description,
     url:      SITE.url,
     siteName: SITE.name,
@@ -109,7 +111,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Vyso, AI automation agency in South Africa",
+    title: "Vyso, AI operations company in South Africa",
     description: SITE.description,
     /* Same reason: the file convention emits `twitter:image` too. */
   },

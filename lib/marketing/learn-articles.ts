@@ -1,18 +1,21 @@
 /* ── Learn content ───────────────────────────────────────────────────────────
    The eight articles behind `/learn` and `/learn/[slug]`.
 
-   Phase 3 (workstream D) reframed this file rather than rewriting it. What
-   changed and — more importantly — what deliberately did not:
-
-   - **Claims are untouched.** Every figure, range and sentence of analysis is
-     what it was, with one exception: the old tiered-pricing paragraph in
-     `how-much-time-can-workflow-automation-save`, which described a package
-     that no longer exists (`.ai/vyso_v2.md` §0 — the site sells one offer
-     now). It is rewritten to the single offer, and it is the only body text
-     whose meaning moved.
-   - **Vyso → Finch** where the sentence is about the product doing the
-     watching. Vyso is the company; Finch is the thing that reads the invoice.
-     Section headings became "How Finch helps"; the prose under them follows.
+   A prior phase reframed this file rather than rewriting it (claims
+   untouched, "How Finch helps" sections named the product). The 2026 redesign
+   (`.ai/plan_vyso_redesign_2026.md` §7.6) retired Finch and every module
+   codename from the public site, so this copy pass went back through all
+   eight "How Finch helps" sections and renamed them "How Vyso helps",
+   replacing the module names (InsightGen, ProcurePulse, ShiftBoard,
+   SupplySync, WasteWatch, OrderFlow, Doc-U) with what the system actually
+   does, in plain language. Same discipline as before: analysis, figures and
+   ranges are untouched, only the description of who does the watching moved.
+   Em/en dashes were also converted to commas, colons or full stops
+   throughout (copy rule §3.2), and a handful of `relatedSolutionHrefs` /
+   `relatedIndustryHrefs` entries that pointed at slugs this redesign removed
+   (`/solutions/operations-dashboard`, `/industries/restaurants`,
+   `/industries/farms`, `/industries/catering-companies`) were repointed at
+   their live equivalents.
    - **`author`** is the founder from `lib/marketing/site.ts`, replacing the
      "Vyso Team" byline. Vyso is a one-person company at this stage (see
      `.ai/vyso_v2.md` §2.3 — "Founder (Josh Moreira, Johannesburg)"), so the
@@ -141,7 +144,7 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
       {
         heading: "The problem in plain terms",
         body: [
-          "Every operational business leaks a little money every week. Not through fraud, and not usually through one bad decision — through dozens of small gaps that never get added up. A supplier invoice that is R180 higher than the quote and nobody checks. Two staff members buying the same stock item because neither knew the other had already ordered it. A price increase from a supplier that quietly erodes margin for three months before anyone notices.",
+          "Every operational business leaks a little money every week. Not through fraud, and not usually through one bad decision: through dozens of small gaps that never get added up. A supplier invoice that is R180 higher than the quote and nobody checks. Two staff members buying the same stock item because neither knew the other had already ordered it. A price increase from a supplier that quietly erodes margin for three months before anyone notices.",
           "None of these show up as a single line item marked \"loss.\" They show up as a business that works hard, grows revenue, and somehow never has the cash position that growth should produce. By the time an owner sits down to ask why, the leakage has usually been happening for a year or more.",
         ],
       },
@@ -149,13 +152,13 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
         heading: "Why this happens",
         body: [
           "Money leakage is almost always a visibility problem, not a discipline problem. Most South African SMEs run their operations across a mix of WhatsApp groups, paper delivery notes, spreadsheets that only one person understands, and whatever the accounting package happens to capture at month-end. Each of those tools works fine in isolation. None of them talk to each other.",
-          "Because no single system holds the full picture, nobody in the business — not the owner, not the ops manager — can see procurement, stock movement, pricing and cash flow at the same time. Small errors that would be obvious in a connected system stay invisible in a fragmented one. The bigger the business gets, the more places there are for money to quietly slip through the gaps between tools.",
+          "Because no single system holds the full picture, nobody in the business (not the owner, not the ops manager) can see procurement, stock movement, pricing and cash flow at the same time. Small errors that would be obvious in a connected system stay invisible in a fragmented one. The bigger the business gets, the more places there are for money to quietly slip through the gaps between tools.",
         ],
       },
       {
         heading: "What it's costing you",
         body: [
-          "The number varies by business, but the pattern does not. In our conversations with South African operators, unmonitored leakage across procurement, stock variance and duplicated admin routinely runs between 2% and 8% of monthly revenue. For a business turning over R500,000 a month, that is R10,000 to R40,000 disappearing every month without a single dramatic cause — just accumulated small gaps.",
+          "The number varies by business, but the pattern does not. In our conversations with South African operators, unmonitored leakage across procurement, stock variance and duplicated admin routinely runs between 2% and 8% of monthly revenue. For a business turning over R500,000 a month, that is R10,000 to R40,000 disappearing every month without a single dramatic cause: just accumulated small gaps.",
           "The compounding cost is worse than the direct cost. Owners who cannot see where money is leaking make pricing and hiring decisions on a distorted picture of profitability. Growth gets funded by margin that was never really there, which is how healthy-looking businesses end up with cash flow problems they cannot explain.",
         ],
       },
@@ -165,7 +168,7 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
           "You do not need new software to start closing the gap. Start with visibility, then decide what needs automating.",
         ],
         list: [
-          "Pick one week and reconcile every supplier invoice against the original quote or price list — not the PO, the original agreed price.",
+          "Pick one week and reconcile every supplier invoice against the original quote or price list: not the PO, the original agreed price.",
           "Ask two people who touch procurement to independently list what they ordered last week, then compare. Overlaps and gaps both matter.",
           "Track wastage or stock write-offs for two weeks in a simple shared log, even if it is just a spreadsheet. Most businesses underestimate this figure by half.",
           "Look at the last three months of supplier pricing for your top five inputs. Quiet increases are easy to miss line by line and obvious once compared side by side.",
@@ -173,10 +176,10 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
         ],
       },
       {
-        heading: "How Finch helps",
+        heading: "How Vyso helps",
         body: [
-          "Finch exists specifically to close this visibility gap. Rather than replacing every tool your team already uses, Finch connects procurement, stock, supplier records and reporting into one operating picture, so the small gaps that hide in disconnected systems become visible in a connected one.",
-          "InsightGen surfaces the patterns — a supplier whose pricing has crept up, a stock line with abnormal variance, a workflow generating repeated manual corrections — before they cost another quarter of margin. ProcurePulse keeps purchasing and stock intelligence in one place so duplicated or uncontrolled buying is caught at the point of order rather than discovered at month-end. For businesses ready to see their full leakage picture, our dedicated solution page on reducing money leakage walks through exactly how this works in practice.",
+          "Vyso exists specifically to close this visibility gap. Rather than replacing every tool your team already uses, Vyso connects procurement, stock, supplier records and reporting into one operating picture, so the small gaps that hide in disconnected systems become visible in a connected one.",
+          "Vyso surfaces the patterns before they cost another quarter of margin: a supplier whose pricing has crept up, a stock line with abnormal variance, a workflow generating repeated manual corrections. It keeps purchasing and stock intelligence in one place so duplicated or uncontrolled buying is caught at the point of order rather than discovered at month-end. For businesses ready to see their full leakage picture, our dedicated solution page on reducing money leakage walks through exactly how this works in practice.",
         ],
       },
     ],
@@ -200,10 +203,10 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
     ],
     endFinding: {
       agent: "PRICE WATCH",
-      observation: "Cooking oil up 9% at your main supplier since May — three invoices, no notification.",
+      observation: "Cooking oil up 9% at your main supplier since May: three invoices, no notification.",
       impact: "\u2248 R3,100/yr at current volumes",
       evidence: "3 invoices",
-      meta: "SUPPLIER \u00b7 +9% \u00b7 MAY\u2013AUG",
+      meta: "SUPPLIER \u00b7 +9% \u00b7 MAY-AUG",
       actions: ["Draft supplier email", "Show 6-month trend", "Dismiss"],
     },
     keyTerms: ["money-leakage", "price-creep", "operations-audit"],
@@ -220,7 +223,7 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
       "why-weekly-reports-are-usually-too-late",
     ],
     relatedSolutionHrefs: ["/solutions/reduce-money-leakage", "/solutions/reporting-automation"],
-    relatedIndustryHrefs: ["/industries/restaurants", "/industries/wholesale"],
+    relatedIndustryHrefs: ["/industries/hospitality", "/industries/wholesale"],
   },
   {
     slug: "15-signs-your-business-has-operational-chaos",
@@ -233,7 +236,7 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
     dateModified: LEARN_LAST_MODIFIED,
     readingTime: "6 min read",
     heroLead:
-      "Most operators do not describe their business as chaotic. They describe it as \"just how it is\" — which is usually the first sign that chaos has become the default operating state.",
+      "Most operators do not describe their business as chaotic. They describe it as \"just how it is\", which is usually the first sign that chaos has become the default operating state.",
     sections: [
       {
         heading: "The problem in plain terms",
@@ -244,7 +247,7 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
       {
         heading: "Why this happens",
         body: [
-          "Chaos accumulates gradually, which is exactly why it is hard to see from inside the business. A process that was reasonable at five staff members becomes unworkable at twenty, but nobody redesigns it — they just add another person to manage the exceptions. Growth outpaces the systems supporting it, and the gap gets filled with manual effort, tribal knowledge and good will, none of which scale.",
+          "Chaos accumulates gradually, which is exactly why it is hard to see from inside the business. A process that was reasonable at five staff members becomes unworkable at twenty, but nobody redesigns it: they just add another person to manage the exceptions. Growth outpaces the systems supporting it, and the gap gets filled with manual effort, tribal knowledge and good will, none of which scale.",
         ],
       },
       {
@@ -255,7 +258,7 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
         list: [
           "One person is the only one who understands how a critical process actually works.",
           "Weekly reports take hours to compile and are out of date by the time they are read.",
-          "Stock counts routinely do not match what the system — or the spreadsheet — says should be there.",
+          "Stock counts routinely do not match what the system, or the spreadsheet, says should be there.",
           "Supplier orders are placed from memory or habit rather than from a checked reorder point.",
           "Staff use WhatsApp for approvals, purchase requests or handovers that should be traceable.",
           "The owner finds out about a problem from a customer before hearing it from the team.",
@@ -273,7 +276,7 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
       {
         heading: "What it's costing you",
         body: [
-          "Operational chaos has a direct cost in wasted hours and duplicated work, and an indirect cost that is often larger: decisions made on incomplete or outdated information. A manager reordering stock without visibility of what is already committed, or a leadership team pricing a product without current cost data, is not making a bad decision — they are making the only decision available to them given what they can see. Businesses in this position frequently report losing 10 to 15 hours a week across the team to admin that a connected system would remove entirely.",
+          "Operational chaos has a direct cost in wasted hours and duplicated work, and an indirect cost that is often larger: decisions made on incomplete or outdated information. A manager reordering stock without visibility of what is already committed, or a leadership team pricing a product without current cost data, is not making a bad decision: they are making the only decision available to them given what they can see. Businesses in this position frequently report losing 10 to 15 hours a week across the team to admin that a connected system would remove entirely.",
         ],
       },
       {
@@ -287,10 +290,10 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
         body: [],
       },
       {
-        heading: "How Finch helps",
+        heading: "How Vyso helps",
         body: [
-          "Finch is built around exactly this pattern: growing businesses that have outgrown spreadsheets, WhatsApp and paper, but are not ready for — or do not need — a full enterprise system. The one-week Operations Audit maps where chaos is concentrated in your business specifically, rather than assuming every business has the same gaps. From there, modules like ShiftBoard, ProcurePulse and InsightGen give the team one place to plan, track and report, instead of five disconnected ones.",
-          "Our operations dashboard solution page shows what a single, connected operating view actually looks like once the chaos has been mapped and addressed.",
+          "Vyso is built around exactly this pattern: growing businesses that have outgrown spreadsheets, WhatsApp and paper, but are not ready for (or do not need) a full enterprise system. The free Operations Audit maps where chaos is concentrated in your business specifically, rather than assuming every business has the same gaps. From there, Vyso gives the team one connected place to plan, track and report, instead of five disconnected ones.",
+          "Our reporting automation solution page shows what a single, connected operating view actually looks like once the chaos has been mapped and addressed.",
         ],
       },
     ],
@@ -317,7 +320,7 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
       observation: "Monday\u2019s report took four hours to compile and was six days old by the time it was read.",
       impact: "\u2248 R5,200/month in admin hours",
       evidence: "4 weeks of reports",
-      meta: "REPORTING \u00b7 4H/WEEK \u00b7 JUL\u2013AUG",
+      meta: "REPORTING \u00b7 4H/WEEK \u00b7 JUL-AUG",
       actions: ["Show what a brief replaces", "Book your audit", "Dismiss"],
     },
     keyTerms: ["weekly-brief", "operations-audit", "money-leakage"],
@@ -326,8 +329,8 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
       "why-weekly-reports-are-usually-too-late",
       "how-much-time-can-workflow-automation-save",
     ],
-    relatedSolutionHrefs: ["/solutions/operations-dashboard", "/solutions/reduce-money-leakage"],
-    relatedIndustryHrefs: ["/industries/hospitality", "/industries/catering-companies"],
+    relatedSolutionHrefs: ["/solutions/reporting-automation", "/solutions/reduce-money-leakage"],
+    relatedIndustryHrefs: ["/industries/hospitality", "/industries/wholesale"],
   },
   {
     slug: "how-much-time-can-workflow-automation-save",
@@ -345,43 +348,43 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
       {
         heading: "The problem in plain terms",
         body: [
-          "A meaningful share of the working week at most SMEs goes to tasks that are repeatable, rules-based and require no real judgement — retyping an order into a second system, chasing a supplier for a delivery date, manually compiling a report from three spreadsheets. None of this work is difficult. All of it is time-consuming, and it crowds out the judgement-based work that actually grows the business.",
+          "A meaningful share of the working week at most SMEs goes to tasks that are repeatable, rules-based and require no real judgement: retyping an order into a second system, chasing a supplier for a delivery date, manually compiling a report from three spreadsheets. None of this work is difficult. All of it is time-consuming, and it crowds out the judgement-based work that actually grows the business.",
         ],
       },
       {
         heading: "Why this happens",
         body: [
-          "Manual admin persists not because teams are inefficient, but because the alternative — building or buying a system to automate it — has historically felt like a bigger project than the admin itself. So the workaround becomes permanent: someone retypes the order, someone manually checks the invoice against the PO, someone compiles the weekly report from scratch every Friday. Each task alone seems too small to justify automating. Added together across a team and a year, it rarely is.",
+          "Manual admin persists not because teams are inefficient, but because the alternative (building or buying a system to automate it) has historically felt like a bigger project than the admin itself. So the workaround becomes permanent: someone retypes the order, someone manually checks the invoice against the PO, someone compiles the weekly report from scratch every Friday. Each task alone seems too small to justify automating. Added together across a team and a year, it rarely is.",
         ],
       },
       {
         heading: "What it's costing you",
         body: [
           "In our conversations with South African operators across food, retail and wholesale, staff involved in admin or operations typically spend between 8 and 15 hours a week on tasks that follow a repeatable pattern: order capture, invoice checking, report compilation, status chasing. At a fully loaded staff cost of R150 to R250 an hour for a mid-level operations person, that is R4,800 to R15,000 a month per person, before counting the cost of the errors that manual, repetitive work inevitably introduces.",
-          "The less visible cost is opportunity. Time spent on manual admin is time not spent reviewing supplier performance, checking margin, or planning ahead — the work that actually protects and grows profit.",
+          "The less visible cost is opportunity. Time spent on manual admin is time not spent reviewing supplier performance, checking margin, or planning ahead: the work that actually protects and grows profit.",
         ],
       },
       {
         heading: "Practical steps you can take this month",
         list: [
           "Ask each person on your ops team to log their tasks for three days and flag anything they do more than twice in that period the same way.",
-          "Rank those repeated tasks by frequency, not by how long each instance takes — frequency is usually the better predictor of total time lost.",
+          "Rank those repeated tasks by frequency, not by how long each instance takes: frequency is usually the better predictor of total time lost.",
           "Pick the single highest-frequency task and ask: does this follow the same rule every time? If yes, it is a strong automation candidate.",
           "Estimate the error rate on that task honestly. Repetitive manual work is where small mistakes compound fastest.",
         ],
         body: [],
       },
       {
-        heading: "How Finch helps",
+        heading: "How Vyso helps",
         body: [
-          /* Rewritten in Phase 3, repriced by `.ai/plan_home_only.md`. The
-             paragraph this replaces named the old entry-level package and its
-             "up to five automations" cap, then the one published monthly rate
-             that succeeded it — pricing the business no longer sells. The
-             claims below are the ones `/operations-audit` and `/faq` already
-             make. */
-          "Finch is built for exactly this first step: agents that watch the tools your team already uses — WhatsApp, Xero, spreadsheets, email — without a platform migration. The free operations audit ranks where the repeatable work actually is in your operation, and agents are activated against that roadmap in the order the findings justify, rather than by a package you picked before anyone had looked. Each item on the roadmap is priced on its own scope, quoted to you directly.",
-          "As the highest-value workflow becomes clear, it moves into a dedicated module like OrderFlow or Doc-U, with Finch giving your team a lighter interface to work from day to day.",
+          /* Updated for the 2026 redesign (`.ai/plan_vyso_redesign_2026.md`
+             §7.6): Finch and the module codenames (OrderFlow, Doc-U) are
+             retired from public copy. The pricing claim was already fixed to
+             the current, no-published-rate model in an earlier phase and is
+             unchanged here; the claims below are the ones `/operations-audit`
+             and `/faq` already make. */
+          "Vyso is built for exactly this first step: systems that watch the tools your team already uses (WhatsApp, Xero, spreadsheets, email) without a platform migration. The free operations audit ranks where the repeatable work actually is in your operation, and each system is built against that roadmap in the order the findings justify, rather than as a package you picked before anyone had looked. Each item on the roadmap is priced on its own scope, quoted to you directly.",
+          "As the highest-value workflow becomes clear, Vyso builds a dedicated system around it, giving your team a lighter interface to work from day to day.",
           "Our procurement automation and reporting automation solution pages go into more detail on the two areas where South African SMEs typically see the fastest time savings.",
         ],
       },
@@ -433,47 +436,47 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
     title: "The Hidden Cost of Manual Procurement",
     category: "Procurement",
     description:
-      "Manual procurement rarely fails loudly. It fails quietly — through duplicated orders, missed price checks and approvals nobody can trace. Here is what that actually costs.",
+      "Manual procurement rarely fails loudly. It fails quietly: through duplicated orders, missed price checks and approvals nobody can trace. Here is what that actually costs.",
     author: ARTICLE_AUTHOR,
     datePublished: "2026-07-13",
     dateModified: LEARN_LAST_MODIFIED,
     readingTime: "7 min read",
     heroLead:
-      "Procurement is one of the few places in a business where a small process gap turns directly into a Rand figure — and it is usually the last place owners think to look.",
+      "Procurement is one of the few places in a business where a small process gap turns directly into a Rand figure, and it is usually the last place owners think to look.",
     sections: [
       {
         heading: "The problem in plain terms",
         body: [
-          "Manual procurement means orders placed from memory, price checks skipped under time pressure, and approvals given verbally or over WhatsApp with no record. It works, in the sense that stock keeps arriving and the business keeps running. What it does not do is protect the business from the accumulated cost of small procurement mistakes — mistakes that are individually forgivable and collectively expensive.",
+          "Manual procurement means orders placed from memory, price checks skipped under time pressure, and approvals given verbally or over WhatsApp with no record. It works, in the sense that stock keeps arriving and the business keeps running. What it does not do is protect the business from the accumulated cost of small procurement mistakes: mistakes that are individually forgivable and collectively expensive.",
         ],
       },
       {
         heading: "Why this happens",
         body: [
-          "Procurement often sits with whoever has capacity that day, not with a consistent process. Under pressure to keep stock flowing, price checks against the agreed list get skipped, duplicate orders happen because nobody can see what was already requested, and approvals get given quickly and informally because a formal process would slow things down. None of this is negligence — it is what happens when procurement runs on individual judgement rather than a shared, visible system.",
+          "Procurement often sits with whoever has capacity that day, not with a consistent process. Under pressure to keep stock flowing, price checks against the agreed list get skipped, duplicate orders happen because nobody can see what was already requested, and approvals get given quickly and informally because a formal process would slow things down. None of this is negligence: it is what happens when procurement runs on individual judgement rather than a shared, visible system.",
         ],
       },
       {
         heading: "What it's costing you",
         body: [
-          "The direct cost shows up in three places: paying above the agreed price because nobody checked, duplicated orders that create excess stock or wastage, and rushed emergency purchases at a premium because a shortage was not caught early. Across South African food and wholesale operators, these three patterns combined typically account for 1.5% to 4% of total procurement spend — on a business spending R300,000 a month with suppliers, that is R4,500 to R12,000 leaking every month through process gaps alone.",
+          "The direct cost shows up in three places: paying above the agreed price because nobody checked, duplicated orders that create excess stock or wastage, and rushed emergency purchases at a premium because a shortage was not caught early. Across South African food and wholesale operators, these three patterns combined typically account for 1.5% to 4% of total procurement spend. On a business spending R300,000 a month with suppliers, that is R4,500 to R12,000 leaking every month through process gaps alone.",
           "The indirect cost is supplier relationships built on inconsistency. Suppliers who notice a business does not check pricing closely have less incentive to hold their prices, and inconsistent order timing makes it harder to negotiate better terms.",
         ],
       },
       {
         heading: "Practical steps you can take this month",
         list: [
-          "Build a single, shared price list per supplier that every person placing orders can see — even a shared spreadsheet is better than memory.",
+          "Build a single, shared price list per supplier that every person placing orders can see: even a shared spreadsheet is better than memory.",
           "Require every order over a set Rand threshold to have a named approver, and record who approved it.",
           "Reconcile the last month of supplier invoices against the agreed price list, line by line.",
-          "Identify where duplicate orders are most likely — usually where more than one person can place orders for the same category — and add a simple check before order confirmation.",
+          "Identify where duplicate orders are most likely (usually where more than one person can place orders for the same category) and add a simple check before order confirmation.",
         ],
         body: [],
       },
       {
-        heading: "How Finch helps",
+        heading: "How Vyso helps",
         body: [
-          "ProcurePulse gives your team one shared view of purchasing and stock intelligence, so reorder points, current pricing and outstanding orders are visible to everyone who needs them — not held in one person's head. Doc-U captures supplier documents and extracts the detail automatically, so invoices can be checked against the original quote without manual retyping. Together they turn procurement from an individual judgement call into a consistent, auditable process.",
+          "Vyso gives your team one shared view of purchasing and stock intelligence, so reorder points, current pricing and outstanding orders are visible to everyone who needs them, not held in one person's head. It also captures supplier documents and extracts the detail automatically, so invoices can be checked against the original quote without manual retyping. Together, this turns procurement from an individual judgement call into a consistent, auditable process.",
           "If procurement is where you suspect the biggest leakage is happening, our procurement automation solution page walks through the full workflow, from approval to reconciliation.",
         ],
       },
@@ -518,14 +521,14 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
       "the-real-cost-of-poor-stock-control",
     ],
     relatedSolutionHrefs: ["/solutions/procurement-automation", "/solutions/reduce-money-leakage"],
-    relatedIndustryHrefs: ["/industries/food-suppliers", "/industries/farms"],
+    relatedIndustryHrefs: ["/industries/food-suppliers", "/industries/wholesale"],
   },
   {
     slug: "supplier-scorecards-what-to-track-and-why",
     title: "Supplier Scorecards: What to Track and Why",
     category: "Procurement",
     description:
-      "Most SMEs judge suppliers on gut feel. A simple scorecard turns that gut feel into a record you can act on — here is what to track and why it matters.",
+      "Most SMEs judge suppliers on gut feel. A simple scorecard turns that gut feel into a record you can act on: here is what to track and why it matters.",
     author: ARTICLE_AUTHOR,
     datePublished: "2026-07-16",
     dateModified: LEARN_LAST_MODIFIED,
@@ -536,13 +539,13 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
       {
         heading: "The problem in plain terms",
         body: [
-          "Supplier performance is usually judged on memory and recent events rather than on a consistent record. A supplier who delivered late once last week feels less reliable than one who has been quietly missing delivery windows for three months — because the recent, memorable event outweighs the pattern nobody has been tracking. Without a scorecard, businesses end up renegotiating with, or dropping, the wrong suppliers based on incomplete information.",
+          "Supplier performance is usually judged on memory and recent events rather than on a consistent record. A supplier who delivered late once last week feels less reliable than one who has been quietly missing delivery windows for three months, because the recent, memorable event outweighs the pattern nobody has been tracking. Without a scorecard, businesses end up renegotiating with, or dropping, the wrong suppliers based on incomplete information.",
         ],
       },
       {
         heading: "Why this happens",
         body: [
-          "Tracking supplier performance properly requires capturing the same data points every time — on-time delivery, price accuracy, quality issues, response time to queries — and that discipline is hard to maintain manually, especially across a supplier base of thirty or fifty relationships. It falls away under day-to-day pressure, and the business is left with impressions instead of evidence.",
+          "Tracking supplier performance properly requires capturing the same data points every time: on-time delivery, price accuracy, quality issues, response time to queries. That discipline is hard to maintain manually, especially across a supplier base of thirty or fifty relationships. It falls away under day-to-day pressure, and the business is left with impressions instead of evidence.",
         ],
       },
       {
@@ -551,18 +554,18 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
           "A scorecard does not need to be complicated to be useful. The most valuable ones stay simple enough that someone will actually keep them updated.",
         ],
         list: [
-          "On-time delivery rate — the percentage of orders delivered within the agreed window.",
-          "Price accuracy — how often invoiced prices match the agreed price list without a manual correction.",
-          "Order accuracy — whether the correct items and quantities arrived, and how often a delivery required a follow-up.",
-          "Quality issues — returns, rejections or complaints linked to that supplier's stock.",
-          "Responsiveness — how quickly the supplier answers a query or resolves an issue once raised.",
-          "Communication of changes — whether pricing or availability changes are flagged proactively or discovered on the invoice.",
+          "On-time delivery rate: the percentage of orders delivered within the agreed window.",
+          "Price accuracy: how often invoiced prices match the agreed price list without a manual correction.",
+          "Order accuracy: whether the correct items and quantities arrived, and how often a delivery required a follow-up.",
+          "Quality issues: returns, rejections or complaints linked to that supplier's stock.",
+          "Responsiveness: how quickly the supplier answers a query or resolves an issue once raised.",
+          "Communication of changes: whether pricing or availability changes are flagged proactively or discovered on the invoice.",
         ],
       },
       {
         heading: "What it's costing you to skip this",
         body: [
-          "Businesses without supplier scorecards typically discover pricing drift, quality decline or delivery reliability problems three to six months after they started — long enough for the cost to have compounded significantly. A supplier whose on-time delivery quietly drops from 95% to 80% over two quarters can force emergency purchases, rushed substitutions and stockouts, all of which cost more than the original order would have.",
+          "Businesses without supplier scorecards typically discover pricing drift, quality decline or delivery reliability problems three to six months after they started, long enough for the cost to have compounded significantly. A supplier whose on-time delivery quietly drops from 95% to 80% over two quarters can force emergency purchases, rushed substitutions and stockouts, all of which cost more than the original order would have.",
         ],
       },
       {
@@ -575,10 +578,10 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
         body: [],
       },
       {
-        heading: "How Finch helps",
+        heading: "How Vyso helps",
         body: [
-          "SupplySync keeps supplier records and relationship history in one place, so scorecard data builds automatically from the orders, deliveries and invoices already flowing through the system — rather than requiring a separate manual log that inevitably falls away. Paired with ProcurePulse, it gives your team an evidence-based view of which suppliers are actually earning their place in your business.",
-          "This connects directly to our procurement automation solution — worth a look if supplier reliability has been a recurring source of frustration.",
+          "Vyso keeps supplier records and relationship history in one place, so scorecard data builds automatically from the orders, deliveries and invoices already flowing through the system, rather than requiring a separate manual log that inevitably falls away. It gives your team an evidence-based view of which suppliers are actually earning their place in your business.",
+          "This connects directly to our procurement automation solution: worth a look if supplier reliability has been a recurring source of frustration.",
         ],
       },
     ],
@@ -605,7 +608,7 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
       observation: "On-time delivery at your second-largest supplier fell from 94% to 78% over two months.",
       impact: "\u2248 R4,600 in emergency purchases",
       evidence: "36 deliveries",
-      meta: "SUPPLIER \u00b7 \u221216PP \u00b7 JUN\u2013AUG",
+      meta: "SUPPLIER \u00b7 \u221216PP \u00b7 JUN-AUG",
       actions: ["Open the scorecard", "Draft supplier email", "Dismiss"],
     },
     keyTerms: ["delivery-note-reconciliation", "price-creep", "operations-audit"],
@@ -614,8 +617,8 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
       "the-real-cost-of-poor-stock-control",
       "why-weekly-reports-are-usually-too-late",
     ],
-    relatedSolutionHrefs: ["/solutions/procurement-automation", "/solutions/operations-dashboard"],
-    relatedIndustryHrefs: ["/industries/wholesale", "/industries/farms"],
+    relatedSolutionHrefs: ["/solutions/procurement-automation", "/solutions/reporting-automation"],
+    relatedIndustryHrefs: ["/industries/wholesale", "/industries/food-suppliers"],
   },
   {
     slug: "why-weekly-reports-are-usually-too-late",
@@ -633,7 +636,7 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
       {
         heading: "The problem in plain terms",
         body: [
-          "Most SMEs run on a weekly reporting cycle: someone compiles numbers from stock, sales and procurement into a spreadsheet, sends it to leadership, and the team discusses it at the next meeting. By that point the data is anywhere from three to ten days old, and whatever caused the number to move — a supplier price change, a wastage spike, a stock shortfall — has usually already repeated itself at least once.",
+          "Most SMEs run on a weekly reporting cycle: someone compiles numbers from stock, sales and procurement into a spreadsheet, sends it to leadership, and the team discusses it at the next meeting. By that point the data is anywhere from three to ten days old, and whatever caused the number to move (a supplier price change, a wastage spike, a stock shortfall) has usually already repeated itself at least once.",
         ],
       },
       {
@@ -645,25 +648,25 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
       {
         heading: "What it's costing you",
         body: [
-          "Delayed reporting means delayed decisions. A wastage spike that shows up in Friday's report was probably a Monday problem — meaning the business absorbed four extra days of the same loss before anyone could act. A supplier price increase caught a week after it started has already been paid on every order placed in that window. Across the operators we speak to, the gap between a problem starting and a decision-maker seeing it in a report averages five to seven days — and every one of those days carries a cost that compounds with the size of the business.",
-          "There is also a trust cost. Teams that only see performance data once a week lose the habit of checking it, discussing it, and reacting to it quickly — reporting becomes a compliance exercise rather than a management tool.",
+          "Delayed reporting means delayed decisions. A wastage spike that shows up in Friday's report was probably a Monday problem: meaning the business absorbed four extra days of the same loss before anyone could act. A supplier price increase caught a week after it started has already been paid on every order placed in that window. Across the operators we speak to, the gap between a problem starting and a decision-maker seeing it in a report averages five to seven days, and every one of those days carries a cost that compounds with the size of the business.",
+          "There is also a trust cost. Teams that only see performance data once a week lose the habit of checking it, discussing it, and reacting to it quickly: reporting becomes a compliance exercise rather than a management tool.",
         ],
       },
       {
         heading: "Practical steps you can take this month",
         list: [
           "Time your current report compilation process, start to finish, including everyone involved.",
-          "Identify which two or three metrics actually change your decisions week to week — most reports contain far more data than gets acted on.",
+          "Identify which two or three metrics actually change your decisions week to week: most reports contain far more data than gets acted on.",
           "Ask whether those two or three metrics could be checked daily rather than weekly, even manually, as a test.",
           "Note how many days typically pass between a problem starting and it being visible in your current report.",
         ],
         body: [],
       },
       {
-        heading: "How Finch helps",
+        heading: "How Vyso helps",
         body: [
-          "InsightGen replaces the manual compilation step with live dashboards built from the data already moving through your operation — procurement, stock, sales and staffing — so the report your team currently spends hours building by hand exists automatically, and updates continuously rather than weekly. That turns a five-to-seven-day decision lag into something closer to real time.",
-          "Our reporting automation and operations dashboard solution pages show what this looks like once weekly compilation is replaced with a live operating view.",
+          "Vyso replaces the manual compilation step with live dashboards built from the data already moving through your operation (procurement, stock, sales and staffing), so the report your team currently spends hours building by hand exists automatically, and updates continuously rather than weekly. That turns a five-to-seven-day decision lag into something closer to real time.",
+          "Our reporting automation and spreadsheet automation solution pages show what this looks like once weekly compilation is replaced with a live operating view.",
         ],
       },
     ],
@@ -672,7 +675,7 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
       {
         label: "THE BRIEF",
         status: "FROM YOUR AUDIT ROADMAP",
-        role: "Sends the same handful of numbers, in the same shape, on a schedule \u2014 so a change stands out instead of being compiled.",
+        role: "Sends the same handful of numbers, in the same shape, on a schedule, so a change stands out instead of being compiled.",
       },
       {
         label: "STOCK SENSE",
@@ -706,8 +709,8 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
       "why-businesses-lose-money-without-realising-it",
       "ai-for-small-and-medium-businesses-practical-use-cases",
     ],
-    relatedSolutionHrefs: ["/solutions/reporting-automation", "/solutions/operations-dashboard"],
-    relatedIndustryHrefs: ["/industries/hospitality", "/industries/restaurants"],
+    relatedSolutionHrefs: ["/solutions/reporting-automation", "/solutions/spreadsheet-automation"],
+    relatedIndustryHrefs: ["/industries/hospitality", "/industries/wholesale"],
   },
   {
     slug: "the-real-cost-of-poor-stock-control",
@@ -725,19 +728,19 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
       {
         heading: "The problem in plain terms",
         body: [
-          "Poor stock control shows up as small, familiar discrepancies: the count that does not quite match the system, the ingredient that runs out mid-week despite \"having enough,\" the stock take that always turns up a bit less than expected. Individually, none of these feel urgent. Over a year, they represent real product — and real Rand value — leaving the business without being properly accounted for.",
+          "Poor stock control shows up as small, familiar discrepancies: the count that does not quite match the system, the ingredient that runs out mid-week despite \"having enough,\" the stock take that always turns up a bit less than expected. Individually, none of these feel urgent. Over a year, they represent real product, and real Rand value, leaving the business without being properly accounted for.",
         ],
       },
       {
         heading: "Why this happens",
         body: [
-          "Stock control breaks down when the record of what should be in stock and the reality of what is actually in stock are updated in different places, at different times, by different people. A delivery gets logged late. A wastage event gets remembered rather than recorded. A staff member takes stock for a legitimate reason and forgets to note it. None of these are big failures — they are small timing and recording gaps that accumulate into a system nobody fully trusts, which is why so many businesses fall back on physical counts rather than relying on their records.",
+          "Stock control breaks down when the record of what should be in stock and the reality of what is actually in stock are updated in different places, at different times, by different people. A delivery gets logged late. A wastage event gets remembered rather than recorded. A staff member takes stock for a legitimate reason and forgets to note it. None of these are big failures: they are small timing and recording gaps that accumulate into a system nobody fully trusts, which is why so many businesses fall back on physical counts rather than relying on their records.",
         ],
       },
       {
         heading: "What it's costing you",
         body: [
-          "For food and hospitality operators specifically, unrecorded wastage and stock variance typically runs between 4% and 8% of cost of goods sold — on a business spending R200,000 a month on stock, that is R8,000 to R16,000 a month that shows up nowhere except a slightly disappointing gross margin. Wholesale and distribution businesses see a smaller percentage but a larger absolute figure, because volumes are higher.",
+          "For food and hospitality operators specifically, unrecorded wastage and stock variance typically runs between 4% and 8% of cost of goods sold. On a business spending R200,000 a month on stock, that is R8,000 to R16,000 a month that shows up nowhere except a slightly disappointing gross margin. Wholesale and distribution businesses see a smaller percentage but a larger absolute figure, because volumes are higher.",
           "The secondary cost is decision quality. Purchasing decisions based on stock records that do not match reality lead to both overstocking, which ties up cash, and stockouts, which cost sales and force rushed, premium-priced emergency purchases.",
         ],
       },
@@ -747,15 +750,15 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
           "Run a full physical count on your ten highest-value stock lines and compare against system or spreadsheet records.",
           "For any line with more than 5% variance, trace back through the last two weeks of deliveries, sales and wastage entries to find where the gap started.",
           "Introduce a same-day wastage log, even a simple one, for anyone who removes stock for spoilage, testing or staff use.",
-          "Review reorder points against actual usage rather than habit — many reorder points are set once and never revisited.",
+          "Review reorder points against actual usage rather than habit: many reorder points are set once and never revisited.",
         ],
         body: [],
       },
       {
-        heading: "How Finch helps",
+        heading: "How Vyso helps",
         body: [
-          "WasteWatch captures wastage and shrinkage close to the moment it happens, with a reason attached, so the pattern is visible instead of estimated. Combined with ProcurePulse's stock intelligence, your team gets a stock picture that reflects what is actually happening in the operation, not what the last full count assumed. InsightGen then surfaces variance trends automatically, rather than requiring a manual investigation every time a number looks off.",
-          "This connects directly to our reduce money leakage solution, and if food or hospitality wastage specifically is your biggest concern, our restaurant industry page covers the same problem from an operational angle.",
+          "Vyso captures wastage and shrinkage close to the moment it happens, with a reason attached, so the pattern is visible instead of estimated. Combined with live stock intelligence, your team gets a stock picture that reflects what is actually happening in the operation, not what the last full count assumed. Variance trends surface automatically, rather than requiring a manual investigation every time a number looks off.",
+          "This connects directly to our reduce money leakage solution, and if food or hospitality wastage specifically is your biggest concern, our hospitality industry page covers the same problem from an operational angle.",
         ],
       },
     ],
@@ -791,32 +794,32 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
       "why-businesses-lose-money-without-realising-it",
       "supplier-scorecards-what-to-track-and-why",
     ],
-    relatedSolutionHrefs: ["/solutions/reduce-money-leakage", "/solutions/operations-dashboard"],
-    relatedIndustryHrefs: ["/industries/restaurants", "/industries/catering-companies"],
+    relatedSolutionHrefs: ["/solutions/reduce-money-leakage", "/solutions/inventory-automation"],
+    relatedIndustryHrefs: ["/industries/hospitality", "/industries/food-suppliers"],
   },
   {
     slug: "ai-for-small-and-medium-businesses-practical-use-cases",
     title: "AI for Small and Medium Businesses: Practical Use Cases",
     category: "AI in Business",
     description:
-      "Beyond the hype, AI already does specific, practical work for South African SMEs today — finding bottlenecks, reading documents, and flagging problems before they grow. Here is what that looks like.",
+      "Beyond the hype, AI already does specific, practical work for South African SMEs today: finding bottlenecks, reading documents, and flagging problems before they grow. Here is what that looks like.",
     author: ARTICLE_AUTHOR,
     datePublished: "2026-07-27",
     dateModified: LEARN_LAST_MODIFIED,
     readingTime: "7 min read",
     heroLead:
-      "Most SME owners have heard enough AI hype to be sceptical of it, and rightly so. The useful question is not whether AI is impressive — it is what it actually does for a business your size, today.",
+      "Most SME owners have heard enough AI hype to be sceptical of it, and rightly so. The useful question is not whether AI is impressive: it is what it actually does for a business your size, today.",
     sections: [
       {
         heading: "The problem in plain terms",
         body: [
-          "AI is talked about mostly in the abstract — chatbots, generative content, big enterprise transformation programmes — none of which map cleanly onto the daily reality of running a restaurant group, a wholesale operation or a catering business. The practical question for most SME owners is not \"should we adopt AI\" but \"is there anything AI actually does that would save my team time or catch a problem earlier this week?\" The honest answer is yes, but the useful applications are narrower and less flashy than the marketing suggests.",
+          "AI is talked about mostly in the abstract: chatbots, generative content, big enterprise transformation programmes, none of which map cleanly onto the daily reality of running a restaurant group, a wholesale operation or a catering business. The practical question for most SME owners is not \"should we adopt AI\" but \"is there anything AI actually does that would save my team time or catch a problem earlier this week?\" The honest answer is yes, but the useful applications are narrower and less flashy than the marketing suggests.",
         ],
       },
       {
         heading: "Why this gets confused",
         body: [
-          "AI is sold at the platform level — as a general capability — when the value for a specific SME almost always shows up at the workflow level: reading a scanned invoice accurately, spotting a stock variance pattern a human would only notice after three months, flagging that a supplier's pricing has crept above the agreed list. These are narrow, specific applications, and they are easy to miss under the noise of AI as a category.",
+          "AI is sold at the platform level, as a general capability, when the value for a specific SME almost always shows up at the workflow level: reading a scanned invoice accurately, spotting a stock variance pattern a human would only notice after three months, flagging that a supplier's pricing has crept above the agreed list. These are narrow, specific applications, and they are easy to miss under the noise of AI as a category.",
         ],
       },
       {
@@ -825,33 +828,33 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
           "The most useful applications for operational SMEs cluster around a few specific jobs:",
         ],
         list: [
-          "Document extraction — reading supplier invoices, delivery notes and WhatsApp order screenshots, and turning them into structured, checkable data without manual retyping.",
-          "Pattern and anomaly detection — spotting stock variance, pricing drift or unusual order volumes automatically, rather than waiting for a human to notice during a monthly review.",
-          "Automated reporting — compiling live operational summaries from data that already exists in the business, replacing hours of manual spreadsheet work.",
-          "Workflow triage — flagging which approvals, orders or exceptions need a person's attention first, instead of leaving everything at equal priority in an inbox.",
-          "Forecasting support — using historical order and wastage patterns to suggest more accurate reorder points than habit-based purchasing.",
+          "Document extraction: reading supplier invoices, delivery notes and WhatsApp order screenshots, and turning them into structured, checkable data without manual retyping.",
+          "Pattern and anomaly detection: spotting stock variance, pricing drift or unusual order volumes automatically, rather than waiting for a human to notice during a monthly review.",
+          "Automated reporting: compiling live operational summaries from data that already exists in the business, replacing hours of manual spreadsheet work.",
+          "Workflow triage: flagging which approvals, orders or exceptions need a person's attention first, instead of leaving everything at equal priority in an inbox.",
+          "Forecasting support: using historical order and wastage patterns to suggest more accurate reorder points than habit-based purchasing.",
         ],
       },
       {
         heading: "What it's costing you to skip this",
         body: [
-          "Businesses relying entirely on manual review for the tasks above are not just slower — they are structurally more likely to miss the slow-moving problems AI is good at catching, like a gradual price increase or a stock pattern that only becomes obvious once you compare several months side by side. These are exactly the kinds of leakage described elsewhere in this series, and they are the hardest for a busy human team to catch unaided.",
+          "Businesses relying entirely on manual review for the tasks above are not just slower: they are structurally more likely to miss the slow-moving problems AI is good at catching, like a gradual price increase or a stock pattern that only becomes obvious once you compare several months side by side. These are exactly the kinds of leakage described elsewhere in this series, and they are the hardest for a busy human team to catch unaided.",
         ],
       },
       {
         heading: "Practical steps you can take this month",
         list: [
-          "List the manual tasks in your business that involve reading a document and typing what it says into another system — this is the clearest AI use case available today.",
-          "Ask your team which recurring problems they only notice \"eventually\" rather than immediately — these are strong candidates for automated pattern detection.",
+          "List the manual tasks in your business that involve reading a document and typing what it says into another system: this is the clearest AI use case available today.",
+          "Ask your team which recurring problems they only notice \"eventually\" rather than immediately: these are strong candidates for automated pattern detection.",
           "Treat AI as a tool for narrow, specific jobs first. Broad \"AI transformation\" without a defined workflow rarely produces a return.",
         ],
         body: [],
       },
       {
-        heading: "How Finch helps",
+        heading: "How Vyso helps",
         body: [
-          "Finch applies AI at exactly this practical, workflow level. Doc-U reads and extracts supplier documents and order screenshots automatically. InsightGen applies pattern detection to your operational data to catch variance and drift early. None of this is presented as a general AI platform — it is AI applied to specific, named operational problems, which is where SMEs actually see a return.",
-          "Our AI vs Spreadsheets comparison and operations dashboard solution page go further into how this plays out once AI-assisted reporting replaces manual compilation.",
+          "Vyso applies AI at exactly this practical, workflow level. It reads and extracts supplier documents and order screenshots automatically, and applies pattern detection to your operational data to catch variance and drift early. None of this is a general AI platform: it is AI applied to specific operational problems, which is where SMEs actually see a return.",
+          "Our AI vs Spreadsheets comparison and document processing solution page go further into how this plays out once AI-assisted reporting replaces manual compilation.",
         ],
       },
     ],
@@ -875,7 +878,7 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
     ],
     endFinding: {
       agent: "RECON",
-      observation: "A delivery note and its invoice disagreed on two lines. Doc-U read both without retyping.",
+      observation: "A delivery note and its invoice disagreed on two lines. Vyso read both without retyping.",
       impact: "\u2248 R840 on one delivery",
       evidence: "1 invoice \u00b7 1 delivery note",
       meta: "RECON \u00b7 2 LINES \u00b7 AUG",
@@ -887,7 +890,7 @@ export const LEARN_ARTICLES: readonly LearnArticle[] = [
       "how-much-time-can-workflow-automation-save",
       "hidden-cost-of-manual-procurement",
     ],
-    relatedSolutionHrefs: ["/solutions/reporting-automation", "/solutions/operations-dashboard"],
+    relatedSolutionHrefs: ["/solutions/reporting-automation", "/solutions/document-processing"],
     relatedIndustryHrefs: ["/industries/food-suppliers", "/industries/wholesale"],
   },
 ] as const;

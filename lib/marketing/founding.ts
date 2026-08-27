@@ -89,12 +89,26 @@ export const COHORT: readonly CohortSeat[] = [
    group — the terms a prospective founding client actually asks about. Same
    text feeds the page and its FAQPage JSON-LD, so they can never drift. */
 
+/* `.ai/plan_vyso_redesign_2026.md` §7.6 (Phase 3): the four ids below are
+   ALL that survive in `faq.ts`'s "pricing" group since an earlier phase
+   rewrote that file for the new positioning — the five founding-client-
+   specific ids this array named before ("how-much-does-finch-cost",
+   "is-there-a-setup-cost", "founding-terms",
+   "several-locations-custom-integrations", "can-we-cancel") no longer exist
+   at all, which made every one of them throw the `PRICING_GROUP.questions
+   .find()` below at module-load time — a hard crash on `/founding-client`
+   and on `/llms.txt`/`/llms-full.txt` (both import `FOUNDING_TITLE`/
+   `FOUNDING_DESCRIPTION` from this file). Patched to the current "pricing"
+   group's own four ids so the page and both llms routes build again; a full
+   content rewrite of `/founding-client` is out of this phase's scope
+   (plan §7.6 leaves modules/compare/founding in place for Phase 4, which
+   deletes this route entirely), so this is the minimum fix that stops the
+   crash without inventing founding-specific copy the new FAQ doesn't have. */
 const FOUNDING_FAQ_IDS = [
-  "how-much-does-finch-cost",
-  "is-there-a-setup-cost",
-  "founding-terms",
-  "several-locations-custom-integrations",
-  "can-we-cancel",
+  "how-much-does-vyso-cost",
+  "whats-included-in-the-free-operations-audit",
+  "how-long-does-a-project-take",
+  "does-vyso-offer-ongoing-support",
 ] as const;
 
 const PRICING_GROUP = FAQ_GROUPS.find((group) => group.id === "pricing");

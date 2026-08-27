@@ -8,9 +8,12 @@
 
    1. **Definition first, and it is a definition** — not a pitch with a
       definition inside it. Each `definition` runs 60–120 words and would be
-      correct on any site. Finch appears in `whyItMatters`, not before it.
+      correct on any site. Vyso, where it appears at all, appears in
+      `whyItMatters`, not before it (`.ai/plan_vyso_redesign_2026.md` §7.6:
+      copy pass, no Finch, no module codenames, `fractional-coo` rewritten
+      definition-only with an honest "Vyso is not one" note).
    2. **No invented statistics.** The only numbers here are arithmetic (the
-      markup/margin worked example) or the site's own published price.
+      markup/margin worked example) or illustrative operational figures.
    3. **No quoted tax rate.** `vat-inclusive-pricing` explains the mechanic and
       points at SARS for the rate, because a rate printed in a glossary is a
       fact with an expiry date and nothing here checks it. See its `note`.
@@ -73,11 +76,11 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     metaDescription:
       "A fractional COO is a chief operating officer hired for part of a week rather than full time. What the role covers, what it costs, and the alternative.",
     definition: [
-      "A fractional COO is a chief operating officer you hire for part of a week rather than full time — typically a few days a month on a retainer, to run or repair the operating side of a business that cannot justify an executive salary. The work is the same work: process, suppliers, stock, reporting, people. Only the hours and the cost change. In South Africa the arrangement is common among SMEs that have outgrown owner-run operations but are several years away from an executive payroll, and it is usually bought when the owner has become the bottleneck.",
+      "A fractional COO is a chief operating officer you hire for part of a week rather than full time: typically a few days a month on a retainer, to run or repair the operating side of a business that cannot justify an executive salary. The work is the same work: process, suppliers, stock, reporting, people. Only the hours and the cost change. In South Africa the arrangement is common among SMEs that have outgrown owner-run operations but are several years away from an executive payroll, and it is usually bought when the owner has become the bottleneck.",
     ],
     whyItMatters: [
       "A food supplier turning over a few million rand a year has the problems of a much larger business and none of the head count to solve them. Somebody has to watch prices, deliveries, stock and debtors every week, and in most SMEs that somebody is the owner, at night.",
-      "A fractional COO is one answer to that. Software that watches the same things every day and briefs you on a Monday is another, and it is the one Finch is priced as: per customer and per scope, fixed after a free audit, rather than as a share of a salary. The two are not the same purchase, and the comparison page sets them side by side rather than pretending one replaces judgement.",
+      "Vyso is not a fractional COO, and it is worth being direct about that here. A fractional COO makes judgement calls: what to prioritise, who to hire, which supplier relationship to end. Vyso automates the repetitive work underneath those decisions and flags what needs attention, which is a narrower and different kind of help. Some businesses need both, some need neither, and an operations audit is a reasonable way to work out which applies to yours.",
     ],
     example: {
       agent: "THE BRIEF",
@@ -90,8 +93,8 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     relatedTerms: ["operations-audit", "weekly-brief", "money-leakage"],
     relatedArticles: ["15-signs-your-business-has-operational-chaos"],
     relatedPages: [
-      { label: "Finch vs hiring a COO", href: "/compare/finch-vs-hiring-a-coo" },
       { label: "The free operations audit", href: "/operations-audit" },
+      { label: "How Vyso works", href: "/how-it-works" },
     ],
   },
 
@@ -101,9 +104,9 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     aka: ["operational audit", "ops review"],
     metaTitle: "Operations audit: what it is and what it produces",
     metaDescription:
-      "An operations audit is a fixed-scope review of how a business buys, holds, invoices and collects — done against real documents, not a conversation.",
+      "An operations audit is a fixed-scope review of how a business buys, holds, invoices and collects, done against real documents, not a conversation.",
     definition: [
-      "An operations audit is a fixed-scope review of how a business actually runs — what it buys, what it holds, what it invoices, what it is owed, and how long each of those takes — carried out against real documents rather than a conversation. It produces two things: a list of the places money is leaving that nobody planned for, with the evidence attached to each one, and an order of work. It is a diagnosis, not an implementation, and a good one is useful even if you never buy anything afterwards.",
+      "An operations audit is a fixed-scope review of how a business actually runs: what it buys, what it holds, what it invoices, what it is owed, and how long each of those takes, carried out against real documents rather than a conversation. It produces two things: a list of the places money is leaving that nobody planned for, with the evidence attached to each one, and an order of work. It is a diagnosis, not an implementation, and a good one is useful even if you never buy anything afterwards.",
     ],
     whyItMatters: [
       "Most operational advice fails because it starts from a description of the business rather than its paperwork. Owners describe the process they designed; the invoices describe the process that is running. Where those two differ is where the money goes.",
@@ -136,7 +139,7 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     metaDescription:
       "Money leakage is what a business loses through small, repeated gaps rather than one visible failure. Where it hides in a South African operation.",
     definition: [
-      "Money leakage is what a business loses through small, repeated, unplanned gaps rather than through one visible failure — a price increase nobody checked, a delivery two crates short, an invoice paid twice, stock written off with no reason attached. Each event is too small to investigate on its own, and none of them appear in the accounts under their own name. Added together they show up as a business that is busy, growing, and somehow never holding the cash the growth should have produced.",
+      "Money leakage is what a business loses through small, repeated, unplanned gaps rather than through one visible failure: a price increase nobody checked, a delivery two crates short, an invoice paid twice, stock written off with no reason attached. Each event is too small to investigate on its own, and none of them appear in the accounts under their own name. Added together they show up as a business that is busy, growing, and somehow never holding the cash the growth should have produced.",
     ],
     whyItMatters: [
       "Leakage is a visibility problem before it is a discipline problem. An SA food operation runs across WhatsApp groups, paper delivery notes, a spreadsheet only one person understands, and an accounting package that sees everything a month late. Each tool is fine; none of them compare notes, and the gaps between them is where the losses live.",
@@ -160,7 +163,7 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     ],
     relatedPages: [
       { label: "Reduce money leakage", href: "/solutions/reduce-money-leakage" },
-      { label: "What Finch watches", href: "/#agents" },
+      { label: "Start your operations audit", href: "/operations-audit" },
     ],
   },
 
@@ -175,7 +178,7 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     ],
     whyItMatters: [
       "Price lists are usually built on markup, because that is how a buyer thinks: cost plus. Management accounts are always read in margin, because that is how a bank and a landlord think: percentage of turnover. Businesses that move between the two without converting end up pricing to a margin they never actually earned.",
-      "In food the gap is expensive because the percentages are thin to begin with. A kitchen aiming at 30% margin and pricing at 30% markup is running roughly 23% margin and does not know it — on tight volumes that is the difference between a good month and a flat one.",
+      "In food the gap is expensive because the percentages are thin to begin with. A kitchen aiming at 30% margin and pricing at 30% markup is running roughly 23% margin and does not know it. On tight volumes that is the difference between a good month and a flat one.",
     ],
     example: {
       agent: "PRICE WATCH",
@@ -189,7 +192,7 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     relatedArticles: ["why-businesses-lose-money-without-realising-it"],
     relatedPages: [
       { label: "Reduce money leakage", href: "/solutions/reduce-money-leakage" },
-      { label: "Restaurants", href: "/industries/restaurants" },
+      { label: "Hospitality", href: "/industries/hospitality" },
     ],
   },
 
@@ -201,11 +204,11 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     metaDescription:
       "A debtors ageing groups what customers owe you by how long it has been outstanding. Why the shape of the report matters more than the total.",
     definition: [
-      "A debtors ageing groups everything your customers owe you by how long it has been outstanding — current, 30, 60, 90 days and older. It is the fastest read available on whether sales are turning into cash. The shape matters more than the total: a book weighted to the current column is healthy at any size, while one with weight in the 60- and 90-day columns describes a cash-flow problem that has already happened, whatever the revenue line says about the same period.",
+      "A debtors ageing groups everything your customers owe you by how long it has been outstanding: current, 30, 60, 90 days and older. It is the fastest read available on whether sales are turning into cash. The shape matters more than the total: a book weighted to the current column is healthy at any size, while one with weight in the 60- and 90-day columns describes a cash-flow problem that has already happened, whatever the revenue line says about the same period.",
     ],
     whyItMatters: [
-      "Food businesses sell on terms and buy on shorter ones. A wholesaler paying suppliers in 15 days while being paid in 55 is financing its own customers, and the ageing report is where that shows up first — long before the bank balance makes it obvious.",
-      "The other reason to read it weekly rather than monthly is that ageing is where a customer in trouble becomes visible. An account that quietly thins out — smaller orders, slower payment — is a different problem from one large late invoice, and only the trend shows it.",
+      "Food businesses sell on terms and buy on shorter ones. A wholesaler paying suppliers in 15 days while being paid in 55 is financing its own customers, and the ageing report is where that shows up first, long before the bank balance makes it obvious.",
+      "The other reason to read it weekly rather than monthly is that ageing is where a customer in trouble becomes visible. An account that quietly thins out (smaller orders, slower payment) is a different problem from one large late invoice, and only the trend shows it.",
     ],
     example: {
       agent: "DEBTORS",
@@ -218,7 +221,7 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     relatedTerms: ["money-leakage", "weekly-brief", "invoice-line-item"],
     relatedArticles: ["why-weekly-reports-are-usually-too-late"],
     relatedPages: [
-      { label: "Operations dashboard", href: "/solutions/operations-dashboard" },
+      { label: "Reporting automation", href: "/solutions/reporting-automation" },
       { label: "Wholesale", href: "/industries/wholesale" },
     ],
   },
@@ -229,9 +232,9 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     aka: ["three-way match", "GRN matching"],
     metaTitle: "Delivery-note reconciliation: the 3-way match",
     metaDescription:
-      "Delivery-note reconciliation checks that what a supplier invoiced is what came off the truck — order, delivery note and invoice matched line by line.",
+      "Delivery-note reconciliation checks that what a supplier invoiced is what came off the truck: order, delivery note and invoice matched line by line.",
     definition: [
-      "Delivery-note reconciliation is the check that what a supplier invoiced you for is what actually came off the truck. It matches three documents line by line — the order you placed, the delivery note signed at the back door, and the invoice that follows — and flags any line where the quantity, the unit or the price disagrees. In fresh produce it is the difference between paying for 40kg and receiving 37kg. Done by hand it is the first thing skipped under pressure; done automatically it happens on every delivery, including the busy ones.",
+      "Delivery-note reconciliation is the check that what a supplier invoiced you for is what actually came off the truck. It matches three documents line by line: the order you placed, the delivery note signed at the back door, and the invoice that follows, and flags any line where the quantity, the unit or the price disagrees. In fresh produce it is the difference between paying for 40kg and receiving 37kg. Done by hand it is the first thing skipped under pressure; done automatically it happens on every delivery, including the busy ones.",
     ],
     whyItMatters: [
       "The busiest deliveries are the ones most worth checking, and they are exactly the ones nobody checks. A short crate on a Friday afternoon is signed for, invoiced in full, and paid three weeks later by somebody who was not at the back door.",
@@ -262,20 +265,20 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     aka: ["price drift", "supplier creep"],
     metaTitle: "Price creep: the supplier increases nobody announces",
     metaDescription:
-      "Price creep is the slow, unannounced upward drift of supplier prices — a few percent at a time, across months, on invoices that are otherwise correct.",
+      "Price creep is the slow, unannounced upward drift of supplier prices: a few percent at a time, across months, on invoices that are otherwise correct.",
     definition: [
-      "Price creep is the slow, unannounced upward drift of supplier prices — a few percent at a time, spread across months and across line items, on invoices that are otherwise entirely correct. No single increase is large enough to trigger a phone call, which is precisely why it works. It is only visible when you compare the same item's price across a run of invoices, rather than checking each invoice against the one before it. By the time it shows in your margin it has usually been paid for a quarter or more.",
+      "Price creep is the slow, unannounced upward drift of supplier prices: a few percent at a time, spread across months and across line items, on invoices that are otherwise entirely correct. No single increase is large enough to trigger a phone call, which is precisely why it works. It is only visible when you compare the same item's price across a run of invoices, rather than checking each invoice against the one before it. By the time it shows in your margin it has usually been paid for a quarter or more.",
     ],
     whyItMatters: [
-      "Produce prices move for real reasons — season, fuel, weather — so an increase is never obviously wrong. That is the cover it hides under. The question worth asking is not whether a price went up but whether it went up further than the market did, and only your own invoice history answers that.",
+      "Produce prices move for real reasons (season, fuel, weather), so an increase is never obviously wrong. That is the cover it hides under. The question worth asking is not whether a price went up but whether it went up further than the market did, and only your own invoice history answers that.",
       "It compounds quietly across a supplier base. Two percent on a handful of lines at three suppliers is a rounding error on any single invoice and a five-figure number over a year on the volumes a food business actually buys.",
     ],
     example: {
       agent: "PRICE WATCH",
-      observation: "Cooking oil up 9% since May at your main supplier — three invoices, no notification.",
+      observation: "Cooking oil up 9% since May at your main supplier: three invoices, no notification.",
       impact: "≈ R3,100/yr at current volumes",
       evidence: "3 invoices",
-      meta: "SUPPLIER · +9% · MAY–AUG",
+      meta: "SUPPLIER · +9% · MAY-AUG",
       actions: ["Draft supplier email", "Show 6-month trend", "Dismiss"],
     },
     relatedTerms: ["money-leakage", "invoice-line-item", "gross-margin-vs-markup"],
@@ -297,7 +300,7 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     metaDescription:
       "Stock cover days is how many days of trading your stock will last at your recent rate of use. How to work it out, and why perishables have a hard ceiling.",
     definition: [
-      "Stock cover days is how many days of trading your current stock will last at your recent rate of use: divide the quantity you hold of an item by its average daily usage. Two days of cover on a fast-moving line is a stockout waiting for one late delivery; forty days on a slow one is cash sitting in a cold room. It is a per-item number, not a warehouse number — an average across a store hides both problems at once, which is the usual reason neither gets fixed.",
+      "Stock cover days is how many days of trading your current stock will last at your recent rate of use: divide the quantity you hold of an item by its average daily usage. Two days of cover on a fast-moving line is a stockout waiting for one late delivery; forty days on a slow one is cash sitting in a cold room. It is a per-item number, not a warehouse number: an average across a store hides both problems at once, which is the usual reason neither gets fixed.",
     ],
     whyItMatters: [
       "For perishables the figure has a hard ceiling: cover beyond shelf life is not cover, it is future wastage with a date on it. Reorder points set once and never revisited are how a kitchen ends up holding eleven days of something that keeps for six.",
@@ -315,7 +318,7 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     relatedArticles: ["the-real-cost-of-poor-stock-control"],
     relatedPages: [
       { label: "Reduce money leakage", href: "/solutions/reduce-money-leakage" },
-      { label: "Restaurants", href: "/industries/restaurants" },
+      { label: "Hospitality", href: "/industries/hospitality" },
     ],
   },
 
@@ -325,13 +328,13 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     aka: ["VAT-inclusive vs ex-VAT"],
     metaTitle: "VAT-inclusive pricing vs ex-VAT: the difference",
     metaDescription:
-      "A VAT-inclusive price contains VAT; an ex-VAT price does not. Margin is calculated on the ex-VAT figure — and mixing the two quietly costs margin.",
+      "A VAT-inclusive price contains VAT; an ex-VAT price does not. Margin is calculated on the ex-VAT figure, and mixing the two quietly costs margin.",
     definition: [
-      "A VAT-inclusive price already contains value-added tax. A VAT-exclusive price — usually written ex-VAT — does not. The distinction matters because margin is calculated on the ex-VAT figure: the VAT portion was never your money, it is collected on behalf of SARS. To move from an inclusive price to the ex-VAT price, divide by one plus the VAT rate. Mixing the two across a price list, a quote and an invoice is one of the quietest sources of margin error in South African trade, because both numbers look equally plausible on the page.",
+      "A VAT-inclusive price already contains value-added tax. A VAT-exclusive price, usually written ex-VAT, does not. The distinction matters because margin is calculated on the ex-VAT figure: the VAT portion was never your money, it is collected on behalf of SARS. To move from an inclusive price to the ex-VAT price, divide by one plus the VAT rate. Mixing the two across a price list, a quote and an invoice is one of the quietest sources of margin error in South African trade, because both numbers look equally plausible on the page.",
     ],
     whyItMatters: [
       "Food businesses sit on both sides of the line at once: retail and menu prices are quoted inclusive because that is what a customer pays, while supplier price lists and cost calculations are usually ex-VAT. Anyone costing a dish or a delivery has to know which number they are holding.",
-      "The failure is rarely a single mistake. It is a price list built on one basis and a margin target read on the other, repeated across every line for as long as nobody checks — which makes it exactly the kind of thing worth catching at the document, not at year-end.",
+      "The failure is rarely a single mistake. It is a price list built on one basis and a margin target read on the other, repeated across every line for as long as nobody checks, which makes it exactly the kind of thing worth catching at the document, not at year-end.",
     ],
     note: "No rate is quoted here on purpose: the standard rate is set by National Treasury and changes by budget, and a number printed in a glossary is a fact with an expiry date. Check the current standard rate with SARS or your accountant before doing the sum.",
     example: {
@@ -358,14 +361,14 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     metaDescription:
       "POPIA is South Africa's data-protection law. What counts as personal information in an operations business, and what the Act requires you to do.",
     definition: [
-      "POPIA is the Protection of Personal Information Act, South Africa's data-protection law, in force since 2021. It sets conditions for how any organisation collects, stores, uses and shares personal information about people — customers, staff, drivers, the individuals at your suppliers. Information must be collected for a stated purpose, kept secure, kept no longer than it is needed, and made available to the person it describes on request. Every business holds personal information, so the Act applies whether or not a business thinks of itself as handling data.",
+      "POPIA is the Protection of Personal Information Act, South Africa's data-protection law, in force since 2021. It sets conditions for how any organisation collects, stores, uses and shares personal information about people: customers, staff, drivers, the individuals at your suppliers. Information must be collected for a stated purpose, kept secure, kept no longer than it is needed, and made available to the person it describes on request. Every business holds personal information, so the Act applies whether or not a business thinks of itself as handling data.",
     ],
     whyItMatters: [
       "An operations business holds more personal information than it realises: driver names on delivery notes, staff rosters and hours, customer contact numbers in a WhatsApp group, the individual at a supplier whose cellphone number is on every order. All of it is in scope.",
-      "It also shapes what you should expect from any software you connect to that data — where it is stored, who at the vendor can see it, and what happens to it if you leave. Those are fair questions to ask before an integration, not after one.",
+      "It also shapes what you should expect from any software you connect to that data: where it is stored, who at the vendor can see it, and what happens to it if you leave. Those are fair questions to ask before an integration, not after one.",
     ],
     example: {
-      agent: "DOC-U",
+      agent: "DOC CHECK",
       observation: "Delivery notes carry driver names and cell numbers. Retention was never set.",
       impact: "Personal information held with no stated purpose",
       evidence: "1 document set",
@@ -386,13 +389,13 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     aka: ["weekly operations report", "Monday brief"],
     metaTitle: "Weekly brief: the report shape that gets read",
     metaDescription:
-      "A weekly brief is a short, fixed-format summary of how the operation ran and what needs a decision — same numbers, same order, same day, every week.",
+      "A weekly brief is a short, fixed-format summary of how the operation ran and what needs a decision: same numbers, same order, same day, every week.",
     definition: [
       "A weekly brief is a short, fixed-format summary of how the operation ran last week and what needs a decision this week, sent on a schedule, in the same shape every time, to the people who can act on it. It is not a dashboard and it is not a report pack. The discipline is the format: the same handful of numbers, in the same order, on the same day, so that a change stands out precisely because everything around it is familiar.",
     ],
     whyItMatters: [
-      "The usual weekly report fails for a structural reason — it is rebuilt by hand, so it arrives late, looks different each week, and contains far more than anyone acts on. A brief that is generated rather than compiled can be short, because nothing in it had to be justified by the effort of producing it.",
-      "Delivery matters as much as content. In an SA food business the people who need the brief are on the floor or in a vehicle, not at a desk, which is why Finch sends it on WhatsApp rather than as an attachment somebody opens on Wednesday.",
+      "The usual weekly report fails for a structural reason: it is rebuilt by hand, so it arrives late, looks different each week, and contains far more than anyone acts on. A brief that is generated rather than compiled can be short, because nothing in it had to be justified by the effort of producing it.",
+      "Delivery matters as much as content. In an SA food business the people who need the brief are on the floor or in a vehicle, not at a desk, which is why Vyso sends it on WhatsApp rather than as an attachment somebody opens on Wednesday.",
     ],
     example: {
       agent: "THE BRIEF",
@@ -424,18 +427,18 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     metaDescription:
       "An invoice line item is one row: item, quantity, unit, unit price, line total. Almost every quiet loss lives at line level and is invisible from the total.",
     definition: [
-      "An invoice line item is a single row on a supplier invoice: the item, the quantity, the unit, the unit price and the line total. It is the smallest level at which a price can be checked, a delivery can be matched and a margin can be traced. Reconciling at invoice-total level catches only errors large enough to move the total. Almost every quiet loss — a wrong unit, a substituted grade, a crept price — lives at line level, and is invisible when you look at one document at a time.",
+      "An invoice line item is a single row on a supplier invoice: the item, the quantity, the unit, the unit price and the line total. It is the smallest level at which a price can be checked, a delivery can be matched and a margin can be traced. Reconciling at invoice-total level catches only errors large enough to move the total. Almost every quiet loss (a wrong unit, a substituted grade, a crept price) lives at line level, and is invisible when you look at one document at a time.",
     ],
     whyItMatters: [
       "Line-level detail is also what makes an invoice comparable to anything else. Without it you cannot hold this month's price against last quarter's, or the invoice against the delivery note, because there is nothing to match on but a total that was never meant to be evidence.",
-      "This is the practical reason document reading matters in an operations business. Doc-U extracts the lines from a scanned invoice or a photographed delivery note so the comparison can happen at all — before that, checking properly means retyping, and retyping is what does not happen on a busy week.",
+      "This is the practical reason document reading matters in an operations business. Vyso extracts the lines from a scanned invoice or a photographed delivery note so the comparison can happen at all: before that, checking properly means retyping, and retyping is what does not happen on a busy week.",
     ],
     example: {
-      agent: "DOC-U",
+      agent: "DOC CHECK",
       observation: "Line 4 reads 'tomatoes, grade 2' at the grade 1 price agreed in June.",
       impact: "≈ R1,150 on this invoice",
       evidence: "1 invoice · 1 price list",
-      meta: "DOC-U · LINE 4 · AUG",
+      meta: "DOC CHECK · LINE 4 · AUG",
       actions: ["Open the invoice", "Draft supplier email", "Dismiss"],
     },
     relatedTerms: ["delivery-note-reconciliation", "price-creep", "vat-inclusive-pricing"],
@@ -444,7 +447,7 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
       "ai-for-small-and-medium-businesses-practical-use-cases",
     ],
     relatedPages: [
-      { label: "Under the hood: the modules", href: "/platform/modules" },
+      { label: "How Vyso works", href: "/how-it-works" },
       { label: "Procurement automation", href: "/solutions/procurement-automation" },
     ],
   },
@@ -477,8 +480,8 @@ export const GLOSSARY_HUB = {
   eyebrow: "GLOSSARY",
   h1Plain: "The words operators use,",
   h1Accent: "defined properly.",
-  lead: "Twelve terms that come up in every operations conversation in South African food and produce — each defined in a sentence you can quote, then explained in the context of a business that buys, holds and delivers stock.",
+  lead: "Twelve terms that come up in every operations conversation in South African food and produce, each defined in a sentence you can quote, then explained in the context of a business that buys, holds and delivers stock.",
   title: "Operations glossary for South African businesses",
   description:
-    "Plain definitions of the operations terms SA food and produce businesses use — money leakage, price creep, stock cover days, debtors ageing and POPIA.",
+    "Plain definitions of the operations terms SA food and produce businesses use: money leakage, price creep, stock cover days, debtors ageing and POPIA.",
 } as const;

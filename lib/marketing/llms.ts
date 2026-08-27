@@ -18,14 +18,22 @@
    not a claim an engine could cite as fact, so it carries none of the honesty
    risk a rand figure or a definition would; it is the same kind of entry a
    sitemap or a footer nav already carries. Nothing about what those pages
-   *say* is asserted here.                                                    */
+   *say* is asserted here.
+
+   `.ai/plan_vyso_redesign_2026.md` §7.6/§8 (Phase 3): the "Product"/"Facts"
+   overview at the top of `/llms.txt` no longer names Finch or a rand figure;
+   it now reads `faq.ts`'s current "vyso"/"pricing" groups (see the
+   `VYSO_GROUP`/`PRICING_GROUP` lookups below), which fixed a real bug: this
+   file's old "finch" group lookup started throwing the moment an earlier
+   phase rewrote `faq.ts` without one. `/solutions` and `/industries` already
+   read `SOLUTION_LIST`/`INDUSTRY_LIST` (their registries), so the eight
+   solutions and three industries this redesign settled on appear with no
+   further edit. The Modules/Compare/Founding sections further down are left
+   exactly as they were, Finch branding included, because Phase 4 deletes
+   those sections together with the routes they describe (plan §12's
+   same-phase rule for a sitemap/llms.ts entry and its redirect). */
 
 import { SITE } from "./site";
-import {
-  DIRECT_ANSWER,
-  FOUNDING_TERMS,
-  STRAIGHT_ANSWERS,
-} from "@/components/finch/pricing/pricing-data";
 import { INDUSTRY_LIST, HUB as INDUSTRIES_HUB } from "./industries";
 import { SOLUTION_LIST, HUB as SOLUTIONS_HUB } from "./solutions";
 import { HUB as COMPARE_HUB, COO, ERP, SPREADSHEETS, SALARY } from "./compare";
@@ -56,15 +64,40 @@ const rand = (amount: number) => `R${amount.toLocaleString("en-US")}`;
 
 /* ── Shared building blocks ──────────────────────────────────────────────── */
 
-const FINCH_GROUP = FAQ_GROUPS.find((g) => g.id === "finch");
-const WHAT_IS_FINCH = FINCH_GROUP?.questions.find((q) => q.id === "what-is-finch")?.answer;
-if (!WHAT_IS_FINCH) {
-  throw new Error('lib/marketing/llms.ts: faq.ts has no "finch" group / "what-is-finch" question.');
+/* `.ai/plan_vyso_redesign_2026.md` §7.6/§8: `faq.ts`'s old "finch" group and
+   its "what-is-finch" question are gone (rewritten in an earlier phase to a
+   "vyso" group with "what-is-vyso" — Finch is retired from public copy). This
+   builder used to read that group directly and threw if it went missing,
+   which it did the moment `faq.ts` was rewritten; fixed here by reading the
+   registry's current shape instead of the old one, keeping the same
+   fail-loud contract so a future rename is caught at build time rather than
+   shipping a blank line in `/llms.txt`. Same fix for `CAN_WE_CANCEL`, which
+   read `components/finch/pricing/pricing-data.ts` (still Finch-branded,
+   still names a rand figure — out of this phase's scope, see plan §7.6's
+   "leave modules/compare/founding sections in place for Phase 4"): the
+   top-level Product/Facts section of this file is not one of those sections,
+   so it now quotes `faq.ts`'s own, current, price-free answer instead. */
+const VYSO_GROUP = FAQ_GROUPS.find((g) => g.id === "vyso");
+const WHAT_IS_VYSO = VYSO_GROUP?.questions.find((q) => q.id === "what-is-vyso")?.answer;
+if (!WHAT_IS_VYSO) {
+  throw new Error('lib/marketing/llms.ts: faq.ts has no "vyso" group / "what-is-vyso" question.');
 }
 
-const CAN_WE_CANCEL = STRAIGHT_ANSWERS.find((a) => a.question === "Can we cancel?")?.answer;
-if (!CAN_WE_CANCEL) {
-  throw new Error('lib/marketing/llms.ts: pricing-data.ts has no "Can we cancel?" straight answer.');
+const PRICING_GROUP = FAQ_GROUPS.find((g) => g.id === "pricing");
+const HOW_MUCH_DOES_VYSO_COST = PRICING_GROUP?.questions.find(
+  (q) => q.id === "how-much-does-vyso-cost",
+)?.answer;
+if (!HOW_MUCH_DOES_VYSO_COST) {
+  throw new Error('lib/marketing/llms.ts: faq.ts has no "pricing" group / "how-much-does-vyso-cost" question.');
+}
+
+const ONGOING_SUPPORT = PRICING_GROUP?.questions.find(
+  (q) => q.id === "does-vyso-offer-ongoing-support",
+)?.answer;
+if (!ONGOING_SUPPORT) {
+  throw new Error(
+    'lib/marketing/llms.ts: faq.ts has no "pricing" group / "does-vyso-offer-ongoing-support" question.',
+  );
 }
 
 const AUDIT_TERM = GLOSSARY_ALPHABETICAL.find((t) => t.slug === "operations-audit");
@@ -80,14 +113,15 @@ type PageEntry = { label: string; url: string };
     added there appears here automatically; nothing is listed twice. */
 function buildPageIndex(): PageEntry[] {
   return [
-    { label: "Home — Vyso, the AI automation agency", url: url("/") },
-    { label: "Finch — the product", url: url("/finch") },
-    { label: "Operations Audit — free, about an hour", url: url("/operations-audit") },
+    { label: "Home: Vyso, AI operations company in South Africa", url: url("/") },
+    { label: "How it works", url: url("/how-it-works") },
+    { label: "Finch: the superseded product page", url: url("/finch") },
+    { label: "Operations Audit: free, about an hour", url: url("/operations-audit") },
     /* The two tools under the audit. Listed by hand rather than generated: this
        index is built from the content registries (industries, solutions,
        modules, glossary), and these two are pages, not registry entries. */
-    { label: "Operations self-assessment — ten questions, scored", url: url("/operations-audit/score") },
-    { label: "Manual work calculator — what manual work costs a month", url: url("/operations-audit/calculator") },
+    { label: "Operations self-assessment: ten questions, scored", url: url("/operations-audit/score") },
+    { label: "Manual work calculator: what manual work costs a month", url: url("/operations-audit/calculator") },
     { label: INDUSTRIES_HUB.title, url: url("/industries") },
     ...INDUSTRY_LIST.map((i) => ({ label: i.name, url: url(`/industries/${i.slug}`) })),
     { label: SOLUTIONS_HUB.title, url: url("/solutions") },
@@ -105,7 +139,7 @@ function buildPageIndex(): PageEntry[] {
     { label: "Case studies", url: url("/case-studies") },
     { label: "Case study: Turn 'n Slice", url: url("/case-studies/turn-n-slice") },
     { label: "Vyso in South Africa", url: url("/south-africa") },
-    { label: "Learn — operations articles", url: url("/learn") },
+    { label: "Insights: operations articles", url: url("/learn") },
     { label: GLOSSARY_HUB.title, url: url("/learn/glossary") },
     { label: "Resources", url: url("/resources") },
     { label: FOUNDING_TITLE, url: FOUNDING_URL },
@@ -139,25 +173,23 @@ const formatPages = (pages: readonly PageEntry[]) =>
 export function buildLlmsTxt(): string {
   const pages = buildPageIndex();
 
-  return `# Vyso — Finch, your company's own COO
+  return `# Vyso: automation that knows what happens next
 
 ${SITE.description}
 
 ## Product
-- What Finch is: ${WHAT_IS_FINCH}
-- Price: ${DIRECT_ANSWER}
+- What Vyso is: ${WHAT_IS_VYSO}
+- Pricing: ${HOW_MUCH_DOES_VYSO_COST}
 - Operations Audit: ${AUDIT_FIRST_SENTENCE} Vyso's is free and takes about an hour with you.
 
 ## Pages
 ${formatPages(pages)}
 
 ## Facts
-- Finch is priced per customer and per scope: a fixed build price and a monthly run price against each item on the audit roadmap, quoted directly, never published. The monthly fee covers every module and agent activated from that roadmap, plus a monthly ops review with a Vyso lead.
 - Operations Audit: free, about an hour, no obligation. What follows is priced per customer and per scope, quoted directly, never published.
-- Founding-client terms: ${FOUNDING_TERMS.join(", ")}.
-- ${CAN_WE_CANCEL}
+- ${ONGOING_SUPPORT}
 - Expanded mandates (multi-entity groups, custom integrations) are priced on scope.
-- Vyso is based in ${SITE.address.addressLocality}, ${SITE.address.addressCountry === "ZA" ? "South Africa" : SITE.address.addressCountry}. It serves South African food and produce SMEs. Locale: ${SITE.locale}.
+- Vyso is based in ${SITE.address.addressLocality}, ${SITE.address.addressCountry === "ZA" ? "South Africa" : SITE.address.addressCountry}. It serves South African SMEs, with the deepest experience in food distribution and wholesale operations. Locale: ${SITE.locale}.
 
 ## Orbit (second product — in development)
 - What Orbit is: ${ORBIT.description}
@@ -215,7 +247,7 @@ function buildModulesSection(): string {
 }
 
 function buildIntegrationsSection(): string {
-  const rows = INTEGRATION_DETAILS.map((i) => `### ${i.name} — ${i.status}\n${i.reads}`).join(
+  const rows = INTEGRATION_DETAILS.map((i) => `### ${i.name}: ${i.status}\n${i.reads}`).join(
     "\n\n",
   );
   return `${rows}\n\n${DONT_SEE_YOUR_TOOL}`;
@@ -318,7 +350,7 @@ ${GLOSSARY_HUB.lead}
 
 ${buildGlossarySection()}
 
-## Industries — what Finch watches
+## Industries: what Vyso watches
 
 ${buildIndustriesSection()}
 

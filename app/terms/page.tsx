@@ -48,7 +48,7 @@ export default function TermsPage() {
         chip={<DraftChip />}
       />
 
-      <p className="m-0 mb-[8px] max-w-[560px] text-[14.5px] leading-[1.65] text-fn-ink-3">
+      <p className="m-0 mb-[8px] max-w-[560px] text-[14.5px] leading-[1.65] text-[color:var(--vy-ink-3)]">
         This page is a working draft, built only from terms already published on this site. It is
         under legal review and is not a final, signed agreement — nothing here should be relied on
         until that review is complete.
