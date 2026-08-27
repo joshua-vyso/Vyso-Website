@@ -7,7 +7,7 @@ import { ERP } from "@/lib/marketing/compare";
 const title = "Finch vs an ERP for South African SMEs";
 /* 153 chars. */
 const description =
-  "An ERP records what your business did. Finch reads it and flags what changed, for R6,000 per location per month. An honest comparison for South African SMEs.";
+  "An ERP records what your business did. Finch reads it and flags what changed, priced per scope. An honest comparison for South African SMEs.";
 
 export const metadata: Metadata = {
   title,
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
    content — the strengths, the four breakdowns, the table, the four steps and
    the FAQs — survives; what changed is the language (Vyso the company, Finch
    the product) and the pricing rows, which used to describe a per-workflow
-   scope that predates the single R6,000 offer. */
+   scope that predates the current per-scope pricing. */
 export default function FinchVsErpPage() {
   return (
     <PortedComparisonPage

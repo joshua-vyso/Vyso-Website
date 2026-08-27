@@ -12,7 +12,7 @@ import { FAQ_GROUPS, type FaqItem } from "@/lib/marketing/faq";
 
 const TITLE = "South African operations software — Finch by Vyso";
 const DESCRIPTION =
-  "Finch runs ZAR pricing, VAT-aware invoices and EFT, cash and card payments for South African food SMEs — R6,000 per location a month.";
+  "Finch runs ZAR pricing, VAT-aware invoices and EFT, cash and card payments for South African food SMEs. Priced per scope, after a free audit.";
 
 export const metadata: Metadata = {
   title: TITLE,

@@ -23,7 +23,7 @@ export default async function Image({ params }: { params: Promise<{ slug: string
       finding: {
         agent: "FINCH",
         observation: "Money leakage, procurement, reporting and the operations dashboard.",
-        impact: "R6,000 / location / month",
+        impact: "Priced per scope, after a free audit",
         evidence: "vyso.co.za/solutions",
       },
       state: null,

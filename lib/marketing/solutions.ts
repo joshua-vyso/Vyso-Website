@@ -240,7 +240,7 @@ const reduceMoneyLeakage: Solution = {
     {
       question: "Is this only worth it for businesses with several locations?",
       answer:
-        "No. A single growing restaurant, farm or supplier is a fit once the leakage is no longer small enough to shrug off. Finch is R6,000 per location per month, so one location is one line on the invoice.",
+        "No. A single growing restaurant, farm or supplier is a fit once the leakage is no longer small enough to shrug off. Finch is priced per customer and per scope, so one location is priced as one location.",
     },
   ],
 };
@@ -396,7 +396,7 @@ const procurementAutomation: Solution = {
     {
       question: "How does this start?",
       answer:
-        "With the one-week Operations Audit: R2,000, credited to your first month. We take a week of invoices and statements and tell you what a price and delivery check would have caught — whether you sign or not.",
+        "With the free operations audit: about an hour with you, no obligation. We walk your day with you and tell you what a price and delivery check would have caught — whether you go ahead or not.",
     },
   ],
 };
@@ -410,7 +410,7 @@ const reportingAutomation: Solution = {
     "The weekly report builds itself from the work that already happened, and arrives on WhatsApp before you've opened a laptop.",
   title: "Reporting automation for South African SMEs",
   description:
-    "Finch builds your weekly operations report from data you already produce and sends it on WhatsApp on Monday. R6,000 per location per month, South Africa.",
+    "Finch builds your weekly operations report from data you already produce and sends it on WhatsApp on Monday. Priced per scope, free audit, South Africa.",
   eyebrow: "WHAT FINCH FIXES · REPORTING",
   heroPlain: "Stop rebuilding the same report",
   heroAccent: "by hand, every single week.",
@@ -569,7 +569,7 @@ const operationsDashboard: Solution = {
     "One view across purchases, stock, debtors and margin — delivered as a brief you read, not a dashboard you must remember to open.",
   title: "Operations dashboard software for SA SMEs",
   description:
-    "One view across purchases, stock, debtors and margin for South African SMEs — Finch's brief instead of five spreadsheets. R6,000 per location per month.",
+    "One view across purchases, stock, debtors and margin for South African SMEs — Finch's brief instead of five spreadsheets. Priced per scope, free audit.",
   eyebrow: "WHAT FINCH FIXES · ONE VIEW",
   heroPlain: "One view of the operation.",
   heroAccent: "Delivered, not looked up.",
@@ -748,7 +748,7 @@ export function getSolution(slug: string): Solution | undefined {
 export const HUB = {
   title: "Solutions — what Finch fixes in your operation",
   description:
-    "Money leaking, procurement on WhatsApp, reports built by hand, no single view. Four problems Finch fixes for South African operations, from a R2,000 audit.",
+    "Money leaking, procurement on WhatsApp, reports built by hand, no single view. Four problems Finch fixes for South African operations, from a free audit.",
   eyebrow: "WHAT FINCH FIXES",
   h1Plain: "Fix the problem,",
   h1Accent: "not the symptom.",

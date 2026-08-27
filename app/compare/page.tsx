@@ -13,7 +13,7 @@ import { HUB } from "@/lib/marketing/compare";
 const title = "Compare Finch — vs a COO, an ERP, spreadsheets";
 /* 152 chars. Leads with the comparison intent, carries the price and the place. */
 const description =
-  "Honest comparisons for South African operators: Finch at R6,000 per location per month versus hiring a COO, running an ERP, or living in spreadsheets.";
+  "Honest comparisons for South African operators: Finch versus hiring a COO, running an ERP, or living in spreadsheets. Priced per scope, after a free audit.";
 
 export const metadata: Metadata = {
   title,

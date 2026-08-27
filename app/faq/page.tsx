@@ -11,7 +11,7 @@ import { FaqDeepLinkHandler, FaqFilter } from "./FaqInteractive";
 
 const TITLE = "FAQ: Finch pricing, the audit & POPIA";
 const DESCRIPTION =
-  "Straight answers about Finch's R6,000 offer, the Operations Audit, founding terms, POPIA and how Finch fits the tools you already run.";
+  "Straight answers about what Finch costs, the free operations audit, founding terms, POPIA and how Finch fits the tools you already run.";
 
 export const metadata: Metadata = {
   title: TITLE,

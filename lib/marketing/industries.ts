@@ -167,7 +167,7 @@ const foodSuppliers: Industry = {
 
   title: "Food supplier operations software — South Africa",
   description:
-    "Finch reads every order, price list, delivery note and invoice a South African food supplier produces, and flags what moved. R6,000 per location/month.",
+    "Finch reads every order, price list, delivery note and invoice a South African food supplier produces, and flags what moved. Priced per scope, free audit.",
 
   eyebrow: "FOOD SUPPLIERS · SOUTH AFRICA",
   h1Plain: "Every invoice, delivery note and price list —",
@@ -325,7 +325,7 @@ const farms: Industry = {
 
   title: "Farm operations software — South Africa",
   description:
-    "Finch reads the orders, dispatch notes, input invoices and debtors of a South African farm or producer, and flags what moved. R6,000 per location/month.",
+    "Finch reads the orders, dispatch notes, input invoices and debtors of a South African farm or producer, and flags what moved. Priced per scope, free audit.",
 
   eyebrow: "FARMS & PRODUCERS · SOUTH AFRICA",
   h1Plain: "Variable supply, repeat buyers —",
@@ -482,7 +482,7 @@ const restaurants: Industry = {
 
   title: "Restaurant operations software — South Africa",
   description:
-    "Finch reads a South African restaurant's invoices, delivery notes and stock counts and flags what moved this week, in rand. R6,000 per location/month.",
+    "Finch reads a South African restaurant's invoices, delivery notes and stock counts and flags what moved this week, in rand. Priced per scope, free audit.",
 
   eyebrow: "RESTAURANTS · SOUTH AFRICA",
   h1Plain: "Know what the kitchen cost you before service —",
@@ -613,7 +613,7 @@ const restaurants: Industry = {
     {
       question: "Is this only for restaurant groups?",
       answer:
-        "No. A single growing restaurant is a fit once the repeated admin and handovers have outgrown WhatsApp, paper and spreadsheets. Pricing is per location, so one site is one line on the invoice.",
+        "No. A single growing restaurant is a fit once the repeated admin and handovers have outgrown WhatsApp, paper and spreadsheets. Pricing follows the scope of what we build, so a single site is priced as a single site.",
     },
     {
       question: "What does Finch cost for a restaurant?",
@@ -632,7 +632,7 @@ const cateringCompanies: Industry = {
 
   title: "Catering operations software — South Africa",
   description:
-    "Finch reads the invoices behind every function a South African caterer runs and compares them to the quote. R6,000 per location per month, audit R2,000.",
+    "Finch reads the invoices behind every function a South African caterer runs and compares them to the quote. Priced per scope, after a free audit.",
 
   eyebrow: "CATERING COMPANIES · SOUTH AFRICA",
   h1Plain: "Every function costed against",
@@ -782,7 +782,7 @@ const wholesale: Industry = {
 
   title: "Wholesale operations software — South Africa",
   description:
-    "At wholesale volumes a R2 cost move vanishes into the month. Finch checks every invoice line against what you agreed. R6,000/location/month, South Africa.",
+    "At wholesale volumes a R2 cost move vanishes into the month. Finch checks every invoice line against what you agreed. Priced per scope, after a free audit.",
 
   eyebrow: "WHOLESALE · SOUTH AFRICA",
   h1Plain: "Volume hides the small losses.",
@@ -938,7 +938,7 @@ const hospitality: Industry = {
 
   title: "Hospitality operations software — South Africa",
   description:
-    "Kitchen, bar and housekeeping each track their own week. Finch reads across all of them and sends what changed. R6,000/location/month, South Africa.",
+    "Kitchen, bar and housekeeping each track their own week. Finch reads across all of them and sends what changed. Priced per scope, after a free audit.",
 
   eyebrow: "HOSPITALITY · SOUTH AFRICA",
   h1Plain: "Every department has its own numbers.",
@@ -1070,7 +1070,7 @@ const hospitality: Industry = {
     {
       question: "Is this suitable for a multi-property group?",
       answer:
-        "It can be. Group-level visibility depends on how consistently each property currently operates, which the audit assesses before recommending a rollout. Pricing is per location, so a group is priced per site.",
+        "It can be. Group-level visibility depends on how consistently each property currently operates, which the audit assesses before recommending a rollout. Pricing follows the scope of what we build, so a group is priced on what a group actually needs.",
     },
     {
       question: "What does Finch cost for a hospitality operation?",
@@ -1095,7 +1095,7 @@ const securityCompanies: Industry = {
 
   title: "Security company operations software — SA",
   description:
-    "Rostered hours, contracted hours and invoiced hours should match. Finch reads the rosters, contracts and invoices. R6,000 per location/month, South Africa.",
+    "Rostered hours, contracted hours and invoiced hours should match. Finch reads the rosters, contracts and invoices. Priced per scope, after a free audit.",
 
   eyebrow: "SECURITY COMPANIES · SOUTH AFRICA · EXPERIMENTAL",
   h1Plain: "Rostered hours, contracted hours, invoiced hours —",
@@ -1238,7 +1238,7 @@ const securityCompanies: Industry = {
     {
       question: "How would we find out whether it fits?",
       answer:
-        "The one-week Operations Audit, R2,000, credited to your first month. Because this vertical is experimental, the audit's first job is to tell you honestly whether Finch is the right tool — and we will say so if it is not.",
+        "The free operations audit, about an hour with you. Because this vertical is experimental, the audit's first job is to tell you honestly whether Finch is the right tool — and we will say so if it is not.",
     },
   ],
 };
@@ -1252,7 +1252,7 @@ const insuranceBrokers: Industry = {
 
   title: "Insurance broker operations software — SA",
   description:
-    "Finch reads commission statements, checks them against the policies you placed, and flags renewals going quiet. R6,000 per location/month, South Africa.",
+    "Finch reads commission statements, checks them against the policies you placed, and flags renewals going quiet. Priced per scope, after a free audit.",
 
   eyebrow: "INSURANCE BROKERS · SOUTH AFRICA · EXPERIMENTAL",
   h1Plain: "Renewals, commission statements and follow-ups —",
@@ -1386,7 +1386,7 @@ const insuranceBrokers: Industry = {
     {
       question: "How would we find out whether it fits?",
       answer:
-        "The one-week Operations Audit, R2,000, credited to your first month. Because this vertical is experimental, the audit's first job is to tell you honestly whether Finch is the right tool — and we will say so if it is not.",
+        "The free operations audit, about an hour with you. Because this vertical is experimental, the audit's first job is to tell you honestly whether Finch is the right tool — and we will say so if it is not.",
     },
   ],
 };
@@ -1433,7 +1433,7 @@ export function getIndustry(slug: string): Industry | undefined {
 export const HUB = {
   title: "Industries — who Finch works for in SA",
   description:
-    "Finch watches operations-heavy South African food businesses: suppliers, farms, restaurants, caterers, wholesalers, hospitality. R6,000 per location/month.",
+    "Finch watches operations-heavy South African food businesses: suppliers, farms, restaurants, caterers, wholesalers, hospitality. Priced per scope.",
   eyebrow: "WHO FINCH WORKS FOR",
   h1Plain: "Built for operations-heavy",
   h1Accent: "South African food businesses.",

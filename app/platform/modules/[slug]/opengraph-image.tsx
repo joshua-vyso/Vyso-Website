@@ -45,7 +45,7 @@ export default async function Image({ params }: { params: Promise<{ slug: string
       impact:
         module_.agents.length > 0
           ? `Used by ${module_.agents.join(" · ")}`
-          : "Part of the R6,000 offer",
+          : "Part of what the audit roadmap switches on",
       evidence: module_.appUrlLabel,
       meta: module_.status,
     },

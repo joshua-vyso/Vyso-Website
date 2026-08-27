@@ -93,10 +93,12 @@ export type OgImageSpec = {
    * published facts rather than a finding should do.
    */
   state?: string | null;
-  /**
-   * The right half of the footer. Defaults to the standing price, which is the
-   * one fact worth carrying on every preview; pass `null` on the page that
-   * already says it in the card (`/pricing`) rather than printing it twice.
+   /**
+   * The right half of the footer. Defaults to the free audit, which is the one
+   * offer every preview can carry truthfully: it used to default to the
+   * published monthly price, and nothing on the site publishes one now
+   * (`.ai/plan_home_only.md`). Pass `null` to drop the line, or a string to
+   * point at a nearer page than the audit.
    */
   footerNote?: string | null;
 };
@@ -269,7 +271,7 @@ function FindingMock({ finding, caption, state = "NEW" }: Required<Pick<OgImageS
  */
 export async function renderOgImage(spec: OgImageSpec): Promise<ImageResponse> {
   const fonts = await loadOgFonts();
-  const footerNote = spec.footerNote === undefined ? "R6,000 / location / month" : spec.footerNote;
+  const footerNote = spec.footerNote === undefined ? "Free operations audit" : spec.footerNote;
 
   return new ImageResponse(
     (

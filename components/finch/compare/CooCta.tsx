@@ -29,11 +29,11 @@ export function CooCta() {
       <div className="flex flex-col items-start gap-[26px] lg:flex-row lg:items-center lg:justify-between lg:gap-[48px]">
         <div>
           <h2 className="m-0 mb-[12px] max-w-[560px] font-fn-serif text-[28px] font-medium leading-[1.18] tracking-[-0.02em] text-fn-ink-text lg:text-[34px]">
-            Start with a one-week Operations Audit.
+            Start with a free operations audit.
           </h2>
           <p className="m-0 max-w-[520px] text-[15px] leading-[1.65] text-fn-ink-text-2 text-pretty lg:text-[15.5px]">
-            R2,000, credited to your first month. We tell you where the money is
-            leaking — whether you sign or not.
+            About an hour with you, free. We tell you where the money is leaking
+            whether you work with us or not.
           </p>
         </div>
         <MagneticButton
@@ -43,7 +43,7 @@ export function CooCta() {
           event="book_audit_click"
           eventProps={{ page: "compare-coo-cta" }}
         >
-          Book your audit
+          Book your free audit
         </MagneticButton>
       </div>
     </Band>

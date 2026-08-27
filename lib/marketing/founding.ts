@@ -24,7 +24,7 @@ export const CANONICAL_URL = "https://vyso.co.za/founding-client";
    the plan's own metadata rule, verified by script (54 / 143 chars). */
 export const TITLE = "Founding client terms — setup waived, first month free";
 export const DESCRIPTION =
-  "Vyso founding-client terms: setup waived, first month free, rate locked. Starts with the R2,000 Operations Audit — for South African food SMEs.";
+  "Vyso founding-client terms: setup waived, first month free, rate locked. Starts with the free operations audit, for South African food SMEs.";
 
 /* ── What a founding client gets ─────────────────────────────────────────── */
 

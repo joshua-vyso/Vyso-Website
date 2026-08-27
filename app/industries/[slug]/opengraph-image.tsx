@@ -26,7 +26,7 @@ export default async function Image({ params }: { params: Promise<{ slug: string
       finding: {
         agent: "FINCH",
         observation: "Agents are set per business in the audit, in the order they earn their place.",
-        impact: "R6,000 / location / month",
+        impact: "Priced per scope, after a free audit",
         evidence: "vyso.co.za/industries",
       },
       state: null,

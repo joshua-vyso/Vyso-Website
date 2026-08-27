@@ -16,10 +16,10 @@ import { SplitReveal } from "@/components/finch/text/Statement";
 import { COO, SALARY } from "@/lib/marketing/compare";
 
 /* 49 chars before the sitewide "| Vyso" template. */
-const title = "Finch vs hiring a COO — R6,000 vs a salary";
+const title = "Finch vs hiring a COO — software vs a salary";
 /* 154 chars. The query, the two numbers, the place, and the honest half. */
 const description =
-  "Finch does a COO’s reading, checking and chasing for R6,000 per location per month. Sourced South African operations manager salaries, and what a COO still wins.";
+  "Finch does a COO’s reading, checking and chasing, priced per scope. Sourced South African operations manager salaries, and what a COO still wins.";
 
 export const metadata: Metadata = {
   title,

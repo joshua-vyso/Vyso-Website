@@ -7,7 +7,7 @@ import { SPREADSHEETS } from "@/lib/marketing/compare";
 const title = "Finch vs spreadsheets for South African SMEs";
 /* 154 chars. */
 const description =
-  "Where spreadsheets still win, where they quietly break down, and what changes when Finch reads the source documents instead — R6,000 per location per month.";
+  "Where spreadsheets still win, where they quietly break down, and what changes when Finch reads the source documents instead. An honest comparison.";
 
 export const metadata: Metadata = {
   title,
