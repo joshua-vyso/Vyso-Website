@@ -54,6 +54,37 @@ export interface MicrosoftGraphMessagePage {
   messages: MicrosoftGraphMessageMetadata[];
 }
 
+export interface MicrosoftGraphMessageContent extends MicrosoftGraphMessageMetadata {
+  conversationId: string | null;
+  body: {
+    contentType: string | null;
+    content: string | null;
+  } | null;
+  bodyPreview: string | null;
+}
+
+export interface MicrosoftGraphAttachmentMetadata {
+  id: string;
+  name: string | null;
+  contentType: string | null;
+  size: number;
+  isInline: boolean;
+  attachmentType: string | null;
+}
+
+export interface MicrosoftGraphAttachmentPage {
+  httpStatus: number;
+  requestId: string | null;
+  attachments: MicrosoftGraphAttachmentMetadata[];
+}
+
+export interface MicrosoftGraphAttachmentBytes {
+  httpStatus: number;
+  requestId: string | null;
+  bytes: Uint8Array;
+  contentType: string | null;
+}
+
 export interface MicrosoftGraphSubscription {
   id: string;
   resource: string;
@@ -96,16 +127,34 @@ interface GraphMessagePayload {
   } | null;
   receivedDateTime?: unknown;
   hasAttachments?: unknown;
+  conversationId?: unknown;
+  body?: {
+    contentType?: unknown;
+    content?: unknown;
+  } | null;
+  bodyPreview?: unknown;
 }
 
 interface GraphMessageListPayload {
   value?: unknown;
 }
 
+interface GraphAttachmentPayload {
+  id?: unknown;
+  name?: unknown;
+  contentType?: unknown;
+  size?: unknown;
+  isInline?: unknown;
+  '@odata.type'?: unknown;
+}
+
 export class MicrosoftGraphHttpError extends Error {
   readonly operation:
     | 'token'
     | 'messages'
+    | 'message-read'
+    | 'attachment-list'
+    | 'attachment-download'
     | 'subscription-create'
     | 'subscription-read'
     | 'subscription-renew';
@@ -129,6 +178,29 @@ export class MicrosoftGraphHttpError extends Error {
     this.graphCode = input.graphCode ?? null;
     this.requestId = input.requestId ?? null;
   }
+}
+
+function graphRequestId(response: Response, payload?: GraphErrorPayload): string | null {
+  return (
+    response.headers.get('request-id') ||
+    stringOrNull(payload?.error?.innerError?.['request-id']) ||
+    stringOrNull(payload?.error?.innerError?.requestId)
+  );
+}
+
+function graphReadError(
+  operation: 'message-read' | 'attachment-list' | 'attachment-download',
+  response: Response,
+  payload: GraphErrorPayload,
+  accessToken: string,
+): MicrosoftGraphHttpError {
+  return new MicrosoftGraphHttpError({
+    operation,
+    httpStatus: response.status,
+    graphCode: stringOrNull(payload.error?.code),
+    requestId: graphRequestId(response, payload),
+    detail: redact(stringOrNull(payload.error?.message), [accessToken]),
+  });
 }
 
 export function microsoftGraphInboxSubscriptionResource(mailbox: string): string {
@@ -308,6 +380,169 @@ export async function fetchRecentMicrosoftGraphInboxMessages(
     httpStatus: response.status,
     requestId,
     messages: payload.value.map(mapMessage).filter((message) => message !== null),
+  };
+}
+
+/** Read one message's metadata/body. This is deliberately GET-only. */
+export async function fetchMicrosoftGraphMessage(
+  input: { accessToken: string; mailbox: string; messageId: string },
+  fetchImpl: typeof fetch = fetch,
+): Promise<MicrosoftGraphMessageContent & { httpStatus: number; requestId: string | null }> {
+  const accessToken = required(input.accessToken, 'Microsoft access token');
+  const mailbox = required(input.mailbox, 'Microsoft mailbox');
+  const messageId = required(input.messageId, 'Microsoft Graph message id');
+  const url = new URL(
+    `${MICROSOFT_GRAPH_API}/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(messageId)}`,
+  );
+  url.searchParams.set(
+    '$select',
+    'id,subject,from,receivedDateTime,body,bodyPreview,hasAttachments,conversationId',
+  );
+  const response = await fetchImpl(url, {
+    method: 'GET',
+    headers: {
+      accept: 'application/json',
+      authorization: `Bearer ${accessToken}`,
+      prefer: 'outlook.body-content-type="text"',
+    },
+    cache: 'no-store',
+  });
+  const payload = (await jsonObject(response)) as GraphMessagePayload & GraphErrorPayload;
+  if (!response.ok) throw graphReadError('message-read', response, payload, accessToken);
+
+  const metadata = mapMessage(payload);
+  if (!metadata || metadata.id !== messageId) {
+    throw new MicrosoftGraphHttpError({
+      operation: 'message-read',
+      httpStatus: response.status,
+      graphCode: 'InvalidResponse',
+      requestId: graphRequestId(response),
+      detail: 'Microsoft Graph returned an invalid message.',
+    });
+  }
+  const body = payload.body && typeof payload.body === 'object'
+    ? {
+        contentType: stringOrNull(payload.body.contentType),
+        content: stringOrNull(payload.body.content),
+      }
+    : null;
+  return {
+    ...metadata,
+    conversationId: stringOrNull(payload.conversationId),
+    body,
+    bodyPreview: stringOrNull(payload.bodyPreview),
+    httpStatus: response.status,
+    requestId: graphRequestId(response),
+  };
+}
+
+function mapAttachment(value: unknown): MicrosoftGraphAttachmentMetadata | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as GraphAttachmentPayload;
+  const id = stringOrNull(raw.id);
+  if (!id) return null;
+  const size = Number(raw.size);
+  return {
+    id,
+    name: stringOrNull(raw.name),
+    contentType: stringOrNull(raw.contentType),
+    size: Number.isFinite(size) && size >= 0 ? size : 0,
+    isInline: raw.isInline === true,
+    attachmentType: stringOrNull(raw['@odata.type']),
+  };
+}
+
+/** List attachment metadata only. contentBytes is intentionally not selected. */
+export async function fetchMicrosoftGraphAttachmentMetadata(
+  input: { accessToken: string; mailbox: string; messageId: string },
+  fetchImpl: typeof fetch = fetch,
+): Promise<MicrosoftGraphAttachmentPage> {
+  const accessToken = required(input.accessToken, 'Microsoft access token');
+  const mailbox = required(input.mailbox, 'Microsoft mailbox');
+  const messageId = required(input.messageId, 'Microsoft Graph message id');
+  const url = new URL(
+    `${MICROSOFT_GRAPH_API}/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(messageId)}/attachments`,
+  );
+  url.searchParams.set('$select', 'id,name,contentType,size,isInline');
+  url.searchParams.set('$top', '10');
+  const response = await fetchImpl(url, {
+    method: 'GET',
+    headers: { accept: 'application/json', authorization: `Bearer ${accessToken}` },
+    cache: 'no-store',
+  });
+  const payload = (await jsonObject(response)) as GraphMessageListPayload & GraphErrorPayload;
+  if (!response.ok) throw graphReadError('attachment-list', response, payload, accessToken);
+  if (!Array.isArray(payload.value)) {
+    throw new MicrosoftGraphHttpError({
+      operation: 'attachment-list',
+      httpStatus: response.status,
+      graphCode: 'InvalidResponse',
+      requestId: graphRequestId(response),
+      detail: 'Microsoft Graph returned an invalid attachment list.',
+    });
+  }
+  return {
+    httpStatus: response.status,
+    requestId: graphRequestId(response),
+    attachments: payload.value.map(mapAttachment).filter((entry) => entry !== null),
+  };
+}
+
+/** Copy one file attachment's bytes with a read-only GET to `$value`. */
+export async function downloadMicrosoftGraphFileAttachment(
+  input: {
+    accessToken: string;
+    mailbox: string;
+    messageId: string;
+    attachmentId: string;
+    maxBytes: number;
+  },
+  fetchImpl: typeof fetch = fetch,
+): Promise<MicrosoftGraphAttachmentBytes> {
+  const accessToken = required(input.accessToken, 'Microsoft access token');
+  const mailbox = required(input.mailbox, 'Microsoft mailbox');
+  const messageId = required(input.messageId, 'Microsoft Graph message id');
+  const attachmentId = required(input.attachmentId, 'Microsoft Graph attachment id');
+  if (!Number.isInteger(input.maxBytes) || input.maxBytes < 1) {
+    throw new Error('Microsoft Graph attachment byte limit must be a positive integer.');
+  }
+  const url =
+    `${MICROSOFT_GRAPH_API}/users/${encodeURIComponent(mailbox)}/messages/` +
+    `${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}/$value`;
+  const response = await fetchImpl(url, {
+    method: 'GET',
+    headers: { accept: 'application/octet-stream', authorization: `Bearer ${accessToken}` },
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    const payload = (await jsonObject(response)) as GraphErrorPayload;
+    throw graphReadError('attachment-download', response, payload, accessToken);
+  }
+  const declaredLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > input.maxBytes) {
+    throw new MicrosoftGraphHttpError({
+      operation: 'attachment-download',
+      httpStatus: 413,
+      graphCode: 'AttachmentTooLarge',
+      requestId: graphRequestId(response),
+      detail: 'Microsoft Graph attachment exceeds the Vyso processing limit.',
+    });
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.byteLength > input.maxBytes) {
+    throw new MicrosoftGraphHttpError({
+      operation: 'attachment-download',
+      httpStatus: 413,
+      graphCode: 'AttachmentTooLarge',
+      requestId: graphRequestId(response),
+      detail: 'Microsoft Graph attachment exceeds the Vyso processing limit.',
+    });
+  }
+  return {
+    httpStatus: response.status,
+    requestId: graphRequestId(response),
+    bytes,
+    contentType: response.headers.get('content-type'),
   };
 }
 

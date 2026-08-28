@@ -1,7 +1,13 @@
 # Microsoft Graph order-inbox notifications
 
-This milestone is notification-only. It does not fetch mail, fetch attachments,
-run extraction, enqueue work, or modify the mailbox.
+Microsoft 365 is a permanently read-only source for Vyso. Subscription lifecycle
+operations are allowed; mailbox access is limited to GET requests. Vyso never moves,
+deletes, edits, flags, categorises, marks read/unread, replies to, forwards, or sends
+mail. `Application Mail.Read` remains the maximum mailbox permission.
+
+All workflow state lives in Supabase and all attachment processing happens on a copy
+in Vyso's private `documents` Storage bucket. Outlook is never used as a queue or as a
+processing-status store.
 
 ## Public endpoint
 
@@ -28,6 +34,41 @@ Normal notification bodies are capped at 128 KiB and must pass all of these chec
 
 Logs contain only outcome/category, count, change type, resource-match and id-presence
 booleans, timestamp, and the first 12 hex characters of a SHA-256 subscription-id hash.
+
+## Durable ingestion boundary
+
+The validated notification and document processing are separate durability boundaries:
+
+1. Before returning `202`, the webhook inserts a queued `email_ingests` row containing
+   the trusted Vyso org id, mailbox, and Graph message id.
+2. Unique database indexes make duplicate message notifications a no-op.
+3. Next.js `after()` starts processing immediately when possible, but correctness does
+   not depend on it.
+4. The existing `/api/email/process` cron claims queued or stale-processing rows and
+   runs the same provider-dispatch worker. The owner/admin Retry action can requeue an
+   explicit `failed` row.
+5. Attachment ids are recorded as each document is filed. A retry also queries existing
+   `documents.source_attachment_id` values to heal a crash between document insert and
+   progress update. The database additionally forbids a second document for the same
+   `(email_ingest_id, source_attachment_id)`.
+
+The Graph adapter performs only these mailbox reads:
+
+- GET one message's metadata, text body, preview, and conversation id;
+- GET attachment metadata without `contentBytes`;
+- GET `$value` for supported PDF/image file attachments within the existing 13 MiB cap.
+
+The copied bytes are handed to `lib/platform/document-ingest.ts`; no Microsoft-specific
+PDF, image, OCR, or AI parser exists.
+
+`deferCommit: true` is mandatory for Microsoft email attachments. It files and extracts
+the document for review, but does not resolve/create suppliers, create orders or
+invoices, update stock, or feed ProcurePulse/SupplySync. Those side effects remain behind
+the existing human Save/approval path.
+
+Apply `supabase/microsoft-graph-ingest.sql` before deploying ingestion, and configure
+`MICROSOFT_GRAPH_ORG_ID` to the trusted Turn n Slice organisation UUID. Never derive an
+organisation from sender, subject, body, or attachment content.
 
 ## Why incoming `resource` is not literal subscription-resource equality
 

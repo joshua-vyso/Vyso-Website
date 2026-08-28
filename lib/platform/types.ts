@@ -176,6 +176,10 @@ export interface Document {
   confidence: number | null;
   extracted_data: ExtractedData | null;
   storage_path: string | null;
+  /** Original provider attachment id for idempotent email-ingest retries. */
+  source_attachment_id?: string | null;
+  /** Original attachment MIME type; Storage keeps the same value as object metadata. */
+  source_content_type?: string | null;
   uploaded_by: string | null;
   approved_by: string | null;
   approved_at: string | null;

@@ -50,6 +50,7 @@ test('validationToken returns exact decoded plain text and invokes no normal pro
   url.searchParams.set('validationToken', token);
   let rateLimitCalled = false;
   let logCalled = false;
+  let notificationProcessingCalled = false;
 
   const response = await handleMicrosoftGraphWebhook(
     new Request(url, { method: 'POST', body: 'must-not-be-read' }),
@@ -62,6 +63,9 @@ test('validationToken returns exact decoded plain text and invokes no normal pro
       log: () => {
         logCalled = true;
       },
+      onNotifications: async () => {
+        notificationProcessingCalled = true;
+      },
     },
   );
 
@@ -70,14 +74,22 @@ test('validationToken returns exact decoded plain text and invokes no normal pro
   assert.equal(await response.text(), token);
   assert.equal(rateLimitCalled, false);
   assert.equal(logCalled, false);
+  assert.equal(notificationProcessingCalled, false);
 });
 
 test('valid created notification is accepted quickly with an empty 202', async () => {
   const logs: MicrosoftGraphWebhookLog[] = [];
+  let messageIds: string[] = [];
   const response = await handleMicrosoftGraphWebhook(
     webhookRequest({ value: [notification()] }),
     CONFIG,
-    { rateLimitAllowed: async () => true, log: (event) => logs.push(event) },
+    {
+      rateLimitAllowed: async () => true,
+      onNotifications: async (notifications) => {
+        messageIds = notifications.map((entry) => entry.messageId);
+      },
+      log: (event) => logs.push(event),
+    },
   );
 
   assert.equal(response.status, 202);
@@ -90,6 +102,43 @@ test('valid created notification is accepted quickly with an empty 202', async (
   assert.equal(logs[0].changeType, 'created');
   assert.equal(logs[0].resourceMatches, true);
   assert.equal(logs[0].resourceDataIdPresent, true);
+  assert.deepEqual(messageIds, ['AAMk-message-id']);
+});
+
+test('duplicate notifications enqueue one message id', async () => {
+  let messageIds: string[] = [];
+  const row = notification();
+  const response = await handleMicrosoftGraphWebhook(
+    webhookRequest({ value: [row, row] }),
+    CONFIG,
+    {
+      onNotifications: async (notifications) => {
+        messageIds = notifications.map((entry) => entry.messageId);
+      },
+    },
+  );
+  assert.equal(response.status, 202);
+  assert.deepEqual(messageIds, ['AAMk-message-id']);
+});
+
+test('persistence failure returns 503 so Microsoft can retry', async () => {
+  const logs: MicrosoftGraphWebhookLog[] = [];
+  const response = await handleMicrosoftGraphWebhook(
+    webhookRequest({ value: [notification()] }),
+    CONFIG,
+    {
+      onNotifications: async () => {
+        throw new Error('database unavailable with private payload');
+      },
+      log: (entry) => logs.push(entry),
+    },
+  );
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), {
+    error: 'Microsoft Graph notification could not be persisted.',
+  });
+  assert.equal(logs.at(-1)?.category, 'ingest-persistence');
+  assert.doesNotMatch(JSON.stringify(logs), /database unavailable|private payload/);
 });
 
 test('wrong clientState is rejected', async () => {

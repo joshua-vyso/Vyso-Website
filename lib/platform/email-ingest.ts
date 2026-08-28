@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { ingestDocument } from '@/lib/platform/document-ingest';
 import { extractQuoteRequest } from '@/lib/ai/anthropic';
 import { isUniqueViolation } from '@/lib/platform/db-errors';
+import { processMicrosoftGraphEmailIngest } from '@/lib/platform/microsoft-graph-ingest';
 import {
   INGEST_DOMAIN,
   MAX_ATTACHMENT_BYTES,
@@ -194,7 +195,10 @@ export const STALE_PROCESSING_MS = 10 * 60 * 1000;
 interface IngestRow {
   id: string;
   org_id: string;
-  resend_email_id: string;
+  source: string | null;
+  resend_email_id: string | null;
+  mailbox: string | null;
+  graph_message_id: string | null;
   status: string;
   attempts: number;
   documents_created: number;
@@ -251,7 +255,7 @@ async function resolveSenderAuth(
 export async function processEmailIngest(supabase: SupabaseClient, ingestId: string): Promise<void> {
   const { data: row } = await supabase
     .from('email_ingests')
-    .select('id, org_id, resend_email_id, status, attempts, documents_created, processed_attachment_ids, tag, created_at')
+    .select('id, org_id, source, resend_email_id, mailbox, graph_message_id, status, attempts, documents_created, processed_attachment_ids, tag, created_at')
     .eq('id', ingestId)
     .maybeSingle();
   const ingest = row as IngestRow | null;
@@ -303,7 +307,9 @@ export async function processEmailIngest(supabase: SupabaseClient, ingestId: str
   };
 
   try {
-    if (ingest.tag === 'quotes') {
+    if (ingest.source === 'microsoft_graph') {
+      await processMicrosoftGraphEmailIngest(supabase, ingest, fail);
+    } else if (ingest.tag === 'quotes') {
       await runQuoteRequest(supabase, ingest, fail);
     } else {
       await runDocumentIngest(supabase, ingest, fail);
@@ -316,6 +322,10 @@ export async function processEmailIngest(supabase: SupabaseClient, ingestId: str
 /** The document lane — attachments become Doc-U documents (and OrderFlow orders). */
 async function runDocumentIngest(supabase: SupabaseClient, ingest: IngestRow, fail: FailFn): Promise<void> {
   const orgId = ingest.org_id;
+  if (!ingest.resend_email_id) {
+    await fail('Resend ingestion row is missing its provider email id.');
+    return;
+  }
 
   // Attachments already filed on an earlier attempt — re-filing them would duplicate
   // invoices, and the AI step is slow enough that a run really can die halfway.
@@ -436,6 +446,10 @@ async function runDocumentIngest(supabase: SupabaseClient, ingest: IngestRow, fa
  * attach themselves to a real customer's record.
  */
 async function runQuoteRequest(supabase: SupabaseClient, ingest: IngestRow, fail: FailFn): Promise<void> {
+  if (!ingest.resend_email_id) {
+    await fail('Resend ingestion row is missing its provider email id.');
+    return;
+  }
   const done = async () => {
     await supabase
       .from('email_ingests')

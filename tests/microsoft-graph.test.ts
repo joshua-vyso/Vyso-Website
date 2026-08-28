@@ -6,6 +6,9 @@ import {
   MicrosoftGraphHttpError,
   acquireMicrosoftGraphAppToken,
   createMicrosoftGraphInboxSubscription,
+  downloadMicrosoftGraphFileAttachment,
+  fetchMicrosoftGraphAttachmentMetadata,
+  fetchMicrosoftGraphMessage,
   fetchRecentMicrosoftGraphInboxMessages,
   getMicrosoftGraphSubscription,
   microsoftGraphInboxSubscriptionResource,
@@ -172,6 +175,112 @@ test('message read rejects a page size outside the deliberately small verificati
     /integer from 1 to 10/,
   );
   assert.equal(called, false);
+});
+
+test('one-message ingestion read is GET-only and selects body plus conversation metadata', async () => {
+  let requestedUrl = '';
+  let requestedInit: RequestInit | undefined;
+  const fetchMock: typeof fetch = async (input, init) => {
+    requestedUrl = String(input);
+    requestedInit = init;
+    return Response.json({
+      id: 'message-1',
+      subject: 'Tax Invoice IOA76937',
+      from: { emailAddress: { name: 'Supplier', address: 'supplier@example.com' } },
+      receivedDateTime: '2026-08-28T08:38:57Z',
+      hasAttachments: true,
+      conversationId: 'conversation-1',
+      body: { contentType: 'text', content: 'Invoice attached.' },
+      bodyPreview: 'Invoice attached.',
+    });
+  };
+
+  const message = await fetchMicrosoftGraphMessage(
+    { accessToken: 'test-token', mailbox: 'orders@turnnslice.com', messageId: 'message-1' },
+    fetchMock,
+  );
+
+  const url = new URL(requestedUrl);
+  assert.equal(requestedInit?.method, 'GET');
+  assert.equal(requestedInit?.body, undefined);
+  assert.equal(
+    url.pathname,
+    '/v1.0/users/orders%40turnnslice.com/messages/message-1',
+  );
+  assert.equal(
+    url.searchParams.get('$select'),
+    'id,subject,from,receivedDateTime,body,bodyPreview,hasAttachments,conversationId',
+  );
+  assert.equal(
+    new Headers(requestedInit?.headers).get('prefer'),
+    'outlook.body-content-type="text"',
+  );
+  assert.equal(message.conversationId, 'conversation-1');
+  assert.equal(message.body?.content, 'Invoice attached.');
+});
+
+test('attachment listing requests metadata only and never contentBytes', async () => {
+  let requestedUrl = '';
+  let requestedInit: RequestInit | undefined;
+  const fetchMock: typeof fetch = async (input, init) => {
+    requestedUrl = String(input);
+    requestedInit = init;
+    return Response.json({
+      value: [
+        {
+          '@odata.type': '#microsoft.graph.fileAttachment',
+          id: 'attachment-1',
+          name: 'invoice.pdf',
+          contentType: 'application/pdf',
+          size: 18197,
+          isInline: false,
+          contentBytes: 'must-not-be-used',
+        },
+      ],
+    });
+  };
+
+  const page = await fetchMicrosoftGraphAttachmentMetadata(
+    { accessToken: 'test-token', mailbox: 'orders@turnnslice.com', messageId: 'message-1' },
+    fetchMock,
+  );
+  const url = new URL(requestedUrl);
+  assert.equal(requestedInit?.method, 'GET');
+  assert.equal(requestedInit?.body, undefined);
+  assert.equal(url.searchParams.get('$select'), 'id,name,contentType,size,isInline');
+  assert.equal(url.searchParams.get('$select')?.includes('contentBytes'), false);
+  assert.equal(page.attachments[0].attachmentType, '#microsoft.graph.fileAttachment');
+  assert.equal('contentBytes' in page.attachments[0], false);
+});
+
+test('attachment bytes are copied with one bounded GET to the attachment value endpoint', async () => {
+  let requestedUrl = '';
+  let requestedInit: RequestInit | undefined;
+  const fetchMock: typeof fetch = async (input, init) => {
+    requestedUrl = String(input);
+    requestedInit = init;
+    return new Response(new Uint8Array([37, 80, 68, 70]), {
+      headers: { 'content-type': 'application/pdf', 'content-length': '4' },
+    });
+  };
+
+  const copy = await downloadMicrosoftGraphFileAttachment(
+    {
+      accessToken: 'test-token',
+      mailbox: 'orders@turnnslice.com',
+      messageId: 'message-1',
+      attachmentId: 'attachment-1',
+      maxBytes: 1024,
+    },
+    fetchMock,
+  );
+  assert.equal(requestedInit?.method, 'GET');
+  assert.equal(requestedInit?.body, undefined);
+  assert.equal(
+    new URL(requestedUrl).pathname,
+    '/v1.0/users/orders%40turnnslice.com/messages/message-1/attachments/attachment-1/$value',
+  );
+  assert.deepEqual([...copy.bytes], [37, 80, 68, 70]);
 });
 
 test('subscription creation uses the exact Inbox resource and basic created notifications only', async () => {

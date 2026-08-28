@@ -33,8 +33,14 @@ export interface MicrosoftGraphWebhookLog {
 
 export interface MicrosoftGraphWebhookDependencies {
   rateLimitAllowed?: (bucket: string, limit: number, windowSeconds: number) => Promise<boolean>;
+  /** Persist provider ids before the 202. Heavy processing belongs in after()/the cron. */
+  onNotifications?: (notifications: readonly ValidatedMicrosoftGraphNotification[]) => Promise<void>;
   log?: (event: MicrosoftGraphWebhookLog) => void;
   now?: () => Date;
+}
+
+export interface ValidatedMicrosoftGraphNotification {
+  messageId: string;
 }
 
 interface ParsedNotification {
@@ -305,6 +311,24 @@ export async function handleMicrosoftGraphWebhook(
         subscriptionRef,
       });
       return jsonError(429, 'Too many notifications.', { 'retry-after': '60' });
+    }
+  }
+
+  if (dependencies.onNotifications) {
+    try {
+      const messageIds = [...new Set(notifications.map((notification) => notification.resourceData.id))];
+      await dependencies.onNotifications(
+        messageIds.map((messageId) => ({ messageId })),
+      );
+    } catch {
+      log({
+        timestamp: now().toISOString(),
+        outcome: 'rejected',
+        category: 'ingest-persistence',
+        notificationCount: notifications.length,
+        subscriptionRef,
+      });
+      return jsonError(503, 'Microsoft Graph notification could not be persisted.');
     }
   }
 

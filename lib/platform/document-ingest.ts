@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { extractDocument } from '@/lib/ai/anthropic';
 import { extractOrderDocument } from '@/lib/ai/order-reader';
@@ -289,6 +289,10 @@ export interface IngestDocumentInput {
   note?: string;
   /** Links the filed document back to the email it arrived on. */
   emailIngestId?: string | null;
+  /** Provider attachment id, used to heal retries without filing the same copy twice. */
+  sourceAttachmentId?: string | null;
+  /** Original provider MIME type, retained independently of Storage metadata. */
+  sourceContentType?: string | null;
   /**
    * Extract and FILE the document, but DON'T commit its side effects (OrderFlow
    * orders/invoices, ProcurePulse stock movements). The document lands at status
@@ -652,7 +656,53 @@ export type IngestDocumentResult =
  * review); everything else stores its extracted fields and feeds ProcurePulse.
  */
 export async function ingestDocument(input: IngestDocumentInput): Promise<IngestDocumentResult> {
-  const { supabase, orgId, userId, base64, mediaType, filename, note, emailIngestId = null, deferCommit = false } = input;
+  const {
+    supabase,
+    orgId,
+    userId,
+    base64,
+    mediaType,
+    filename,
+    note,
+    emailIngestId = null,
+    sourceAttachmentId = null,
+    sourceContentType = null,
+    deferCommit = false,
+  } = input;
+
+  // Provider retries must converge on one Vyso document and one Storage object.
+  // Checking before the model call avoids paying to re-read a copy that already
+  // exists; the database unique index remains the authoritative race guard.
+  if (emailIngestId && sourceAttachmentId) {
+    const { data: existing, error: existingError } = await supabase
+      .from('documents')
+      .select('id, status, document_type')
+      .eq('org_id', orgId)
+      .eq('email_ingest_id', emailIngestId)
+      .eq('source_attachment_id', sourceAttachmentId)
+      .limit(1)
+      .maybeSingle();
+    if (existingError) {
+      return { ok: false, status: 500, error: `Could not check the existing document: ${existingError.message}` };
+    }
+    if (existing) {
+      const row = existing as { id: string; status: string; document_type: string | null };
+      if (row.status === 'extracted' || row.status === 'approved') {
+        return {
+          ok: true,
+          documentId: row.id,
+          documentType: row.document_type,
+          itemCount: 0,
+        };
+      }
+      return {
+        ok: false,
+        status: 409,
+        error: 'The existing Vyso document copy is not successfully extracted.',
+        documentId: row.id,
+      };
+    }
+  }
 
   // 1. Classify (+ generic extract). One Haiku call decides the document type.
   let cls;
@@ -666,7 +716,17 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
 
   // 2. Upload the file to the private "documents" bucket.
   const safeName = filename.replace(/[^\w.\-() ]+/g, '_');
-  const storagePath = `${orgId}/${randomUUID()}_${safeName}`;
+  // Email attachments use a deterministic, opaque path. If a function dies after
+  // Storage accepts the bytes but before the documents row is inserted, the retry
+  // reuses this exact object instead of creating an orphaned second copy.
+  const attachmentStorageKey = emailIngestId && sourceAttachmentId
+    ? createHash('sha256')
+      .update(`${emailIngestId}\0${sourceAttachmentId}`, 'utf8')
+      .digest('hex')
+    : null;
+  const storagePath = attachmentStorageKey
+    ? `${orgId}/email-ingests/${attachmentStorageKey}`
+    : `${orgId}/${randomUUID()}_${safeName}`;
   const bytes = Buffer.from(base64, 'base64');
   // How much paper the reader got. Same stamp the /api/ai/extract path writes —
   // this pipeline serves the chat drop and the inbound-email worker, and a
@@ -675,7 +735,9 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
   const { error: upErr } = await supabase.storage
     .from('documents')
     .upload(storagePath, bytes, { contentType: mediaType || 'application/octet-stream', upsert: false });
-  if (upErr) {
+  // A deterministic email object already existing means an earlier attempt made
+  // it across the Storage boundary. Continue and heal/create the database row.
+  if (upErr && !(attachmentStorageKey && isUniqueViolation(upErr))) {
     return { ok: false, status: 500, error: `Could not save the file: ${upErr.message}` };
   }
 
@@ -692,9 +754,33 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
       document_type: documentType,
       ...(folderId ? { folder_id: folderId } : {}),
       ...(emailIngestId ? { email_ingest_id: emailIngestId } : {}),
+      ...(sourceAttachmentId ? { source_attachment_id: sourceAttachmentId } : {}),
+      ...(sourceContentType ? { source_content_type: sourceContentType } : {}),
     })
     .select('id')
     .single();
+  if ((insErr || !inserted) && emailIngestId && sourceAttachmentId && isUniqueViolation(insErr)) {
+    const { data: winner } = await supabase
+      .from('documents')
+      .select('id, status, document_type')
+      .eq('org_id', orgId)
+      .eq('email_ingest_id', emailIngestId)
+      .eq('source_attachment_id', sourceAttachmentId)
+      .limit(1)
+      .maybeSingle();
+    if (winner) {
+      const row = winner as { id: string; status: string; document_type: string | null };
+      if (row.status === 'extracted' || row.status === 'approved') {
+        return { ok: true, documentId: row.id, documentType: row.document_type, itemCount: 0 };
+      }
+      return {
+        ok: false,
+        status: 409,
+        error: 'The existing Vyso document copy is not successfully extracted.',
+        documentId: row.id,
+      };
+    }
+  }
   if (insErr || !inserted) {
     return { ok: false, status: 500, error: `Could not file the document: ${insErr?.message ?? 'unknown error'}` };
   }
@@ -806,7 +892,11 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
   }
 
   let supplierId: string | null = null;
-  if (parties.supplierName) {
+  // Deferred email ingest is a READ/FILE/EXTRACT boundary only. Supplier resolution
+  // can create both a suppliers row and a SupplySync profile, so it belongs behind
+  // the same human approval boundary as stock, orders and invoices. The extracted
+  // supplier name remains in extracted_data for the reviewer to confirm/link.
+  if (parties.supplierName && !deferCommit) {
     try {
       supplierId = await resolveSupplierProfile(supabase, orgId, parties.supplierName);
     } catch {
