@@ -10,6 +10,7 @@ import {
 } from '@/lib/platform/procurepulse';
 import { distinctItemUnits } from '@/lib/platform/procurepulse/units';
 import type { Recipe, RecipeIngredient, StockItem } from '@/lib/platform/types';
+import { parseLocaleNumber } from '@/lib/platform/locale-number';
 
 /** The thin stock snapshot the editor needs for typeahead + availability. */
 export interface ItemLite {
@@ -34,10 +35,20 @@ const READINESS: Record<RecipeReadiness, { bg: string; fg: string; label: string
   unknown: { bg: '#EEF1F5', fg: '#6B6F68', label: 'Link ingredients' },
 };
 
+/**
+ * Keystroke sanitiser for the output-qty / qty-per-batch boxes: strips only
+ * characters a locale-formatted number could never contain, and leaves both
+ * separators alone.
+ *
+ * FIXED BUG, DO NOT REINTRODUCE: this used to strip to `[^0-9.]` and then
+ * collapse repeated dots — it deleted every comma the user typed, so "0,20"
+ * became "020" on screen, a hundred-fold magnitude change, not a typo. Reading
+ * the number is `parseLocaleNumber`'s job at the point of use, never this
+ * function's — see OrderReviewEditor.tsx's `sanitizeDecimal` for the same
+ * pattern.
+ */
 function sanitizeDecimal(s: string): string {
-  const cleaned = s.replace(/[^0-9.]/g, '');
-  const parts = cleaned.split('.');
-  return parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : cleaned;
+  return s.replace(/[^0-9.,]/g, '');
 }
 function sanitizeInt(s: string): string {
   return s.replace(/[^0-9]/g, '');
@@ -176,7 +187,7 @@ export function RecipeEditor({
           recipe_id: recipe.id,
           stock_item_id: r.stock_item_id,
           product_name: r.product_name,
-          qty_per_batch: Number(r.qty_per_batch) || 0,
+          qty_per_batch: parseLocaleNumber(r.qty_per_batch) ?? 0,
           unit: item ? item.unit : r.unit || null,
         };
       }),
@@ -241,7 +252,7 @@ export function RecipeEditor({
               return {
                 stock_item_id: r.stock_item_id,
                 product_name: r.product_name.trim(),
-                qty_per_batch: Number(r.qty_per_batch) || 0,
+                qty_per_batch: parseLocaleNumber(r.qty_per_batch) ?? 0,
                 unit: item ? item.unit : r.unit || null,
               };
             }),
@@ -377,7 +388,7 @@ export function RecipeEditor({
                 {rows.map((row, i) => {
                   const item = row.stock_item_id ? itemById.get(row.stock_item_id) : null;
                   const matches = openRow === i ? matchesFor(row) : [];
-                  const perBatch = Number(row.qty_per_batch) || 0;
+                  const perBatch = parseLocaleNumber(row.qty_per_batch) ?? 0;
                   const canBatches = item && perBatch > 0 ? Math.floor(item.on_hand / perBatch) : null;
                   return (
                     <div key={row.key} className="border-t border-[#F4F5F7] px-5 py-3">

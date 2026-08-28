@@ -156,7 +156,7 @@ export async function processMicrosoftGraphEmailIngest(
         });
         return copy.bytes;
       },
-      ingestDocument: async ({ bytes, filename, mediaType, sourceAttachmentId, note }) =>
+      ingestDocument: async ({ bytes, filename, mediaType, sourceAttachmentId, note, customerEvidence }) =>
         ingestDocument({
           supabase,
           orgId: ingest.org_id,
@@ -165,6 +165,7 @@ export async function processMicrosoftGraphEmailIngest(
           mediaType,
           filename,
           note,
+          customerEvidence,
           emailIngestId: ingest.id,
           sourceAttachmentId,
           sourceContentType: mediaType,

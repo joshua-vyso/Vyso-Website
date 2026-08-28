@@ -165,11 +165,15 @@ export function ProductThresholds({
                 <div className="truncate text-[14px] font-semibold text-[#171A17]">{r.name}</div>
                 <div className="text-[11px] text-[#A0A49C]">{r.unit}</div>
               </div>
-              <input className={`${cell} of-num text-right`} inputMode="numeric" value={r.low_threshold} onChange={(e) => edit(r.stock_item_id, 'low_threshold', e.target.value.replace(/[^0-9.]/g, ''))} />
-              <input className={`${cell} of-num text-right`} inputMode="numeric" value={r.par_level} onChange={(e) => edit(r.stock_item_id, 'par_level', e.target.value.replace(/[^0-9.]/g, ''))} />
+              {/* FIXED BUG, DO NOT REINTRODUCE: `[^0-9.]` used to strip every
+                  comma typed — the raw string is sent as-is to
+                  /api/procurepulse/thresholds, which parses it server-side
+                  (lead_time_days below is genuinely integer-only, left as-is). */}
+              <input className={`${cell} of-num text-right`} inputMode="numeric" value={r.low_threshold} onChange={(e) => edit(r.stock_item_id, 'low_threshold', e.target.value.replace(/[^0-9.,]/g, ''))} />
+              <input className={`${cell} of-num text-right`} inputMode="numeric" value={r.par_level} onChange={(e) => edit(r.stock_item_id, 'par_level', e.target.value.replace(/[^0-9.,]/g, ''))} />
               <input className={`${cell} of-num text-right`} inputMode="numeric" value={r.lead_time_days} onChange={(e) => edit(r.stock_item_id, 'lead_time_days', e.target.value.replace(/[^0-9.]/g, ''))} />
               <div className="flex items-center gap-1">
-                <input className={`${cell} of-num text-right`} inputMode="numeric" value={r.freshness_value} onChange={(e) => edit(r.stock_item_id, 'freshness_value', e.target.value.replace(/[^0-9.]/g, ''))} />
+                <input className={`${cell} of-num text-right`} inputMode="numeric" value={r.freshness_value} onChange={(e) => edit(r.stock_item_id, 'freshness_value', e.target.value.replace(/[^0-9.,]/g, ''))} />
                 <select
                   value={r.freshness_unit}
                   onChange={(e) => edit(r.stock_item_id, 'freshness_unit', e.target.value)}

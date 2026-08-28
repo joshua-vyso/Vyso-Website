@@ -9,6 +9,7 @@ import {
   floorOnHand,
   type OutputCandidate,
 } from '@/lib/platform/procurepulse/batch-logic';
+import { parseLocaleNumber } from '@/lib/platform/locale-number';
 
 // A batch write is several sequential inserts + reads (recipe, catalogue,
 // batch header, ingredient lines, N movement writes) — give it more room than
@@ -31,10 +32,13 @@ function friendly(error: { code?: string; message?: string } | null | undefined)
 }
 
 const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
+// BatchLogger.tsx's output_qty/qty_used fields now legitimately send comma
+// decimals (post locale-number sweep); malformed input still fails to null,
+// never a guess, same as before.
 const num = (v: unknown): number | null => {
   if (v === '' || v == null) return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  return parseLocaleNumber(String(v)); // reads "12,5"; malformed still → null
 };
 
 interface IngredientIn {

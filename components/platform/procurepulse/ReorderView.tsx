@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { rand, type DraftOrder } from '@/lib/platform/procurepulse';
 import type { ReorderRequest, StockOrder } from '@/lib/platform/types';
+import { parseLocaleNumber } from '@/lib/platform/locale-number';
 
 interface ItemLite {
   id: string;
@@ -12,11 +13,18 @@ interface ItemLite {
   cheapest_supplier: string | null;
 }
 
-/** Keep digits + at most one decimal point (so "1.2.3" can't become NaN). */
+/**
+ * Keystroke sanitiser for the Quantity box: strips only characters a
+ * locale-formatted number could never contain, and leaves both separators
+ * alone.
+ *
+ * FIXED BUG, DO NOT REINTRODUCE: this used to strip to `[^0-9.]` and collapse
+ * repeated dots — it deleted every comma the user typed, so "0,20" became
+ * "020" on screen. Reading the number is `parseLocaleNumber`'s job at the
+ * point of use (below), never this function's.
+ */
 function sanitizeDecimal(s: string): string {
-  const cleaned = s.replace(/[^0-9.]/g, '');
-  const parts = cleaned.split('.');
-  return parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : cleaned;
+  return s.replace(/[^0-9.,]/g, '');
 }
 
 /** Monday-anchored ISO date key for the week a timestamp falls in. */
@@ -214,7 +222,7 @@ export function ReorderView({
         body: JSON.stringify({
           product_name: name,
           stock_item_id: picked?.id ?? null,
-          qty: Number(qty) || 0,
+          qty: parseLocaleNumber(qty) ?? 0,
           unit: unit || null,
           supplier: supplier || null,
           note: note || null,

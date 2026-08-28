@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { resolveUser, AI_CORS_HEADERS } from '@/lib/ai/auth';
 import { unitDimension, kgTo } from '@/lib/platform/procurepulse/units';
 import type { ExtractedLineItem, StockItem } from '@/lib/platform/types';
+import { parseLocaleNumber, inferDecimalSeparator, type DecimalSeparator } from '@/lib/platform/locale-number';
 
 export const maxDuration = 30;
 
@@ -9,13 +10,15 @@ export async function OPTIONS() {
   return new NextResponse(null, { headers: AI_CORS_HEADERS });
 }
 
-/** Loose numeric parse ("10", "1 240.50", "R78") → number | null. */
-function parseNum(s: string | undefined | null): number | null {
-  if (s == null) return null;
-  const cleaned = String(s).replace(/[^0-9.\-]/g, '');
-  if (cleaned === '' || cleaned === '-' || cleaned === '.') return null;
-  const n = Number(cleaned);
-  return Number.isFinite(n) ? n : null;
+/**
+ * Loose numeric parse ("10", "1 240.50", "R78") → number | null. Delegates to
+ * the shared locale-aware parser instead of `replace(/[^0-9.\-]/g, '')` — that
+ * old pattern deleted commas rather than reading them, turning an SA "0,20"
+ * into "020" → 20 (a magnitude error, not a rounding one). `hint` is this
+ * route's own separator reading (see the caller) over every line it processes.
+ */
+function parseNum(s: string | undefined | null, hint?: DecimalSeparator | null): number | null {
+  return parseLocaleNumber(s, hint ? { decimalSeparator: hint } : undefined);
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -87,13 +90,21 @@ export async function POST(req: Request) {
       .select('id, extracted_data')
       .in('id', docIds);
     const target = item.name.trim().toLowerCase();
-    for (const d of (docs ?? []) as { id: string; extracted_data: { line_items?: ExtractedLineItem[] } | null }[]) {
+    const docRows = (docs ?? []) as { id: string; extracted_data: { line_items?: ExtractedLineItem[] } | null }[];
+    // One separator reading across every line this route is about to read —
+    // see lib/platform/locale-number.ts. This item's feeding docs are read
+    // together as one weighted average, so they must agree on what a lone
+    // comma means rather than each line guessing on its own.
+    const hint = inferDecimalSeparator(
+      docRows.flatMap((d) => (d.extracted_data?.line_items ?? []).flatMap((li) => [li.quantity, li.weight])),
+    );
+    for (const d of docRows) {
       const lines = d.extracted_data?.line_items ?? [];
       let used = false;
       for (const li of lines) {
         if ((li.description ?? '').trim().toLowerCase() !== target) continue;
-        const q = parseNum(li.quantity);
-        const w = parseNum(li.weight);
+        const q = parseNum(li.quantity, hint);
+        const w = parseNum(li.weight, hint);
         if (q != null && q > 0 && w != null && w > 0) {
           totalQty += q;
           totalKg += q * w;

@@ -4,6 +4,7 @@ import {
   countGrossMismatches,
   grossMismatch,
   lineGross,
+  lineSeparatorHint,
   orderSubtotal,
   toPrintableLines,
 } from '../lib/platform/docu/order-line-totals.ts';
@@ -136,6 +137,43 @@ test('toPrintableLines drops rows with no product name', () => {
 test('toPrintableLines sets no amount — the sheet derives it from the same two factors', () => {
   const [line] = toPrintableLines([{ description: 'X', quantity: '2', unit: '', unit_price: '10' }]);
   assert.equal(line.amount, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// Locale wiring — a comma-decimal document (Standard Bank PO SBSA94517) must
+// read the SAME as its period-decimal equivalent, given the document's own
+// separator hint. See tests/docu-standard-bank-regression.test.ts for the
+// full five-row fixture; these lock the `lineGross`/`grossMismatch`/
+// `orderSubtotal` wiring in isolation.
+// ---------------------------------------------------------------------------
+
+test('lineGross reads a comma-decimal line correctly when given the document hint', () => {
+  assert.equal(lineGross({ quantity: '0,20', unit_price: '269,000', raw_amount: '53,80' }, ','), 53.8);
+});
+
+test('lineSeparatorHint infers comma from a comma-decimal document', () => {
+  const lines = [
+    { quantity: '0,20', unit_price: '269,000', raw_amount: '53,80' },
+    { quantity: '0,05', unit_price: '279,00', raw_amount: '13,95' },
+  ];
+  assert.equal(lineSeparatorHint(lines), ',');
+});
+
+test('orderSubtotal infers the hint itself and sums a comma-decimal document correctly', () => {
+  const lines = [
+    { quantity: '0,20', unit_price: '269,000', raw_amount: '53,80' },
+    { quantity: '0,05', unit_price: '279,00', raw_amount: '13,95' },
+  ];
+  // 0.20 × 269.00 = 53.80, plus 0.05 × 279.00 = 13.95 — never the corrupted
+  // 5 380 000-scale figure the old comma-stripping parser would have produced.
+  assert.equal(orderSubtotal(lines), 67.75);
+});
+
+test('grossMismatch reconciles a comma-decimal line and stays silent, given the hint', () => {
+  assert.equal(
+    grossMismatch({ quantity: '0,20', unit_price: '269,000', raw_amount: '53,80' }, ','),
+    null,
+  );
 });
 
 test('printing follows the edit, not the save', () => {

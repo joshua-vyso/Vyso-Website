@@ -44,6 +44,12 @@ export interface MicrosoftGraphIngestDependencies {
     mediaType: string;
     sourceAttachmentId: string;
     note?: string;
+    customerEvidence: {
+      senderEmail: string | null;
+      senderName: string | null;
+      subject: string | null;
+      messageText: string | null;
+    };
   }) => Promise<MicrosoftGraphDocumentSinkResult>;
   recordMessage: (
     message: MicrosoftGraphMessageContent,
@@ -207,6 +213,12 @@ export async function ingestMicrosoftGraphMessage(
         mediaType: attachment.contentType ?? 'application/octet-stream',
         sourceAttachmentId: attachment.id,
         note: message.subject?.slice(0, 500),
+        customerEvidence: {
+          senderEmail: message.from?.address ?? null,
+          senderName: message.from?.name ?? null,
+          subject: message.subject ?? null,
+          messageText: (message.body?.content ?? message.bodyPreview ?? '').slice(0, 20_000) || null,
+        },
       });
       if (result.documentId) {
         if (result.ok) documentsCreated += 1;

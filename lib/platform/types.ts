@@ -121,6 +121,8 @@ export interface ExtractedLineItem {
    *  Never computed; blank when the document prints no amount column.
    *  See lib/platform/docu/order-line-totals.ts. */
   raw_amount?: string;
+  /** Unit price exactly as printed, before locale-aware canonicalisation. */
+  raw_unit_price?: string;
   /** For uploaded customer ORDERS whose paper prints TWO quantity columns: the
    *  outer/pack figure and the unit it counts ("4", "Box"). Blank on the many
    *  documents with a single quantity column. Captured separately because
@@ -136,6 +138,8 @@ export interface ExtractedLineItem {
    *  `applyRowArithmetic`. Absent when the row needed no resolving or when
    *  nothing reconciled — a decision left inspectable rather than silent. */
   arithmetic_basis?: string;
+  /** Provenance for the headline quantity. Additive for historical rows. */
+  quantity_source?: 'printed' | 'derived' | 'unresolved';
   weight?: string;
   quantity?: string;
   units_per_box?: string;
@@ -162,12 +166,69 @@ export interface ExtractedData {
   customer_name?: string | null;
   /** Confidence (0–100) that customer_name was read correctly. */
   customer_confidence?: number | null;
+  /** Existing-customer link evidence. All fields are additive for old rows. */
+  customer_id?: string | null;
+  customer_match_confidence?: number | null;
+  customer_match_method?: string | null;
+  customer_match_reason?: string | null;
+  customer_match_ambiguous?: boolean | null;
+  customer_match_candidates?: Array<{
+    customer_id: string;
+    customer_name: string;
+    score: number;
+    reason: string;
+  }> | null;
+  customer_match_evidence?: {
+    sender_email: string | null;
+    sender_domain: string | null;
+    sender_name: string | null;
+    extracted_customer_name: string | null;
+    purchase_order_number: string | null;
+    delivery_location: string | null;
+  } | null;
+  purchase_order_number?: string | null;
+  order_date?: string | null;
+  requested_delivery_date?: string | null;
+  delivery_location?: string | null;
+  order_notes?: string | null;
+  extraction_model?: string | null;
+  extraction_warning?: string | null;
+  /** Structural evidence-loss gate; additive for historical rows. */
+  structure_audit?: {
+    status: 'ok' | 'needs_review';
+    score: number;
+    line_count: number;
+    suspicious_description_rows: number;
+    missing_unit_rows: number;
+    missing_unit_price_rows: number;
+    missing_amount_rows: number;
+    unsupported_box_default_rows: number;
+    repeated_description_rows: number;
+  } | null;
+  /** Safe PDF orientation provenance. Contains angles only, never file data. */
+  orientation_normalization?: {
+    applied: boolean;
+    original_rotation: number;
+    selected_rotation: number;
+    attempted_rotations: number[];
+  } | null;
+  image_pixels?: { width: number; height: number } | null;
+  /** Set only when a non-order classification read triggered a second,
+   *  order-lane read — lib/platform/docu/classification-policy.ts. True
+   *  whether or not that second read WON: `escalation_order_score` and
+   *  `escalation_classification_score` are always both present when this is
+   *  set, so a reviewer can see how close the call was even when the
+   *  classification read was the one kept. */
+  escalated?: boolean | null;
+  escalation_classification_score?: number | null;
+  escalation_order_score?: number | null;
 }
 
 export interface Document {
   id: string;
   org_id: string;
   supplier_id: string | null;
+  customer_id?: string | null;
   folder_id: string | null;
   filename: string;
   document_type: DocumentType | null;

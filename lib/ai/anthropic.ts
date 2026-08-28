@@ -3,6 +3,17 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { AiSummary, StatementSummary } from '@/lib/platform/docu/types';
 import { auditLines, summariseAudit, type LineAuditSummary } from '@/lib/platform/docu/line-audit';
 import {
+  auditExtractionStructure,
+  finalizeExtractionConfidence,
+  shouldRetryPdfOrientation,
+  type ExtractionStructureAudit,
+} from '@/lib/platform/docu/extraction-quality';
+import {
+  pdfOrientationCandidates,
+  type PdfOrientationNormalization,
+} from '@/lib/platform/docu/pdf-orientation';
+import { parseLocaleNumber, inferDecimalSeparator, type DecimalSeparator } from '@/lib/platform/locale-number';
+import {
   buildOrderPrompt,
   coerceOrderExtraction,
   type OrderExtractionResult,
@@ -113,6 +124,12 @@ export interface ExtractionResult {
   /** Arithmetic audit of the lines — null when they add up (or there was nothing
    *  to check). Persisted into `extracted_data.line_audit` by the callers. */
   line_audit: LineAuditSummary | null;
+  /** Evidence-loss gate. `needs_review` prevents a visually plausible but
+   *  structurally empty table from being treated as a successful read. */
+  structure_audit?: ExtractionStructureAudit;
+  /** Present only when a low-quality single-page PDF triggered orientation
+   *  recovery. Contains angles, never document bytes. */
+  orientation_normalization?: PdfOrientationNormalization;
 }
 
 function textOf(message: Anthropic.Message): string {
@@ -171,7 +188,7 @@ Rules:
     - weight = the pack/unit weight CONVERTED TO KILOGRAMS, as a plain decimal number with NO unit: "300G" -> "0.3", "500G" -> "0.5", "6KG" -> "6", "18KG" -> "18". "" if no weight is shown.
     - units_per_box = the number of punnets/units packed per box when the line clearly encodes it. For "BABY BUTTERNUT,300G PUNNE,*,0,*,12,*" that is "12". "" if not indicated.
 - total_kg = the TOTAL kilograms for the line = weight × quantity, as a plain decimal string (e.g. weight="0.3", quantity="40" -> total_kg="12"; weight="6", quantity="2" -> total_kg="12"). weight is already the per-pack weight in kg, so do NOT multiply by units_per_box. "" if weight or quantity is missing.
-- unit = the COUNTING unit that quantity is measured in, as a short lowercase plural noun, read from the pack/commodity descriptor: "PUNNE"/"PUNNET" -> "punnets", "BOX" -> "boxes", "POCKET" -> "pockets", "BAG" -> "bags", "BUNCH" -> "bunches", "CRATE" -> "crates", "TRAY" -> "trays", "PKT"/"PACKET" -> "packets". If the row is priced/counted by weight, use "kg". Default to "boxes" only when there is genuinely no packaging cue.
+- unit = the COUNTING unit that quantity is measured in, as a short lowercase plural noun, read from the printed UOM/pack/commodity descriptor: "PUNNE"/"PUNNET" -> "punnets", "BOX" -> "boxes", "POCKET" -> "pockets", "BAG" -> "bags", "BUNCH" -> "bunches", "CRATE" -> "crates", "TRAY" -> "trays", "PKT"/"PACKET" -> "packets". If the row is priced/counted by weight, use "kg". If no unit is printed or supported by the row, return ""; never supply a default unit.
 - "supplier" (per line): set ONLY when the line table has a per-row seller column — most often a market statement's "AGENT" column, where each commodity row is supplied by a different market agent/vendor (e.g. "WENPRO MARKET A", "C L DE VILLIERS", "R S A MARKET AG", "DAPPER AGENCIES", "BOTHA ROODT"). Copy that agent/vendor name into the line's "supplier", cleaned to Title Case and de-truncated to the full trading name where obvious (e.g. "Wenpro Market Agents", "R S A Market Agents", "Botha Roodt"). Leave it "" on ordinary single-supplier invoices/delivery notes where every line shares the one top-level supplier.
 - quantity, unit_price and amount come from the QTY, UNIT PRICE and TOTAL columns of that row — NOT from the commodity string.
 - CHECK THE COLUMN ALIGNMENT BEFORE YOU ANSWER. Every line's amount must equal its quantity × its unit_price (or total_kg × unit_price where the row is priced by weight). A photographed or skewed table makes it easy to read a rate or a total off the row above or below, so walk the table again row by row and confirm each price and amount sits on the SAME line as its product. If a row does not multiply out, you have taken its numbers from a neighbouring row — fix the pairing; never adjust the figures to make them agree.
@@ -185,6 +202,87 @@ export async function extractDocument(params: {
   mediaType: string;
   filename: string;
 }): Promise<ExtractionResult> {
+  const isPdf =
+    params.mediaType === 'application/pdf' || params.filename.toLowerCase().endsWith('.pdf');
+  const initial = await extractDocumentOnce(params);
+  let best = initial;
+  let bestInput = params;
+  let bestScore = auditExtractionStructure(initial).score;
+  let orientation: PdfOrientationNormalization | undefined;
+
+  // First read unchanged. Only a structurally bad single-page PDF pays for
+  // alternate rotation reads, and the winner is chosen by evidence preservation
+  // rather than by a preferred document type or party name.
+  if (isPdf && shouldRetryPdfOrientation(initial)) {
+    try {
+      const variants = await pdfOrientationCandidates(params.base64);
+      const attempted: number[] = [];
+      let selectedRotation = variants.originalRotation;
+      for (const variant of variants.candidates) {
+        attempted.push(variant.rotation);
+        const candidateInput = { ...params, base64: variant.base64 };
+        const candidate = await extractDocumentOnce(candidateInput);
+        // Hoisted: this used to run auditExtractionStructure(candidate) twice
+        // (once for the score, again for the status in the break check below).
+        const candidateAudit = auditExtractionStructure(candidate);
+        if (candidateAudit.score > bestScore) {
+          best = candidate;
+          bestInput = candidateInput;
+          bestScore = candidateAudit.score;
+          selectedRotation = variant.rotation;
+        }
+        if (candidateAudit.score >= 85 && candidateAudit.status === 'ok') break;
+      }
+      // Only record provenance when a rotation was actually TRIED. An empty
+      // `attempted_rotations` (variants.candidates was empty — a multi-page
+      // PDF, see pdf-orientation.ts) is not provenance, it's noise, and used to
+      // be stored anyway.
+      if (attempted.length > 0) {
+        orientation = {
+          applied: bestInput !== params,
+          original_rotation: variants.originalRotation,
+          selected_rotation: selectedRotation,
+          attempted_rotations: attempted,
+        };
+      }
+    } catch {
+      // Orientation recovery is a quality fallback. An unreadable/encrypted PDF
+      // remains the original low-confidence review result rather than turning a
+      // completed model read into an infrastructure error.
+    }
+  }
+
+  const structureAudit = auditExtractionStructure(best);
+  // A read that only succeeded after rotating a degraded scan is never
+  // auto-trustworthy on its own — a rotated fabrication must not outrank the
+  // original's honest low confidence. See finalizeExtractionConfidence's own
+  // comment for why this cap is independent of (and additive with) the
+  // needs_review cap.
+  const adoptedRotation = bestInput !== params;
+  const result: ExtractionResult = {
+    ...best,
+    overall_confidence: finalizeExtractionConfidence(best.overall_confidence, {
+      adoptedRotation,
+      auditStatus: structureAudit.status,
+    }),
+    structure_audit: structureAudit,
+    ...(orientation ? { orientation_normalization: orientation } : {}),
+  };
+  if (adoptedRotation) preparedInputs.set(result, bestInput);
+  return result;
+}
+
+type DocumentInput = { base64: string; mediaType: string; filename: string };
+const preparedInputs = new WeakMap<ExtractionResult, DocumentInput>();
+
+/** Return the in-memory orientation-normalised copy selected by classification.
+ * The bytes live only in this WeakMap: they cannot be JSON-serialised or stored
+ * in extracted_data by accident. */
+export function preparedDocumentInput(result: ExtractionResult, fallback: DocumentInput): DocumentInput {
+  return preparedInputs.get(result) ?? fallback;
+}
+
+async function extractDocumentOnce(params: DocumentInput): Promise<ExtractionResult> {
   const isPdf =
     params.mediaType === 'application/pdf' || params.filename.toLowerCase().endsWith('.pdf');
 
@@ -242,7 +340,17 @@ export async function extractDocument(params: {
   // Either way the confidence is capped under DOC_LOW_CONFIDENCE_THRESHOLD (80),
   // so an audited document lands in the review queue instead of sailing through
   // any auto-approval path.
-  const audit = auditLines({ lines, total: documentTotal(fields, summary) });
+  //
+  // ONE reading of this document's numeric format — from the header fields AND
+  // the line items together — computed once and handed to BOTH the total
+  // extraction and the line audit, so a comma-decimal statement is read the
+  // same way in its total as in its lines. Leaving each to infer separately
+  // risked exactly the split-brain a shared parser exists to prevent.
+  const numericHint = inferDecimalSeparator([
+    ...fields.map((f) => f.value),
+    ...lines.flatMap((l) => [l.quantity, l.unit_price, l.amount]),
+  ]);
+  const audit = auditLines({ lines, total: documentTotal(fields, summary, numericHint), hint: numericHint });
 
   return {
     document_type: parsed.document_type ?? null,
@@ -266,14 +374,27 @@ function cleanString(v: unknown): string | null {
 
 /** The document's own total, for the audit's line-sum cross-check: an extracted
  *  "total"/"amount due" field when the reader picked one up, else a statement's
- *  total purchases. VAT-only and pallet lines are not it. */
-function documentTotal(fields: ExtractedField[], summary: StatementSummary | null): number | null {
+ *  total purchases. VAT-only and pallet lines are not it.
+ *
+ *  Was `Number(String(f.value ?? '').replace(/[^0-9.\-]/g, ''))` — the same
+ *  comma-deleting bug as the old `parseAmount` (see extract.ts): a SA
+ *  comma-decimal total would have compared a real line sum against a total
+ *  1000× too large and flagged a perfectly clean document as `line_math`. Now a
+ *  thin delegate to the one shared parser, steered by `hint` — the same
+ *  document-wide reading `auditLines` gets, so the total and the lines can
+ *  never disagree about what number format this document uses. */
+function documentTotal(
+  fields: ExtractedField[],
+  summary: StatementSummary | null,
+  hint?: DecimalSeparator | null,
+): number | null {
+  const opts = hint ? { decimalSeparator: hint } : undefined;
   for (const f of fields) {
     const label = (f.label ?? '').toLowerCase();
     const isTotal = label.includes('total') || label.includes('amount due');
     if (!isTotal || /vat|tax|pallet|balance/.test(label)) continue;
-    const n = Number(String(f.value ?? '').replace(/[^0-9.\-]/g, ''));
-    if (Number.isFinite(n) && n !== 0) return n;
+    const n = parseLocaleNumber(f.value, opts);
+    if (n != null && n !== 0) return n;
   }
   return summary?.total_purchases ?? null;
 }

@@ -1,7 +1,7 @@
 import { NextResponse, after } from 'next/server';
 import { resolveUser, AI_CORS_HEADERS } from '@/lib/ai/auth';
 import { docWatchForDocument } from '@/lib/platform/doc-watch/run';
-import { extractDocument, aiConfigured } from '@/lib/ai/anthropic';
+import { extractDocument, preparedDocumentInput, aiConfigured } from '@/lib/ai/anthropic';
 import { extractOrderDocument } from '@/lib/ai/order-reader';
 import { feedDocumentToProcurePulse, orgHasProcurePulse } from '@/lib/platform/procurepulse-feed';
 import { feedDocumentToSupplySync, orgHasSupplySync } from '@/lib/platform/supplysync-feed';
@@ -149,7 +149,10 @@ export async function POST(req: Request) {
 
     let order;
     try {
-      order = await extractOrderDocument({ base64, mediaType, filename: doc.filename, products });
+      const orderInput = generic
+        ? preparedDocumentInput(generic, { base64, mediaType, filename: doc.filename })
+        : { base64, mediaType, filename: doc.filename };
+      order = await extractOrderDocument({ ...orderInput, products });
     } catch (err) {
       await supabase.from('documents').update({ status: 'error' }).eq('id', doc.id);
       return NextResponse.json(
@@ -187,6 +190,9 @@ export async function POST(req: Request) {
           // OpenAI failure that fell back to Claude). A fallback nobody is told
           // about is a document read by a model nobody chose.
           extraction_warning: order.warning ?? null,
+          structure_audit: order.structure_audit ?? generic?.structure_audit ?? null,
+          orientation_normalization:
+            order.orientation_normalization ?? generic?.orientation_normalization ?? null,
           // The size of the photo this was read from — the innocent
           // explanation for a misread digit, and the `low_resolution` flag.
           image_pixels: imagePixels,
@@ -291,6 +297,8 @@ export async function POST(req: Request) {
     // Arithmetic audit of the lines (null when they add up). Drives the
     // review-queue warning and the Doc-U flags — see lib/platform/docu/line-audit.ts.
     line_audit: result.line_audit,
+    structure_audit: result.structure_audit ?? null,
+    orientation_normalization: result.orientation_normalization ?? null,
     // Only set when the org issued it — lib/platform/docu/document-direction.ts.
     direction: parties.record,
     // Written on every document, not just orders: an invoice photographed too

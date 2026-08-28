@@ -9,27 +9,38 @@ import { crossesDimension } from '@/lib/platform/procurepulse/units';
 import { UnitCombobox } from './UnitCombobox';
 import { PageHead } from './ui';
 import type { StockItem } from '@/lib/platform/types';
+import { parseLocaleNumber } from '@/lib/platform/locale-number';
 
-/** One editable product row (a subset of pp_stock_items + a client id). */
+/**
+ * One editable product row (a subset of pp_stock_items + a client id).
+ *
+ * `low_threshold`/`avg_unit_price` are kept as the RAW STRING the input shows
+ * — not the parsed number — so a keystroke never reformats what the user is
+ * mid-way through typing (a comma-decimal "0,20" must still read as "0,20"
+ * after the "," keystroke, not collapse back to "0"). They are only resolved
+ * to numbers at `save()`, via `parseLocaleNumber`.
+ */
 interface Row {
   id: string; // real uuid, or `new-N` for an unsaved product
   name: string;
   unit: string;
-  low_threshold: number;
-  avg_unit_price: number | null;
+  low_threshold: string;
+  avg_unit_price: string;
   on_hand: number;
   category: string | null;
 }
 
 const PAGE_SIZE = 50;
 
+const numStr = (n: number | null | undefined) => (n == null ? '' : String(n));
+
 function toRow(s: StockItem): Row {
   return {
     id: s.id,
     name: s.name,
     unit: s.unit ?? '',
-    low_threshold: Number(s.low_threshold ?? 0),
-    avg_unit_price: s.avg_unit_price,
+    low_threshold: numStr(s.low_threshold ?? 0),
+    avg_unit_price: numStr(s.avg_unit_price),
     on_hand: Number(s.on_hand ?? 0),
     category: s.category,
   };
@@ -99,7 +110,7 @@ export function ProductsManager({
     const id = `new-${tempRef.current++}`;
     setWorking((prev) => {
       pushHistory(prev);
-      return [{ id, name: '', unit: '', low_threshold: 0, avg_unit_price: null, on_hand: 0, category: null }, ...prev];
+      return [{ id, name: '', unit: '', low_threshold: '0', avg_unit_price: '', on_hand: 0, category: null }, ...prev];
     });
     setSearch('');
     setPage(0);
@@ -173,8 +184,9 @@ export function ProductsManager({
             .update({
               name: r.name.trim(),
               unit: r.unit.trim(),
-              low_threshold: r.low_threshold,
-              avg_unit_price: r.avg_unit_price,
+              // Resolved here (not on keystroke) — see the Row doc comment.
+              low_threshold: parseLocaleNumber(r.low_threshold) ?? 0,
+              avg_unit_price: r.avg_unit_price.trim() === '' ? null : parseLocaleNumber(r.avg_unit_price),
               on_hand: r.on_hand,
             })
             .eq('id', r.id),
@@ -189,8 +201,8 @@ export function ProductsManager({
             org_id: org.id,
             name: r.name.trim(),
             unit: r.unit.trim() || 'units',
-            low_threshold: r.low_threshold,
-            avg_unit_price: r.avg_unit_price,
+            low_threshold: parseLocaleNumber(r.low_threshold) ?? 0,
+            avg_unit_price: r.avg_unit_price.trim() === '' ? null : parseLocaleNumber(r.avg_unit_price),
             on_hand: 0,
             currency: 'ZAR',
             category: r.category,
@@ -386,18 +398,22 @@ export function ProductsManager({
                 <input
                   className={`${cell} of-num text-right`}
                   inputMode="numeric"
-                  value={String(r.low_threshold)}
-                  onChange={(e) => editField(r.id, 'low_threshold', Number(e.target.value.replace(/[^0-9.]/g, '')) || 0)}
+                  value={r.low_threshold}
+                  // FIXED BUG, DO NOT REINTRODUCE: this used to parse-and-store
+                  // `Number(e.target.value.replace(/[^0-9.]/g, '')) || 0` on every
+                  // keystroke — stripping the comma before it was ever read, and
+                  // reformatting the field back to a plain number mid-type, so a
+                  // typed "0,20" collapsed to "0" the instant the comma landed.
+                  // The raw string is kept as-is now; parseLocaleNumber resolves
+                  // it once, at save() — see the Row doc comment above.
+                  onChange={(e) => editField(r.id, 'low_threshold', e.target.value.replace(/[^0-9.,]/g, ''))}
                 />
                 <input
                   className={`${cell} of-num text-right`}
                   inputMode="decimal"
-                  value={r.avg_unit_price == null ? '' : String(r.avg_unit_price)}
+                  value={r.avg_unit_price}
                   placeholder="—"
-                  onChange={(e) => {
-                    const v = e.target.value.replace(/[^0-9.]/g, '');
-                    editField(r.id, 'avg_unit_price', v === '' ? null : Number(v));
-                  }}
+                  onChange={(e) => editField(r.id, 'avg_unit_price', e.target.value.replace(/[^0-9.,]/g, ''))}
                 />
                 <span className="flex items-center justify-end gap-1.5 text-[14px] text-[#6B6F68]">
                   {pending ? (

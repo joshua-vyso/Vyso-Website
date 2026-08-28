@@ -111,6 +111,26 @@ test('coerceOrderExtraction reads a well-formed reply, fences and all', () => {
   assert.equal(out.line_items.length, 1);
   assert.equal(out.line_items[0].raw_description, 'FF - GRAPES WHITE BOX');
   assert.equal(out.line_items[0].raw_amount, '1318.00');
+  assert.equal(out.purchase_order_number, null, 'new header fields remain optional for old consumers');
+});
+
+test('new order header fields are additive and survive coercion', () => {
+  const out = coerceOrderExtraction(JSON.stringify({
+    customer_name: 'Standard Bank Global Leadership Centre',
+    customer_confidence: 96,
+    purchase_order_number: '94517',
+    order_date: '28/08/2026',
+    requested_delivery_date: '31/08/2026',
+    delivery_location: 'Global Leadership Centre',
+    order_notes: 'Deliver before 10:00',
+    line_items: [],
+    overall_confidence: 92,
+  }));
+  assert.equal(out.purchase_order_number, '94517');
+  assert.equal(out.order_date, '28/08/2026');
+  assert.equal(out.requested_delivery_date, '31/08/2026');
+  assert.equal(out.delivery_location, 'Global Leadership Centre');
+  assert.equal(out.order_notes, 'Deliver before 10:00');
 });
 
 test('a reader that skipped raw_description still leaves the resolver a raw name', () => {
@@ -145,6 +165,23 @@ test('an amount is never invented by the coercion — a blank stays blank', () =
     line_items: [{ description: 'Grapes White', quantity: '2', unit_price: '659.00' }],
   }));
   assert.equal(out.line_items[0].raw_amount, '');
+});
+
+test('comma-decimal unit-price evidence survives coercion for review', () => {
+  const out = coerceOrderExtraction(JSON.stringify({
+    line_items: [{
+      raw_description: 'Apple Granny Smith Kg',
+      description: 'Apple Granny Smith',
+      quantity: '20',
+      unit: 'kg',
+      raw_unit_price: '17,40',
+      unit_price: '17,40',
+      raw_amount: '348,00',
+      confidence: 95,
+    }],
+  }));
+  assert.equal(out.line_items[0].raw_unit_price, '17,40');
+  assert.equal(out.line_items[0].unit_price, '17,40');
 });
 
 // --- the provider default --------------------------------------------------

@@ -16,6 +16,7 @@ import {
 } from '@/lib/platform/supplysync-credits';
 import { useSupplySync } from './context';
 import { RED } from './shared';
+import { parseLocaleNumber } from '@/lib/platform/locale-number';
 
 // ---------------------------------------------------------------------------
 // Local form primitives — the same field language as the add-supplier wizard.
@@ -129,9 +130,18 @@ function todayISO(): string {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString().slice(0, 10);
 }
 
+/**
+ * A rebate/credit money-or-rate field's string → a number, defaulting to 0.
+ *
+ * FIXED BUG, DO NOT REINTRODUCE: this used to be
+ * `Number(v.replace(/[^0-9.\-]/g, ''))` — it deleted commas instead of
+ * reading them, so a comma-decimal rate like "2,5" (percent) or a flat amount
+ * like "1 234,56" was quietly read as 25 or 123456. These fields are never
+ * keystroke-sanitised (free text), so this delegation is the only place that
+ * reading happens.
+ */
 function toNumber(v: string): number {
-  const n = Number(v.replace(/[^0-9.\-]/g, ''));
-  return Number.isFinite(n) ? n : 0;
+  return parseLocaleNumber(v) ?? 0;
 }
 
 /** A credit claim is also an operational incident — this is the timeline event

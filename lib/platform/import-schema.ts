@@ -8,6 +8,11 @@
  * their non-empty values are JOINED. A column can also be dropped (mapped to '').
  */
 
+// `.ts`-suffixed so `node --test` can load this module directly (see
+// tests/import-schema-coerce.test.ts) — matches the convention already used
+// by lib/platform/docu/order-line-totals.ts for the same reason.
+import { parseLocaleNumber } from './locale-number.ts';
+
 export type ImportEntity = 'customers' | 'products';
 export type ImportFieldType = 'text' | 'number' | 'boolean' | 'vat_treatment' | 'account_status' | 'vat_rate';
 
@@ -108,10 +113,15 @@ export function coerceField(raw: unknown, type: ImportFieldType): string | numbe
   const v = String(raw ?? '').trim();
   if (v === '') return null;
   switch (type) {
-    case 'number': {
-      const n = Number(v.replace(/[^0-9.\-]/g, ''));
-      return Number.isFinite(n) ? n : null;
-    }
+    case 'number':
+      // Delegates to the shared locale-aware parser instead of
+      // `Number(v.replace(/[^0-9.\-]/g, ''))` — that old pattern deleted commas
+      // rather than reading them, so an imported "1 234,56" (credit
+      // limit/opening balance) became "123456" — two orders of magnitude off,
+      // not a rounding error. No per-cell separator hint is available (each
+      // spreadsheet cell is read alone), so an ambiguous "1,234" still keeps
+      // the en-thousands default (1234), exactly as it always has.
+      return parseLocaleNumber(v);
     case 'boolean':
       return /^(active|1|true|yes|y)$/i.test(v);
     case 'account_status':
@@ -119,7 +129,10 @@ export function coerceField(raw: unknown, type: ImportFieldType): string | numbe
     case 'vat_treatment':
       return /^z/i.test(v) ? 'zero_rated' : /^e/i.test(v) ? 'exempt' : 'standard';
     case 'vat_rate':
-      return /^z/i.test(v) ? 0 : /^e/i.test(v) ? 0 : /^s/i.test(v) ? 15 : Number(v.replace(/[^0-9.\-]/g, '')) || 0;
+      // Same delegation; `%` suffixes ("15%") are stripped by the shared
+      // parser itself, same as the old regex did. Malformed/zero-rated/exempt
+      // still fall back to 0 — never null — matching the field's old contract.
+      return /^z/i.test(v) ? 0 : /^e/i.test(v) ? 0 : /^s/i.test(v) ? 15 : (parseLocaleNumber(v) ?? 0);
     default:
       return v;
   }

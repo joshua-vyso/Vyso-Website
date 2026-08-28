@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Document, ExtractedLineItem } from './types';
 import { isOutgoingDocument } from './docu/document-direction';
 import type { DocuExtractedData } from './docu/types';
+import { parseLocaleNumber, inferDecimalSeparator, type DecimalSeparator } from './locale-number';
 
 /**
  * Doc-U → ProcurePulse feed.
@@ -32,21 +33,22 @@ export interface FeedResult {
 
 /**
  * Parse a loose numeric string ("1 240.50", "R78", "12") to a number, or null.
- * Uses Number() (not parseFloat) so malformed values like "5-", "1-2", "1.2.3"
- * reject to null instead of silently truncating — matching parseAmount in
- * lib/platform/docu/extract.ts.
+ * Delegates to the shared locale-aware parser (lib/platform/locale-number.ts)
+ * instead of `String(s).replace(/[^0-9.\-]/g, '')` — that old pattern DELETED
+ * commas rather than reading them, so an SA-formatted "0,20" became "020" → 20,
+ * a change of magnitude rather than a rounding error (see that module's header
+ * for the full incident). `hint` is a document-level separator reading from
+ * `inferDecimalSeparator` over the same line set this string came from — pass
+ * it whenever the whole set is in scope; omit it for a single string read in
+ * isolation, which is still read correctly for every unambiguous format.
  */
-function parseNum(s: string | undefined | null): number | null {
-  if (s == null) return null;
-  const cleaned = String(s).replace(/[^0-9.\-]/g, '');
-  if (cleaned === '' || cleaned === '-' || cleaned === '.') return null;
-  const n = Number(cleaned);
-  return Number.isFinite(n) ? n : null;
+export function parseNum(s: string | undefined | null, hint?: DecimalSeparator | null): number | null {
+  return parseLocaleNumber(s, hint ? { decimalSeparator: hint } : undefined);
 }
 
 /** Positive price, or null — never let a negative/zero price reach pricing. */
-function parsePrice(s: string | undefined | null): number | null {
-  const n = parseNum(s);
+export function parsePrice(s: string | undefined | null, hint?: DecimalSeparator | null): number | null {
+  const n = parseNum(s, hint);
   return n != null && n > 0 ? n : null;
 }
 
@@ -56,8 +58,8 @@ function likeEscape(s: string): string {
 }
 
 /** Build a "300g · 12/box"-style pack label from extracted weight (kg) + units. */
-function buildPack(weight: string | undefined, unitsPerBox: string | undefined): string | null {
-  const w = parseNum(weight);
+function buildPack(weight: string | undefined, unitsPerBox: string | undefined, hint?: DecimalSeparator | null): string | null {
+  const w = parseNum(weight, hint);
   const weightLabel = w != null && w > 0 ? (w < 1 ? `${Math.round(w * 1000)}g` : `${w}kg`) : null;
   const upb = (unitsPerBox ?? '').trim();
   if (weightLabel && upb) return `${weightLabel} · ${upb}/box`;
@@ -113,6 +115,16 @@ export async function computeKgPerUnit(
     }
   }
 
+  // Read each feeding document's own decimal separator ONCE from its own line
+  // set (quantity/weight/total_kg) — a document's numbers are read together
+  // (see lib/platform/locale-number.ts), and this average blends lines from
+  // several documents, so two documents are never assumed to share one
+  // convention just because they feed the same product.
+  const hintByDoc = new Map<string, DecimalSeparator | null>();
+  for (const [docId, docLines] of linesByDoc) {
+    hintByDoc.set(docId, inferDecimalSeparator(docLines.flatMap((l) => [l.quantity, l.weight, l.total_kg])));
+  }
+
   for (const it of items) {
     const docSet = docIdsByItem.get(it.id);
     const target = it.name.trim().toLowerCase();
@@ -120,12 +132,13 @@ export async function computeKgPerUnit(
     let totalKg = 0;
     if (docSet) {
       for (const docId of docSet) {
+        const hint = hintByDoc.get(docId);
         for (const li of linesByDoc.get(docId) ?? []) {
           if ((li.description ?? '').trim().toLowerCase() !== target) continue;
-          const q = parseNum(li.quantity);
+          const q = parseNum(li.quantity, hint);
           if (q == null || q <= 0) continue;
-          const w = parseNum(li.weight);
-          const tkg = parseNum(li.total_kg);
+          const w = parseNum(li.weight, hint);
+          const tkg = parseNum(li.total_kg, hint);
           // Prefer the canonical per-pack weight (× qty); fall back to total_kg.
           const kg = w != null && w > 0 ? q * w : tkg != null && tkg > 0 ? tkg : null;
           if (kg != null && kg > 0) {
@@ -265,6 +278,13 @@ export async function feedDocumentToProcurePulse(
     return { ...base, reason: 'no-line-items' };
   }
 
+  // One separator reading for the whole document (see lib/platform/locale-number.ts)
+  // — a line-by-line guess would let one row's "269,000" and a sibling row's
+  // "0,20" on the SAME invoice disagree about what a lone comma means.
+  const hint = inferDecimalSeparator(
+    lineItems.flatMap((li) => [li.quantity, li.unit_price, li.weight, li.total_kg]),
+  );
+
   // Document-level supplier (for price provenance + movement label). The supplier
   // extracted in Doc-U review is authoritative; fall back to a linked suppliers row.
   let supplierName: string | null = (doc.extracted_data?.supplier ?? '').trim() || null;
@@ -327,7 +347,7 @@ export async function feedDocumentToProcurePulse(
     const name = (li.description ?? '').trim();
     if (!name) continue;
 
-    const price = parsePrice(li.unit_price);
+    const price = parsePrice(li.unit_price, hint);
     // Counting unit as captured/corrected in Doc-U review (boxes / punnets / …).
     const lineUnit = (li.unit ?? '').trim();
     // Per-line seller (a market statement's AGENT) — else the document supplier.
@@ -352,7 +372,7 @@ export async function feedDocumentToProcurePulse(
         .insert({
           org_id: doc.org_id,
           name,
-          pack: buildPack(li.weight, li.units_per_box),
+          pack: buildPack(li.weight, li.units_per_box, hint),
           unit: lineUnit || 'boxes',
           on_hand: 0,
           low_threshold: 0,
@@ -370,7 +390,7 @@ export async function feedDocumentToProcurePulse(
     if (lineUnit) unitByItem.set(itemId, lineUnit);
     if (lineSupplier) supplierByItem.set(itemId, lineSupplier);
 
-    const qty = parseNum(li.quantity) ?? 0;
+    const qty = parseNum(li.quantity, hint) ?? 0;
     if (qty > 0) {
       const { error: moveErr } = await supabase.from('pp_movements').insert({
         org_id: doc.org_id,

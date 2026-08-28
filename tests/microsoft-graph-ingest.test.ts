@@ -111,6 +111,26 @@ test('a supplier invoice copy flows through the existing document sink once', as
   assert.deepEqual(result.errors, []);
 });
 
+test('message identity reaches the document sink without becoming an organisation selector', async () => {
+  const captured: Array<Parameters<MicrosoftGraphIngestDependencies['ingestDocument']>[0]> = [];
+  await ingestMicrosoftGraphMessage(
+    { expectedMessageId: MESSAGE_ID, processedAttachmentIds: [], documentsCreated: 0 },
+    dependencies({
+      ingestDocument: async (input) => {
+        captured.push(input);
+        return { ok: true, documentId: 'document-1', documentType: 'invoice' };
+      },
+    }),
+  );
+  assert.deepEqual(captured[0]?.customerEvidence, {
+    senderEmail: 'charlien@countrymushrooms.co.za',
+    senderName: 'Charlien Naude',
+    subject: 'Tax Invoice IOA76937',
+    messageText: 'Tax Invoice IOA76937 from COUNTRY MUSHROOMS (PTY) LTD',
+  });
+  assert.ok(!('orgId' in (captured[0]?.customerEvidence ?? {})));
+});
+
 test('Graph message GET failure stops before attachment or parser work', async () => {
   let touchedAttachment = false;
   await assert.rejects(
@@ -271,4 +291,9 @@ test('deferred document ingestion cannot create supplier or operational side eff
   assert.match(source, /parties\.supplierName && !deferCommit/);
   assert.match(source, /if \(!deferCommit\) \{[\s\S]*?runDocumentSideEffects/);
   assert.match(source, /Deferred \(email\): stop here/);
+});
+
+test('email-linked orders cannot enter the unmatched-customer auto-create path', () => {
+  const source = readFileSync(new URL('../lib/platform/orderflow-from-doc.ts', import.meta.url), 'utf8');
+  assert.match(source, /if \(!customerId && !sourceDoc\.email_ingest_id\)/);
 });

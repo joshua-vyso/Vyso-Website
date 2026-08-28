@@ -16,6 +16,7 @@ import { TypePicker } from './TypePicker';
 import { StatementTotalsCard } from './StatementTotalsCard';
 import { FlagsList } from './FlagsList';
 import { LineAuditNotice } from './LineAuditNotice';
+import { StructureAuditNotice } from './StructureAuditNotice';
 import { AiSummaryCard } from './AiSummaryCard';
 import { ConfidenceBreakdown } from './ConfidenceBreakdown';
 import { DocumentRelationshipFlow } from './DocumentRelationshipFlow';
@@ -180,6 +181,11 @@ export function DocumentDetailPanel({
           or whose lines do not add up — is the one thing the reviewer must read
           before they trust anything below it. */}
       <LineAuditNotice audit={extracted?.line_audit} className="mt-5" />
+      <StructureAuditNotice
+        audit={extracted?.structure_audit}
+        orientation={extracted?.orientation_normalization}
+        className="mt-3"
+      />
 
       {/* Two main blocks — extracted data (left) + original preview (right).
           The preview cell stretches to the row height and holds a sticky child,
@@ -189,6 +195,7 @@ export function DocumentDetailPanel({
           <OrderReviewEditor
             documentId={doc.id}
             extractedData={extracted}
+            initialCustomerId={doc.customer_id ?? null}
             customers={customers}
             linkedOrder={linkedOrder}
             orgUnits={orgUnits}

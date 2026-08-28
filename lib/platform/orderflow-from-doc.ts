@@ -45,6 +45,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ExtractedData } from './types.ts';
 import { invoiceNumber, vatRateForTreatment } from './orderflow.ts';
 import type { OfCustomer } from './orderflow.ts';
+import { parseLocaleNumber, inferDecimalSeparator, type DecimalSeparator } from './locale-number.ts';
 import type { CdCustomerItemAlias, CdPriceList, CdPriceOverride } from './coredata.ts';
 import { customerPriceList, resolvePrice } from './coredata.ts';
 import {
@@ -122,14 +123,6 @@ export function matchCustomer(
   if (best && best.score >= 0.5) return { customerId: best.id, confidence: Math.round(55 + best.score * 25) };
   return { customerId: null, confidence: 0 };
 }
-
-const num = (v: unknown): number | null => {
-  if (v == null || v === '') return null;
-  const s = String(v).replace(/[^0-9.\-]/g, '');
-  if (!s) return null;
-  const n = Number(s);
-  return Number.isFinite(n) ? n : null;
-};
 
 export interface StockLite {
   id: string;
@@ -252,13 +245,29 @@ export async function syncOrderFromDocument(
 
   const { data: docRow } = await db
     .from('documents')
-    .select('id, extracted_data')
+    .select('id, extracted_data, customer_id, email_ingest_id')
     .eq('id', documentId)
     .eq('org_id', orgId)
     .maybeSingle();
   if (!docRow) return { ok: false, reason: 'doc-not-found' };
-  const ed = ((docRow as { extracted_data?: ExtractedData }).extracted_data ?? {}) as ExtractedData;
+  const sourceDoc = docRow as {
+    extracted_data?: ExtractedData;
+    customer_id?: string | null;
+    email_ingest_id?: string | null;
+  };
+  const ed = (sourceDoc.extracted_data ?? {}) as ExtractedData;
   const lines = ed.line_items ?? [];
+
+  // ONE reading of this document's numeric format, formed before a single line
+  // is priced — never per-line, which is how "0,20" on one row and "269,000"
+  // (ambiguous alone) on the next could end up read two different ways on the
+  // SAME order. See lib/platform/locale-number.ts: this is exactly the bug
+  // that let a R53.80 line reach an invoice as R5 380 000.00.
+  const numericHint: DecimalSeparator | null = inferDecimalSeparator(
+    lines.flatMap((li) => [li.quantity, li.unit_price]),
+  );
+  const num = (v: string | number | null | undefined): number | null =>
+    parseLocaleNumber(v, numericHint ? { decimalSeparator: numericHint } : undefined);
 
   // We upsert exactly ONE order per source document, which needs the
   // of-order-source-doc migration (of_orders.source_document_id). Without it we
@@ -277,9 +286,12 @@ export async function syncOrderFromDocument(
   // params (customer-ai-invoicing.sql) ride along when present.
   const { data: custRows } = await db.from('of_customers').select('*').eq('org_id', orgId);
   const customers = (custRows ?? []) as (CustomerLite & Partial<OfCustomer>)[];
-  let customerId = params.customerId ?? null;
+  // A reviewer pick wins, then the read-only existing-customer resolution stored
+  // on the document. Both are verified against the org-scoped list below.
+  let customerId = params.customerId ?? sourceDoc.customer_id ?? ed.customer_id ?? null;
+  if (customerId && !customers.some((customer) => customer.id === customerId)) customerId = null;
   let matchConfidence = customerId ? 100 : 0;
-  if (!customerId) {
+  if (!customerId && !sourceDoc.email_ingest_id) {
     const m = matchCustomer(ed.customer_name, customers);
     customerId = m.customerId;
     matchConfidence = m.confidence;

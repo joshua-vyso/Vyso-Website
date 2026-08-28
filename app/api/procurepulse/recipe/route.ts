@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getPlatformSession, createServerSupabase } from '@/lib/platform/supabase-server';
 import { AI_CORS_HEADERS } from '@/lib/ai/auth';
+import { parseLocaleNumber } from '@/lib/platform/locale-number';
 
 export async function OPTIONS() {
   return new NextResponse(null, { headers: AI_CORS_HEADERS });
@@ -15,10 +16,13 @@ function friendly(error: { code?: string; message?: string } | null): string {
 }
 
 const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
+// RecipeEditor.tsx's output_qty/qty_per_batch fields now legitimately send
+// comma decimals (post locale-number sweep); malformed input still fails to
+// null, never a guess, same as before.
 const num = (v: unknown): number | null => {
   if (v === '' || v == null) return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  return parseLocaleNumber(String(v)); // reads "12,5"; malformed still → null
 };
 
 interface IngredientIn {

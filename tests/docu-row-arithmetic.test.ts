@@ -75,6 +75,7 @@ test('the avocado row is populated from the winning pairing, not from the extrac
   assert.equal(line.quantity, '48', 'the each figure, not the box figure');
   assert.equal(line.unit_price, '15.75');
   assert.equal(line.arithmetic_basis, 'unit_quantity');
+  assert.equal(line.quantity_source, 'printed');
   // Evidence is never rewritten by an arithmetic pass.
   assert.equal(line.raw_amount, '756.00');
   assert.equal(line.description, 'Avocado');
@@ -161,7 +162,7 @@ test('a cost per each billed across every box resolves on bulk × unit', () => {
 // The restraint. Every case below must leave the row EXACTLY as extracted.
 // ---------------------------------------------------------------------------
 
-test('nothing reconciles: the row is returned byte-identical for the red ring to find', () => {
+test('nothing reconciles: evidence stays untouched and the printed quantity is marked', () => {
   const row = {
     bulk_quantity: '4',
     unit_quantity: '48',
@@ -176,19 +177,44 @@ test('nothing reconciles: the row is returned byte-identical for the red ring to
   assert.equal(v.resolved, false);
   assert.equal(v.basis, null);
   assert.equal(v.paper, 999, 'the paper’s figure is still reported');
-  assert.deepEqual(applyRowArithmetic(row), row, 'not one field is touched');
+  assert.deepEqual(applyRowArithmetic(row), { ...row, quantity_source: 'printed' });
 });
 
 test('an order with no amount column is never resolved — most orders', () => {
   const row = { quantity: '5', unit: 'boxes', unit_price: '', raw_amount: '' };
   assert.equal(resolveRowArithmetic(row).resolved, false);
-  assert.deepEqual(applyRowArithmetic(row), row);
+  assert.deepEqual(applyRowArithmetic(row), { ...row, quantity_source: 'printed' });
 });
 
 test('a printed amount with no unit price is not a question we can ask', () => {
   const row = { quantity: '5', unit_price: '', raw_amount: '250.00' };
   assert.equal(resolveRowArithmetic(row).resolved, false);
-  assert.deepEqual(applyRowArithmetic(row), row);
+  assert.deepEqual(applyRowArithmetic(row), { ...row, quantity_source: 'printed' });
+});
+
+test('quantity is derived only from a printed total and unit price that reconcile', () => {
+  const line = applyRowArithmetic({
+    description: 'Baby Marrow',
+    quantity: '',
+    unit: 'kg',
+    raw_unit_price: '22,50',
+    unit_price: '22,50',
+    raw_amount: '225,00',
+  }, ',');
+  assert.equal(line.quantity, '10');
+  assert.equal(line.quantity_source, 'derived');
+  assert.equal(line.arithmetic_basis, 'amount_divided_by_unit_price');
+  assert.equal(line.unit_price, '22.5', 'arithmetic uses a canonical numeric string');
+  assert.equal(line.raw_unit_price, '22,50', 'the source string survives for review');
+  assert.equal(line.raw_amount, '225,00', 'verbatim amount evidence is preserved');
+});
+
+test('missing or zero price leaves an absent quantity unresolved', () => {
+  const missing = applyRowArithmetic({ quantity: '', unit_price: '', raw_amount: '225,00' }, ',');
+  const zero = applyRowArithmetic({ quantity: '', unit_price: '0,00', raw_amount: '225,00' }, ',');
+  assert.equal(missing.quantity_source, 'unresolved');
+  assert.equal(zero.quantity_source, 'unresolved');
+  assert.equal(missing.quantity, '');
 });
 
 test('a zero quantity never wins, however well 0 × anything matches a 0 nett', () => {
@@ -214,6 +240,41 @@ test('a blank unit is filled from the winning basis; a read one is not overwritt
 // ---------------------------------------------------------------------------
 // A document at a time
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Locale wiring — a SA comma-decimal two-column row must resolve exactly like
+// its period-decimal equivalent, once the document's own figures supply the
+// separator hint (never guessed from this one row alone).
+// ---------------------------------------------------------------------------
+
+test('a comma-decimal avocado row resolves the same way once the document hint is known', () => {
+  const v = resolveRowArithmetic(
+    {
+      bulk_quantity: '4',
+      bulk_unit: 'Box',
+      unit_quantity: '48',
+      unit: 'Each',
+      quantity: '4',
+      unit_price: '15,75',
+      raw_amount: '756,00',
+    },
+    ',',
+  );
+  assert.equal(v.resolved, true);
+  assert.equal(v.basis, 'unit_quantity');
+  assert.equal(v.quantity, 48);
+  assert.equal(v.unit_price, 15.75);
+  assert.equal(v.total, 756);
+});
+
+test('applyRowArithmeticToLines infers a comma-decimal document and resolves every row', () => {
+  const lines = applyRowArithmeticToLines([
+    { ...AVOCADO, quantity: '4', unit_price: '15,75', raw_amount: '756,00', description: 'Avocado' },
+    { ...GRAPES_WHITE, quantity: '2', unit_price: '659,00', raw_amount: '1318,00', description: 'Grapes White' },
+  ]);
+  assert.deepEqual(lines.map((l) => l.quantity), ['48', '2']);
+  assert.deepEqual(lines.map((l) => l.unit_price), ['15.75', '659']);
+});
 
 test('the whole document: the two-column rows resolve and the simple rows do not move', () => {
   const lines = applyRowArithmeticToLines([

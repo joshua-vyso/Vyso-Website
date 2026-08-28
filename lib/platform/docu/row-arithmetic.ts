@@ -46,8 +46,10 @@
  */
 import { parseAmount } from './extract.ts';
 import { moneyMatches } from './line-audit.ts';
+import { inferDecimalSeparator, type DecimalSeparator } from '../locale-number.ts';
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
+const asOpts = (hint?: DecimalSeparator | null) => (hint ? { decimalSeparator: hint } : undefined);
 
 /**
  * The candidate numbers a row offers, exactly as the reader transcribed them.
@@ -68,11 +70,16 @@ export interface RowNumbers {
   quantity?: string | null;
   /** The UNIT COST column. Which quantity it is a cost *per* is the question. */
   unit_price?: string | null;
+  /** The same unit cost verbatim, before canonical numeric formatting. */
+  raw_unit_price?: string | null;
   /** The NETT / AMOUNT column, copied off the paper. The arbiter. */
   raw_amount?: string | null;
   /** WRITTEN, never read: which pairing won, stamped by `applyRowArithmetic` so
    *  the decision is inspectable after the fact rather than a silent rewrite. */
   arithmetic_basis?: string | null;
+  /** Whether the final headline quantity was printed, derived from the row's
+   *  own price/total, or could not be established. */
+  quantity_source?: 'printed' | 'derived' | 'unresolved' | null;
 }
 
 /**
@@ -90,7 +97,9 @@ export type ArithmeticBasis =
   /** bulk_quantity × unit_quantity × unit_price — a cost per each, billed per box. */
   | 'bulk_times_unit'
   /** quantity × unit_price — the ordinary row, and the one we hope for. */
-  | 'quantity';
+  | 'quantity'
+  /** raw_amount ÷ unit_price, used only when the document printed no quantity. */
+  | 'amount_divided_by_unit_price';
 
 /** What the row resolved to, or why it did not. */
 export interface RowArithmetic {
@@ -135,14 +144,14 @@ const UNRESOLVED: RowArithmetic = {
  * the question cannot fairly be asked: no printed nett, no unit price, or no
  * quantity of any kind.
  */
-export function resolveRowArithmetic(row: RowNumbers): RowArithmetic {
-  const paper = parseAmount(row.raw_amount);
-  const price = parseAmount(row.unit_price);
+export function resolveRowArithmetic(row: RowNumbers, hint?: DecimalSeparator | null): RowArithmetic {
+  const paper = parseAmount(row.raw_amount, asOpts(hint));
+  const price = parseAmount(row.raw_unit_price || row.unit_price, asOpts(hint));
   if (paper == null || price == null) return UNRESOLVED;
 
-  const bulk = parseAmount(row.bulk_quantity);
-  const unitQty = parseAmount(row.unit_quantity);
-  const qty = parseAmount(row.quantity);
+  const bulk = parseAmount(row.bulk_quantity, asOpts(hint));
+  const unitQty = parseAmount(row.unit_quantity, asOpts(hint));
+  const qty = parseAmount(row.quantity, asOpts(hint));
   const unitName = (row.unit ?? '').trim() || null;
   const bulkUnitName = (row.bulk_unit ?? '').trim() || null;
 
@@ -187,10 +196,12 @@ export function resolveRowArithmetic(row: RowNumbers): RowArithmetic {
  *
  *   • It never touches `raw_description`, `raw_amount` or `description`. Those
  *     are the record of the document; this pass is about which numbers multiply.
- *   • It never writes a figure the row did not print. Every value it sets came
- *     off the paper — the only thing added is knowing which two to multiply.
- *   • It never fires when nothing reconciles. The line comes back byte-identical
- *     and the review editor's red ring does its job.
+ *   • It derives a missing quantity only from the row's own printed total ÷
+ *     printed unit price, reconciles the rounded result back to that total, and
+ *     labels it `quantity_source: derived` for review.
+ *   • When nothing reconciles, all document evidence stays untouched; only the
+ *     additive provenance label is written, and the review editor keeps the red
+ *     ring/question visible.
  *   • It never overwrites a unit the reader read with one it did not. A blank
  *     unit is filled from the winning basis; a populated one stands.
  *
@@ -198,9 +209,39 @@ export function resolveRowArithmetic(row: RowNumbers): RowArithmetic {
  * the fact rather than being a silent rewrite — the same reason
  * `extraction_model` exists.
  */
-export function applyRowArithmetic<T extends RowNumbers>(line: T): T {
-  const verdict = resolveRowArithmetic(line);
-  if (!verdict.resolved || verdict.quantity == null || verdict.unit_price == null) return line;
+export function applyRowArithmetic<T extends RowNumbers>(
+  line: T,
+  hint?: DecimalSeparator | null,
+): T & RowNumbers {
+  const verdict = resolveRowArithmetic(line, hint);
+  const hasPrintedQuantity = [line.quantity, line.bulk_quantity, line.unit_quantity]
+    .some((value) => parseAmount(value, asOpts(hint)) != null);
+
+  if (!verdict.resolved || verdict.quantity == null || verdict.unit_price == null) {
+    // A quantity may be absent while the row still prints both independent
+    // money witnesses. Derive from those only, round to the same precision the
+    // UI stores, then reconcile back to the printed total before accepting it.
+    if (!hasPrintedQuantity) {
+      const paper = parseAmount(line.raw_amount, asOpts(hint));
+      const price = parseAmount(line.raw_unit_price || line.unit_price, asOpts(hint));
+      if (paper != null && price != null && price !== 0) {
+        const quantity = round2(paper / price);
+        if (quantity > 0 && moneyMatches(round2(quantity * price), paper)) {
+          return {
+            ...line,
+            quantity: formatNumber(quantity),
+            unit_price: formatNumber(price),
+            arithmetic_basis: 'amount_divided_by_unit_price',
+            quantity_source: 'derived',
+          } as T & RowNumbers;
+        }
+      }
+    }
+    return {
+      ...line,
+      quantity_source: hasPrintedQuantity ? 'printed' : 'unresolved',
+    } as T & RowNumbers;
+  }
 
   const currentUnit = (line.unit ?? '').trim();
   // Cast: the three fields written are declared on `RowNumbers` and
@@ -212,12 +253,28 @@ export function applyRowArithmetic<T extends RowNumbers>(line: T): T {
     unit: currentUnit || verdict.unit || '',
     unit_price: formatNumber(verdict.unit_price),
     arithmetic_basis: verdict.basis,
-  } as T;
+    quantity_source: 'printed',
+  } as T & RowNumbers;
 }
 
-/** Every line of a document, total-first. */
-export function applyRowArithmeticToLines<T extends RowNumbers>(lines: T[]): T[] {
-  return lines.map((l) => applyRowArithmetic(l));
+/** Every line of a document, total-first. Infers the document's decimal
+ *  separator ONCE from every row's numeric fields and applies that one reading
+ *  throughout — a single row's "756,00" is not enough evidence on its own, but
+ *  the whole purchase order usually is. */
+export function applyRowArithmeticToLines<T extends RowNumbers>(lines: T[]): Array<T & RowNumbers> {
+  const samples: Array<string | null | undefined> = [];
+  for (const l of lines) {
+    samples.push(
+      l.bulk_quantity,
+      l.unit_quantity,
+      l.quantity,
+      l.raw_unit_price,
+      l.unit_price,
+      l.raw_amount,
+    );
+  }
+  const hint = inferDecimalSeparator(samples);
+  return lines.map((l) => applyRowArithmetic(l, hint));
 }
 
 /** A plain numeric string: integers stay integers, money keeps its cents. */

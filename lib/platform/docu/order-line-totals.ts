@@ -32,6 +32,7 @@
 import type { ExtractedLineItem } from '../types.ts';
 import { parseAmount } from './extract.ts';
 import { moneyMatches } from './line-audit.ts';
+import { inferDecimalSeparator, type DecimalSeparator } from '../locale-number.ts';
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
@@ -46,22 +47,54 @@ export interface OrderLineMoney {
 }
 
 /**
+ * Infer this document's decimal separator ONCE from every numeric string its
+ * lines carry (quantity, unit price, the paper's own amount), so a comma-decimal
+ * order ("0,20" × "269,000") reads correctly everywhere it is touched.
+ *
+ * EXPORTED so the review editor and any other caller that walks a full line
+ * array ask this ONE question about the document instead of silently forming
+ * their own opinion — the failure mode that would let one screen show a figure
+ * a second screen disagrees with, of a document that is not itself ambiguous
+ * once all its numbers are read together. See `lib/platform/locale-number.ts`
+ * for the vote itself; this is only the gathering of what to vote on.
+ */
+export function lineSeparatorHint(
+  lines: Array<Pick<OrderLineMoney, 'quantity' | 'unit_price' | 'raw_amount'>>,
+): DecimalSeparator | null {
+  const samples: Array<string | null | undefined> = [];
+  for (const l of lines) samples.push(l.quantity, l.unit_price, l.raw_amount);
+  return inferDecimalSeparator(samples);
+}
+
+const asOpts = (hint?: DecimalSeparator | null) => (hint ? { decimalSeparator: hint } : undefined);
+
+/**
  * Quantity × unit price, to the cent — the gross for one line.
  *
  * A blank or unreadable figure on either side counts as zero rather than
  * throwing the row away: an order line with no price yet is a normal state (it
  * fills from the price list at sync), and it should read R 0.00 on screen, not
  * a dash that hides the row from the running total.
+ *
+ * `hint` is the document-level separator from `lineSeparatorHint` — pass the
+ * SAME hint for every line of one document (this function reads one line at a
+ * time and cannot infer it alone; a single "0,20" is not enough evidence on
+ * its own). Omit it for the ordinary, unambiguous case — every existing caller
+ * that never passed one keeps parsing exactly as before.
  */
-export function lineGross(line: OrderLineMoney): number {
-  const qty = parseAmount(line.quantity) ?? 0;
-  const price = parseAmount(line.unit_price) ?? 0;
+export function lineGross(line: OrderLineMoney, hint?: DecimalSeparator | null): number {
+  const qty = parseAmount(line.quantity, asOpts(hint)) ?? 0;
+  const price = parseAmount(line.unit_price, asOpts(hint)) ?? 0;
   return round2(qty * price);
 }
 
-/** The order's gross, summed over the lines the editor currently holds. */
-export function orderSubtotal(lines: OrderLineMoney[]): number {
-  return round2(lines.reduce((sum, l) => sum + lineGross(l), 0));
+/** The order's gross, summed over the lines the editor currently holds.
+ *  Infers the document's separator once (unless the caller already knows it)
+ *  and applies that ONE reading to every line, rather than each line guessing
+ *  independently off its own two or three figures. */
+export function orderSubtotal(lines: OrderLineMoney[], hint?: DecimalSeparator | null): number {
+  const h = hint !== undefined ? hint : lineSeparatorHint(lines);
+  return round2(lines.reduce((sum, l) => sum + lineGross(l, h), 0));
 }
 
 /** A row whose arithmetic disagrees with the paper's own amount column. */
@@ -91,20 +124,28 @@ export interface GrossMismatch {
  * whichever is kinder — and a row that does not is returned with both figures
  * so the screen can print them side by side.
  */
-export function grossMismatch(line: OrderLineMoney): GrossMismatch | null {
-  const paper = parseAmount(line.raw_amount);
+export function grossMismatch(line: OrderLineMoney, hint?: DecimalSeparator | null): GrossMismatch | null {
+  const paper = parseAmount(line.raw_amount, asOpts(hint));
   if (paper == null) return null;
-  if (parseAmount(line.quantity) == null) return null;
-  if (parseAmount(line.unit_price) == null) return null;
+  if (parseAmount(line.quantity, asOpts(hint)) == null) return null;
+  if (parseAmount(line.unit_price, asOpts(hint)) == null) return null;
 
-  const gross = lineGross(line);
+  const gross = lineGross(line, hint);
+  // Deliberately still `moneyMatches` (line-audit.ts's cent-or-0.5% tolerance),
+  // NOT a second tolerance opinion of our own: the row cross-check on this
+  // screen must never disagree with the invoice-arithmetic audit about what
+  // "close enough" means (see the module doc comment above). What changed here
+  // is that `paper`/`gross` are now CANONICAL numbers off the shared parser —
+  // the bug was in what these two figures WERE, never in how they were
+  // compared.
   if (moneyMatches(gross, paper)) return null;
   return { paper, gross, difference: round2(gross - paper) };
 }
 
 /** How many of these lines disagree with the paper. For the review banner. */
-export function countGrossMismatches(lines: OrderLineMoney[]): number {
-  return lines.reduce((n, l) => n + (grossMismatch(l) ? 1 : 0), 0);
+export function countGrossMismatches(lines: OrderLineMoney[], hint?: DecimalSeparator | null): number {
+  const h = hint !== undefined ? hint : lineSeparatorHint(lines);
+  return lines.reduce((n, l) => n + (grossMismatch(l, h) ? 1 : 0), 0);
 }
 
 /** One editable row of the order review editor, as far as printing cares. */

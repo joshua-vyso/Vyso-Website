@@ -20,6 +20,7 @@
  * to do with them; see `lib/ai/anthropic.ts` for the wiring.
  */
 import { parseAmount } from './extract.ts';
+import { inferDecimalSeparator, type DecimalSeparator } from '../locale-number.ts';
 
 // --- tolerances & thresholds ------------------------------------------------
 
@@ -146,11 +147,28 @@ export interface AuditInput<T extends AuditableLine> {
   /** The document's own total, if one was extracted. Enables the sum cross-check
    *  and lets a single unrecoverable amount be reconstructed as the residual. */
   total?: number | null;
+  /** The document's decimal separator, when the caller has already inferred one
+   *  from a wider view of the document than just these lines (e.g. `anthropic.ts`
+   *  also has the extracted header fields). Omit to have this module infer it
+   *  from `lines` alone — the ordinary case, and what every existing caller
+   *  gets by not passing this. Pass `null` explicitly to force "no hint" even
+   *  though `lines` might otherwise carry evidence — not currently used, but
+   *  kept distinct from "omitted" for a caller that ever needs it. */
+  hint?: DecimalSeparator | null;
 }
 
 // --- helpers ----------------------------------------------------------------
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
+const asOpts = (hint?: DecimalSeparator | null) => (hint ? { decimalSeparator: hint } : undefined);
+
+/** Gather every numeric string this audit reads off a line set — quantity,
+ *  weight, total_kg, unit price, amount — for `inferDecimalSeparator`. */
+function auditSeparatorHint(lines: AuditableLine[]): DecimalSeparator | null {
+  const samples: Array<string | null | undefined> = [];
+  for (const l of lines) samples.push(l.quantity, l.weight, l.total_kg, l.unit_price, l.amount);
+  return inferDecimalSeparator(samples);
+}
 
 /** Do two money figures agree, within a cent or within 0.5%? */
 export function moneyMatches(expected: number, actual: number): boolean {
@@ -159,10 +177,10 @@ export function moneyMatches(expected: number, actual: number): boolean {
 }
 
 /** The multipliers a line could legitimately be priced by, best guess first. */
-function multipliers(line: AuditableLine): { basis: PriceBasis; value: number }[] {
-  const qty = parseAmount(line.quantity);
-  const weight = parseAmount(line.weight);
-  const totalKg = parseAmount(line.total_kg) ?? (weight != null && qty != null ? weight * qty : null);
+function multipliers(line: AuditableLine, hint?: DecimalSeparator | null): { basis: PriceBasis; value: number }[] {
+  const qty = parseAmount(line.quantity, asOpts(hint));
+  const weight = parseAmount(line.weight, asOpts(hint));
+  const totalKg = parseAmount(line.total_kg, asOpts(hint)) ?? (weight != null && qty != null ? weight * qty : null);
   const byWeightFirst = (line.unit ?? '').trim().toLowerCase() === 'kg';
 
   const out: { basis: PriceBasis; value: number }[] = [];
@@ -175,16 +193,18 @@ function multipliers(line: AuditableLine): { basis: PriceBasis; value: number }[
 }
 
 /** The multiplier used when deriving a missing figure — the line's primary basis. */
-function primaryMultiplier(line: AuditableLine): { basis: PriceBasis; value: number } | null {
-  return multipliers(line)[0] ?? null;
+function primaryMultiplier(line: AuditableLine, hint?: DecimalSeparator | null): { basis: PriceBasis; value: number } | null {
+  return multipliers(line, hint)[0] ?? null;
 }
 
-/** Check one line's arithmetic. */
-export function auditLine(line: AuditableLine, index: number): LineVerdict {
+/** Check one line's arithmetic. `hint` — see `AuditInput.hint` — steers a
+ *  genuinely ambiguous figure ("269,000"); omitted, this reads exactly as
+ *  before for every unambiguous (the ordinary period-decimal) case. */
+export function auditLine(line: AuditableLine, index: number, hint?: DecimalSeparator | null): LineVerdict {
   const description = (line.description ?? '').trim();
-  const price = parseAmount(line.unit_price);
-  const actual = parseAmount(line.amount);
-  const options = multipliers(line);
+  const price = parseAmount(line.unit_price, asOpts(hint));
+  const actual = parseAmount(line.amount, asOpts(hint));
+  const options = multipliers(line, hint);
 
   if (price == null || actual == null || options.length === 0) {
     return { index, row: index + 1, description, status: 'unchecked', basis: null, expected: null, actual, difference: null };
@@ -235,11 +255,11 @@ function shiftCandidates(): ColumnShift[] {
 
 /** Fill a hole the slide left, but only where arithmetic forces the answer:
  *  a line with a quantity and exactly one of (price, amount) implies the other. */
-function fillDerivable<T extends AuditableLine>(lines: T[]): T[] {
+function fillDerivable<T extends AuditableLine>(lines: T[], hint?: DecimalSeparator | null): T[] {
   return lines.map((line) => {
-    const price = parseAmount(line.unit_price);
-    const amount = parseAmount(line.amount);
-    const m = primaryMultiplier(line);
+    const price = parseAmount(line.unit_price, asOpts(hint));
+    const amount = parseAmount(line.amount, asOpts(hint));
+    const m = primaryMultiplier(line, hint);
     if (m == null || m.value === 0) return line;
     if (price != null && amount == null) return { ...line, amount: round2(m.value * price).toFixed(2) };
     if (amount != null && price == null) return { ...line, unit_price: round2(amount / m.value).toFixed(2) };
@@ -259,7 +279,7 @@ export function checkTotal(lineSum: number, total: number | null | undefined): T
 }
 
 /** Pairs the slide consumed from nowhere / left behind. */
-function findOrphans(lines: AuditableLine[], shift: ColumnShift): OrphanPair[] {
+function findOrphans(lines: AuditableLine[], shift: ColumnShift, hint?: DecimalSeparator | null): OrphanPair[] {
   const usedPrice = new Set<number>();
   const usedAmount = new Set<number>();
   for (let i = 0; i < lines.length; i += 1) {
@@ -270,15 +290,15 @@ function findOrphans(lines: AuditableLine[], shift: ColumnShift): OrphanPair[] {
   for (let i = 0; i < lines.length; i += 1) {
     const price = usedPrice.has(i) ? null : (lines[i].unit_price ?? null);
     const amount = usedAmount.has(i) ? null : (lines[i].amount ?? null);
-    if (parseAmount(price) != null || parseAmount(amount) != null) {
+    if (parseAmount(price, asOpts(hint)) != null || parseAmount(amount, asOpts(hint)) != null) {
       out.push({ index: i, unit_price: price || null, amount: amount || null });
     }
   }
   return out;
 }
 
-const sumAmounts = (lines: AuditableLine[]): number =>
-  round2(lines.reduce((acc, l) => acc + (parseAmount(l.amount) ?? 0), 0));
+const sumAmounts = (lines: AuditableLine[], hint?: DecimalSeparator | null): number =>
+  round2(lines.reduce((acc, l) => acc + (parseAmount(l.amount, asOpts(hint)) ?? 0), 0));
 
 function tally(verdicts: LineVerdict[]) {
   const checked = verdicts.filter((v) => v.status !== 'unchecked').length;
@@ -296,8 +316,12 @@ function tally(verdicts: LineVerdict[]) {
 export function auditLines<T extends AuditableLine>(input: AuditInput<T>): LineAudit<T> {
   const lines = input.lines ?? [];
   const total = input.total ?? null;
+  // `input.hint` explicitly (including `null`, "force no hint") wins; omitted
+  // (`undefined`) means infer from `lines` — the ordinary case, and what every
+  // existing caller that never knew this option existed still gets.
+  const hint = input.hint !== undefined ? input.hint : auditSeparatorHint(lines);
 
-  const base = lines.map((l, i) => auditLine(l, i));
+  const base = lines.map((l, i) => auditLine(l, i, hint));
   const stats = tally(base);
 
   const clean = (diagnosis: AuditDiagnosis, note: string | null, cap: number | null): LineAudit<T> => ({
@@ -310,7 +334,7 @@ export function auditLines<T extends AuditableLine>(input: AuditInput<T>): LineA
     unresolvedRows: [],
     reconstructedFromTotal: false,
     orphans: [],
-    totalCheck: checkTotal(sumAmounts(lines), total),
+    totalCheck: checkTotal(sumAmounts(lines, hint), total),
     confidenceCap: cap,
     note,
   });
@@ -329,7 +353,7 @@ export function auditLines<T extends AuditableLine>(input: AuditInput<T>): LineA
     let best: { shift: ColumnShift; lines: T[]; passed: number } | null = null;
     for (const shift of shiftCandidates()) {
       const shifted = applyShift(lines, shift);
-      const passed = shifted.map((l, i) => auditLine(l, i)).filter((v) => v.status === 'ok').length;
+      const passed = shifted.map((l, i) => auditLine(l, i, hint)).filter((v) => v.status === 'ok').length;
       if (passed / lines.length >= SHIFT_ACCEPT_RATE && (best == null || passed > best.passed)) {
         best = { shift, lines: shifted, passed };
       }
@@ -338,27 +362,27 @@ export function auditLines<T extends AuditableLine>(input: AuditInput<T>): LineA
     if (best) {
       // The slide is established. Now close the holes it left — but only where
       // the arithmetic leaves no choice.
-      let repaired = fillDerivable(best.lines);
+      let repaired = fillDerivable(best.lines, hint);
       let reconstructedFromTotal = false;
 
       // Exactly one amount still missing and a document total on hand: the
       // residual IS that amount. (Assumes the extracted total is on the same
       // basis as the line sum — the note says the columns were realigned and
       // the confidence cap puts the document in front of a human either way.)
-      const missing = repaired.map((l, i) => (parseAmount(l.amount) == null ? i : -1)).filter((i) => i >= 0);
+      const missing = repaired.map((l, i) => (parseAmount(l.amount, asOpts(hint)) == null ? i : -1)).filter((i) => i >= 0);
       if (missing.length === 1 && total != null) {
-        const known = sumAmounts(repaired);
+        const known = sumAmounts(repaired, hint);
         const residual = round2(total - known);
         if (residual > 0) {
           const i = missing[0];
-          const m = primaryMultiplier(repaired[i]);
+          const m = primaryMultiplier(repaired[i], hint);
           repaired = repaired.map((l, j) =>
             j === i
               ? {
                   ...l,
                   amount: residual.toFixed(2),
                   unit_price:
-                    parseAmount(l.unit_price) == null && m != null && m.value !== 0
+                    parseAmount(l.unit_price, asOpts(hint)) == null && m != null && m.value !== 0
                       ? round2(residual / m.value).toFixed(2)
                       : l.unit_price,
                 }
@@ -368,7 +392,7 @@ export function auditLines<T extends AuditableLine>(input: AuditInput<T>): LineA
         }
       }
 
-      const verdicts = repaired.map((l, i) => auditLine(l, i));
+      const verdicts = repaired.map((l, i) => auditLine(l, i, hint));
       const after = tally(verdicts);
       const unresolvedRows = verdicts.filter((v) => v.status === 'unchecked').map((v) => v.row);
       const failingRows = verdicts.filter((v) => v.status === 'mismatch').map((v) => v.row);
@@ -389,8 +413,8 @@ export function auditLines<T extends AuditableLine>(input: AuditInput<T>): LineA
         repaired,
         unresolvedRows,
         reconstructedFromTotal,
-        orphans: findOrphans(lines, best.shift),
-        totalCheck: checkTotal(sumAmounts(repaired), total),
+        orphans: findOrphans(lines, best.shift, hint),
+        totalCheck: checkTotal(sumAmounts(repaired, hint), total),
         confidenceCap: REPAIRED_CONFIDENCE_CAP,
         note: bits.join(' '),
       };

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/platform/supabase-browser';
 import { CADENCE_LABEL, sellPrice, zar2, type PlPriceList } from '@/lib/platform/pricepilot';
+import { parseLocaleNumber } from '@/lib/platform/locale-number';
 
 interface ProductLite {
   id: string;
@@ -37,7 +38,7 @@ export function PriceListDetail({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const def = Number(defaultMargin) || 0;
+  const def = parseLocaleNumber(defaultMargin) ?? 0;
   const effective = (id: string) => (id in overrides ? overrides[id] : def);
 
   // Only overrides that actually differ from the current default get persisted.
@@ -54,8 +55,11 @@ export function PriceListDetail({
   const dirty = def !== baseDefault || !sameMap(canonical, baseOverrides);
 
   function setMargin(id: string, v: string) {
-    const n = v === '' ? def : Number(v.replace(/[^0-9.]/g, ''));
-    setOverrides((prev) => ({ ...prev, [id]: Number.isFinite(n) ? n : def }));
+    // FIXED BUG, DO NOT REINTRODUCE: this used to be
+    // `Number(v.replace(/[^0-9.]/g, ''))` — it deleted commas instead of
+    // reading them, so a comma-decimal margin like "22,5" became 225%.
+    const n = v === '' ? def : parseLocaleNumber(v);
+    setOverrides((prev) => ({ ...prev, [id]: n ?? def }));
   }
   function resetRow(id: string) {
     setOverrides((prev) => {
@@ -167,7 +171,9 @@ export function PriceListDetail({
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
           <span className="text-[12px] font-medium uppercase tracking-[0.05em] text-[#8A8E86]">Default margin</span>
-          <input className={`${cell} w-20 text-right`} inputMode="decimal" value={defaultMargin} onChange={(e) => setDefaultMargin(e.target.value.replace(/[^0-9.]/g, ''))} />
+          {/* FIXED BUG, DO NOT REINTRODUCE: `[^0-9.]` used to strip every comma
+              typed — reading the number is parseLocaleNumber's job at `def` above. */}
+          <input className={`${cell} w-20 text-right`} inputMode="decimal" value={defaultMargin} onChange={(e) => setDefaultMargin(e.target.value.replace(/[^0-9.,]/g, ''))} />
           <span className="text-[13px] text-[#6B6F68]">%</span>
         </div>
         <div className="flex-1" />

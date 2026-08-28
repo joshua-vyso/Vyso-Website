@@ -1,7 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { extractDocument } from '@/lib/ai/anthropic';
+import { extractDocument, preparedDocumentInput } from '@/lib/ai/anthropic';
 import { extractOrderDocument } from '@/lib/ai/order-reader';
+import type { OrderExtractionResult } from '@/lib/ai/order-prompt';
+import {
+  auditExtractionStructure,
+  betterExtraction,
+  type StructuralExtraction,
+} from '@/lib/platform/docu/extraction-quality';
+import { decideClassificationRouting } from '@/lib/platform/docu/classification-policy';
 import { imagePixelSize } from '@/lib/platform/docu/image-size';
 import { syncOrderFromDocument } from '@/lib/platform/orderflow-from-doc';
 import { feedDocumentToProcurePulse, orgHasProcurePulse } from '@/lib/platform/procurepulse-feed';
@@ -22,6 +29,10 @@ import {
   type DocumentDirectionRecord,
   type OrgIdentity,
 } from '@/lib/platform/docu/document-direction';
+import {
+  resolveExistingCustomerForOrg,
+  type CustomerIdentityEvidence,
+} from '@/lib/platform/docu/customer-match';
 import type { DocumentType, ExtractedData } from '@/lib/platform/types';
 
 /**
@@ -287,6 +298,8 @@ export interface IngestDocumentInput {
   filename: string;
   /** Free-text hint shown to the order reader (chat note / email subject). Data, not instructions. */
   note?: string;
+  /** Email identity evidence for matching EXISTING customers only. Never trusted as an org id. */
+  customerEvidence?: CustomerIdentityEvidence | null;
   /** Links the filed document back to the email it arrived on. */
   emailIngestId?: string | null;
   /** Provider attachment id, used to heal retries without filing the same copy twice. */
@@ -664,6 +677,7 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
     mediaType,
     filename,
     note,
+    customerEvidence = null,
     emailIngestId = null,
     sourceAttachmentId = null,
     sourceContentType = null,
@@ -704,15 +718,77 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
     }
   }
 
-  // 1. Classify (+ generic extract). One Haiku call decides the document type.
+  // 1. Classify (+ generic extract). Usually one Haiku call decides the
+  //    document type — no longer ALWAYS one: a non-order read that looks
+  //    order-shaped earns a second, order-lane opinion below.
   let cls;
   try {
     cls = await extractDocument({ base64, mediaType, filename });
   } catch (err) {
     return { ok: false, status: 500, error: err instanceof Error ? err.message : 'Could not read this document.' };
   }
-  const documentType = cls.document_type;
-  const isOrder = documentType === 'order';
+  const preparedInput = preparedDocumentInput(cls, { base64, mediaType, filename });
+
+  let documentType = cls.document_type;
+  let isOrder = documentType === 'order';
+  // Set only when the escalation below both ran AND its order-lane read won —
+  // reused by step 4a so that lane never pays for a second live order read of
+  // the same document.
+  let escalatedOrder: OrderExtractionResult | null = null;
+  // Set whenever the escalation below actually ran (adopted or not), so both
+  // outcomes stay visible on whichever result ends up stored — see the two
+  // `extracted_data` builders below.
+  let escalation: { classificationScore: number; orderScore: number } | null = null;
+
+  // ROUTING ESCALATION (Phase 0's observed failure): a classification read
+  // that fabricates confidently at every rotation never trips ITS OWN retry,
+  // because each fabrication scores well enough on its own structural audit
+  // to look like a completed job. Only a genuinely different read — a
+  // different prompt, a different model tier — can disagree with it, so
+  // `decideClassificationRouting` (lib/platform/docu/classification-policy.ts)
+  // requests one whenever the classification read looks order-shaped: its own
+  // audit failed, its confidence is low, or its text reads like a purchase
+  // order/requisition. The order-lane read is REQUESTED cheaply here but only
+  // KEPT if it actually scores better — never on its own say-so.
+  if (!isOrder && decideClassificationRouting(cls) === 'escalate_order') {
+    const { data: catalogueRows } = await supabase
+      .from('pp_stock_items')
+      .select('name')
+      .eq('org_id', orgId)
+      .order('name', { ascending: true });
+    const products = ((catalogueRows ?? []) as { name: string }[]).map((r) => r.name).filter(Boolean);
+    try {
+      // orientationChecked: true ALWAYS on an escalation read (Part 2 item 5):
+      // the classification read already ran the rotation search on these
+      // exact bytes (or never needed to), so a second full retry loop here
+      // would double the unattended-document cost for a search that already
+      // happened.
+      const candidate = await extractOrderDocument({
+        ...preparedInput,
+        products,
+        note,
+        orientationChecked: true,
+      });
+      escalation = {
+        classificationScore: auditExtractionStructure(cls).score,
+        orderScore: auditExtractionStructure(candidate).score,
+      };
+      // betterExtraction's own criterion — the order read must SCORE better,
+      // not merely exist — decides adoption. Explicit type argument: `cls`
+      // and `candidate` are two different result shapes that both merely
+      // HAPPEN to satisfy StructuralExtraction, not a shared concrete type
+      // for TS to infer on its own.
+      if (betterExtraction<StructuralExtraction>(cls, candidate) === candidate) {
+        escalatedOrder = candidate;
+        documentType = 'order';
+        isOrder = true;
+      }
+    } catch {
+      // The escalation read itself failing changes nothing: the
+      // classification read — already flagged by its own structure audit —
+      // stays authoritative.
+    }
+  }
 
   // 2. Upload the file to the private "documents" bucket.
   const safeName = filename.replace(/[^\w.\-() ]+/g, '_');
@@ -789,24 +865,40 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
   // 4a. ORDER → read with the order reader, then build the OrderFlow order
   //     (auto-invoice when confident, else a draft to review).
   if (isOrder) {
-    const { data: catalogueRows } = await supabase
-      .from('pp_stock_items')
-      .select('name')
-      .eq('org_id', orgId)
-      .order('name', { ascending: true });
-    const products = ((catalogueRows ?? []) as { name: string }[]).map((r) => r.name).filter(Boolean);
+    let order: OrderExtractionResult;
+    if (escalatedOrder) {
+      // Already read above while DECIDING whether to escalate at all — a
+      // second live order-lane call here would re-read the same document for
+      // a decision that has already been made.
+      order = escalatedOrder;
+    } else {
+      const { data: catalogueRows } = await supabase
+        .from('pp_stock_items')
+        .select('name')
+        .eq('org_id', orgId)
+        .order('name', { ascending: true });
+      const products = ((catalogueRows ?? []) as { name: string }[]).map((r) => r.name).filter(Boolean);
 
-    let order;
-    try {
-      order = await extractOrderDocument({ base64, mediaType, filename, products, note });
-    } catch (err) {
-      await supabase.from('documents').update({ status: 'error' }).eq('id', documentId);
-      return {
-        ok: false,
-        status: 500,
-        error: err instanceof Error ? err.message : 'Could not read the order.',
-        documentId,
-      };
+      try {
+        order = await extractOrderDocument({
+          ...preparedInput,
+          products,
+          note,
+          // True only when the CLASSIFICATION read itself adopted a rotation
+          // (Part 2 item 5). This is the natively-typed order path, not an
+          // escalation, so it still runs its own retry loop when the
+          // classification read never needed one.
+          orientationChecked: Boolean(cls.orientation_normalization?.applied),
+        });
+      } catch (err) {
+        await supabase.from('documents').update({ status: 'error' }).eq('id', documentId);
+        return {
+          ok: false,
+          status: 500,
+          error: err instanceof Error ? err.message : 'Could not read the order.',
+          documentId,
+        };
+      }
     }
     // A model/JSON failure reads as empty — surface it rather than filing a blank order.
     if (!order.customer_name && order.line_items.length === 0) {
@@ -818,24 +910,70 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
         documentId,
       };
     }
+    // Microsoft email is unattended. Resolve only against this verified org's
+    // existing directory and keep uncertain candidates as review evidence. This
+    // never creates or edits a customer; an unresolved name stays unresolved.
+    let customerMatch = null;
+    if (emailIngestId) {
+      try {
+        customerMatch = await resolveExistingCustomerForOrg(supabase, orgId, {
+          ...(customerEvidence ?? {}),
+          extractedCustomerName: order.customer_name,
+          purchaseOrderNumber: order.purchase_order_number,
+          deliveryLocation: order.delivery_location,
+        });
+      } catch {
+        // A directory read failure must fail closed, but it must not discard an
+        // otherwise reviewable document. No customer id is written.
+        customerMatch = null;
+      }
+    }
+    const extractedData: ExtractedData = {
+      fields: [],
+      line_items: order.line_items,
+      customer_name: order.customer_name,
+      customer_confidence: order.customer_confidence,
+      purchase_order_number: order.purchase_order_number ?? null,
+      order_date: order.order_date ?? null,
+      requested_delivery_date: order.requested_delivery_date ?? null,
+      delivery_location: order.delivery_location ?? null,
+      order_notes: order.order_notes ?? null,
+      customer_id: customerMatch?.customerId ?? null,
+      customer_match_confidence: customerMatch?.confidence ?? 0,
+      customer_match_method: customerMatch?.method ?? 'unresolved',
+      customer_match_reason: customerMatch?.reason ?? 'customer-directory-unavailable',
+      customer_match_ambiguous: customerMatch?.ambiguous ?? false,
+      customer_match_candidates: customerMatch?.candidates ?? [],
+      customer_match_evidence: customerMatch?.evidence ?? null,
+      // Which model read it — see the same stamp in app/api/ai/extract.
+      extraction_model: order.model,
+      extraction_warning: order.warning ?? null,
+      structure_audit: order.structure_audit ?? cls.structure_audit ?? null,
+      orientation_normalization:
+        order.orientation_normalization ?? cls.orientation_normalization ?? null,
+      image_pixels: imagePixels,
+      // Present only when the routing escalation above actually ran. Set
+      // here because escalatedOrder is what got us into this branch at all —
+      // a reviewer can see both scores and how close the call was.
+      ...(escalation
+        ? {
+            escalated: true,
+            escalation_classification_score: escalation.classificationScore,
+            escalation_order_score: escalation.orderScore,
+          }
+        : {}),
+    };
     await supabase
       .from('documents')
       .update({
         status: 'extracted',
         confidence: order.overall_confidence,
         document_type: 'order',
-        extracted_data: {
-          fields: [],
-          line_items: order.line_items,
-          customer_name: order.customer_name,
-          customer_confidence: order.customer_confidence,
-          // Which model read it — see the same stamp in app/api/ai/extract.
-          extraction_model: order.model,
-          extraction_warning: order.warning ?? null,
-          image_pixels: imagePixels,
-        },
+        extracted_data: extractedData,
+        customer_id: customerMatch?.customerId ?? null,
       })
-      .eq('id', documentId);
+      .eq('id', documentId)
+      .eq('org_id', orgId);
 
     // Deferred (email): stop here. The order lands in the review queue at 'extracted';
     // nothing is created in OrderFlow until a human clicks Save.
@@ -848,7 +986,7 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
           document_type: 'order',
           filename,
           supplier_id: null,
-          extracted_data: null,
+          extracted_data: extractedData,
         }));
       } catch {
         /* extraction + filing already succeeded — the doc is there to review */
@@ -914,9 +1052,22 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
     bill_to: cls.bill_to,
     // Arithmetic audit of the lines (null when they add up) — lib/platform/docu/line-audit.ts.
     line_audit: cls.line_audit,
+    structure_audit: cls.structure_audit ?? null,
+    orientation_normalization: cls.orientation_normalization ?? null,
     image_pixels: imagePixels,
     // Only set when the org issued it — lib/platform/docu/document-direction.ts.
     direction: parties.record,
+    // Present only when the routing escalation above ran and LOST — the
+    // classification read (already flagged by its own structure audit above)
+    // is what's being stored here, and this is the reviewer's evidence that a
+    // second opinion was asked for and didn't beat it.
+    ...(escalation
+      ? {
+          escalated: true,
+          escalation_classification_score: escalation.classificationScore,
+          escalation_order_score: escalation.orderScore,
+        }
+      : {}),
   };
   await supabase
     .from('documents')

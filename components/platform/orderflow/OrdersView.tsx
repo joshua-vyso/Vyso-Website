@@ -38,6 +38,7 @@ import { PublishOrderButton } from './PublishOrderButton';
 import { FinchOrderPrefill } from '@/components/platform/finch/FinchOrderPrefill';
 import { matchByName } from '@/lib/ai/finch/name-match';
 import type { ParsedOrder } from '@/lib/ai/finch/order-handoff';
+import { parseLocaleNumber } from '@/lib/platform/locale-number';
 
 export interface OrderItemLite {
   stock_item_id?: string | null;
@@ -91,6 +92,22 @@ function isSameDay(a: number, b: number) {
 }
 function orderRef(o: Pick<OrderRow, 'id' | 'order_number' | 'invoice_number'>) {
   return o.order_number ?? o.invoice_number ?? `#${o.id.slice(0, 6).toUpperCase()}`;
+}
+/**
+ * Keystroke sanitiser for the quick-order Qty/Price boxes: strips only
+ * letters and symbols a locale-formatted number could never contain, and
+ * leaves both separators alone.
+ *
+ * FIXED BUG, DO NOT REINTRODUCE: this used to be
+ * `e.target.value.replace(/[^0-9.]/g, '')` — it deleted every comma the
+ * user typed, so "0,20" became "020" on screen, a hundred-fold magnitude
+ * change, not a typo. Copies the approach in OrderReviewEditor.tsx's
+ * `sanitizeDecimal` — reading the number is `parseLocaleNumber`'s job at the
+ * point of use (`builderTotal`, `canSave`, `saveOrder` below), never this
+ * function's.
+ */
+function sanitizeDecimal(s: string): string {
+  return s.replace(/[^0-9.,\s]/g, '');
 }
 /** Order lines → builder lines for createInvoice / createOrder (source 'base', no override note). */
 function toBuilderLines(items: OrderItemLite[]): BuilderLine[] {
@@ -287,8 +304,10 @@ export function OrdersView({
     toast(`Loaded ${its.length} items from the last order.`);
   }
 
-  const builderTotal = lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.unit_price) || 0), 0);
-  const canSave = customerId && lines.some((l) => l.name.trim() && Number(l.qty) > 0);
+  // Number(l.qty)/(l.unit_price) would read the sanitizer's now-unstripped
+  // commas as NaN — parseLocaleNumber is what actually understands them.
+  const builderTotal = lines.reduce((s, l) => s + (parseLocaleNumber(l.qty) ?? 0) * (parseLocaleNumber(l.unit_price) ?? 0), 0);
+  const canSave = customerId && lines.some((l) => l.name.trim() && (parseLocaleNumber(l.qty) ?? 0) > 0);
 
   function resetBuilder() {
     setOpen(false);
@@ -310,14 +329,14 @@ export function OrdersView({
     }
     setBusy(true);
     const builderLines: BuilderLine[] = lines
-      .filter((l) => l.name.trim() && Number(l.qty) > 0)
+      .filter((l) => l.name.trim() && (parseLocaleNumber(l.qty) ?? 0) > 0)
       .map((l) => ({
         key: l.key,
         stock_item_id: l.stock_item_id,
         name: l.name.trim(),
-        qty: Number(l.qty) || 0,
+        qty: parseLocaleNumber(l.qty) ?? 0,
         unit: l.unit.trim() || null,
-        unit_price: Number(l.unit_price) || 0,
+        unit_price: parseLocaleNumber(l.unit_price) ?? 0,
         source: l.stock_item_id ? ('base' as const) : ('none' as const),
         override_note: null,
       }));
@@ -960,12 +979,12 @@ export function OrdersView({
                 {lines.map((l) => (
                   <div key={l.key} className="grid grid-cols-[1fr_64px_64px_84px_28px] items-center gap-2">
                     <input className={cell} value={l.name} onChange={(e) => updateLine(l.key, { name: e.target.value })} />
-                    <input className={`${cell} text-right`} value={l.qty} inputMode="decimal" onChange={(e) => updateLine(l.key, { qty: e.target.value.replace(/[^0-9.]/g, '') })} placeholder="qty" />
+                    <input className={`${cell} text-right`} value={l.qty} inputMode="decimal" onChange={(e) => updateLine(l.key, { qty: sanitizeDecimal(e.target.value) })} placeholder="qty" />
                     <select className={`${cell} cursor-pointer pr-1`} value={l.unit} onChange={(e) => updateLine(l.key, { unit: e.target.value })} aria-label="Unit">
                       <option value="">unit</option>
                       {unitOptions(l.unit).map((u) => (<option key={u} value={u}>{u}</option>))}
                     </select>
-                    <input className={`${cell} text-right`} value={l.unit_price} inputMode="decimal" onChange={(e) => updateLine(l.key, { unit_price: e.target.value.replace(/[^0-9.]/g, '') })} placeholder="price" />
+                    <input className={`${cell} text-right`} value={l.unit_price} inputMode="decimal" onChange={(e) => updateLine(l.key, { unit_price: sanitizeDecimal(e.target.value) })} placeholder="price" />
                     <button type="button" onClick={() => removeLine(l.key)} aria-label="Remove line" className="flex h-9 w-7 items-center justify-center rounded-lg text-[#8A8E86] hover:bg-[#FCEBEB] hover:text-[#A32D2D]">✕</button>
                   </div>
                 ))}

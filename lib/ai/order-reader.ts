@@ -9,6 +9,12 @@ import {
 } from './order-prompt';
 import { isSupportedImageType, normaliseImageType, openaiConfigured, openaiJson } from './openai';
 import { applyRowArithmeticToLines } from '@/lib/platform/docu/row-arithmetic';
+import {
+  auditExtractionStructure,
+  finalizeExtractionConfidence,
+  shouldRetryPdfOrientation,
+} from '@/lib/platform/docu/extraction-quality';
+import { pdfOrientationCandidates } from '@/lib/platform/docu/pdf-orientation';
 
 /**
  * The order lane's READER, and the only thing application code calls to read an
@@ -71,6 +77,17 @@ export interface OrderReadParams {
   filename: string;
   products?: string[];
   note?: string;
+  /**
+   * Set by the caller when the bytes handed to this reader have ALREADY been
+   * through PDF-orientation recovery — set by `document-ingest.ts` whenever
+   * `preparedDocumentInput` returned a rotated copy from the classification
+   * read, and ALWAYS on a routing-escalation second opinion
+   * (`lib/platform/docu/classification-policy.ts`). Skips this reader's own
+   * retry loop entirely: retrying rotation twice over the same document
+   * (once in the classification lane, again here) would double the
+   * unattended-document cost for a rotation search that already ran.
+   */
+  orientationChecked?: boolean;
 }
 
 /**
@@ -83,6 +100,78 @@ export interface OrderReadParams {
  * front on the day it was written.
  */
 export async function extractOrderDocument(params: OrderReadParams): Promise<OrderExtractionResult> {
+  const initial = await readOrderOnce(params);
+  const isPdf =
+    params.mediaType === 'application/pdf' || params.filename.toLowerCase().endsWith('.pdf');
+  if (params.orientationChecked || !isPdf || !shouldRetryPdfOrientation(initial)) {
+    const structureAudit = auditExtractionStructure(initial);
+    return {
+      ...initial,
+      overall_confidence: finalizeExtractionConfidence(initial.overall_confidence, {
+        adoptedRotation: false,
+        auditStatus: structureAudit.status,
+      }),
+      structure_audit: structureAudit,
+    };
+  }
+
+  try {
+    const variants = await pdfOrientationCandidates(params.base64);
+    let best = initial;
+    let bestScore = auditExtractionStructure(initial).score;
+    let selectedRotation = variants.originalRotation;
+    const attempted: number[] = [];
+    for (const variant of variants.candidates) {
+      attempted.push(variant.rotation);
+      const candidate = await readOrderOnce({ ...params, base64: variant.base64 });
+      // Hoisted: this used to run auditExtractionStructure(candidate) twice
+      // (once for the score, again for the status in the break check below).
+      const candidateAudit = auditExtractionStructure(candidate);
+      if (candidateAudit.score > bestScore) {
+        best = candidate;
+        bestScore = candidateAudit.score;
+        selectedRotation = variant.rotation;
+      }
+      if (candidateAudit.score >= 85 && candidateAudit.status === 'ok') break;
+    }
+    const structureAudit = auditExtractionStructure(best);
+    const adoptedRotation = best !== initial;
+    return {
+      ...best,
+      overall_confidence: finalizeExtractionConfidence(best.overall_confidence, {
+        adoptedRotation,
+        auditStatus: structureAudit.status,
+      }),
+      structure_audit: structureAudit,
+      // Only record provenance when a rotation was actually TRIED. An empty
+      // `attempted_rotations` (variants.candidates was empty — a multi-page
+      // PDF, see pdf-orientation.ts) is not provenance, it's noise, and used
+      // to be stored anyway.
+      ...(attempted.length > 0
+        ? {
+            orientation_normalization: {
+              applied: adoptedRotation,
+              original_rotation: variants.originalRotation,
+              selected_rotation: selectedRotation,
+              attempted_rotations: attempted,
+            },
+          }
+        : {}),
+    };
+  } catch {
+    const structureAudit = auditExtractionStructure(initial);
+    return {
+      ...initial,
+      overall_confidence: finalizeExtractionConfidence(initial.overall_confidence, {
+        adoptedRotation: false,
+        auditStatus: structureAudit.status,
+      }),
+      structure_audit: structureAudit,
+    };
+  }
+}
+
+async function readOrderOnce(params: OrderReadParams): Promise<OrderExtractionResult> {
   const primary = orderProvider();
   const read = primary === 'openai' ? readWithOpenAi : extractOrderDocumentAnthropic;
   const backup = primary === 'openai' ? extractOrderDocumentAnthropic : readWithOpenAi;

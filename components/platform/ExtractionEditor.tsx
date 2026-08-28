@@ -9,6 +9,7 @@ import type { ProductOption } from '@/lib/platform/docu/product-suggest';
 import { GRID_CELL_FOCUS, gridCell, useGridNavigation } from '@/hooks/useGridNavigation';
 import type { DocumentStatus, ExtractedField, ExtractedLineItem } from '@/lib/platform/types';
 import type { DocuExtractedData } from '@/lib/platform/docu/types';
+import { parseLocaleNumber, inferDecimalSeparator } from '@/lib/platform/locale-number';
 
 function ConfidenceChip({ confidence }: { confidence: number }) {
   const low = confidence < FIELD_REVIEW_THRESHOLD;
@@ -76,14 +77,18 @@ export function ExtractionEditor({
     () => draft.filter((f) => f.confidence < FIELD_REVIEW_THRESHOLD).length,
     [draft],
   );
-  const lineTotal = useMemo(
-    () =>
-      lines.reduce((sum, l) => {
-        const n = parseFloat((l.amount ?? '').replace(/[^0-9.-]/g, ''));
-        return sum + (Number.isFinite(n) ? n : 0);
-      }, 0),
-    [lines],
-  );
+  const lineTotal = useMemo(() => {
+    // One separator reading for the whole document's amount column (see
+    // lib/platform/locale-number.ts) — the old `parseFloat((l.amount ??
+    // '').replace(/[^0-9.-]/g, ''))` deleted commas instead of reading them,
+    // so an SA-formatted "1 234,56" line summed in as "123456". Mirrors the
+    // per-document hint OrderReviewEditor.tsx computes via `lineSeparatorHint`.
+    const hint = inferDecimalSeparator(lines.map((l) => l.amount));
+    return lines.reduce((sum, l) => {
+      const n = parseLocaleNumber(l.amount, hint ? { decimalSeparator: hint } : undefined);
+      return sum + (n ?? 0);
+    }, 0);
+  }, [lines]);
 
   const updateValue = (index: number, value: string) =>
     setDraft((prev) => prev.map((f, i) => (i === index ? { ...f, value } : f)));

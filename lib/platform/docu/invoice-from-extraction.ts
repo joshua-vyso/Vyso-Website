@@ -27,6 +27,7 @@
  */
 import type { ExtractedField, ExtractedLineItem } from '../types.ts';
 import type { DocumentDirectionRecord } from './document-direction.ts';
+import { parseLocaleNumber, inferDecimalSeparator, type DecimalSeparator } from '../locale-number.ts';
 
 /** One row of the printed items table (matches `ClassicInvoiceLine`). */
 export interface SheetLine {
@@ -71,13 +72,25 @@ export type MissingHeaderField = 'number' | 'date';
 const MAX_VAT_RATE = 30;
 
 /**
- * A money/quantity string as a number, using EXACTLY the rule the extraction
- * editor's running total uses (`replace(/[^0-9.-]/g, '')`), so the sheet and
- * the editor can never disagree about what a line is worth.
+ * A money/quantity string as a number, using the SAME shared parser every
+ * other Doc-U/OrderFlow numeric site delegates to (`lib/platform/locale-number.ts`),
+ * so this print sheet and the review editor's running total can never disagree
+ * about what a line is worth.
+ *
+ * Was `parseFloat(String(value ?? '').replace(/[^0-9.-]/g, ''))` — the same
+ * comma-deleting bug `parseAmount` had (see extract.ts's doc comment); a
+ * comma-decimal invoice would have reprinted at 1000× its real amounts.
+ *
+ * Returns 0 (never null) for empty/unparseable input — every caller here does
+ * arithmetic immediately (`qty * unitPrice`, a running subtotal) and a null
+ * would just become a NaN a few lines down; 0 is the same "nothing here" this
+ * function has always reported.
  */
-export function parseNumeric(value: string | null | undefined): number {
-  const n = parseFloat(String(value ?? '').replace(/[^0-9.-]/g, ''));
-  return Number.isFinite(n) ? n : 0;
+export function parseNumeric(
+  value: string | null | undefined,
+  opts?: { decimalSeparator?: DecimalSeparator },
+): number {
+  return parseLocaleNumber(value, opts) ?? 0;
 }
 
 function fieldValue(fields: ExtractedField[], match: (label: string) => boolean): string | null {
@@ -137,22 +150,24 @@ const isVatNumberLabel = (l: string) => /\bvat\b/i.test(l) && (hasRef(l) || /\br
  * is one of whatever it is — and the rate is back-derived whenever the amount
  * column says something different from quantity × unit price.
  */
-function toSheetLine(l: ExtractedLineItem, index: number): SheetLine {
+function toSheetLine(l: ExtractedLineItem, index: number, hint?: DecimalSeparator | null): SheetLine {
+  const opts = hint ? { decimalSeparator: hint } : undefined;
   const name = (l.description ?? '').trim() || (l.reference ?? '').trim() || 'Item';
-  let qty = parseNumeric(l.quantity);
+  let qty = parseNumeric(l.quantity, opts);
   if (!(qty > 0)) qty = 1;
 
-  let unitPrice = parseNumeric(l.unit_price);
-  const amount = parseNumeric(l.amount);
+  let unitPrice = parseNumeric(l.unit_price, opts);
+  const amount = parseNumeric(l.amount, opts);
   if (amount !== 0 && Math.abs(qty * unitPrice - amount) > 0.005) unitPrice = amount / qty;
 
   return { id: `x${index}`, name, qty, unit: (l.unit ?? '').trim() || null, unit_price: unitPrice };
 }
 
 /** A line carrying neither a name nor money is padding, not an invoice line. */
-function isPrintable(l: ExtractedLineItem): boolean {
+function isPrintable(l: ExtractedLineItem, hint?: DecimalSeparator | null): boolean {
+  const opts = hint ? { decimalSeparator: hint } : undefined;
   const named = (l.description ?? '').trim() !== '' || (l.reference ?? '').trim() !== '';
-  return named || parseNumeric(l.unit_price) !== 0 || parseNumeric(l.amount) !== 0;
+  return named || parseNumeric(l.unit_price, opts) !== 0 || parseNumeric(l.amount, opts) !== 0;
 }
 
 function round2(n: number): number {
@@ -172,18 +187,20 @@ export function resolveVatRate(
   fields: ExtractedField[],
   lines: SheetLine[],
   defaultRate: number,
+  hint?: DecimalSeparator | null,
 ): { rate: number; source: 'document' | 'default' } {
+  const opts = hint ? { decimalSeparator: hint } : undefined;
   const fallback = { rate: Number(defaultRate) || 0, source: 'default' as const };
 
   const explicit = fieldValue(fields, isVatRateLabel);
   if (explicit !== null) {
-    const r = parseNumeric(explicit);
+    const r = parseNumeric(explicit, opts);
     if (r >= 0 && r <= MAX_VAT_RATE) return { rate: snap(r, fallback.rate), source: 'document' };
   }
 
   const printed = fieldValue(fields, isVatAmountLabel);
   if (printed === null) return fallback;
-  const vat = parseNumeric(printed);
+  const vat = parseNumeric(printed, opts);
   if (vat === 0) return { rate: 0, source: 'document' };
 
   const subtotal = round2(lines.reduce((s, l) => s + l.qty * l.unit_price, 0));
@@ -221,9 +238,15 @@ export function mapExtractionToSheet(input: {
   termsText?: string | null;
 }): ExtractionSheet {
   const fields = (input.fields ?? []).filter(Boolean);
-  const lines = (input.lineItems ?? []).filter(Boolean).filter(isPrintable).map(toSheetLine);
+  const rawLines = (input.lineItems ?? []).filter(Boolean);
+  // ONE reading of this document's numeric format — from every line's own
+  // figures, since that's what's in scope here — applied to every line and to
+  // the header's VAT fields below, rather than each line item guessing alone
+  // off its own quantity/price/amount.
+  const hint = inferDecimalSeparator(rawLines.flatMap((l) => [l.quantity, l.unit_price, l.amount]));
+  const lines = rawLines.filter((l) => isPrintable(l, hint)).map((l, i) => toSheetLine(l, i, hint));
 
-  const { rate, source } = resolveVatRate(fields, lines, input.defaultVatRate ?? 0);
+  const { rate, source } = resolveVatRate(fields, lines, input.defaultVatRate ?? 0, hint);
 
   const number = fieldValue(fields, isNumberLabel) ?? '';
   const issueDate = fieldValue(fields, isIssueDateLabel) ?? '';

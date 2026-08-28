@@ -32,6 +32,7 @@ import {
   countGrossMismatches,
   grossMismatch,
   lineGross,
+  lineSeparatorHint,
   orderSubtotal,
   toPrintableLines,
 } from '@/lib/platform/docu/order-line-totals';
@@ -57,6 +58,8 @@ interface Line {
   quantity: string;
   unit: string;
   unit_price: string;
+  /** Unit price verbatim from the paper, retained beside the editable canonical value. */
+  raw_unit_price: string;
   /** The paper's own words, carried through edit and re-save untouched. The
    *  reviewer may rewrite `description` to whatever they like; the record of
    *  what the customer actually wrote must not be a casualty of that. */
@@ -66,6 +69,9 @@ interface Line {
    *  checked against — see `grossMismatch`. Empty on the many orders that print
    *  no amounts at all. */
   raw_amount: string;
+  /** How the parser obtained quantity. Derived values are called out beside the
+   *  row so a reviewer never mistakes arithmetic for printed evidence. */
+  quantity_source: 'printed' | 'derived' | 'unresolved' | '';
   /** This line's match + price provenance, when the order has been synced once.
    *  Null on a document synced before provenance existed, or a hand-added line. */
   record: OrderLineRecord | null;
@@ -87,10 +93,24 @@ function isMissingTable(error: { code?: string; message?: string } | null): bool
   return error?.code === '42P01' || /relation .* does not exist/i.test(error?.message ?? '');
 }
 
+/**
+ * Keystroke sanitiser for a Qty/Unit price box: strips only letters and
+ * symbols a locale-formatted number could never contain, and leaves both
+ * separators alone.
+ *
+ * FIXED BUG, DO NOT REINTRODUCE: this used to be
+ * `s.replace(/[^0-9.]/g, '')` — it deleted every comma the reviewer typed, so
+ * fixing a SA supplier's "269,00" by hand produced "26900" on screen, silently
+ * turning a two-hundred-and-sixty-nine-rand correction into a twenty-six-
+ * thousand-nine-hundred-rand one. Now it only removes what could not possibly
+ * be part of a number in ANY format this reads (letters, currency symbols,
+ * stray punctuation) and leaves ".", "," and whitespace (a thousands-space
+ * grouping, "1 395,00") exactly as typed — interpreting them is
+ * `parseAmount`'s job at compute time (via `lineGross`/`grossMismatch`, both
+ * given this document's shared separator hint), never this function's.
+ */
 function sanitizeDecimal(s: string): string {
-  const cleaned = s.replace(/[^0-9.]/g, '');
-  const parts = cleaned.split('.');
-  return parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : cleaned;
+  return s.replace(/[^0-9.,\s]/g, '');
 }
 
 /**
@@ -102,6 +122,7 @@ function sanitizeDecimal(s: string): string {
 export function OrderReviewEditor({
   documentId,
   extractedData,
+  initialCustomerId,
   customers,
   linkedOrder,
   orgUnits = [],
@@ -110,6 +131,8 @@ export function OrderReviewEditor({
 }: {
   documentId: string;
   extractedData: DocuExtractedData | null;
+  /** Existing org customer resolved during read-only unattended ingestion. */
+  initialCustomerId?: string | null;
   customers: CustomerLite[];
   linkedOrder: LinkedOrder | null;
   orgUnits?: string[];
@@ -139,7 +162,9 @@ export function OrderReviewEditor({
   const extractedName = extractedData?.customer_name ?? '';
   const extractedConf = extractedData?.customer_confidence ?? null;
   const initialCustomer =
-    (linkedOrder?.customer_id ? customers.find((c) => c.id === linkedOrder.customer_id) : null) ?? null;
+    (linkedOrder?.customer_id ? customers.find((c) => c.id === linkedOrder.customer_id) : null) ??
+    (initialCustomerId ? customers.find((c) => c.id === initialCustomerId) : null) ??
+    null;
 
   const [customerId, setCustomerId] = useState<string | null>(initialCustomer?.id ?? null);
   const [query, setQuery] = useState(initialCustomer?.name ?? extractedName);
@@ -179,7 +204,14 @@ export function OrderReviewEditor({
 
   const exactExists = customers.some((c) => c.name.trim().toLowerCase() === query.trim().toLowerCase());
 
-  const subtotal = orderSubtotal(lines);
+  // ONE reading of this order's numeric format, formed from every line at once
+  // — never per-row — and reused everywhere on this screen a figure is parsed:
+  // the subtotal, the mismatch count, each row's gross and cross-check, and the
+  // save handler below. A per-row guess is exactly how one comma document could
+  // end up read two different ways on the same screen.
+  const lineHint = useMemo(() => lineSeparatorHint(lines), [lines]);
+
+  const subtotal = orderSubtotal(lines, lineHint);
 
   // Lines the matcher refused to claim it identified. Counted for the banner so
   // the reviewer knows before scrolling that this order is not ready to invoice.
@@ -208,7 +240,7 @@ export function OrderReviewEditor({
   // its own count and its own sentence rather than being folded into the one
   // above. This is the check that would have caught "Apple Top Red @ 560.90"
   // against a printed 569.90 the moment the page rendered.
-  const mismatched = countGrossMismatches(lines);
+  const mismatched = countGrossMismatches(lines, lineHint);
 
   // The sheet the Print button previews: built from the CURRENT rows, not from
   // what is saved. A reviewer who has just corrected 560.90 to 569.90 and not
@@ -414,7 +446,18 @@ export function OrderReviewEditor({
     const nextIndex = lines.length;
     setLines((prev) => [
       ...prev,
-      { key: newKey(), description: '', quantity: '', unit: '', unit_price: '', raw: '', raw_amount: '', record: null },
+      {
+        key: newKey(),
+        description: '',
+        quantity: '',
+        unit: '',
+        unit_price: '',
+        raw_unit_price: '',
+        raw: '',
+        raw_amount: '',
+        quantity_source: 'unresolved',
+        record: null,
+      },
     ]);
     // Land the caret in the new row's product cell, so adding a line by keyboard
     // continues straight into typing it rather than into a hunt for the field.
@@ -468,17 +511,19 @@ export function OrderReviewEditor({
           quantity: l.quantity.trim(),
           unit: l.unit.trim(),
           unit_price: l.unit_price.trim(),
+          raw_unit_price: l.raw_unit_price.trim() || l.unit_price.trim(),
           // The paper's own line total survives the round-trip for exactly the
           // reason `raw_description` does: it is evidence, not a working value,
           // and a re-save that dropped it would silently disarm the cross-check
           // on every subsequent open of this document.
           raw_amount: l.raw_amount.trim(),
+          quantity_source: l.quantity_source || undefined,
           // The gross the reviewer actually saw and signed off. The order sync
           // re-derives it from qty × unit_price anyway (of_order_items carries
           // the two factors, and every total downstream is `docTotals` over
           // them), so this is the document's record rather than an input to the
           // invoice — which is why it can never drift from what was on screen.
-          amount: lineGross(l).toFixed(2),
+          amount: lineGross(l, lineHint).toFixed(2),
           confidence: 100,
         }));
       await supabase
@@ -646,6 +691,22 @@ export function OrderReviewEditor({
           ) : (
             <p className="mt-1.5 text-[12px] text-[#854F0B]">No customer name was read — pick or create one.</p>
           )}
+          {extractedData?.customer_match_method && extractedData.customer_match_method !== 'unresolved' ? (
+            <p className="mt-1 text-[12px] text-[#2F6B45]">
+              Matched to an existing customer · {extractedData.customer_match_method.replaceAll('_', ' ')}
+              {extractedData.customer_match_confidence != null
+                ? ` · ${extractedData.customer_match_confidence}%`
+                : ''}
+            </p>
+          ) : extractedData?.customer_match_candidates?.length ? (
+            <p className="mt-1 text-[12px] text-[#854F0B]">
+              Customer unresolved · review candidates:{' '}
+              {extractedData.customer_match_candidates
+                .slice(0, 3)
+                .map((candidate) => `${candidate.customer_name} (${candidate.score}%)`)
+                .join(', ')}
+            </p>
+          ) : null}
           {/* The read did not go the way it was configured to. Said out loud for
               the same reason the model id is: a document quietly served by the
               fallback provider is a document read by a model nobody chose, and
@@ -793,8 +854,8 @@ export function OrderReviewEditor({
           <div className="space-y-2" ref={gridRef} onKeyDown={onGridKeyDown}>
             {lines.map((l, i) => {
               const r = l.record;
-              const gross = lineGross(l);
-              const off = grossMismatch(l);
+              const gross = lineGross(l, lineHint);
+              const off = grossMismatch(l, lineHint);
               // Show the paper's words whenever the billed name is not simply
               // them. A line we matched correctly still gets the "→" so the
               // reviewer can check the rewrite rather than trust it.
@@ -829,7 +890,20 @@ export function OrderReviewEditor({
                       inGrid
                       gridCell={gridCell(i, 0)}
                     />
-                    <input className={`${cell} of-num text-right`} inputMode="numeric" data-grid-cell={gridCell(i, 1)} value={l.quantity} onChange={(e) => updateLine(i, { quantity: e.target.value.replace(/[^0-9.]/g, '') })} />
+                    <input
+                      className={`${cell} of-num text-right`}
+                      inputMode="numeric"
+                      data-grid-cell={gridCell(i, 1)}
+                      value={l.quantity}
+                      title={
+                        l.quantity_source === 'derived'
+                          ? 'Derived from the printed total divided by unit price — confirm against the document'
+                          : l.quantity_source === 'unresolved'
+                            ? 'Quantity was not resolved from the document'
+                            : 'Quantity as read from the document'
+                      }
+                      onChange={(e) => updateLine(i, { quantity: sanitizeDecimal(e.target.value) })}
+                    />
                     <select
                       className={`${cell} cursor-pointer pr-1`}
                       value={l.unit}
@@ -863,6 +937,20 @@ export function OrderReviewEditor({
                       ✕
                     </button>
                   </div>
+                  {l.quantity_source === 'derived' ? (
+                    <p className="mt-1 px-1 text-[11.5px] leading-[1.5] text-[#854F0B]">
+                      Quantity derived from printed total ÷ unit price — confirm it against the document.
+                    </p>
+                  ) : l.quantity_source === 'unresolved' ? (
+                    <p className="mt-1 px-1 text-[11.5px] leading-[1.5] text-[#A32D2D]">
+                      Quantity could not be established from the printed row.
+                    </p>
+                  ) : null}
+                  {l.raw_unit_price && l.raw_unit_price !== l.unit_price ? (
+                    <p className="mt-1 px-1 text-[11.5px] leading-[1.5] text-[#6B6F68]">
+                      Paper unit price: <span className="of-num font-medium">{l.raw_unit_price}</span>
+                    </p>
+                  ) : null}
                   {/* The cross-check, on the row it belongs to. Both figures,
                       no correction: we cannot know whether the quantity, the
                       price or the amount is the misread one, and picking for

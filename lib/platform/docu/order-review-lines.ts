@@ -32,10 +32,12 @@ export interface ReviewLine {
   quantity: string;
   unit: string;
   unit_price: string;
+  raw_unit_price: string;
   /** The paper's own words, carried through edit and re-save untouched. */
   raw: string;
   /** The line total as printed in the paper's own amount column, verbatim. */
   raw_amount: string;
+  quantity_source: 'printed' | 'derived' | 'unresolved' | '';
   /** Match + price provenance, once the order has been synced. */
   record: OrderLineRecord | null;
 }
@@ -62,8 +64,10 @@ export function buildReviewLines(
     quantity: l.quantity ?? '',
     unit: l.unit ?? '',
     unit_price: l.unit_price ?? '',
+    raw_unit_price: l.raw_unit_price ?? l.unit_price ?? '',
     raw: ((l.raw_description ?? '').trim() || (l.description ?? '').trim()).trim(),
     raw_amount: l.raw_amount ?? '',
+    quantity_source: l.quantity_source ?? '',
     record: null,
   }));
   return attachRecords(rows, extractedData?.order_lines);

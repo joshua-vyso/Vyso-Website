@@ -25,6 +25,7 @@ import type {
 } from './orderflow';
 import { DEFAULT_OF_SETTINGS } from './orderflow';
 import type { CdContact, CdDeliveryAddress, CdProduct, CdPriceList, CdPriceOverride, CdPaymentTerm, CdCompanyProfile, CdCustomerItemAlias } from './coredata';
+import { parseLocaleNumber, inferDecimalSeparator, type DecimalSeparator } from './locale-number';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function rows<T>(res: { data: unknown }): T[] {
@@ -612,13 +613,25 @@ export interface PriceListsData {
   latestStatementPrices: Record<string, StatementPrice>;
 }
 
-/** Positive unit price from a loose string ("R 78,50", "1 240.00"), else null. */
-function statementUnitPrice(raw: unknown): number | null {
+/**
+ * Positive unit price from a loose string ("R 78,50", "1 240.00"), else null.
+ *
+ * THE EXAMPLE ABOVE IS THE BUG THIS ONCE HAD: the old body was
+ * `String(raw).replace(/[^0-9.\-]/g, '')` — it deleted the comma instead of
+ * reading it, so this docstring's own "R 78,50" became "7850" (a hundred-fold
+ * magnitude error, not a rounding one). Now it delegates to the shared
+ * locale-aware parser (lib/platform/locale-number.ts); `hint` is the
+ * statement document's own separator reading (see the caller, which infers it
+ * once per document from that document's price strings) so a single "78,50"
+ * line reads the same way as its neighbours.
+ */
+function statementUnitPrice(raw: unknown, hint?: DecimalSeparator | null): number | null {
   if (raw == null) return null;
-  const cleaned = String(raw).replace(/[^0-9.\-]/g, '');
-  if (cleaned === '' || cleaned === '-' || cleaned === '.') return null;
-  const n = Number(cleaned);
-  return Number.isFinite(n) && n > 0 ? n : null;
+  const n = parseLocaleNumber(
+    typeof raw === 'number' ? raw : String(raw),
+    hint ? { decimalSeparator: hint } : undefined,
+  );
+  return n != null && n > 0 ? n : null;
 }
 
 export async function getPriceListsData(orgId: string): Promise<PriceListsData> {
@@ -668,8 +681,11 @@ export async function getPriceListsData(orgId: string): Promise<PriceListsData> 
     const statementDate: string | null =
       (typeof ed?.summary?.statement_date === 'string' && ed.summary.statement_date) ||
       (doc.created_at ? doc.created_at.slice(0, 10) : null);
+    // One separator reading per statement document (its price strings), so a
+    // lone-comma price on this doc's line 1 reads the same way as line 12's.
+    const hint = inferDecimalSeparator(lineItems.map((li) => li?.unit_price));
     for (const li of lineItems) {
-      const price = statementUnitPrice(li?.unit_price);
+      const price = statementUnitPrice(li?.unit_price, hint);
       if (price == null) continue;
       const desc = (li?.description ?? '').toString().trim().toLowerCase();
       if (!desc) continue;

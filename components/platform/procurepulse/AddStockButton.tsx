@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/platform/supabase-browser';
 import { usePlatform } from '@/lib/platform/session';
+import { parseLocaleNumber } from '@/lib/platform/locale-number';
 
 type Tab = 'document' | 'custom';
 interface DocLite {
@@ -102,8 +103,11 @@ export function AddStockButton() {
 
   async function addCustom() {
     const name = (picked?.name ?? query).trim();
-    const n = Number(qty.replace(/[^0-9.]/g, ''));
-    if (!name || !Number.isFinite(n) || n <= 0 || busy) return;
+    // FIXED BUG, DO NOT REINTRODUCE: this used to be
+    // `Number(qty.replace(/[^0-9.]/g, ''))` — it deleted commas instead of
+    // reading them, so a comma-decimal quantity like "0,20" was added as 20.
+    const n = parseLocaleNumber(qty);
+    if (!name || n == null || n <= 0 || busy) return;
     const supabase = createClient();
     if (!supabase || !org?.id) return;
     setBusy(true);
@@ -271,7 +275,9 @@ export function AddStockButton() {
                     type="text"
                     inputMode="decimal"
                     value={qty}
-                    onChange={(e) => setQty(e.target.value.replace(/[^0-9.]/g, ''))}
+                    // Leaves commas alone while typing — see addCustom()'s
+                    // parseLocaleNumber for why deleting them was the bug.
+                    onChange={(e) => setQty(e.target.value.replace(/[^0-9.,]/g, ''))}
                     placeholder={`Quantity${picked ? ` (${picked.unit})` : ''}`}
                     className="of-num h-11 w-40 rounded-[12px] border border-[#E4E9F0] bg-white px-4 text-[14px] text-[#171A17] outline-none placeholder:text-[#A0A49C] focus:border-[#3E7BC4]"
                   />

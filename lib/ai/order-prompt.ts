@@ -12,6 +12,8 @@
  * `.ts`-suffixed relative import for the same reason.
  */
 import type { ExtractedLineItem } from '../platform/types.ts';
+import type { ExtractionStructureAudit } from '../platform/docu/extraction-quality.ts';
+import type { PdfOrientationNormalization } from '../platform/docu/pdf-orientation.ts';
 
 /** What one order read returns, whoever read it. */
 export interface OrderExtractionResult {
@@ -19,8 +21,18 @@ export interface OrderExtractionResult {
   customer_name: string | null;
   /** 0–100 confidence that customer_name was read correctly. */
   customer_confidence: number;
+  /** Optional header fields. Absent/null on historical reads and informal orders. */
+  purchase_order_number?: string | null;
+  order_date?: string | null;
+  requested_delivery_date?: string | null;
+  delivery_location?: string | null;
+  order_notes?: string | null;
   line_items: ExtractedLineItem[];
   overall_confidence: number;
+  /** Additive review evidence; absent on historical extractions. */
+  structure_audit?: ExtractionStructureAudit;
+  /** Set only when this reader itself recovered a low-quality PDF rotation. */
+  orientation_normalization?: PdfOrientationNormalization;
   /**
    * Who read this document, as "provider/model".
    *
@@ -112,8 +124,13 @@ Respond with ONLY a JSON object (no prose, no markdown code fences) of exactly t
 {
   "customer_name": string | null,
   "customer_confidence": number,
+  "purchase_order_number": string | null,
+  "order_date": string | null,
+  "requested_delivery_date": string | null,
+  "delivery_location": string | null,
+  "order_notes": string | null,
   "line_items": [
-    { "raw_description": string, "description": string, "quantity": string, "unit": string, "bulk_quantity": string, "bulk_unit": string, "unit_quantity": string, "unit_price": string, "raw_amount": string, "confidence": number }
+    { "raw_description": string, "description": string, "quantity": string, "unit": string, "bulk_quantity": string, "bulk_unit": string, "unit_quantity": string, "raw_unit_price": string, "unit_price": string, "raw_amount": string, "confidence": number }
   ],
   "overall_confidence": number
 }
@@ -126,12 +143,17 @@ Rules:
     - Handwritten / typed note: a name by "from", "customer", "client", a shop name, or the sign-off.
   Return the cleaned name in Title Case. Use null only if there is genuinely no name anywhere.
 - "customer_confidence" (0-100): how sure you are the name is right. A clear WhatsApp contact header or email sender display name is high (85-100); a name guessed from a phone number or an ambiguous scrawl is low (<60).
+- "purchase_order_number" = the PO/order reference exactly as printed, without inventing one from the filename.
+- "order_date" and "requested_delivery_date" = the dates exactly as printed. Do not infer a missing year or rewrite an ambiguous date.
+- "delivery_location" = the printed Deliver To / Ship To location or address. This is delivery evidence, never the customer identity by itself.
+- "order_notes" = short order/delivery instructions printed on the document, or null. Do not repeat all line items here.
 - "line_items" = every product the customer is asking for, ONE ENTRY PER ROW ON THE PAPER, in the order they appear. Never merge two rows and never invent one. For each:
     - raw_description = the product text EXACTLY as it is printed or written, VERBATIM: same words, same order, same abbreviations, same category codes, same colour and size words ("FF - GRAPES WHITE BOX", "PATTY PAN YELLOW", "Mix Vegetables 2 pkt 20 kg"). Do NOT tidy it, translate it, expand it or resolve it to anything. This is the record of what the customer wrote and it must survive.
     - description = the produce/product, cleaned and Title Case (e.g. "Strawberries", "Mixed Veg", "Baby Marrow").
     - quantity = the row's headline quantity, digits only as a string ("5" from "5 boxes", "10" from "10x"). Where the row prints TWO quantity columns (see below), put the OUTER/BULK figure here and fill the other three fields as well.
     - unit = the counting unit as a short lowercase plural noun read from the text: "boxes","punnets","bags","kg","crates","trays","bunches","packets","pockets","each". "" if none is stated.
-    - unit_price = the price PER UNIT exactly as printed in the row's own unit-cost/rate column, else "" (many orders carry no prices at all).
+    - raw_unit_price = the price PER UNIT exactly as printed in the row's own unit-cost/rate column, including its decimal separator, else "" (many orders carry no prices at all).
+    - unit_price = the same printed price. Vyso canonicalises it deterministically after extraction; do not canonicalise or compute it yourself.
     - raw_amount = the LINE TOTAL as printed in the row's own amount/nett/value column ("569.90"), copied digit for digit, else "" when the document has no such column. This is NOT the unit price and NOT the document total, and you must NEVER compute it — if the row shows no amount, return "".
     - confidence = 0-100 for that line.
 - TWO QUANTITY COLUMNS ARE TWO DIFFERENT NUMBERS AND YOU MUST NOT COLLAPSE THEM. A printed purchase order often carries a BULK quantity with its own pack unit AND a UNIT quantity with its own unit — for example "4 | Box | 48 | Each | 15.75 | 756.00", which is four boxes containing forty-eight avocados at fifteen seventy-five each. Where the row prints both:
@@ -217,6 +239,7 @@ export function coerceOrderExtraction(raw: string): Omit<OrderExtractionResult, 
       // rewrite — fall back to it, but keep raw_description populated so the
       // resolver always has a raw name to work from.
       const raw_description = str(r.raw_description) || str(r.description);
+      const raw_unit_price = str(r.raw_unit_price) || str(r.unit_price);
       return {
         raw_description,
         description: str(r.description) || raw_description,
@@ -225,7 +248,8 @@ export function coerceOrderExtraction(raw: string): Omit<OrderExtractionResult, 
         bulk_quantity: str(r.bulk_quantity),
         bulk_unit: str(r.bulk_unit),
         unit_quantity: str(r.unit_quantity),
-        unit_price: str(r.unit_price),
+        raw_unit_price,
+        unit_price: str(r.unit_price) || raw_unit_price,
         // The paper's own line total, kept beside the paper's own words and for
         // the same reason: it is the only independent witness to the figures on
         // the row, and both the arithmetic resolver and the review editor's
@@ -239,6 +263,11 @@ export function coerceOrderExtraction(raw: string): Omit<OrderExtractionResult, 
   return {
     customer_name: str(parsed.customer_name) || null,
     customer_confidence: clampPct(parsed.customer_confidence),
+    purchase_order_number: str(parsed.purchase_order_number) || null,
+    order_date: str(parsed.order_date) || null,
+    requested_delivery_date: str(parsed.requested_delivery_date) || null,
+    delivery_location: str(parsed.delivery_location) || null,
+    order_notes: str(parsed.order_notes) || null,
     line_items,
     overall_confidence: clampPct(parsed.overall_confidence),
   };

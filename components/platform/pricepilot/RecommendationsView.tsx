@@ -13,6 +13,7 @@ import {
   CONFIDENCE_STYLE,
   type Opportunity,
 } from '@/lib/platform/pricepilot';
+import { parseLocaleNumber } from '@/lib/platform/locale-number';
 
 /**
  * Suggested price changes — products below the target margin, with confidence,
@@ -40,8 +41,11 @@ export function RecommendationsView({
   const marginFor = (o: Opportunity) => {
     const raw = edited[o.item.id];
     if (raw == null || raw.trim() === '') return Math.round(o.suggestedMargin); // default matches the displayed value
-    const n = Number(raw.replace(/[^0-9.]/g, '')); // strip minus + junk, like PriceListDetail
-    return Number.isFinite(n) && n >= 0 && n <= 1000 ? n : Math.round(o.suggestedMargin);
+    // FIXED BUG, DO NOT REINTRODUCE: this used to be
+    // `Number(raw.replace(/[^0-9.]/g, ''))` — it deleted commas instead of
+    // reading them, so a comma-decimal margin like "22,5" became 225%.
+    const n = parseLocaleNumber(raw); // like PriceListDetail
+    return n != null && n >= 0 && n <= 1000 ? n : Math.round(o.suggestedMargin);
   };
   const impactFor = (o: Opportunity) => {
     const cost = Number(o.item.avg_unit_price ?? 0);

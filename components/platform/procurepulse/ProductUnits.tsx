@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { UnitCombobox } from './UnitCombobox';
 import type { ProductUnit, StockItem } from '@/lib/platform/types';
+import { parseLocaleNumber } from '@/lib/platform/locale-number';
 
 interface Row {
   stock_item_id: string;
@@ -17,8 +18,8 @@ interface Row {
 const PAGE = 50;
 
 function exampleOf(r: Row): string {
-  const f = Number(r.conversion_factor);
-  if (!r.purchase_unit || !r.stock_unit || !Number.isFinite(f) || f <= 0) return '—';
+  const f = parseLocaleNumber(r.conversion_factor);
+  if (!r.purchase_unit || !r.stock_unit || f == null || f <= 0) return '—';
   return `1 ${r.purchase_unit} = ${f} ${r.stock_unit}`;
 }
 
@@ -72,7 +73,7 @@ export function ProductUnits({
   const pageRows = filtered.slice(safePage * PAGE, safePage * PAGE + PAGE);
 
   // Surface an invalid (non-positive / non-numeric) conversion factor before save.
-  const badFactor = (v: string) => v.trim() !== '' && !(Number(v) > 0);
+  const badFactor = (v: string) => v.trim() !== '' && !((parseLocaleNumber(v) ?? 0) > 0);
 
   async function save() {
     if (busy || dirty.size === 0) return;
@@ -166,7 +167,11 @@ export function ProductUnits({
                 inputMode="decimal"
                 value={r.conversion_factor}
                 placeholder="—"
-                onChange={(e) => edit(r.stock_item_id, 'conversion_factor', e.target.value.replace(/[^0-9.]/g, ''))}
+                // FIXED BUG, DO NOT REINTRODUCE: `[^0-9.]` used to strip every
+                // comma the user typed — reading the number is parseLocaleNumber's
+                // job at the point of use (exampleOf/badFactor above), not this
+                // keystroke handler's.
+                onChange={(e) => edit(r.stock_item_id, 'conversion_factor', e.target.value.replace(/[^0-9.,]/g, ''))}
               />
               <div className="truncate text-[12px] text-[#6B6F68]">{exampleOf(r)}</div>
             </div>

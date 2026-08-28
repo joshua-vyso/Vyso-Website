@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/platform/supabase-browser';
 import { usePlatform } from '@/lib/platform/session';
 import { CADENCES, CADENCE_LABEL, type PriceCadence } from '@/lib/platform/pricepilot';
+import { parseLocaleNumber } from '@/lib/platform/locale-number';
 
 export interface PriceListRow {
   id: string;
@@ -54,7 +55,10 @@ export function PriceListsView({ lists, customers }: { lists: PriceListRow[]; cu
         org_id: org.id,
         name: name.trim(),
         customer_id: customerId || null,
-        default_margin_pct: Number(margin) || 0,
+        // FIXED BUG, DO NOT REINTRODUCE: this used to be `Number(margin) || 0`
+        // fed by a sanitizer that stripped every comma the user typed — a
+        // comma-decimal margin like "22,5" landed as 225%.
+        default_margin_pct: parseLocaleNumber(margin) ?? 0,
         cadence,
       })
       .select('id')
@@ -121,7 +125,9 @@ export function PriceListsView({ lists, customers }: { lists: PriceListRow[]; cu
               <div className="flex gap-3">
                 <div className="flex-1">
                   <label className="mb-1 block text-[12px] font-medium uppercase tracking-[0.05em] text-[#8A8E86]">Default margin %</label>
-                  <input className={field} inputMode="decimal" value={margin} onChange={(e) => setMargin(e.target.value.replace(/[^0-9.]/g, ''))} />
+                  {/* FIXED BUG, DO NOT REINTRODUCE: `[^0-9.]` used to strip every
+                      comma typed — reading the number is parseLocaleNumber's job, at create() above. */}
+                  <input className={field} inputMode="decimal" value={margin} onChange={(e) => setMargin(e.target.value.replace(/[^0-9.,]/g, ''))} />
                 </div>
                 <div className="flex-1">
                   <label className="mb-1 block text-[12px] font-medium uppercase tracking-[0.05em] text-[#8A8E86]">Cadence</label>

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { appendBatchCountNote, filterRecipes, scaleRecipePrefill } from '@/lib/platform/procurepulse/batch-logic';
 import { distinctItemUnits } from '@/lib/platform/procurepulse/units';
+import { parseLocaleNumber } from '@/lib/platform/locale-number';
 
 /** The thin recipe shape the logger needs: header + its ingredient lines. */
 export interface RecipeLite {
@@ -47,10 +48,18 @@ interface RecentBatch {
   created_at: string;
 }
 
+/**
+ * Keystroke sanitiser for the output-qty / qty-used boxes: strips only
+ * characters a locale-formatted number could never contain, and leaves both
+ * separators alone.
+ *
+ * FIXED BUG, DO NOT REINTRODUCE: this used to strip to `[^0-9.]` and collapse
+ * repeated dots — it deleted every comma the user typed, so "0,20" became
+ * "020" on screen. Reading the number is `parseLocaleNumber`'s job at the
+ * point of use, never this function's.
+ */
 function sanitizeDecimal(s: string): string {
-  const cleaned = s.replace(/[^0-9.]/g, '');
-  const parts = cleaned.split('.');
-  return parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : cleaned;
+  return s.replace(/[^0-9.,]/g, '');
 }
 function sanitizeInt(s: string): string {
   return s.replace(/[^0-9]/g, '');
@@ -198,8 +207,8 @@ export function BatchLogger({
    *  produced nothing, which is never intentional). */
   const canConfirm = useMemo(() => {
     if (!recipe) return false;
-    const qty = Number(outputQty);
-    return Number.isFinite(qty) && qty > 0;
+    const qty = parseLocaleNumber(outputQty);
+    return qty != null && qty > 0;
   }, [recipe, outputQty]);
 
   /** Re-fetched after a confirmed batch (from a click handler, not an effect —
@@ -308,11 +317,11 @@ export function BatchLogger({
             return {
               stock_item_id: r.stock_item_id,
               product_name: r.product_name,
-              qty_used: Number(r.qty_used) || 0,
+              qty_used: parseLocaleNumber(r.qty_used) ?? 0,
               unit: item ? item.unit : r.unit || null,
             };
           }),
-          output: { qty: Number(outputQty) || 0, unit: effectiveOutputUnit },
+          output: { qty: parseLocaleNumber(outputQty) ?? 0, unit: effectiveOutputUnit },
           // The persisted row stays singular (one pp_batches row per confirm,
           // already-multiplied quantities) — this is the multiplier's only
           // trace in the audit trail. See appendBatchCountNote.

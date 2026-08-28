@@ -29,6 +29,7 @@ import {
   ACCENT,
   MUTE,
 } from './shared';
+import { parseLocaleNumber } from '@/lib/platform/locale-number';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -41,9 +42,17 @@ function ageColor(days: number): string {
   return MUTE;
 }
 
+/**
+ * The settlement-amount field's string → a number, defaulting to 0.
+ *
+ * FIXED BUG, DO NOT REINTRODUCE: this used to be
+ * `Number(v.replace(/[^0-9.\-]/g, ''))` — it deleted commas instead of
+ * reading them, so settling a credit for a comma-decimal "1 234,56" quietly
+ * became 123456. The field itself is never keystroke-sanitised (free text),
+ * so this delegation is the only place that reading happens.
+ */
 function toNumber(v: string): number {
-  const n = Number(v.replace(/[^0-9.\-]/g, ''));
-  return Number.isFinite(n) ? n : 0;
+  return parseLocaleNumber(v) ?? 0;
 }
 
 function todayISO(): string {
