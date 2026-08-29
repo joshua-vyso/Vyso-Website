@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   classifyMicrosoftEmail,
+  diagnoseMicrosoftGraphAttachments,
+  finalMicrosoftGraphIngestStatus,
+  hasPdfSignature,
   ingestMicrosoftGraphMessage,
   selectMicrosoftGraphAttachments,
   type MicrosoftGraphIngestDependencies,
@@ -63,24 +66,106 @@ test('the real Country Mushrooms example classifies as a supplier invoice', () =
   const result = classifyMicrosoftEmail({
     subject: 'Tax Invoice IOA76937',
     body: 'Tax Invoice IOA76937 from COUNTRY MUSHROOMS (PTY) LTD',
-    attachmentNames: ['Tax Invoice IOA76937.PDF'],
+    senderName: 'Charlien Naude',
+    senderEmail: 'charlien@countrymushrooms.co.za',
+    attachments: [attachment()],
   });
-  assert.deepEqual(result, {
-    classification: 'supplier_invoice',
-    confidence: 97,
-    reason: 'invoice-keyword',
-  });
+  assert.equal(result.classification, 'supplier_invoice');
+  assert.equal(result.orderingIntentDetected, false);
+  assert.equal(result.primarySource, 'combined');
+  assert.ok(result.confidence >= 95);
+  assert.ok(result.evidence.includes('sender:business-domain'));
+  assert.ok(result.evidence.includes('attachment:mime-pdf'));
 });
 
-test('likely customer orders and unknown mail remain distinct', () => {
-  assert.equal(
-    classifyMicrosoftEmail({ subject: 'Purchase Order PO-1042' }).classification,
-    'customer_order',
-  );
+test('body-only explicit supply request with quantities has ordering intent', () => {
+  const result = classifyMicrosoftEmail({
+    subject: 'Monday delivery',
+    body: 'Hi, please deliver 10kg potatoes and 5kg carrots Monday.',
+  });
+  assert.equal(result.classification, 'customer_order');
+  assert.equal(result.orderingIntentDetected, true);
+  assert.equal(result.primarySource, 'email_body');
+  assert.ok(result.evidence.includes('body:explicit-supply-request'));
+  assert.ok(result.evidence.includes('body:multiple-quantity-uom-lines'));
+});
+
+test('price, availability, complaint and product discussion do not become orders', () => {
+  const cases = [
+    { body: 'Please send pricing for potatoes', expected: 'quote' },
+    { body: 'Do you have strawberries available?', expected: 'general_correspondence' },
+    { body: 'We have had issues with the carrots in our last order.', expected: 'general_correspondence' },
+    { body: 'The potatoes are looking good this season.', expected: 'general_correspondence' },
+  ] as const;
+  for (const item of cases) {
+    const result = classifyMicrosoftEmail({ subject: 'Produce', body: item.body });
+    assert.equal(result.classification, item.expected, item.body);
+    assert.equal(result.orderingIntentDetected, false, item.body);
+  }
+});
+
+test('standalone Order and Requisition need structured or attachment evidence', () => {
+  const standalone = classifyMicrosoftEmail({
+    subject: 'Order',
+    body: 'Please deliver 10kg potatoes and 4 punnets strawberries.',
+  });
+  assert.equal(standalone.classification, 'customer_order');
+  assert.equal(standalone.orderingIntentDetected, true);
+
+  const requisition = classifyMicrosoftEmail({
+    subject: 'Purchase Requisition PR-41778',
+    body: '10kg potatoes',
+  });
+  assert.equal(requisition.classification, 'customer_order');
+  assert.equal(requisition.orderingIntentDetected, true);
+
+  const unsubstantiated = classifyMicrosoftEmail({ subject: 'Order', body: 'Please see attached.' });
+  assert.notEqual(unsubstantiated.classification, 'customer_order');
+  assert.equal(unsubstantiated.orderingIntentDetected, false);
+});
+
+test('attachment evidence drives orders and invoices while attachment-only prose does not', () => {
+  const order = classifyMicrosoftEmail({
+    subject: 'Documents',
+    body: 'Please see attached.',
+    attachments: [attachment({ name: 'PO_144463.pdf', contentType: 'application/octet-stream' })],
+  });
+  assert.equal(order.classification, 'customer_order');
+  assert.equal(order.orderingIntentDetected, true);
+  assert.equal(order.primarySource, 'attachment');
+
+  const invoice = classifyMicrosoftEmail({
+    body: 'Please see attached.',
+    attachments: [attachment({ name: 'Tax Invoice 41778.pdf' })],
+  });
+  assert.equal(invoice.classification, 'supplier_invoice');
+  assert.equal(invoice.primarySource, 'attachment');
+
+  const generic = classifyMicrosoftEmail({
+    body: 'Please see attached.',
+    attachments: [attachment({ name: 'document.pdf' })],
+  });
+  assert.notEqual(generic.classification, 'customer_order');
+});
+
+test('an old order attached to a complaint is not treated as a new order', () => {
+  const result = classifyMicrosoftEmail({
+    subject: 'Issue with our last order',
+    body: 'We have had issues with the carrots in our last order. Please see attached.',
+    attachments: [attachment({ name: 'PO_144463.pdf' })],
+  });
+  assert.equal(result.classification, 'general_correspondence');
+  assert.equal(result.orderingIntentDetected, false);
+});
+
+test('unknown mail remains distinct', () => {
   assert.deepEqual(classifyMicrosoftEmail({}), {
     classification: 'unknown',
     confidence: 0,
     reason: 'no-deterministic-signal',
+    orderingIntentDetected: false,
+    primarySource: 'none',
+    evidence: [],
   });
 });
 
@@ -92,6 +177,27 @@ test('supported Graph file attachments reuse the existing PDF/image policy', () 
     attachment({ id: 'item', attachmentType: '#microsoft.graph.itemAttachment' }),
   ]);
   assert.deepEqual(selected.map((entry) => entry.id), ['attachment-1']);
+});
+
+test('attachment diagnostics distinguish ignored furniture from unsupported business documents', () => {
+  const diagnostics = diagnoseMicrosoftGraphAttachments([
+    attachment({ id: 'inline', name: 'logo.png', contentType: 'image/png', isInline: true }),
+    attachment({ id: 'xlsx', name: 'order.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    attachment({ id: 'bin', name: 'tracking.bin', contentType: 'application/octet-stream' }),
+    attachment({ id: 'pdf', name: 'PO_144463.pdf', contentType: 'application/octet-stream' }),
+  ]);
+  assert.deepEqual(diagnostics.map((entry) => [entry.attachmentId, entry.disposition, entry.actionable]), [
+    ['inline', 'ignored_inline', false],
+    ['xlsx', 'unsupported_media_type', true],
+    ['bin', 'ignored_non_document', false],
+    ['pdf', 'provisional_pdf', true],
+  ]);
+});
+
+test('PDF signature validation is exact and does not trust a filename', () => {
+  assert.equal(hasPdfSignature(new TextEncoder().encode('%PDF-1.7\n')), true);
+  assert.equal(hasPdfSignature(new TextEncoder().encode('not a pdf')), false);
+  assert.equal(hasPdfSignature(new TextEncoder().encode('%PDF')), false);
 });
 
 test('a supplier invoice copy flows through the existing document sink once', async () => {
@@ -109,6 +215,65 @@ test('a supplier invoice copy flows through the existing document sink once', as
   assert.deepEqual(result.processedAttachmentIds, ['attachment-1']);
   assert.deepEqual(progress, [['attachment-1']]);
   assert.deepEqual(result.errors, []);
+});
+
+test('parsed attachment evidence is reflected without erasing matching message evidence', async () => {
+  const result = await ingestMicrosoftGraphMessage(
+    { expectedMessageId: MESSAGE_ID, processedAttachmentIds: [], documentsCreated: 0 },
+    dependencies({
+      fetchMessage: async () => message({
+        subject: 'Order',
+        body: { contentType: 'text', content: 'Please deliver 10kg potatoes.' },
+        bodyPreview: 'Please deliver 10kg potatoes.',
+      }),
+      listAttachments: async () => [attachment({ name: 'PO_144463.pdf' })],
+      ingestDocument: async () => ({ ok: true, documentId: 'document-1', documentType: 'order' }),
+    }),
+  );
+  assert.equal(result.classification.classification, 'customer_order');
+  assert.equal(result.classification.primarySource, 'combined');
+  assert.ok(result.classification.evidence.includes('attachment:parsed-order'));
+});
+
+test('a valid PDF mislabeled application/octet-stream is verified and normalized Vyso-side', async () => {
+  const captured: Array<Parameters<MicrosoftGraphIngestDependencies['ingestDocument']>[0]> = [];
+  const result = await ingestMicrosoftGraphMessage(
+    { expectedMessageId: MESSAGE_ID, processedAttachmentIds: [], documentsCreated: 0 },
+    dependencies({
+      listAttachments: async () => [attachment({ name: 'PO_144463.pdf', contentType: 'application/octet-stream' })],
+      downloadAttachment: async () => new TextEncoder().encode('%PDF-1.7\nbody'),
+      ingestDocument: async (input) => {
+        captured.push(input);
+        return { ok: true, documentId: 'document-1', documentType: 'order' };
+      },
+    }),
+  );
+  assert.equal(captured.length, 1);
+  assert.equal(captured[0]?.mediaType, 'application/pdf');
+  assert.equal(captured[0]?.sourceContentType, 'application/octet-stream');
+  assert.equal(result.attachmentDiagnostics[0]?.disposition, 'processable_verified_pdf');
+  assert.equal(result.unsupportedAttachments, 0);
+  assert.equal(result.documentsCreated, 1);
+});
+
+test('a fake PDF filename with invalid bytes remains unsupported and never reaches the parser', async () => {
+  let parserCalled = false;
+  const result = await ingestMicrosoftGraphMessage(
+    { expectedMessageId: MESSAGE_ID, processedAttachmentIds: [], documentsCreated: 0 },
+    dependencies({
+      listAttachments: async () => [attachment({ name: 'PO_144460.pdf', contentType: 'application/octet-stream' })],
+      downloadAttachment: async () => new TextEncoder().encode('PK fake workbook bytes'),
+      ingestDocument: async () => {
+        parserCalled = true;
+        return { ok: true, documentId: 'must-not-exist' };
+      },
+    }),
+  );
+  assert.equal(parserCalled, false);
+  assert.equal(result.documentsCreated, 0);
+  assert.equal(result.actionableUnsupportedAttachments, 1);
+  assert.equal(result.attachmentDiagnostics[0]?.disposition, 'invalid_pdf_signature');
+  assert.equal(finalMicrosoftGraphIngestStatus(result), 'failed');
 });
 
 test('message identity reaches the document sink without becoming an organisation selector', async () => {
@@ -202,6 +367,40 @@ test('unsupported attachments are left untouched without invoking download or pa
   assert.equal(downloadCalled, false);
   assert.equal(parserCalled, false);
   assert.equal(result.unsupportedAttachments, 1);
+  assert.equal(result.actionableUnsupportedAttachments, 1);
+  assert.equal(finalMicrosoftGraphIngestStatus(result), 'failed');
+});
+
+test('zero-document status distinguishes reviewable loss from non-actionable correspondence', async () => {
+  const bodyOrder = await ingestMicrosoftGraphMessage(
+    { expectedMessageId: MESSAGE_ID, processedAttachmentIds: [], documentsCreated: 0 },
+    dependencies({
+      fetchMessage: async () => message({
+        subject: 'Order',
+        hasAttachments: false,
+        body: { contentType: 'text', content: 'Please deliver 10kg potatoes and 5kg carrots Monday.' },
+        bodyPreview: 'Please deliver 10kg potatoes and 5kg carrots Monday.',
+      }),
+      listAttachments: async () => [],
+    }),
+  );
+  assert.equal(bodyOrder.classification.orderingIntentDetected, true);
+  assert.equal(finalMicrosoftGraphIngestStatus(bodyOrder), 'failed');
+
+  const correspondence = await ingestMicrosoftGraphMessage(
+    { expectedMessageId: MESSAGE_ID, processedAttachmentIds: [], documentsCreated: 0 },
+    dependencies({
+      fetchMessage: async () => message({
+        subject: 'Question',
+        hasAttachments: false,
+        body: { contentType: 'text', content: 'Thank you for the update.' },
+        bodyPreview: 'Thank you for the update.',
+      }),
+      listAttachments: async () => [],
+    }),
+  );
+  assert.equal(correspondence.classification.classification, 'general_correspondence');
+  assert.equal(finalMicrosoftGraphIngestStatus(correspondence), 'ignored');
 });
 
 test('idempotent retry skips a Graph attachment already filed on an earlier attempt', async () => {
@@ -252,7 +451,7 @@ test('an existing errored Vyso copy stays failed without creating a duplicate do
   assert.match(result.errors[0], /Doc-U extraction retry/);
 });
 
-test('attachment retries use one deterministic Storage path and partial failures cannot finish done', () => {
+test('attachment retries use one deterministic Storage path and final status is semantic', () => {
   const documentSource = readFileSync(new URL('../lib/platform/document-ingest.ts', import.meta.url), 'utf8');
   const adapterSource = readFileSync(new URL('../lib/platform/microsoft-graph-ingest.ts', import.meta.url), 'utf8');
 
@@ -261,7 +460,7 @@ test('attachment retries use one deterministic Storage path and partial failures
   assert.match(documentSource, /email-ingests\/\$\{attachmentStorageKey\}/);
   assert.match(documentSource, /attachmentStorageKey && isUniqueViolation\(upErr\)/);
   assert.match(documentSource, /eq\('source_attachment_id', sourceAttachmentId\)/);
-  assert.match(adapterSource, /const status = result\.errors\.length > 0 \? 'failed' : 'done'/);
+  assert.match(adapterSource, /finalMicrosoftGraphIngestStatus\(result\)/);
 });
 
 test('database migration enforces Graph message and attachment idempotency', () => {
@@ -269,6 +468,8 @@ test('database migration enforces Graph message and attachment idempotency', () 
   assert.match(sql, /unique index if not exists email_ingests_graph_message_uidx/i);
   assert.match(sql, /on email_ingests \(org_id, graph_message_id\)/i);
   assert.match(sql, /unique index if not exists documents_ingest_attachment_uidx/i);
+  assert.match(sql, /graph_id_type text not null default 'rest_id'/i);
+  assert.match(sql, /attachment_diagnostics jsonb not null default '\[\]'::jsonb/i);
 });
 
 test('persisted Microsoft work is recoverable without after()', () => {

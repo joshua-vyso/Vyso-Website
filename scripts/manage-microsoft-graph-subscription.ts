@@ -20,6 +20,7 @@ import {
   acquireMicrosoftGraphAppToken,
   createMicrosoftGraphInboxSubscription,
   getMicrosoftGraphSubscription,
+  microsoftGraphIdTypeFromConfig,
   renewMicrosoftGraphSubscription,
   type MicrosoftGraphSubscription,
 } from '../lib/platform/microsoft-graph-core.ts';
@@ -168,11 +169,13 @@ async function main(): Promise<void> {
         ['MICROSOFT_MAILBOX', 'MICROSOFT_GRAPH_CLIENT_STATE', 'MICROSOFT_GRAPH_WEBHOOK_URL'],
         fileEnv,
       );
+      const idType = microsoftGraphIdTypeFromConfig(configured('MICROSOFT_GRAPH_ID_TYPE', fileEnv));
       const subscription = await createMicrosoftGraphInboxSubscription({
         accessToken,
         mailbox: createConfig.MICROSOFT_MAILBOX,
         notificationUrl: createConfig.MICROSOFT_GRAPH_WEBHOOK_URL,
         clientState: createConfig.MICROSOFT_GRAPH_CLIENT_STATE,
+        idType,
       });
       printSubscription('Subscription creation', subscription);
       console.log(

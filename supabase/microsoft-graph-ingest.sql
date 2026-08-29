@@ -22,6 +22,13 @@ alter table email_ingests add column if not exists has_attachments boolean;
 alter table email_ingests add column if not exists classification text;
 alter table email_ingests add column if not exists classification_confidence int;
 alter table email_ingests add column if not exists classification_reason text;
+alter table email_ingests add column if not exists ordering_intent_detected boolean;
+alter table email_ingests add column if not exists classification_primary_source text;
+alter table email_ingests add column if not exists classification_evidence jsonb not null default '[]'::jsonb;
+alter table email_ingests add column if not exists attachment_diagnostics jsonb not null default '[]'::jsonb;
+-- Existing/live notifications use the default REST id. Future immutable-id
+-- subscriptions opt in explicitly and stamp new rows with the other value.
+alter table email_ingests add column if not exists graph_id_type text not null default 'rest_id';
 alter table email_ingests add column if not exists updated_at timestamptz not null default now();
 
 -- A duplicated Graph notification or worker retry can never create a second
@@ -51,6 +58,34 @@ begin
           'delivery_note', 'credit_note', 'general_correspondence', 'unknown'
         )
       );
+  end if;
+  if not exists (
+    select 1 from pg_constraint where conname = 'email_ingests_classification_source_check'
+  ) then
+    alter table email_ingests add constraint email_ingests_classification_source_check
+      check (
+        classification_primary_source is null or classification_primary_source in (
+          'attachment', 'email_body', 'combined', 'none'
+        )
+      );
+  end if;
+  if not exists (
+    select 1 from pg_constraint where conname = 'email_ingests_graph_id_type_check'
+  ) then
+    alter table email_ingests add constraint email_ingests_graph_id_type_check
+      check (graph_id_type in ('rest_id', 'rest_immutable_entry_id'));
+  end if;
+  if not exists (
+    select 1 from pg_constraint where conname = 'email_ingests_classification_evidence_array_check'
+  ) then
+    alter table email_ingests add constraint email_ingests_classification_evidence_array_check
+      check (jsonb_typeof(classification_evidence) = 'array');
+  end if;
+  if not exists (
+    select 1 from pg_constraint where conname = 'email_ingests_attachment_diagnostics_array_check'
+  ) then
+    alter table email_ingests add constraint email_ingests_attachment_diagnostics_array_check
+      check (jsonb_typeof(attachment_diagnostics) = 'array');
   end if;
 end $$;
 

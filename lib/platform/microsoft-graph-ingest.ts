@@ -8,9 +8,12 @@ import {
   downloadMicrosoftGraphFileAttachment,
   fetchMicrosoftGraphAttachmentMetadata,
   fetchMicrosoftGraphMessage,
+  microsoftGraphIdTypeFromConfig,
+  type MicrosoftGraphIdType,
 } from './microsoft-graph-core';
 import {
   ingestMicrosoftGraphMessage,
+  finalMicrosoftGraphIngestStatus,
   type MicrosoftEmailClassificationResult,
 } from './microsoft-graph-ingest-core';
 import { getMicrosoftGraphAppToken } from './microsoft-graph';
@@ -21,6 +24,7 @@ export interface MicrosoftGraphEmailIngestRow {
   org_id: string;
   mailbox: string | null;
   graph_message_id: string | null;
+  graph_id_type: MicrosoftGraphIdType | null;
   status: string;
   attempts: number;
   documents_created: number;
@@ -38,6 +42,7 @@ export async function enqueueMicrosoftGraphNotifications(
   input: {
     orgId: string;
     mailbox: string;
+    graphIdType?: MicrosoftGraphIdType;
     notifications: readonly ValidatedMicrosoftGraphNotification[];
   },
 ): Promise<string[]> {
@@ -51,6 +56,7 @@ export async function enqueueMicrosoftGraphNotifications(
         resend_email_id: null,
         message_id: notification.messageId,
         graph_message_id: notification.messageId,
+        graph_id_type: input.graphIdType ?? 'rest_id',
         mailbox: input.mailbox,
         from_email: null,
         to_address: input.mailbox,
@@ -78,6 +84,9 @@ function classificationPatch(classification: MicrosoftEmailClassificationResult)
     classification: classification.classification,
     classification_confidence: classification.confidence,
     classification_reason: classification.reason,
+    ordering_intent_detected: classification.orderingIntentDetected,
+    classification_primary_source: classification.primarySource,
+    classification_evidence: classification.evidence,
   };
 }
 
@@ -92,6 +101,7 @@ export async function processMicrosoftGraphEmailIngest(
 ): Promise<void> {
   const mailbox = ingest.mailbox?.trim() ?? '';
   const messageId = ingest.graph_message_id?.trim() ?? '';
+  const graphIdType = ingest.graph_id_type ?? microsoftGraphIdTypeFromConfig('rest_id');
   if (!mailbox || !messageId) {
     await fail('Microsoft ingestion row is missing its mailbox or message id.');
     return;
@@ -135,6 +145,7 @@ export async function processMicrosoftGraphEmailIngest(
           accessToken: token.accessToken,
           mailbox,
           messageId,
+          idType: graphIdType,
         });
         return message;
       },
@@ -143,6 +154,7 @@ export async function processMicrosoftGraphEmailIngest(
           accessToken: token.accessToken,
           mailbox,
           messageId,
+          idType: graphIdType,
         });
         return page.attachments;
       },
@@ -153,10 +165,11 @@ export async function processMicrosoftGraphEmailIngest(
           messageId,
           attachmentId: attachment.id,
           maxBytes: MAX_ATTACHMENT_BYTES,
+          idType: graphIdType,
         });
         return copy.bytes;
       },
-      ingestDocument: async ({ bytes, filename, mediaType, sourceAttachmentId, note, customerEvidence }) =>
+      ingestDocument: async ({ bytes, filename, mediaType, sourceContentType, sourceAttachmentId, note, customerEvidence }) =>
         ingestDocument({
           supabase,
           orgId: ingest.org_id,
@@ -168,7 +181,7 @@ export async function processMicrosoftGraphEmailIngest(
           customerEvidence,
           emailIngestId: ingest.id,
           sourceAttachmentId,
-          sourceContentType: mediaType,
+          sourceContentType,
           deferCommit: true,
         }),
       recordMessage: async (message, classification) => {
@@ -209,19 +222,20 @@ export async function processMicrosoftGraphEmailIngest(
     },
   );
 
-  const unsupported = result.unsupportedAttachments
-    ? `${result.unsupportedAttachments} unsupported attachment(s) were left untouched.`
+  const unsupported = result.actionableUnsupportedAttachments
+    ? `${result.actionableUnsupportedAttachments} business document attachment(s) require review.`
     : null;
   const processingError = [...result.errors, ...(unsupported ? [unsupported] : [])].join('; ').slice(0, 500) || null;
   // Partial success is not completion: one pending/errored document must keep the
   // provider ingest visibly failed even when another attachment succeeded.
-  const status = result.errors.length > 0 ? 'failed' : 'done';
+  const status = finalMicrosoftGraphIngestStatus(result);
   const { error: finalError } = await supabase
     .from('email_ingests')
     .update({
       status,
       documents_created: result.documentsCreated,
       processed_attachment_ids: result.processedAttachmentIds,
+      attachment_diagnostics: result.attachmentDiagnostics,
       ...classificationPatch(result.classification),
       error: processingError,
       processed_at: new Date().toISOString(),

@@ -11,6 +11,7 @@ import {
   fetchMicrosoftGraphMessage,
   fetchRecentMicrosoftGraphInboxMessages,
   getMicrosoftGraphSubscription,
+  microsoftGraphIdTypeFromConfig,
   microsoftGraphInboxSubscriptionResource,
   renewMicrosoftGraphSubscription,
 } from '../lib/platform/microsoft-graph-core.ts';
@@ -219,6 +220,44 @@ test('one-message ingestion read is GET-only and selects body plus conversation 
   assert.equal(message.body?.content, 'Invoice attached.');
 });
 
+test('immutable-id reads are an explicit opt-in and keep every mailbox operation GET-only', async () => {
+  const requests: RequestInit[] = [];
+  const messageFetch: typeof fetch = async (_input, init) => {
+    requests.push(init ?? {});
+    return Response.json({
+      id: 'immutable-message-1',
+      subject: 'Order',
+      from: { emailAddress: { name: 'Customer', address: 'buyer@example.com' } },
+      receivedDateTime: '2026-08-29T08:00:00Z',
+      hasAttachments: false,
+      conversationId: 'conversation-1',
+      body: { contentType: 'text', content: 'Order body' },
+      bodyPreview: 'Order body',
+    });
+  };
+  await fetchMicrosoftGraphMessage({
+    accessToken: 'test-token',
+    mailbox: 'orders@turnnslice.com',
+    messageId: 'immutable-message-1',
+    idType: 'rest_immutable_entry_id',
+  }, messageFetch);
+
+  const attachmentFetch: typeof fetch = async (_input, init) => {
+    requests.push(init ?? {});
+    return Response.json({ value: [] });
+  };
+  await fetchMicrosoftGraphAttachmentMetadata({
+    accessToken: 'test-token',
+    mailbox: 'orders@turnnslice.com',
+    messageId: 'immutable-message-1',
+    idType: 'rest_immutable_entry_id',
+  }, attachmentFetch);
+
+  assert.deepEqual(requests.map((request) => request.method), ['GET', 'GET']);
+  assert.equal(new Headers(requests[0]?.headers).get('prefer'), 'outlook.body-content-type="text", IdType="ImmutableId"');
+  assert.equal(new Headers(requests[1]?.headers).get('prefer'), 'IdType="ImmutableId"');
+});
+
 test('attachment listing requests metadata only and never contentBytes', async () => {
   let requestedUrl = '';
   let requestedInit: RequestInit | undefined;
@@ -271,11 +310,13 @@ test('attachment bytes are copied with one bounded GET to the attachment value e
       messageId: 'message-1',
       attachmentId: 'attachment-1',
       maxBytes: 1024,
+      idType: 'rest_immutable_entry_id',
     },
     fetchMock,
   );
   assert.equal(requestedInit?.method, 'GET');
   assert.equal(requestedInit?.body, undefined);
+  assert.equal(new Headers(requestedInit?.headers).get('prefer'), 'IdType="ImmutableId"');
   assert.equal(
     new URL(requestedUrl).pathname,
     '/v1.0/users/orders%40turnnslice.com/messages/message-1/attachments/attachment-1/$value',
@@ -325,11 +366,48 @@ test('subscription creation uses the exact Inbox resource and basic created noti
   assert.equal('includeResourceData' in body, false);
   assert.equal('encryptionCertificate' in body, false);
   assert.equal('lifecycleNotificationUrl' in body, false);
+  assert.equal(new Headers(requestedInit?.headers).get('prefer'), null);
   assert.equal(subscription.httpStatus, 201);
   assert.equal(
     microsoftGraphInboxSubscriptionResource('orders@turnnslice.com'),
     "users/orders@turnnslice.com/mailFolders('Inbox')/messages",
   );
+});
+
+test('future immutable subscription creation adds only the explicit Prefer header', async () => {
+  let requestedInit: RequestInit | undefined;
+  const fetchMock: typeof fetch = async (_input, init) => {
+    requestedInit = init;
+    return Response.json({
+      id: 'immutable-subscription-id',
+      resource: "users/orders@turnnslice.com/mailFolders('Inbox')/messages",
+      changeType: 'created',
+      expirationDateTime: '2026-09-03T08:00:00.000Z',
+      notificationUrl: 'https://vyso.co.za/api/integrations/microsoft/webhook',
+    }, { status: 201 });
+  };
+
+  await createMicrosoftGraphInboxSubscription({
+    accessToken: 'test-token',
+    mailbox: 'orders@turnnslice.com',
+    notificationUrl: 'https://vyso.co.za/api/integrations/microsoft/webhook',
+    clientState: 'test-client-state',
+    expirationDateTime: '2026-09-03T08:00:00.000Z',
+    idType: 'rest_immutable_entry_id',
+  }, fetchMock);
+
+  assert.equal(requestedInit?.method, 'POST');
+  assert.equal(new Headers(requestedInit?.headers).get('prefer'), 'IdType="ImmutableId"');
+  const body = JSON.parse(String(requestedInit?.body)) as Record<string, unknown>;
+  assert.equal('idType' in body, false);
+  assert.equal('includeResourceData' in body, false);
+});
+
+test('Graph id type config defaults mutable and rejects unknown values', () => {
+  assert.equal(microsoftGraphIdTypeFromConfig(undefined), 'rest_id');
+  assert.equal(microsoftGraphIdTypeFromConfig('rest_id'), 'rest_id');
+  assert.equal(microsoftGraphIdTypeFromConfig('immutable'), 'rest_immutable_entry_id');
+  assert.throws(() => microsoftGraphIdTypeFromConfig('surprise'), /must be rest_id or rest_immutable_entry_id/);
 });
 
 test('subscription renewal PATCHes expirationDateTime only', async () => {

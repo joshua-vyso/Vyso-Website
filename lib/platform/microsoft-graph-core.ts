@@ -22,6 +22,20 @@ const DEFAULT_MESSAGE_LIMIT = 5;
 const MAX_MESSAGE_LIMIT = 10;
 const SUBSCRIPTION_LIFETIME_MS = 6 * 24 * 60 * 60_000;
 
+export type MicrosoftGraphIdType = 'rest_id' | 'rest_immutable_entry_id';
+
+/** Default-off preparation for a future, explicitly coordinated subscription cutover. */
+export function microsoftGraphIdTypeFromConfig(value: string | null | undefined): MicrosoftGraphIdType {
+  const configured = (value ?? '').trim().toLowerCase();
+  if (!configured || configured === 'rest_id' || configured === 'mutable') return 'rest_id';
+  if (configured === 'rest_immutable_entry_id' || configured === 'immutable') return 'rest_immutable_entry_id';
+  throw new Error('MICROSOFT_GRAPH_ID_TYPE must be rest_id or rest_immutable_entry_id.');
+}
+
+function immutableIdPreference(idType: MicrosoftGraphIdType | undefined): string | null {
+  return idType === 'rest_immutable_entry_id' ? 'IdType="ImmutableId"' : null;
+}
+
 export interface MicrosoftGraphCredentials {
   tenantId: string;
   clientId: string;
@@ -327,6 +341,7 @@ export async function fetchRecentMicrosoftGraphInboxMessages(
     accessToken: string;
     mailbox: string;
     top?: number;
+    idType?: MicrosoftGraphIdType;
   },
   fetchImpl: typeof fetch = fetch,
 ): Promise<MicrosoftGraphMessagePage> {
@@ -345,6 +360,7 @@ export async function fetchRecentMicrosoftGraphInboxMessages(
     headers: {
       accept: 'application/json',
       authorization: `Bearer ${accessToken}`,
+      ...(immutableIdPreference(input.idType) ? { prefer: immutableIdPreference(input.idType)! } : {}),
     },
     cache: 'no-store',
   });
@@ -385,7 +401,7 @@ export async function fetchRecentMicrosoftGraphInboxMessages(
 
 /** Read one message's metadata/body. This is deliberately GET-only. */
 export async function fetchMicrosoftGraphMessage(
-  input: { accessToken: string; mailbox: string; messageId: string },
+  input: { accessToken: string; mailbox: string; messageId: string; idType?: MicrosoftGraphIdType },
   fetchImpl: typeof fetch = fetch,
 ): Promise<MicrosoftGraphMessageContent & { httpStatus: number; requestId: string | null }> {
   const accessToken = required(input.accessToken, 'Microsoft access token');
@@ -403,7 +419,10 @@ export async function fetchMicrosoftGraphMessage(
     headers: {
       accept: 'application/json',
       authorization: `Bearer ${accessToken}`,
-      prefer: 'outlook.body-content-type="text"',
+      prefer: [
+        'outlook.body-content-type="text"',
+        immutableIdPreference(input.idType),
+      ].filter(Boolean).join(', '),
     },
     cache: 'no-store',
   });
@@ -454,7 +473,7 @@ function mapAttachment(value: unknown): MicrosoftGraphAttachmentMetadata | null 
 
 /** List attachment metadata only. contentBytes is intentionally not selected. */
 export async function fetchMicrosoftGraphAttachmentMetadata(
-  input: { accessToken: string; mailbox: string; messageId: string },
+  input: { accessToken: string; mailbox: string; messageId: string; idType?: MicrosoftGraphIdType },
   fetchImpl: typeof fetch = fetch,
 ): Promise<MicrosoftGraphAttachmentPage> {
   const accessToken = required(input.accessToken, 'Microsoft access token');
@@ -467,7 +486,11 @@ export async function fetchMicrosoftGraphAttachmentMetadata(
   url.searchParams.set('$top', '10');
   const response = await fetchImpl(url, {
     method: 'GET',
-    headers: { accept: 'application/json', authorization: `Bearer ${accessToken}` },
+    headers: {
+      accept: 'application/json',
+      authorization: `Bearer ${accessToken}`,
+      ...(immutableIdPreference(input.idType) ? { prefer: immutableIdPreference(input.idType)! } : {}),
+    },
     cache: 'no-store',
   });
   const payload = (await jsonObject(response)) as GraphMessageListPayload & GraphErrorPayload;
@@ -496,6 +519,7 @@ export async function downloadMicrosoftGraphFileAttachment(
     messageId: string;
     attachmentId: string;
     maxBytes: number;
+    idType?: MicrosoftGraphIdType;
   },
   fetchImpl: typeof fetch = fetch,
 ): Promise<MicrosoftGraphAttachmentBytes> {
@@ -511,7 +535,11 @@ export async function downloadMicrosoftGraphFileAttachment(
     `${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}/$value`;
   const response = await fetchImpl(url, {
     method: 'GET',
-    headers: { accept: 'application/octet-stream', authorization: `Bearer ${accessToken}` },
+    headers: {
+      accept: 'application/octet-stream',
+      authorization: `Bearer ${accessToken}`,
+      ...(immutableIdPreference(input.idType) ? { prefer: immutableIdPreference(input.idType)! } : {}),
+    },
     cache: 'no-store',
   });
   if (!response.ok) {
@@ -599,6 +627,7 @@ async function subscriptionRequest(
     method: 'GET' | 'POST' | 'PATCH';
     body?: Record<string, string>;
     protectedValues?: readonly string[];
+    preferImmutableIds?: boolean;
   },
   fetchImpl: typeof fetch,
 ): Promise<MicrosoftGraphSubscription> {
@@ -609,6 +638,7 @@ async function subscriptionRequest(
       accept: 'application/json',
       authorization: `Bearer ${accessToken}`,
       ...(input.body ? { 'content-type': 'application/json' } : {}),
+      ...(input.preferImmutableIds ? { prefer: 'IdType="ImmutableId"' } : {}),
     },
     ...(input.body ? { body: JSON.stringify(input.body) } : {}),
     cache: 'no-store',
@@ -642,6 +672,7 @@ export async function createMicrosoftGraphInboxSubscription(
     notificationUrl: string;
     clientState: string;
     expirationDateTime?: string;
+    idType?: MicrosoftGraphIdType;
   },
   fetchImpl: typeof fetch = fetch,
 ): Promise<MicrosoftGraphSubscription> {
@@ -663,6 +694,7 @@ export async function createMicrosoftGraphInboxSubscription(
         clientState,
       },
       protectedValues: [clientState],
+      preferImmutableIds: input.idType === 'rest_immutable_entry_id',
     },
     fetchImpl,
   );

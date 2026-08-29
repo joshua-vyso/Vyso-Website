@@ -7,6 +7,7 @@ import {
   type MicrosoftGraphWebhookLog,
 } from '@/lib/platform/microsoft-graph-webhook';
 import { createServiceSupabase } from '@/lib/platform/supabase-service';
+import { microsoftGraphIdTypeFromConfig } from '@/lib/platform/microsoft-graph-core';
 
 export const runtime = 'nodejs';
 // The response stays fast; after() shares this budget with the existing durable worker.
@@ -44,6 +45,7 @@ export async function POST(request: Request): Promise<Response> {
         const ingestIds = await enqueueMicrosoftGraphNotifications(supabase, {
           orgId,
           mailbox,
+          graphIdType: microsoftGraphIdTypeFromConfig(configured('MICROSOFT_GRAPH_ID_TYPE')),
           notifications,
         });
         for (const ingestId of ingestIds) {

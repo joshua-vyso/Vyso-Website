@@ -199,6 +199,7 @@ interface IngestRow {
   resend_email_id: string | null;
   mailbox: string | null;
   graph_message_id: string | null;
+  graph_id_type: 'rest_id' | 'rest_immutable_entry_id' | null;
   status: string;
   attempts: number;
   documents_created: number;
@@ -255,7 +256,7 @@ async function resolveSenderAuth(
 export async function processEmailIngest(supabase: SupabaseClient, ingestId: string): Promise<void> {
   const { data: row } = await supabase
     .from('email_ingests')
-    .select('id, org_id, source, resend_email_id, mailbox, graph_message_id, status, attempts, documents_created, processed_attachment_ids, tag, created_at')
+    .select('id, org_id, source, resend_email_id, mailbox, graph_message_id, graph_id_type, status, attempts, documents_created, processed_attachment_ids, tag, created_at')
     .eq('id', ingestId)
     .maybeSingle();
   const ingest = row as IngestRow | null;

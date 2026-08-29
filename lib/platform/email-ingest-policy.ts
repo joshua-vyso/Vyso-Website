@@ -36,7 +36,7 @@ const ALLOWED_TYPES = /^(application\/pdf|image\/(png|jpe?g|webp|gif))$/i;
 /** ~13MB decoded — matches the chat ingest ceiling. */
 export const MAX_ATTACHMENT_BYTES = 13 * 1024 * 1024;
 /** Don't let one email fan out into an unbounded number of AI calls. */
-const MAX_ATTACHMENTS_PER_EMAIL = 10;
+export const MAX_ATTACHMENTS_PER_EMAIL = 10;
 
 export type SenderStatus = 'approved' | 'pending' | 'blocked' | 'unknown';
 
