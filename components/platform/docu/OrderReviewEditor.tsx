@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/platform/supabase-browser';
@@ -27,6 +27,14 @@ import {
   pendingConfirmations,
   type LineConfirmation,
 } from '@/lib/platform/docu/customer-item-alias';
+import {
+  deriveUomRuleCondition,
+  describeUomAppliedLine,
+  describeUomRuleCondition,
+  sameRuleCondition,
+  type CustomerUomRuleLite,
+  type UomRuleCondition,
+} from '@/lib/platform/docu/customer-uom-rules';
 import { logActivity } from '@/lib/platform/orderflow-activity';
 import {
   countGrossMismatches,
@@ -189,6 +197,29 @@ export function OrderReviewEditor({
   /** Set while the "Remember these N links" offer is being acted on. */
   const [remembering, setRemembering] = useState(false);
 
+  // This customer's active conditional UOM rules, loaded client-side (see the
+  // "CUSTOMER-SCOPED UOM RULES" section below for why this can't be a
+  // server-fetched prop like `customers`/`products`: the customer this
+  // document is FOR is picked live on this screen and can change without a
+  // reload, and a rule set is scoped to exactly one customer).
+  const [uomRules, setUomRules] = useState<CustomerUomRuleLite[]>([]);
+  /**
+   * Each line's unit AS EXTRACTED, captured once at mount — before any edit.
+   * A UOM-rule suggestion is offered only off a genuine paper fact ("the
+   * printed unit was KG and the reviewer just changed it"), never off a
+   * comparison to a value this same render pass already rewrote. A line
+   * added by hand (`addLine`) never gets an entry here, and is therefore
+   * never eligible — there is no printed unit to have a rule about.
+   */
+  const [originalUnits] = useState<Map<string, string>>(() => new Map(lines.map((l) => [l.key, l.unit])));
+  /** Suggestion cards dismissed ("Not now" / "Ignore for this order") THIS
+   *  SESSION. Persists nothing — reopening the document offers it again. */
+  const [dismissedUomSuggestions, setDismissedUomSuggestions] = useState<Set<string>>(() => new Set());
+  /** Per-line save state for the [Create rule]/[Update rule] action. */
+  const [uomRuleSaves, setUomRuleSaves] = useState<Map<string, { status: 'saving' | 'saved' | 'failed'; message?: string | null }>>(
+    () => new Map(),
+  );
+
   // Excel-style movement over the rows below. See hooks/useGridNavigation.ts —
   // the whole mechanism is a container keydown handler plus a data attribute per
   // cell, and it defers to anything (the product typeahead) that has already
@@ -319,6 +350,152 @@ export function OrderReviewEditor({
   const knownCustomerId =
     customerId ?? customers.find((c) => c.name.trim().toLowerCase() === query.trim().toLowerCase())?.id ?? null;
   const knownCustomerName = knownCustomerId ? customers.find((c) => c.id === knownCustomerId)?.name ?? null : null;
+
+  // -------------------------------------------------------------------------
+  // CUSTOMER-SCOPED CONDITIONAL UOM RULES
+  //
+  // "This customer's paper always prints KG for a line that is, in fact, a
+  // punnet" is a fact about the SAME kind of thing an alias is a fact about —
+  // this customer's paper, this customer only — but about the UNIT rather
+  // than the product. See lib/platform/docu/customer-uom-rules.ts for why it
+  // is a second table and not a second product-rule system.
+  //
+  // Loaded here (not as a server-fetched prop) because it has to react to the
+  // customer being picked/changed LIVE on this screen, exactly like the
+  // alias-learning flow above reacts to `knownCustomerId` — a suggestion for
+  // a rule scoped to "no customer yet" cannot exist.
+  // -------------------------------------------------------------------------
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!knownCustomerId || !org?.id) {
+        setUomRules([]);
+        return;
+      }
+      const supabase = createClient();
+      if (!supabase) {
+        setUomRules([]);
+        return;
+      }
+      const { data, error } = await supabase
+        .from('cd_customer_uom_rules')
+        .select('*')
+        .eq('org_id', org.id)
+        .eq('customer_id', knownCustomerId)
+        .eq('active', true);
+      if (cancelled) return;
+      // Pre-migration (supabase/customer-uom-rules.sql not run yet): no rules,
+      // not an error banner — the same tolerance the server-side sync uses.
+      setUomRules(isMissingTable(error) ? [] : ((data ?? []) as CustomerUomRuleLite[]));
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [knownCustomerId, org?.id]);
+
+  /**
+   * Store one UOM rule. Returns the human-readable failure, or null on success.
+   *
+   * Mirrors `saveLink` above: upserts on the migration's unique key
+   * (deliberately excluding `target_unit` — see customer-uom-rules.sql), so a
+   * reviewer who changes their mind about the RESULT overwrites the same row
+   * rather than creating a second one that could later conflict with itself,
+   * and logs to the customer's activity feed for the identical reason —  a
+   * rule silently re-units every future order carrying its condition, so who
+   * ruled it and when should not be a fact only the database holds.
+   */
+  async function saveUomRule(cid: string, condition: UomRuleCondition): Promise<string | null> {
+    const supabase = createClient();
+    if (!supabase || !org?.id) return 'You’re not signed in.';
+    const row = {
+      org_id: org.id,
+      customer_id: cid,
+      match_kind: condition.match_kind,
+      description_condition: condition.description_condition,
+      printed_unit: condition.printed_unit,
+      target_unit: condition.target_unit,
+    };
+    const { data, error } = await supabase
+      .from('cd_customer_uom_rules')
+      .upsert(
+        { ...row, source: ALIAS_SOURCE_REVIEW_CONFIRM, document_id: documentId, updated_at: new Date().toISOString() },
+        { onConflict: 'org_id,customer_id,match_kind,description_condition,printed_unit' },
+      )
+      .select('id')
+      .single();
+    if (error) {
+      return isMissingTable(error)
+        ? 'Customer UOM rules aren’t set up yet — run supabase/customer-uom-rules.sql in Supabase.'
+        : error.message;
+    }
+    logActivity(supabase, {
+      orgId: org.id,
+      actorEmail: email,
+      entityType: 'customer',
+      entityId: cid,
+      customerId: cid,
+      event: 'customer_uom_rule_learned',
+      description: `${condition.printed_unit} + “${condition.description_condition}” → ${condition.target_unit}`,
+    });
+    // Reflect the new/updated rule locally, without waiting for a re-sync —
+    // the suggestion card reads `uomRules` to decide whether it has anything
+    // left to say, and a reviewer who just clicked "Create rule" should see
+    // it go away immediately, not after the next full page load.
+    const newId = (data as { id: string } | null)?.id;
+    if (newId) {
+      setUomRules((prev) => [...prev.filter((r) => !sameRuleCondition(r, condition)), { id: newId, org_id: org.id, customer_id: cid, active: true, ...condition }]);
+    }
+    return null;
+  }
+
+  /** What (if anything) this line's current unit implies about a UOM rule —
+   *  a fresh condition nobody has ruled on ('new'), or one that would change
+   *  an EXISTING rule's result ('update'). Null when there is nothing to ask:
+   *  no customer, no printed-unit fact to compare against (a hand-added
+   *  line), no edit, or an existing rule already produces exactly this
+   *  result.
+   *
+   *  ADDENDUM 4b: `original` — the OVERRIDE-DETECTION baseline — is now the
+   *  INTERPRETED unit on a line a rule already applied (see
+   *  `displayUnitForLine`, `order-review-lines.ts`), so "the reviewer changed
+   *  it" correctly means "away from what the dropdown opened showing", not
+   *  away from a printed value the dropdown never displayed. The rule
+   *  CONDITION itself must still be built from the actual paper-printed
+   *  unit, which is a different fact — `l.record?.uom_source_unit` when one
+   *  is on record, `original` itself on every line no rule has touched
+   *  (where the two facts are the same value). */
+  function uomSuggestionForLine(l: Line): { kind: 'new' | 'update'; condition: UomRuleCondition } | null {
+    if (!knownCustomerId) return null;
+    const original = originalUnits.get(l.key);
+    if (original == null) return null;
+    const newUnit = l.unit.trim();
+    if (!newUnit || newUnit.toLowerCase() === original.trim().toLowerCase()) return null;
+    const description = (l.raw || l.description).trim();
+    if (!description) return null;
+    const printedUnit = l.record?.uom_source_unit ?? original;
+    const condition = deriveUomRuleCondition(description, printedUnit, newUnit);
+    if (!condition.printed_unit || !condition.target_unit) return null;
+    const existing = uomRules.find((r) => sameRuleCondition(r, condition));
+    if (existing) {
+      // Same condition, same result already ruled — nothing new to offer.
+      if (existing.target_unit === condition.target_unit) return null;
+      return { kind: 'update', condition };
+    }
+    return { kind: 'new', condition };
+  }
+
+  async function actOnUomSuggestion(key: string, condition: UomRuleCondition) {
+    if (!knownCustomerId) return;
+    setUomRuleSaves((prev) => new Map(prev).set(key, { status: 'saving' }));
+    const failure = await saveUomRule(knownCustomerId, condition);
+    setUomRuleSaves((prev) => new Map(prev).set(key, failure ? { status: 'failed', message: failure } : { status: 'saved' }));
+  }
+
+  function dismissUomSuggestion(key: string) {
+    setDismissedUomSuggestions((prev) => new Set(prev).add(key));
+  }
 
   function setConfirmation(key: string, next: LineConfirmation | null) {
     setConfirmations((prev) => {
@@ -864,6 +1041,21 @@ export function OrderReviewEditor({
               // no record is not "not matched": an unsynced document has made no
               // claim about the line, and painting it amber would invent one.
               const bubble = bubbleState(r ? r.matched : null, confirmations.get(l.key) ?? null);
+              // ADDENDUM 4b: a rule already applied by the last sync — the
+              // dropdown above already opened on the INTERPRETED unit (see
+              // `displayUnitForLine` in order-review-lines.ts), so this is
+              // the source/audit line underneath it, not the only place the
+              // rule is visible. Gated exactly like `displayUnitForLine`
+              // gates the dropdown itself (no conflict, a real target on
+              // record) so the two can never disagree about whether a rule
+              // "applied" on this line.
+              const uomApplied =
+                r?.uom_rule_id && r.uom_source_unit && r.uom_target_unit && !r.uom_conflict_rule_ids?.length
+                  ? { source: r.uom_source_unit, target: r.uom_target_unit }
+                  : null;
+              const uomConflictIds = r?.uom_conflict_rule_ids?.length ? r.uom_conflict_rule_ids : null;
+              const uomSuggestion = dismissedUomSuggestions.has(l.key) ? null : uomSuggestionForLine(l);
+              const uomSaveState = uomRuleSaves.get(l.key) ?? null;
               return (
                 <div
                   key={l.key}
@@ -1039,6 +1231,68 @@ export function OrderReviewEditor({
                       </span>
                       ) : null}
                     </div>
+                  ) : null}
+                  {/* CUSTOMER-SCOPED UOM RULE — conflict beats a live
+                      suggestion beats the quiet "applied" note: showing a new
+                      suggestion card over an unresolved conflict on the same
+                      line would ask the reviewer to rule on something while
+                      hiding that two earlier rulings already disagree. */}
+                  {uomConflictIds ? (
+                    // ADDENDUM 4b: must say plainly that no rule fired here —
+                    // this is the one line where a rule COULD have applied
+                    // and, on purpose, did not.
+                    <p className="mt-1 px-1 text-[11.5px] leading-[1.5] text-[#A32D2D]">
+                      Conflicting customer rules — no rule applied, kept the printed UOM. Review the rules.
+                    </p>
+                  ) : uomSuggestion ? (
+                    <div className="mt-1 rounded-[10px] bg-[#F4F8FC] px-3 py-2 text-[11.5px] leading-[1.6] text-[#3E4A57] ring-1 ring-[#D7E3F0]">
+                      <p className="font-medium text-[#1F5FA8]">
+                        Customer rule — {knownCustomerName ?? 'this customer'}
+                      </p>
+                      {/* RIDER 1 — rendered from the exact object that gets
+                          saved: every condition, spelled out, never a vague
+                          "KG → Punnet". */}
+                      <p>{describeUomRuleCondition(uomSuggestion.condition)}</p>
+                      <p>→ use {uomSuggestion.condition.target_unit}</p>
+                      <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="text-[#8A8E86]">
+                          Applies to future orders from {knownCustomerName ?? 'this customer'}.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void actOnUomSuggestion(l.key, uomSuggestion.condition)}
+                          disabled={uomSaveState?.status === 'saving'}
+                          className="font-medium text-[#1F5FA8] underline-offset-2 hover:underline disabled:opacity-60"
+                        >
+                          {uomSuggestion.kind === 'update'
+                            ? `Update rule → ${uomSuggestion.condition.target_unit}`
+                            : 'Create rule'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => dismissUomSuggestion(l.key)}
+                          className="text-[#8A8E86] underline-offset-2 hover:underline"
+                        >
+                          {uomSuggestion.kind === 'update' ? 'Ignore for this order' : 'Not now'}
+                        </button>
+                      </p>
+                      {uomSaveState?.status === 'saving' ? (
+                        <p className="mt-1 text-[#8A8E86]">Saving…</p>
+                      ) : uomSaveState?.status === 'failed' ? (
+                        <p className="mt-1 text-[#A32D2D]">{uomSaveState.message}</p>
+                      ) : uomSaveState?.status === 'saved' ? (
+                        <p className="mt-1 font-medium text-[#0F6E56]">Saved.</p>
+                      ) : null}
+                    </div>
+                  ) : uomApplied ? (
+                    // ADDENDUM 4b: the dropdown above already opened on
+                    // {uomApplied.target} — this line is the audit trail
+                    // explaining why, built by `describeUomAppliedLine` from
+                    // the exact `uom_source_unit`/`uom_target_unit` on
+                    // record, never re-derived.
+                    <p className="mt-1 px-1 text-[11.5px] leading-[1.5] text-[#0F6E56]">
+                      {describeUomAppliedLine(uomApplied.source, uomApplied.target)}
+                    </p>
                   ) : null}
                 </div>
               );

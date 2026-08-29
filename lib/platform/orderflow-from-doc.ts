@@ -58,6 +58,14 @@ import {
 } from './docu/order-line-match.ts';
 import { applyAgentDecisions, buildAgentRequests } from './docu/order-match-agent.ts';
 import { indexAliasesForCustomer, lookupAlias } from './docu/customer-item-alias.ts';
+import {
+  applyCustomerUomRules,
+  carryForwardUomAudit,
+  indexUomRulesForCustomer,
+  removeFirstUomAuditMatch,
+  type CustomerUomRuleLite,
+  type UomCarryForwardRecord,
+} from './docu/customer-uom-rules.ts';
 import type { MatchAgentDecision, MatchAgentLine } from './docu/order-match-agent.ts';
 
 /**
@@ -355,10 +363,33 @@ export async function syncOrderFromDocument(
   // The customer's own vocabulary, keyed for an exact lookup per line — and
   // keyed by CUSTOMER, which is the entire claim: see docu/customer-item-alias.ts.
   const aliasByRaw = indexAliasesForCustomer(aliases, customerId);
-  // Aliases + all params only steer a KNOWN customer's order — an unknown/partial
-  // customer behaves exactly as before (no alias, no prefix strip, doc price first).
+
+  // Load this customer's conditional UOM rules — "printed KG + description
+  // says punnet → bill as punnet" — right beside the alias load above. Same
+  // tolerance idiom: no error handling on the query itself, `?? []` on the
+  // result, so a pre-migration deploy (supabase/customer-uom-rules.sql not
+  // yet run) degrades to "no rules" rather than throwing. NOT the same table
+  // as cd_customer_item_aliases and NOT a second product-rule system — see
+  // customer-uom-rules.ts's docblock for what this table is answering that
+  // aliases do not.
+  let uomRuleRows: CustomerUomRuleLite[] = [];
+  if (customerId) {
+    const { data: uomRows } = await db
+      .from('cd_customer_uom_rules')
+      .select('*')
+      .eq('org_id', orgId)
+      .eq('customer_id', customerId)
+      .eq('active', true);
+    uomRuleRows = (uomRows ?? []) as CustomerUomRuleLite[];
+  }
+  const uomRulesForCustomer = indexUomRulesForCustomer(uomRuleRows, orgId, customerId);
+
+  // Aliases + rules + all params only steer a KNOWN customer's order — an
+  // unknown/partial customer behaves exactly as before (no alias, no rule, no
+  // prefix strip, doc price first).
   const applyParams = customerKnown ? matchedCustomer : null;
   if (!applyParams) aliasByRaw.clear();
+  const uomRules = applyParams ? uomRulesForCustomer : [];
   const stripPrefixes = !!applyParams && applyParams.strip_order_prefixes !== false; // default on when known
   const priceFromList = applyParams?.invoice_price_basis === 'price_list';
 
@@ -470,6 +501,18 @@ export async function syncOrderFromDocument(
   // new product instead of inserting it twice. Loaded catalogue dedupe is handled
   // by the resolution pass re-finding a row a prior sync already created.
   const createdStock = new Map<string, StockLite>();
+
+  // AUDIT CARRY-FORWARD (plan_customer_uom_rules.md, ADDENDUM 4b follow-up).
+  // The PREVIOUS pass's own `order_lines` — already sitting on `ed` before
+  // this pass overwrites it — is the only place a UOM rule's provenance can
+  // still be read once a review-save has rewritten this line's printed unit
+  // to the rule's own target (see `carryForwardUomAudit`'s docblock in
+  // customer-uom-rules.ts for why that happens on the very next sync). A
+  // mutable pool, consumed one match at a time as lines are walked below, so
+  // two paper rows printing identical text pair against their OWN prior
+  // record rather than both claiming the first one.
+  let uomAuditPool = ((ed as { order_lines?: OrderLineRecord[] | null }).order_lines ?? []) as UomCarryForwardRecord[];
+
   for (let i = 0; i < lines.length; i += 1) {
     const li = lines[i];
     const res = resolutions[i];
@@ -484,12 +527,85 @@ export async function syncOrderFromDocument(
     // the paper's own words. A name we merely suspected never reaches an invoice.
     let name = res.name;
     let unit = docUnit;
+
+    // ---------------------------------------------------------------------
+    // OPERATIONAL-UNIT PRECEDENCE. Three sources can name this line's unit,
+    // and only one wins:
+    //   1. An exact-alias `alias.unit` — a human ruling on THIS PRECISE line
+    //      text. Existing behaviour, unchanged: it stays supreme over a rule,
+    //      because a pattern that merely resembles this line does not outrank
+    //      a confirmation made ON it.
+    //   2. An applied customer UOM rule (`cd_customer_uom_rules`) — a pattern
+    //      ruling ("printed KG + description says punnet → punnet") a human
+    //      confirmed once and that now applies to every later line it
+    //      matches. See customer-uom-rules.ts for the specificity + conflict
+    //      rules (rider 2: a conflict never silently picks a winner).
+    //   3. The printed/extracted unit, unchanged — what happens today.
+    // The match is always evaluated against the PAPER's own printed unit
+    // (`docUnit`), never against `unit` after some earlier step has already
+    // rewritten it — a rule about what the paper says has to be evaluated
+    // against what the paper says.
+    // ---------------------------------------------------------------------
+    const uomOutcome = applyCustomerUomRules(uomRules, {
+      raw_description: rawName,
+      description: li.description ?? '',
+      unit: docUnit,
+    });
+    let uomRuleId: string | undefined;
+    let uomRuleCount: number | undefined;
+    let uomSourceUnit: string | undefined;
+    let uomTargetUnit: string | undefined;
+    // Surfaced regardless of which precedence tier ultimately wins the unit —
+    // a reviewer should learn about a conflicting customer rule even on a
+    // line an exact alias also happens to pin, not only on the lines where it
+    // would otherwise have changed anything.
+    const uomConflictRuleIds = uomOutcome?.kind === 'conflict' ? uomOutcome.ruleIds : undefined;
+
     if (alias) {
       name = (alias.invoice_name ?? '').trim() || s?.name || rawName;
-      if ((alias.unit ?? '').trim()) unit = (alias.unit as string).trim();
-      else if (!unit) unit = s?.unit ?? null;
+      if ((alias.unit ?? '').trim()) {
+        // Precedence 1.
+        unit = (alias.unit as string).trim();
+      } else if (uomOutcome?.kind === 'applied') {
+        // Precedence 2.
+        unit = uomOutcome.unit;
+        uomRuleId = uomOutcome.ruleId;
+        uomRuleCount = uomOutcome.count;
+        uomSourceUnit = docUnit ?? undefined;
+        uomTargetUnit = uomOutcome.unit;
+      } else if (!unit) {
+        unit = s?.unit ?? null;
+      }
+    } else if (uomOutcome?.kind === 'applied') {
+      // Precedence 2 — no alias at all on this line.
+      unit = uomOutcome.unit;
+      uomRuleId = uomOutcome.ruleId;
+      uomRuleCount = uomOutcome.count;
+      uomSourceUnit = docUnit ?? undefined;
+      uomTargetUnit = uomOutcome.unit;
     } else if (!unit) {
+      // Precedence 3 — nothing ruled; fall back to the catalogue's own unit
+      // only when the paper named none at all (existing behaviour).
       unit = s?.unit ?? null;
+    }
+
+    // AUDIT CARRY-FORWARD. Only when THIS pass produced no rule outcome of
+    // its own and no conflict — a fresh outcome or a fresh conflict already
+    // says everything the audit trail needs, and carrying an older claim on
+    // top of either would let a STALE rule contradict what this exact pass
+    // just decided. See `carryForwardUomAudit`'s docblock in
+    // customer-uom-rules.ts for the review-save round-trip this closes.
+    if (!uomRuleId && !uomConflictRuleIds) {
+      const carried = carryForwardUomAudit(uomAuditPool, rawName, unit);
+      if (carried) {
+        uomRuleId = carried.uom_rule_id;
+        uomRuleCount = carried.uom_rule_count;
+        uomSourceUnit = carried.uom_source_unit;
+        uomTargetUnit = carried.uom_target_unit;
+      }
+      // Consumed either way (found-but-ineligible still pairs THIS line to
+      // its own prior record) — see the "one-by-one, positional" contract.
+      uomAuditPool = removeFirstUomAuditMatch(uomAuditPool, rawName);
     }
 
     // CREATE-ON-UPLOAD: a line the catalogue has NOTHING for is a product the org
@@ -585,6 +701,14 @@ export async function syncOrderFromDocument(
       alias_confirmed_at: alias ? alias.updated_at ?? alias.created_at ?? null : null,
       // Noticed, not enforced. Only ever set on a line an alias pinned.
       pack_note: res.packNote,
+      // Precedence 2's own audit trail — see the block above. Undefined
+      // (never written) on every line no rule touched, so an old record and a
+      // line no rule matches both render identically to today.
+      uom_rule_id: uomRuleId,
+      uom_rule_count: uomRuleCount,
+      uom_source_unit: uomSourceUnit,
+      uom_target_unit: uomTargetUnit,
+      uom_conflict_rule_ids: uomConflictRuleIds,
       unit_price: unitPrice,
       price_source: priceSource,
       price_list_name: priceListName,

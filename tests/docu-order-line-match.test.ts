@@ -5,11 +5,13 @@ import {
   SUGGEST_FLOOR,
   bestCatalogueCandidate,
   matchReasonLabel,
+  normaliseUnit,
   priceSourceLabel,
   qualifiersConflict,
   resolveOrderLines,
   scoreCatalogueMatch,
   stripCategoryPrefix,
+  unitsCompatible,
   type CatalogueItem,
   type OrderLineInput,
 } from '../lib/platform/docu/order-line-match.ts';
@@ -356,4 +358,30 @@ test('priceSourceLabel names where the money came from, including "nowhere"', ()
   assert.match(priceSourceLabel('none'), /not invoice/i);
   assert.ok(priceSourceLabel('custom', null).length > 0);
   assert.ok(priceSourceLabel('base').length > 0);
+});
+
+// ---------------------------------------------------------------------------
+// TRY → tray (Capital ground truth, PO POPAR-0017754)
+//
+// RIDER 3 (plan_customer_uom_rules.md, NON-NEGOTIABLE 3): this block is
+// written and run FIRST, against the UNIT_ALIASES table as it stood before
+// this change (no "try" entry) — its failure is captured verbatim in
+// .ai/implementation_customer_uom_rules.md. Only once that failure was
+// recorded was `try: 'tray'` added below. Do not reorder this block relative
+// to the mapping it tests, and do not delete the failure record afterwards —
+// it is the evidence the test-first rule was actually followed.
+// ---------------------------------------------------------------------------
+
+test('TRY folds to tray — Capital prints TRY on its punnet-packet lines', () => {
+  assert.equal(normaliseUnit('TRY'), 'tray');
+  assert.equal(normaliseUnit('try'), 'tray');
+});
+
+test('a printed TRY line is pack-compatible with a catalogue product sold by the tray', () => {
+  const strawberryTray: CatalogueItem = {
+    id: 'p-strawberry-tray',
+    name: 'Strawberry 250gr Punnet Packet',
+    unit: 'tray',
+  };
+  assert.equal(unitsCompatible('TRY', strawberryTray.unit), true);
 });

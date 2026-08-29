@@ -202,6 +202,10 @@ const UNIT_ALIASES: Record<string, string> = {
   bag: 'bag', bags: 'bag',
   pocket: 'pocket', pockets: 'pocket',
   tray: 'tray', trays: 'tray',
+  // Capital's POS prints "TRY" for a tray/punnet-packet line (PO
+  // POPAR-0017754) — a spelling this table had never seen. Regression test:
+  // tests/docu-order-line-match.test.ts, "TRY folds to tray".
+  try: 'tray', trys: 'tray',
   bunch: 'bunch', bunches: 'bunch',
   each: 'each', ea: 'each', unit: 'each', units: 'each',
   kg: 'kg', kgs: 'kg', kilogram: 'kg', kilograms: 'kg',
@@ -661,6 +665,41 @@ export interface OrderLineRecord {
    * never enforced. See `OrderLineResolution.packNote`.
    */
   pack_note?: string | null;
+  /**
+   * This line's unit came from a `cd_customer_uom_rules` ruling — see
+   * `customer-uom-rules.ts`. Set together with `uom_rule_count` and
+   * `uom_source_unit`; absent on every line no rule touched (never written,
+   * not merely null, so an old record predating this feature renders
+   * identically to a line no rule matches). Distinct from `alias_source`: an
+   * alias fixes the PRODUCT, a UOM rule only ever adjusts the UNIT on a
+   * product already settled some other way.
+   */
+  uom_rule_id?: string;
+  /** How many of this customer's rules agreed on this result — always ≥1 when
+   *  `uom_rule_id` is set. Purely informational; agreement, not a tiebreak. */
+  uom_rule_count?: number;
+  /**
+   * The unit the rule resolved TO — what actually got billed on
+   * `of_order_items`. Not in the plan's original four-field list, added
+   * because the applied-rule indicator the plan itself specifies ("Customer
+   * rule applied · KG → punnet") cannot be rendered without it: the line's
+   * own `unit` in `extracted_data.line_items` stays the paper's printed value
+   * forever (source preservation), so the resolved unit exists nowhere else
+   * to read back. See .ai/implementation_customer_uom_rules.md, deviations.
+   */
+  uom_target_unit?: string;
+  /** The unit the paper actually printed, before the rule replaced it — the
+   *  same role `document_price` plays for price: the source value, kept, so
+   *  the review screen can show what was overridden and what it became. */
+  uom_source_unit?: string;
+  /**
+   * Set when two or more of this customer's UOM rules, at the same
+   * specificity, matched this line and disagreed about the result. Rider 2
+   * (plan_customer_uom_rules.md): there is NO tiebreak, ever — the line's
+   * unit is left exactly as printed and every conflicting rule's id is
+   * carried here so a human resolves it.
+   */
+  uom_conflict_rule_ids?: string[];
   /** The unit price actually billed. Null when the line is unpriced. */
   unit_price: number | null;
   price_source: OrderPriceSource;

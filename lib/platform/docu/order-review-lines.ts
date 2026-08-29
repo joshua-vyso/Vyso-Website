@@ -23,6 +23,7 @@
  * specifiers nor the `@/` alias.
  */
 import type { OrderLineRecord } from './order-line-match.ts';
+import { displayUnitForLine } from './customer-uom-rules.ts';
 import type { DocuExtractedData } from './types.ts';
 
 /** One editable row of the review grid. */
@@ -70,7 +71,15 @@ export function buildReviewLines(
     quantity_source: l.quantity_source ?? '',
     record: null,
   }));
-  return attachRecords(rows, extractedData?.order_lines);
+  const paired = attachRecords(rows, extractedData?.order_lines);
+  // ADDENDUM 4b (plan_customer_uom_rules.md): a line a customer UOM rule
+  // already resolved opens showing the INTERPRETED unit, not the printed
+  // one — see `displayUnitForLine`. Deliberately only here, at OPEN time, and
+  // not folded into `attachRecords` itself: that function is also used to
+  // re-pair a "Run matching" rerun onto rows that may carry a unit edit the
+  // reviewer has not saved yet (see its own docblock), and this override
+  // would silently clobber that edit if it ran on every re-pair.
+  return paired.map((row) => ({ ...row, unit: displayUnitForLine(row.record, row.unit) }));
 }
 
 /**

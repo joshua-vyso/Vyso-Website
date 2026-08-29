@@ -193,3 +193,88 @@ test('no extracted data at all is an empty grid, not a crash', () => {
   assert.deepEqual(buildReviewLines(null, key), []);
   assert.deepEqual(buildReviewLines({ fields: [] }, key), []);
 });
+
+// ---------------------------------------------------------------------------
+// ADDENDUM 4b (plan_customer_uom_rules.md, 2026-08-28): the review screen's
+// unit dropdown OPENS on the INTERPRETED unit for a line a customer UOM rule
+// already resolved (no conflict), not the printed one. `displayUnitForLine`
+// (customer-uom-rules.ts) is tested in isolation in
+// docu-customer-uom-rules.test.ts; this is the WIRING check — that
+// `buildReviewLines` actually calls it once records are paired.
+// ---------------------------------------------------------------------------
+
+function withOneLine(unit: string, orderLines?: DocuExtractedData['order_lines']): DocuExtractedData {
+  return {
+    fields: [],
+    customer_name: 'Capital',
+    line_items: [
+      { raw_description: 'Grapes Black Punnet', description: 'Grapes Black Punnet', quantity: '5', unit, unit_price: '25.00', confidence: 100 },
+    ],
+    order_lines: orderLines,
+  };
+}
+
+test('ADDENDUM 4b: a line an applied UOM rule resolved opens on the INTERPRETED unit', () => {
+  const data = withOneLine('KG', [
+    {
+      raw_description: 'Grapes Black Punnet', name: 'Grapes Black Punnet', stock_item_id: null,
+      matched: false, match_confidence: 0, match_reason: 'no_candidate', suggestion: null,
+      uom_rule_id: 'rule-punnet', uom_rule_count: 1, uom_source_unit: 'KG', uom_target_unit: 'punnet',
+      unit_price: null, price_source: 'none', price_list_name: null, document_price: 25,
+    },
+  ]);
+  const [line] = buildReviewLines(data, key);
+  assert.equal(line.unit, 'punnet', 'the dropdown opens on what will actually be billed');
+});
+
+test('ADDENDUM 4b: a conflict line opens on the PRINTED unit — no rule applied', () => {
+  const data = withOneLine('KG', [
+    {
+      raw_description: 'Grapes Black Punnet', name: 'Grapes Black Punnet', stock_item_id: null,
+      matched: false, match_confidence: 0, match_reason: 'no_candidate', suggestion: null,
+      uom_conflict_rule_ids: ['rule-a', 'rule-b'],
+      unit_price: null, price_source: 'none', price_list_name: null, document_price: 25,
+    },
+  ]);
+  const [line] = buildReviewLines(data, key);
+  assert.equal(line.unit, 'KG', 'a conflict is explicitly "no rule applied" — the printed value stands');
+});
+
+test('ADDENDUM 4b: a line no rule ever touched opens on the printed unit, exactly as before', () => {
+  const data = withOneLine('KG', [
+    {
+      raw_description: 'Grapes Black Punnet', name: 'Grapes Black Punnet', stock_item_id: null,
+      matched: true, match_confidence: 92, match_reason: 'matched', suggestion: null,
+      unit_price: 25, price_source: 'document', price_list_name: null, document_price: 25,
+    },
+  ]);
+  const [line] = buildReviewLines(data, key);
+  assert.equal(line.unit, 'KG');
+});
+
+test('ADDENDUM 4b: a line with no order_lines record at all opens on the printed unit', () => {
+  const [line] = buildReviewLines(withOneLine('KG'), key);
+  assert.equal(line.unit, 'KG');
+});
+
+test('ADDENDUM 4b: source preservation — the record\'s own uom_source_unit is never touched by opening the row', () => {
+  const data = withOneLine('KG', [
+    {
+      raw_description: 'Grapes Black Punnet', name: 'Grapes Black Punnet', stock_item_id: null,
+      matched: false, match_confidence: 0, match_reason: 'no_candidate', suggestion: null,
+      uom_rule_id: 'rule-punnet', uom_rule_count: 1, uom_source_unit: 'KG', uom_target_unit: 'punnet',
+      unit_price: null, price_source: 'none', price_list_name: null, document_price: 25,
+    },
+  ]);
+  const [line] = buildReviewLines(data, key);
+  // The dropdown shows the interpreted value, but the record underneath —
+  // what the UI reads to render "Source UOM: KG · …" — still says KG,
+  // verbatim, exactly as the sync wrote it. Nothing in `buildReviewLines`
+  // rewrites the record to agree with the dropdown.
+  assert.equal(line.record?.uom_source_unit, 'KG');
+  assert.equal(line.record?.uom_target_unit, 'punnet');
+  // And the extraction's own line_items entry — the actual source-of-truth
+  // the paper printed — is a plain input to this function, never mutated by
+  // it either.
+  assert.equal(data.line_items?.[0]?.unit, 'KG');
+});

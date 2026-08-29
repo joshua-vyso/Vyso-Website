@@ -341,3 +341,383 @@ test('attachRecords re-pairs onto edited rows without disturbing the edits', () 
   const again = attachRecords(out, []);
   assert.equal(again[1].record?.name, 'Mixed Veg');
 });
+
+/* ===========================================================================
+ * CUSTOMER-SCOPED CONDITIONAL UOM RULES — END TO END THROUGH THE REAL SYNC.
+ *
+ * `tests/docu-customer-uom-rules.test.ts` proves the pure module in isolation.
+ * This block proves the WIRING: that `syncOrderFromDocument` actually loads
+ * `cd_customer_uom_rules`, evaluates it in the stated precedence order against
+ * the paper's own printed unit, and writes the result onto the record the
+ * review screen reads — using the same fake Postgres harness (and the same
+ * "a record with no annotation looks exactly like a perfectly matched line"
+ * stakes) as the rest of this file.
+ *
+ * Ground truth: Capital's real PO POPAR-0017754.
+ * ========================================================================= */
+
+const CAP_ORG = 'org-capital';
+const CAP_DOC = 'doc-capital';
+const CAPITAL = 'cust-capital';
+
+/** Capital's real ruling: printed KG + description says "punnet" → punnet. */
+function punnetRule(id: string, targetUnit = 'punnet') {
+  return {
+    id,
+    org_id: CAP_ORG,
+    customer_id: CAPITAL,
+    match_kind: 'token',
+    description_condition: 'punnet',
+    printed_unit: 'kg',
+    target_unit: targetUnit,
+    active: true,
+  };
+}
+
+function capitalExtracted(lineItems: Record<string, unknown>[]): DocuExtractedData {
+  return {
+    fields: [],
+    customer_name: 'Capital',
+    customer_confidence: 100,
+    line_items: lineItems as never,
+  };
+}
+
+/** A FakeDb seeded for Capital, with whatever `cd_customer_uom_rules` /
+ *  `cd_customer_item_aliases` rows a test wants. Both tables are omitted from
+ *  the seed unless a test passes rows for them — a table this seed never
+ *  mentions is exactly the "migration not run yet" case the fake reproduces
+ *  the same way real Postgres would: nothing to read, no rows, no crash. */
+function seededCapitalDb(
+  extracted: DocuExtractedData,
+  opts: { uomRules?: Record<string, unknown>[]; aliases?: Record<string, unknown>[] } = {},
+): FakeDb {
+  return new FakeDb({
+    documents: [{ id: CAP_DOC, org_id: CAP_ORG, extracted_data: extracted }],
+    of_orders: [],
+    of_order_items: [],
+    of_customers: [{ id: CAPITAL, org_id: CAP_ORG, name: 'Capital' }],
+    pp_stock_items: [],
+    pl_price_lists: [],
+    pl_overrides: [],
+    cd_customer_item_aliases: opts.aliases ?? [],
+    cd_customer_uom_rules: opts.uomRules ?? [],
+    pp_movements: [],
+    of_invoices: [],
+    of_invoice_items: [],
+    of_settings: [],
+  });
+}
+
+async function syncCapital(db: FakeDb): Promise<OrderLineRecord[]> {
+  const result = await syncOrderFromDocument(db as never, {
+    documentId: CAP_DOC,
+    orgId: CAP_ORG,
+    customerId: CAPITAL, // explicit, like a reviewer's pick — deterministic in a test
+    matchAgent: async () => [],
+  });
+  assert.equal(result.ok, true, `sync failed: ${JSON.stringify(result)}`);
+  const records = writtenOrderLines(db);
+  assert.ok(records, 'sync did not write extracted_data.order_lines');
+  return records!;
+}
+
+test('UOM: a token rule applies — punnet, rule id recorded, KG preserved as the source unit', async () => {
+  const extracted = capitalExtracted([
+    { raw_description: 'Grapes Black Punnet', description: 'Grapes Black Punnet', quantity: '5', unit: 'KG', unit_price: '25.00' },
+  ]);
+  const db = seededCapitalDb(extracted, { uomRules: [punnetRule('rule-punnet')] });
+  const [record] = await syncCapital(db);
+
+  assert.equal(record.uom_rule_id, 'rule-punnet');
+  assert.equal(record.uom_rule_count, 1);
+  assert.equal(record.uom_source_unit, 'KG'); // the paper's own printed unit, verbatim
+  assert.equal(record.uom_target_unit, 'punnet');
+  assert.equal(record.uom_conflict_rule_ids, undefined);
+  assert.equal(record.raw_description, 'Grapes Black Punnet'); // untouched
+
+  // The actual billed unit lives on `of_order_items`, not the audit record —
+  // confirm the sync wrote the rule's target there too.
+  const items = db.rows('of_order_items');
+  assert.equal(items[0]?.unit, 'punnet');
+
+  // SOURCE PRESERVATION: the document's own extracted_data.line_items — what
+  // the paper said — is never rewritten by this pass. Only order_lines (the
+  // audit trail) and of_order_items (the billed values) change.
+  const doc = db.rows('documents')[0] as { extracted_data: DocuExtractedData };
+  assert.equal((doc.extracted_data.line_items as { unit: string }[])[0].unit, 'KG');
+});
+
+test('UOM: "Cucumber English kg" printed BOX — wrong printed unit, no token, unit stays', async () => {
+  const extracted = capitalExtracted([
+    { raw_description: 'Cucumber English kg', description: 'Cucumber English kg', quantity: '3', unit: 'BOX', unit_price: '18.50' },
+  ]);
+  const db = seededCapitalDb(extracted, { uomRules: [punnetRule('rule-punnet')] });
+  const [record] = await syncCapital(db);
+
+  assert.equal(record.uom_rule_id, undefined);
+  assert.equal(record.uom_source_unit, undefined);
+  const items = db.rows('of_order_items');
+  assert.equal(items[0]?.unit, 'BOX');
+});
+
+test('UOM: a genuine KG line with no packaging token stays kg', async () => {
+  const extracted = capitalExtracted([
+    { raw_description: 'Loose Tomatoes', description: 'Loose Tomatoes', quantity: '10', unit: 'KG', unit_price: '12.00' },
+  ]);
+  const db = seededCapitalDb(extracted, { uomRules: [punnetRule('rule-punnet')] });
+  const [record] = await syncCapital(db);
+
+  assert.equal(record.uom_rule_id, undefined);
+  const items = db.rows('of_order_items');
+  assert.equal(items[0]?.unit, 'KG');
+});
+
+test('UOM: a different customer\'s identical rule set never applies — the scope, enforced end to end', async () => {
+  const extracted = capitalExtracted([
+    { raw_description: 'Grapes Black Punnet', description: 'Grapes Black Punnet', quantity: '5', unit: 'KG', unit_price: '25.00' },
+  ]);
+  // The rule row names a DIFFERENT customer_id than the one this sync resolves
+  // to — indexUomRulesForCustomer must drop it, exactly like the alias case.
+  const db = seededCapitalDb(extracted, {
+    uomRules: [{ ...punnetRule('rule-punnet'), customer_id: 'cust-someone-else' }],
+  });
+  const [record] = await syncCapital(db);
+
+  assert.equal(record.uom_rule_id, undefined);
+  const items = db.rows('of_order_items');
+  assert.equal(items[0]?.unit, 'KG');
+});
+
+test('UOM: exact_description beats a token rule on the same line', async () => {
+  const extracted = capitalExtracted([
+    { raw_description: 'Grapes Black Punnet', description: 'Grapes Black Punnet', quantity: '5', unit: 'KG', unit_price: '25.00' },
+  ]);
+  const db = seededCapitalDb(extracted, {
+    uomRules: [
+      punnetRule('rule-token'),
+      {
+        id: 'rule-exact',
+        org_id: CAP_ORG,
+        customer_id: CAPITAL,
+        match_kind: 'exact_description',
+        description_condition: 'grapes black punnet',
+        printed_unit: 'kg',
+        target_unit: 'tray', // deliberately disagrees with the token rule
+        active: true,
+      },
+    ],
+  });
+  const [record] = await syncCapital(db);
+
+  assert.equal(record.uom_rule_id, 'rule-exact');
+  const items = db.rows('of_order_items');
+  assert.equal(items[0]?.unit, 'tray');
+});
+
+test('UOM: RIDER 2 — two same-tier rules disagreeing is a conflict, printed unit kept, no tiebreak', async () => {
+  const extracted = capitalExtracted([
+    { raw_description: 'Grapes Black Punnet', description: 'Grapes Black Punnet', quantity: '5', unit: 'KG', unit_price: '25.00' },
+  ]);
+  const db = seededCapitalDb(extracted, {
+    uomRules: [punnetRule('rule-a', 'punnet'), punnetRule('rule-b', 'tray')],
+  });
+  const [record] = await syncCapital(db);
+
+  assert.equal(record.uom_rule_id, undefined, 'a conflict must never silently pick a winner');
+  assert.deepEqual(new Set(record.uom_conflict_rule_ids ?? []), new Set(['rule-a', 'rule-b']));
+  const items = db.rows('of_order_items');
+  assert.equal(items[0]?.unit, 'KG', 'the line keeps the printed unit on a conflict');
+});
+
+test('UOM: two matching rules agreeing on the target apply, with a count of 2', async () => {
+  const extracted = capitalExtracted([
+    { raw_description: 'Grapes Black Punnet', description: 'Grapes Black Punnet', quantity: '5', unit: 'KG', unit_price: '25.00' },
+  ]);
+  const db = seededCapitalDb(extracted, {
+    uomRules: [punnetRule('rule-a', 'punnet'), punnetRule('rule-b', 'punnet')],
+  });
+  const [record] = await syncCapital(db);
+
+  assert.equal(record.uom_rule_count, 2);
+  const items = db.rows('of_order_items');
+  assert.equal(items[0]?.unit, 'punnet');
+});
+
+test('UOM: an exact-alias unit stays supreme over a matching UOM rule', async () => {
+  const extracted = capitalExtracted([
+    { raw_description: 'Grapes Black Punnet', description: 'Grapes Black Punnet', quantity: '5', unit: 'KG', unit_price: '25.00' },
+  ]);
+  const db = seededCapitalDb(extracted, {
+    uomRules: [punnetRule('rule-punnet')],
+    aliases: [
+      {
+        org_id: CAP_ORG,
+        customer_id: CAPITAL,
+        raw_name: 'Grapes Black Punnet',
+        stock_item_id: null,
+        invoice_name: null,
+        unit: 'each', // a human's ruling on THIS exact line text
+        created_at: '2026-08-01T00:00:00.000Z',
+      },
+    ],
+  });
+  const [record] = await syncCapital(db);
+
+  // Precedence 1 wins outright — the rule never even gets credited, because it
+  // was never the reason the unit is what it is.
+  assert.equal(record.uom_rule_id, undefined);
+  const items = db.rows('of_order_items');
+  assert.equal(items[0]?.unit, 'each');
+});
+
+/* ---------------------------------------------------------------------------
+ * PRODUCT-RULE GAP CHECK (plan_customer_uom_rules.md §6): not a UOM-rule test
+ * — cd_customer_item_aliases is untouched by this change — but the plan asks
+ * it be covered if it is not already, and no existing suite asserted this
+ * particular invariant: an alias whose pin does not resolve to a real
+ * catalogue row (a bad `stock_item_id`, or one typed on the settings screen
+ * for a product since deleted) must NOT fall through to CREATE-ON-UPLOAD and
+ * mint a new product. An alias is a human's ruling that this text means A
+ * SPECIFIC existing product; when that product is gone, the honest answer is
+ * "unresolved", never "close enough — make a new one".
+ * ------------------------------------------------------------------------- */
+test('an alias pin that resolves to nothing does not fall through to CREATE-ON-UPLOAD', async () => {
+  const extracted = capitalExtracted([
+    { raw_description: 'Grapes Black Punnet', description: 'Grapes Black Punnet', quantity: '5', unit: 'KG', unit_price: '25.00' },
+  ]);
+  const db = seededCapitalDb(extracted, {
+    aliases: [
+      {
+        org_id: CAP_ORG,
+        customer_id: CAPITAL,
+        raw_name: 'Grapes Black Punnet',
+        // Points at a catalogue row that does not exist — pp_stock_items is
+        // empty in this fixture, standing in for "since deleted".
+        stock_item_id: 'sku-long-gone',
+        invoice_name: null,
+        unit: null,
+        created_at: '2026-08-01T00:00:00.000Z',
+      },
+    ],
+  });
+  const before = db.rows('pp_stock_items').length;
+  const [record] = await syncCapital(db);
+
+  assert.equal(record.matched, false, 'a dangling pin is not a match — there is no product to claim');
+  assert.equal(db.rows('pp_stock_items').length, before, 'no new product was minted for an aliased line');
+});
+
+test('UOM: cd_customer_uom_rules missing entirely (pre-migration) degrades to "no rules", never crashes', async () => {
+  const extracted = capitalExtracted([
+    { raw_description: 'Grapes Black Punnet', description: 'Grapes Black Punnet', quantity: '5', unit: 'KG', unit_price: '25.00' },
+  ]);
+  // No `uomRules` key at all — the table is never seeded, standing in for a
+  // deploy that hasn't pasted supabase/customer-uom-rules.sql yet.
+  const db = seededCapitalDb(extracted);
+  const [record] = await syncCapital(db);
+
+  assert.equal(record.uom_rule_id, undefined);
+  const items = db.rows('of_order_items');
+  assert.equal(items[0]?.unit, 'KG');
+});
+
+/* ===========================================================================
+ * AUDIT CARRY-FORWARD — the two-pass confirm round-trip, end to end.
+ *
+ * `docu-customer-uom-rules.test.ts` proves `carryForwardUomAudit` in
+ * isolation. This is the WIRING proof: a SECOND real `syncOrderFromDocument`
+ * pass, run against the document exactly as `confirm()`'s review-save leaves
+ * it (the interpreted unit written into `extracted_data.line_items[].unit`),
+ * still carries the first pass's rule provenance onto the FINAL record —
+ * which is the one thing the addendum follow-up exists to fix.
+ * ========================================================================= */
+
+test('AUDIT CARRY-FORWARD: the finalise pass still carries uom_rule_id after the review-save round-trip', async () => {
+  const extracted = capitalExtracted([
+    { raw_description: 'Grapes Black Punnet', description: 'Grapes Black Punnet', quantity: '5', unit: 'KG', unit_price: '25.00' },
+  ]);
+  const db = seededCapitalDb(extracted, { uomRules: [punnetRule('rule-punnet')] });
+
+  // PASS 1 — the first sync, right after upload. The rule applies normally;
+  // this is the same behaviour `docu-order-annotations.test.ts`'s earlier
+  // "a token rule applies" test already covers.
+  const [pass1] = await syncCapital(db);
+  assert.equal(pass1.uom_rule_id, 'rule-punnet');
+  assert.equal(pass1.uom_source_unit, 'KG');
+  assert.equal(pass1.uom_target_unit, 'punnet');
+
+  // SIMULATE THE REVIEW-SAVE (ADDENDUM 4b): the dropdown opened on "punnet"
+  // (the interpreted unit), the reviewer left it there, and `confirm()`
+  // writes exactly that back into `extracted_data.line_items[].unit` — never
+  // touching `order_lines`, which still holds pass 1's record at this point.
+  const doc = db.rows('documents')[0] as { extracted_data: DocuExtractedData };
+  (doc.extracted_data.line_items as { unit: string }[])[0].unit = 'punnet';
+
+  // PASS 2 — the finalise sync `/api/orderflow/order-from-document` triggers.
+  // The rule's OWN condition (printed_unit: "kg") no longer matches — the
+  // printed unit is "punnet" now — so without carry-forward this record
+  // would come back with no uom_rule_id at all: the exact bug this closes.
+  const [pass2] = await syncCapital(db);
+  assert.equal(pass2.uom_rule_id, 'rule-punnet', 'the rule claim survives the finalise pass');
+  assert.equal(pass2.uom_rule_count, 1);
+  // The ORIGINAL printed value — never overwritten to agree with the new
+  // "printed" text just because that's what line_items now says.
+  assert.equal(pass2.uom_source_unit, 'KG');
+  assert.equal(pass2.uom_target_unit, 'punnet');
+  assert.equal(pass2.uom_conflict_rule_ids, undefined);
+
+  // And the line still bills correctly, via precedence tier 3 this time
+  // (docUnit is already "punnet"), not tier 2 — same result, different path.
+  const items = db.rows('of_order_items');
+  assert.equal(items[0]?.unit, 'punnet');
+});
+
+test('AUDIT CARRY-FORWARD: a reviewer override to a THIRD unit is never claimed by the old rule', async () => {
+  const extracted = capitalExtracted([
+    { raw_description: 'Grapes Black Punnet', description: 'Grapes Black Punnet', quantity: '5', unit: 'KG', unit_price: '25.00' },
+  ]);
+  const db = seededCapitalDb(extracted, { uomRules: [punnetRule('rule-punnet')] });
+
+  const [pass1] = await syncCapital(db);
+  assert.equal(pass1.uom_rule_id, 'rule-punnet');
+
+  // The reviewer did NOT leave the dropdown on "punnet" — they changed it to
+  // "tray" (a deliberate override, e.g. via the [Update rule → tray] flow, or
+  // simply picking a different unit and never confirming that suggestion).
+  const doc = db.rows('documents')[0] as { extracted_data: DocuExtractedData };
+  (doc.extracted_data.line_items as { unit: string }[])[0].unit = 'tray';
+
+  const [pass2] = await syncCapital(db);
+  assert.equal(pass2.uom_rule_id, undefined, 'an override must never be re-claimed by the rule it overrode');
+  assert.equal(pass2.uom_source_unit, undefined);
+  assert.equal(pass2.uom_target_unit, undefined);
+
+  // The override itself still bills correctly — this test is about the
+  // AUDIT trail, not the unit actually charged.
+  const items = db.rows('of_order_items');
+  assert.equal(items[0]?.unit, 'tray');
+});
+
+test('AUDIT CARRY-FORWARD: duplicate raw_description lines pair against their OWN prior record on re-sync', async () => {
+  const extracted = capitalExtracted([
+    { raw_description: 'Grapes Black Punnet', description: 'Grapes Black Punnet', quantity: '5', unit: 'KG', unit_price: '25.00' },
+    { raw_description: 'Grapes Black Punnet', description: 'Grapes Black Punnet', quantity: '3', unit: 'KG', unit_price: '25.00' },
+  ]);
+  // Two DIFFERENT rules could in principle disagree, but here both lines are
+  // governed by the same rule — the point is that BOTH survive the round
+  // trip independently, not that they cross-contaminate.
+  const db = seededCapitalDb(extracted, { uomRules: [punnetRule('rule-punnet')] });
+
+  const pass1 = await syncCapital(db);
+  assert.equal(pass1.length, 2);
+  assert.ok(pass1.every((r) => r.uom_rule_id === 'rule-punnet'));
+
+  const doc = db.rows('documents')[0] as { extracted_data: DocuExtractedData };
+  for (const li of doc.extracted_data.line_items as { unit: string }[]) li.unit = 'punnet';
+
+  const pass2 = await syncCapital(db);
+  assert.equal(pass2.length, 2);
+  assert.ok(pass2.every((r) => r.uom_rule_id === 'rule-punnet'), 'both duplicate lines carried forward independently');
+  assert.ok(pass2.every((r) => r.uom_source_unit === 'KG'));
+});
