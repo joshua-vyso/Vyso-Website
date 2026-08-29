@@ -199,18 +199,26 @@ ProcurePulse, or SupplySync records.
 ## Expiration and renewal
 
 Basic Outlook message subscriptions have a maximum lifetime of seven days. Vyso asks
-for six days to retain renewal headroom. For this milestone renewal is deliberately
-manual:
+for six days to retain renewal headroom.
+
+Renewal is now automated: a daily Vercel Cron hits
+`/api/integrations/microsoft/renew-subscription` (`vercel.json`, `10 3 * * *`,
+CRON_SECRET-authenticated). Each tick GETs the configured subscription, and PATCHes
+`expirationDateTime` only when Graph reports it within 48 hours of expiry — otherwise
+it no-ops. The 48h threshold gives a daily cron against the 6-day lifetime room for two
+missed ticks before real risk of lapsing, and reading Graph's current expiration first
+(rather than trusting local state) makes repeated ticks idempotent. If the subscription
+has already expired, the route fails loudly (502, visible in Vercel cron logs) instead
+of recreating it — recreation stays a deliberate, documented manual cutover:
 
 `npm run microsoft:subscription:renew`
 
-The renewal request PATCHes `expirationDateTime` only. No resource, permission,
-notification URL, or mailbox state changes.
+remains available for emergencies and manual verification. No resource, permission,
+notification URL, or mailbox state changes in either path.
 
-Automated renewal is required in the next reliability milestone, but no scheduler or
-worker is added now. When integration persistence is introduced, store subscription id,
-expiration, resource, last-renewed time, and status in that integration-config record;
-the environment variable is the smallest safe single-client bridge, not the eventual
+When integration persistence is introduced, store subscription id, expiration,
+resource, last-renewed time, and status in that integration-config record; the
+environment variable is the smallest safe single-client bridge, not the eventual
 multi-client data model.
 
 ## Edge filtering

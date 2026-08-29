@@ -7,9 +7,11 @@ import {
   getMicrosoftGraphSubscription,
   microsoftGraphIdTypeFromConfig,
   renewMicrosoftGraphSubscription,
+  runMicrosoftGraphSubscriptionRenewal,
   type MicrosoftGraphAppToken,
   type MicrosoftGraphMessagePage,
   type MicrosoftGraphIdType,
+  type MicrosoftGraphRenewalResult,
 } from './microsoft-graph-core';
 
 interface MicrosoftGraphServerConfig {
@@ -32,6 +34,16 @@ export const microsoftGraphConfigured = Boolean(
     configuredValue('ENTRA_DIRECTORY_ID_TNS') &&
     configuredValue('MICROSOFT_CLIENT_SECRET') &&
     configuredValue('MICROSOFT_MAILBOX'),
+);
+
+// Separate from microsoftGraphConfigured: the app registration can be fully
+// configured while the one-time subscription id (created by the manual
+// `npm run microsoft:subscription:create` step) is still missing. Callers that
+// only need the subscription lifecycle — like the renewal cron — check this
+// directly instead of relying on requireMicrosoftGraphConfig() to throw, so a
+// missing id is a normal 503 guard rather than a caught exception.
+export const microsoftGraphSubscriptionConfigured = Boolean(
+  configuredValue('MICROSOFT_GRAPH_SUBSCRIPTION_ID'),
 );
 
 function requireMicrosoftGraphConfig(): MicrosoftGraphServerConfig {
@@ -90,4 +102,13 @@ export async function renewMicrosoftOrderInboxSubscription(accessToken: string) 
   const { subscriptionId } = requireMicrosoftGraphConfig();
   if (!subscriptionId) throw new Error('Microsoft Graph subscription id is not configured.');
   return renewMicrosoftGraphSubscription({ accessToken, subscriptionId });
+}
+
+/** One renewal tick for the configured order-inbox subscription; see core for the decision logic. */
+export async function runMicrosoftOrderInboxSubscriptionRenewal(
+  accessToken: string,
+): Promise<MicrosoftGraphRenewalResult> {
+  const { subscriptionId } = requireMicrosoftGraphConfig();
+  if (!subscriptionId) throw new Error('Microsoft Graph subscription id is not configured.');
+  return runMicrosoftGraphSubscriptionRenewal({ accessToken, subscriptionId });
 }

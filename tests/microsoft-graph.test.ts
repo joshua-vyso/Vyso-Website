@@ -13,7 +13,9 @@ import {
   getMicrosoftGraphSubscription,
   microsoftGraphIdTypeFromConfig,
   microsoftGraphInboxSubscriptionResource,
+  microsoftGraphRenewalDecision,
   renewMicrosoftGraphSubscription,
+  runMicrosoftGraphSubscriptionRenewal,
 } from '../lib/platform/microsoft-graph-core.ts';
 
 test('app token request uses client credentials and the Graph .default scope', async () => {
@@ -460,4 +462,237 @@ test('subscription inspection is a GET with no request body', async () => {
   );
   assert.equal(requestedInit?.method, 'GET');
   assert.equal(requestedInit?.body, undefined);
+});
+
+const NOW = new Date('2026-08-29T00:00:00.000Z');
+const DAY_MS = 24 * 60 * 60_000;
+const HOUR_MS = 60 * 60_000;
+
+test('renewal decision: far from expiry skips', () => {
+  const expirationDateTime = new Date(NOW.getTime() + 5 * DAY_MS).toISOString();
+  assert.equal(microsoftGraphRenewalDecision({ expirationDateTime, now: NOW }), 'skip');
+});
+
+test('renewal decision: inside the 48h window renews', () => {
+  const expirationDateTime = new Date(NOW.getTime() + 47 * HOUR_MS).toISOString();
+  assert.equal(microsoftGraphRenewalDecision({ expirationDateTime, now: NOW }), 'renew');
+});
+
+test('renewal decision: threshold boundary is pinned (<=threshold renews, just above skips)', () => {
+  const thresholdMs = 48 * HOUR_MS;
+  const atThreshold = new Date(NOW.getTime() + thresholdMs).toISOString();
+  const justAboveThreshold = new Date(NOW.getTime() + thresholdMs + 1).toISOString();
+  assert.equal(
+    microsoftGraphRenewalDecision({ expirationDateTime: atThreshold, now: NOW, thresholdMs }),
+    'renew',
+  );
+  assert.equal(
+    microsoftGraphRenewalDecision({ expirationDateTime: justAboveThreshold, now: NOW, thresholdMs }),
+    'skip',
+  );
+});
+
+test('renewal decision: past expiry is expired, never repaired here', () => {
+  const expirationDateTime = new Date(NOW.getTime() - HOUR_MS).toISOString();
+  assert.equal(microsoftGraphRenewalDecision({ expirationDateTime, now: NOW }), 'expired');
+});
+
+test('renewal decision: malformed or missing date is invalid', () => {
+  assert.equal(
+    microsoftGraphRenewalDecision({ expirationDateTime: 'not-a-date', now: NOW }),
+    'invalid',
+  );
+  assert.equal(microsoftGraphRenewalDecision({ expirationDateTime: null, now: NOW }), 'invalid');
+  assert.equal(
+    microsoftGraphRenewalDecision({ expirationDateTime: undefined, now: NOW }),
+    'invalid',
+  );
+});
+
+interface RecordedRequest {
+  url: string;
+  method: string;
+  body: string | undefined;
+}
+
+function subscriptionUrl(id: string): string {
+  return `https://graph.microsoft.com/v1.0/subscriptions/${id}`;
+}
+
+/** Every request the orchestration issues must be GET/PATCH on /subscriptions/{id} — never a POST /subscriptions, /messages, or /mailFolders call. */
+function assertOnlySubscriptionRequests(requests: RecordedRequest[], subscriptionId: string) {
+  assert.ok(requests.length > 0);
+  for (const request of requests) {
+    assert.equal(request.url, subscriptionUrl(subscriptionId));
+    assert.ok(request.method === 'GET' || request.method === 'PATCH', `unexpected method ${request.method}`);
+  }
+}
+
+test('renewal orchestration: far from expiry skips and issues zero PATCH requests', async () => {
+  const requests: RecordedRequest[] = [];
+  const farExpiration = new Date(NOW.getTime() + 5 * DAY_MS).toISOString();
+  const fetchMock: typeof fetch = async (input, init) => {
+    requests.push({ url: String(input), method: init?.method ?? 'GET', body: init?.body as string | undefined });
+    return Response.json({
+      id: 'subscription-id',
+      resource: "users/orders@turnnslice.com/mailFolders('Inbox')/messages",
+      changeType: 'created',
+      expirationDateTime: farExpiration,
+      notificationUrl: 'https://vyso.co.za/api/integrations/microsoft/webhook',
+    });
+  };
+
+  const result = await runMicrosoftGraphSubscriptionRenewal(
+    { accessToken: 'test-token', subscriptionId: 'subscription-id', now: NOW },
+    fetchMock,
+  );
+
+  assert.deepEqual(result, { action: 'skipped', expiresAt: farExpiration });
+  assert.equal(requests.filter((r) => r.method === 'PATCH').length, 0);
+  assertOnlySubscriptionRequests(requests, 'subscription-id');
+});
+
+test('renewal orchestration: near expiry issues exactly one PATCH with expirationDateTime only', async () => {
+  const requests: RecordedRequest[] = [];
+  const nearExpiration = new Date(NOW.getTime() + 40 * HOUR_MS).toISOString();
+  const renewedExpiration = new Date(NOW.getTime() + 6 * DAY_MS).toISOString();
+  const fetchMock: typeof fetch = async (input, init) => {
+    const method = init?.method ?? 'GET';
+    requests.push({ url: String(input), method, body: init?.body as string | undefined });
+    return Response.json({
+      id: 'subscription-id',
+      resource: "users/orders@turnnslice.com/mailFolders('Inbox')/messages",
+      changeType: 'created',
+      expirationDateTime: method === 'PATCH' ? renewedExpiration : nearExpiration,
+      notificationUrl: 'https://vyso.co.za/api/integrations/microsoft/webhook',
+    });
+  };
+
+  const result = await runMicrosoftGraphSubscriptionRenewal(
+    { accessToken: 'test-token', subscriptionId: 'subscription-id', now: NOW },
+    fetchMock,
+  );
+
+  assert.deepEqual(result, { action: 'renewed', expiresAt: renewedExpiration });
+  const patches = requests.filter((r) => r.method === 'PATCH');
+  assert.equal(patches.length, 1);
+  assert.equal(patches[0].url, subscriptionUrl('subscription-id'));
+  const patchBody = JSON.parse(String(patches[0].body)) as { expirationDateTime?: unknown };
+  assert.deepEqual(Object.keys(patchBody), ['expirationDateTime']);
+  assert.equal(typeof patchBody.expirationDateTime, 'string');
+  assert.ok(!Number.isNaN(new Date(patchBody.expirationDateTime as string).getTime()));
+  assertOnlySubscriptionRequests(requests, 'subscription-id');
+});
+
+test('renewal orchestration: already-expired subscription throws and never PATCHes', async () => {
+  const requests: RecordedRequest[] = [];
+  const pastExpiration = new Date(NOW.getTime() - HOUR_MS).toISOString();
+  const fetchMock: typeof fetch = async (input, init) => {
+    requests.push({ url: String(input), method: init?.method ?? 'GET', body: init?.body as string | undefined });
+    return Response.json({
+      id: 'subscription-id',
+      resource: "users/orders@turnnslice.com/mailFolders('Inbox')/messages",
+      changeType: 'created',
+      expirationDateTime: pastExpiration,
+      notificationUrl: 'https://vyso.co.za/api/integrations/microsoft/webhook',
+    });
+  };
+
+  await assert.rejects(
+    runMicrosoftGraphSubscriptionRenewal(
+      { accessToken: 'test-token', subscriptionId: 'subscription-id', now: NOW },
+      fetchMock,
+    ),
+  );
+  assert.equal(requests.filter((r) => r.method === 'PATCH').length, 0);
+  assertOnlySubscriptionRequests(requests, 'subscription-id');
+});
+
+test('renewal orchestration: missing subscription (404) throws MicrosoftGraphHttpError and never PATCHes', async () => {
+  const requests: RecordedRequest[] = [];
+  const fetchMock: typeof fetch = async (input, init) => {
+    requests.push({ url: String(input), method: init?.method ?? 'GET', body: init?.body as string | undefined });
+    return Response.json(
+      { error: { code: 'ResourceNotFound', message: 'Subscription not found.' } },
+      { status: 404 },
+    );
+  };
+
+  await assert.rejects(
+    runMicrosoftGraphSubscriptionRenewal(
+      { accessToken: 'test-token', subscriptionId: 'subscription-id', now: NOW },
+      fetchMock,
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof MicrosoftGraphHttpError);
+      assert.equal(error.httpStatus, 404);
+      return true;
+    },
+  );
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].method, 'GET');
+});
+
+test('renewal orchestration: Graph renewal failure (503) throws with a redacted message', async () => {
+  const requests: RecordedRequest[] = [];
+  const nearExpiration = new Date(NOW.getTime() + 1 * HOUR_MS).toISOString();
+  const accessToken = 'never-print-this-access-token';
+  const fetchMock: typeof fetch = async (input, init) => {
+    const method = init?.method ?? 'GET';
+    requests.push({ url: String(input), method, body: init?.body as string | undefined });
+    if (method === 'GET') {
+      return Response.json({
+        id: 'subscription-id',
+        resource: "users/orders@turnnslice.com/mailFolders('Inbox')/messages",
+        changeType: 'created',
+        expirationDateTime: nearExpiration,
+        notificationUrl: 'https://vyso.co.za/api/integrations/microsoft/webhook',
+      });
+    }
+    return Response.json(
+      { error: { code: 'ServiceUnavailable', message: `Graph is down for token ${accessToken}` } },
+      { status: 503 },
+    );
+  };
+
+  await assert.rejects(
+    runMicrosoftGraphSubscriptionRenewal(
+      { accessToken, subscriptionId: 'subscription-id', now: NOW },
+      fetchMock,
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.ok(!error.message.includes(accessToken));
+      return true;
+    },
+  );
+  assertOnlySubscriptionRequests(requests, 'subscription-id');
+});
+
+test('renewal orchestration: malformed subscription response (no expirationDateTime) throws and never PATCHes', async () => {
+  const requests: RecordedRequest[] = [];
+  const fetchMock: typeof fetch = async (input, init) => {
+    requests.push({ url: String(input), method: init?.method ?? 'GET', body: init?.body as string | undefined });
+    // parseSubscription already rejects a response missing required fields (400
+    // InvalidResponse) before this helper's own 'invalid' branch would ever run —
+    // this test pins that the malformed-payload path still never PATCHes.
+    return Response.json(
+      {
+        id: 'subscription-id',
+        resource: "users/orders@turnnslice.com/mailFolders('Inbox')/messages",
+        changeType: 'created',
+        notificationUrl: 'https://vyso.co.za/api/integrations/microsoft/webhook',
+      },
+      { status: 200 },
+    );
+  };
+
+  await assert.rejects(
+    runMicrosoftGraphSubscriptionRenewal(
+      { accessToken: 'test-token', subscriptionId: 'subscription-id', now: NOW },
+      fetchMock,
+    ),
+  );
+  assert.equal(requests.filter((r) => r.method === 'PATCH').length, 0);
+  assertOnlySubscriptionRequests(requests, 'subscription-id');
 });

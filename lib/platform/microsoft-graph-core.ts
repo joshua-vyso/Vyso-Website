@@ -741,3 +741,92 @@ export async function renewMicrosoftGraphSubscription(
     fetchImpl,
   );
 }
+
+export type MicrosoftGraphRenewalDecision = 'skip' | 'renew' | 'expired' | 'invalid';
+
+/**
+ * Pure decision: given the subscription's current expiration and "now", what
+ * should a renewal tick do? No I/O — the caller supplies both dates so this
+ * stays trivially unit-testable and reusable from a cron route or a CLI.
+ *
+ * Threshold defaults to 48h: a daily cron against a 6-day (SUBSCRIPTION_LIFETIME_MS)
+ * lifetime renews roughly every 4 days, so a 48h trigger window still tolerates
+ * two consecutive missed cron ticks before the subscription is at real risk of
+ * lapsing.
+ */
+export function microsoftGraphRenewalDecision(input: {
+  expirationDateTime: string | null | undefined;
+  now: Date;
+  thresholdMs?: number;
+}): MicrosoftGraphRenewalDecision {
+  const thresholdMs = input.thresholdMs ?? 48 * 60 * 60_000;
+  if (!input.expirationDateTime) return 'invalid';
+  const expiresAt = new Date(input.expirationDateTime);
+  if (Number.isNaN(expiresAt.getTime())) return 'invalid';
+
+  const remainingMs = expiresAt.getTime() - input.now.getTime();
+  // A subscription Graph already considers expired cannot be renewed — Graph
+  // rejects a PATCH against a dead subscription. Surfacing 'expired' (rather
+  // than silently recreating it) keeps recreation a deliberate, documented
+  // manual cutover instead of something a cron tick could trigger on its own.
+  if (remainingMs <= 0) return 'expired';
+  if (remainingMs <= thresholdMs) return 'renew';
+  return 'skip';
+}
+
+export interface MicrosoftGraphRenewalResult {
+  action: 'skipped' | 'renewed';
+  expiresAt: string;
+}
+
+/**
+ * One renewal tick, orchestrated over the read-only-except-PATCH subscription
+ * surface. This function never issues any Graph request other than
+ * GET/PATCH on /subscriptions/{id} — no POST /subscriptions (no recreation),
+ * no /messages or /mailFolders calls, no ImmutableId changes.
+ *
+ * GET-first: Graph is the source of truth for the current expiration, so every
+ * tick re-derives its decision from what Graph actually has rather than from
+ * any locally assumed state. That is what makes repeated ticks idempotent —
+ * running this an hour after a successful renewal just observes the new
+ * expiration and skips, with no side effect either way.
+ */
+export async function runMicrosoftGraphSubscriptionRenewal(
+  input: {
+    accessToken: string;
+    subscriptionId: string;
+    now?: Date;
+    thresholdMs?: number;
+  },
+  fetchImpl: typeof fetch = fetch,
+): Promise<MicrosoftGraphRenewalResult> {
+  const now = input.now ?? new Date();
+  const current = await getMicrosoftGraphSubscription(
+    { accessToken: input.accessToken, subscriptionId: input.subscriptionId },
+    fetchImpl,
+  );
+
+  const decision = microsoftGraphRenewalDecision({
+    expirationDateTime: current.expirationDateTime,
+    now,
+    thresholdMs: input.thresholdMs,
+  });
+
+  if (decision === 'invalid') {
+    throw new Error('Microsoft Graph returned a subscription with no usable expirationDateTime.');
+  }
+  if (decision === 'expired') {
+    throw new Error(
+      `Microsoft Graph subscription ${input.subscriptionId} has already expired; recreation is a manual cutover, not a cron action.`,
+    );
+  }
+  if (decision === 'skip') {
+    return { action: 'skipped', expiresAt: current.expirationDateTime };
+  }
+
+  const renewed = await renewMicrosoftGraphSubscription(
+    { accessToken: input.accessToken, subscriptionId: input.subscriptionId },
+    fetchImpl,
+  );
+  return { action: 'renewed', expiresAt: renewed.expirationDateTime };
+}
