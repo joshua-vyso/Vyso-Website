@@ -19,6 +19,7 @@ import { useRealtimeRefresh } from '@/lib/platform/useRealtimeRefresh';
 import { LineAuditNotice } from './LineAuditNotice';
 import type { DocuExtractedData } from '@/lib/platform/docu/types';
 import type { DocumentWithSupplier, ExtractedLineItem } from '@/lib/platform/types';
+import { MessageOrderEvidenceNotice } from './MessageOrderEvidenceNotice';
 
 const TYPE_LABEL: Record<string, string> = {
   invoice: 'Invoice',
@@ -134,6 +135,11 @@ export function DocumentReviewQueue({ docs, canReview }: { docs: DocumentWithSup
                   ) : (
                     <span>confidence <span className="of-num">—</span></span>
                   )}
+                  <MessageOrderEvidenceNotice
+                    sourceType={d.source_type}
+                    evidence={data?.message_order_evidence}
+                    compact
+                  />
                 </div>
               </button>
 

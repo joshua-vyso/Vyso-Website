@@ -33,7 +33,8 @@ import {
   resolveExistingCustomerForOrg,
   type CustomerIdentityEvidence,
 } from '@/lib/platform/docu/customer-match';
-import type { DocumentType, ExtractedData } from '@/lib/platform/types';
+import { previewExistingCustomerInterpretation } from '@/lib/platform/docu/customer-interpretation-preview';
+import type { DocumentSourceType, DocumentType, ExtractedData } from '@/lib/platform/types';
 
 /**
  * The one document-ingest pipeline: classify → file into Doc-U → build the
@@ -287,6 +288,14 @@ export async function ordersFolderId(
   return null;
 }
 
+/** Deterministic private Storage path for one provider source part. */
+export function emailSourceStoragePath(orgId: string, emailIngestId: string, sourcePartId: string): string {
+  const key = createHash('sha256')
+    .update(`${emailIngestId}\0${sourcePartId}`, 'utf8')
+    .digest('hex');
+  return `${orgId}/email-ingests/${key}`;
+}
+
 export interface IngestDocumentInput {
   supabase: SupabaseClient;
   /** Verified org — from the session (chat) or the address token (email). Never from content. */
@@ -306,6 +315,16 @@ export interface IngestDocumentInput {
   sourceAttachmentId?: string | null;
   /** Original provider MIME type, retained independently of Storage metadata. */
   sourceContentType?: string | null;
+  /** Semantic source kind. Email bodies are text sources, never fabricated PDFs. */
+  sourceType?: DocumentSourceType | null;
+  /**
+   * A source-specific reader may supply the canonical order extraction. This
+   * skips file classification/vision but reuses the exact same persistence,
+   * customer resolution, review, idempotency and defer-commit path.
+   */
+  preExtractedOrder?: OrderExtractionResult | null;
+  /** Additive source/provenance metadata stored beside canonical extraction. */
+  extractionMetadata?: Pick<ExtractedData, 'message_order_evidence'> | null;
   /**
    * Extract and FILE the document, but DON'T commit its side effects (OrderFlow
    * orders/invoices, ProcurePulse stock movements). The document lands at status
@@ -681,8 +700,13 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
     emailIngestId = null,
     sourceAttachmentId = null,
     sourceContentType = null,
+    sourceType = null,
+    preExtractedOrder = null,
+    extractionMetadata = null,
     deferCommit = false,
   } = input;
+
+  let recoveringDocumentId: string | null = null;
 
   // Provider retries must converge on one Vyso document and one Storage object.
   // Checking before the model call avoids paying to re-read a copy that already
@@ -709,28 +733,39 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
           itemCount: 0,
         };
       }
-      return {
-        ok: false,
-        status: 409,
-        error: 'The existing Vyso document copy is not successfully extracted.',
-        documentId: row.id,
-      };
+      // A body source is extracted before it crosses the Storage/DB boundary.
+      // If the function died after inserting its deterministic document row,
+      // retry may heal that same row instead of creating another or stranding it.
+      if (preExtractedOrder && sourceAttachmentId === 'email-body' && (row.status === 'pending' || row.status === 'error')) {
+        recoveringDocumentId = row.id;
+      } else {
+        return {
+          ok: false,
+          status: 409,
+          error: 'The existing Vyso document copy is not successfully extracted.',
+          documentId: row.id,
+        };
+      }
     }
   }
 
   // 1. Classify (+ generic extract). Usually one Haiku call decides the
   //    document type — no longer ALWAYS one: a non-order read that looks
   //    order-shaped earns a second, order-lane opinion below.
-  let cls;
-  try {
-    cls = await extractDocument({ base64, mediaType, filename });
-  } catch (err) {
-    return { ok: false, status: 500, error: err instanceof Error ? err.message : 'Could not read this document.' };
+  let cls: Awaited<ReturnType<typeof extractDocument>> | null = null;
+  let preparedInput = { base64, mediaType, filename };
+  let documentType: DocumentType | null = preExtractedOrder ? 'order' : null;
+  let isOrder = Boolean(preExtractedOrder);
+  if (!preExtractedOrder) {
+    try {
+      cls = await extractDocument({ base64, mediaType, filename });
+    } catch (err) {
+      return { ok: false, status: 500, error: err instanceof Error ? err.message : 'Could not read this document.' };
+    }
+    preparedInput = preparedDocumentInput(cls, { base64, mediaType, filename });
+    documentType = cls.document_type;
+    isOrder = documentType === 'order';
   }
-  const preparedInput = preparedDocumentInput(cls, { base64, mediaType, filename });
-
-  let documentType = cls.document_type;
-  let isOrder = documentType === 'order';
   // Set only when the escalation below both ran AND its order-lane read won —
   // reused by step 4a so that lane never pays for a second live order read of
   // the same document.
@@ -750,7 +785,7 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
   // audit failed, its confidence is low, or its text reads like a purchase
   // order/requisition. The order-lane read is REQUESTED cheaply here but only
   // KEPT if it actually scores better — never on its own say-so.
-  if (!isOrder && decideClassificationRouting(cls) === 'escalate_order') {
+  if (cls && !isOrder && decideClassificationRouting(cls) === 'escalate_order') {
     const { data: catalogueRows } = await supabase
       .from('pp_stock_items')
       .select('name')
@@ -796,21 +831,21 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
   // Storage accepts the bytes but before the documents row is inserted, the retry
   // reuses this exact object instead of creating an orphaned second copy.
   const attachmentStorageKey = emailIngestId && sourceAttachmentId
-    ? createHash('sha256')
-      .update(`${emailIngestId}\0${sourceAttachmentId}`, 'utf8')
-      .digest('hex')
+    ? emailSourceStoragePath(orgId, emailIngestId, sourceAttachmentId)
     : null;
   const storagePath = attachmentStorageKey
-    ? `${orgId}/email-ingests/${attachmentStorageKey}`
+    ? attachmentStorageKey
     : `${orgId}/${randomUUID()}_${safeName}`;
   const bytes = Buffer.from(base64, 'base64');
   // How much paper the reader got. Same stamp the /api/ai/extract path writes —
   // this pipeline serves the chat drop and the inbound-email worker, and a
   // photo emailed in too small misreads exactly like one uploaded too small.
   const imagePixels = imagePixelSize(bytes);
-  const { error: upErr } = await supabase.storage
-    .from('documents')
-    .upload(storagePath, bytes, { contentType: mediaType || 'application/octet-stream', upsert: false });
+  const { error: upErr } = recoveringDocumentId
+    ? { error: null }
+    : await supabase.storage
+      .from('documents')
+      .upload(storagePath, bytes, { contentType: mediaType || 'application/octet-stream', upsert: false });
   // A deterministic email object already existing means an earlier attempt made
   // it across the Storage boundary. Continue and heal/create the database row.
   if (upErr && !(attachmentStorageKey && isUniqueViolation(upErr))) {
@@ -819,22 +854,26 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
 
   // 3. Insert the Doc-U documents row (Orders folder for orders).
   const folderId = isOrder ? await ordersFolderId(supabase, orgId, userId) : null;
-  const { data: inserted, error: insErr } = await supabase
-    .from('documents')
-    .insert({
-      org_id: orgId,
-      filename,
-      status: 'pending',
-      storage_path: storagePath,
-      uploaded_by: userId,
-      document_type: documentType,
-      ...(folderId ? { folder_id: folderId } : {}),
-      ...(emailIngestId ? { email_ingest_id: emailIngestId } : {}),
-      ...(sourceAttachmentId ? { source_attachment_id: sourceAttachmentId } : {}),
-      ...(sourceContentType ? { source_content_type: sourceContentType } : {}),
-    })
-    .select('id')
-    .single();
+  const insertResult = recoveringDocumentId
+    ? { data: { id: recoveringDocumentId }, error: null }
+    : await supabase
+      .from('documents')
+      .insert({
+        org_id: orgId,
+        filename,
+        status: 'pending',
+        storage_path: storagePath,
+        uploaded_by: userId,
+        document_type: documentType,
+        ...(folderId ? { folder_id: folderId } : {}),
+        ...(emailIngestId ? { email_ingest_id: emailIngestId } : {}),
+        ...(sourceAttachmentId ? { source_attachment_id: sourceAttachmentId } : {}),
+        ...(sourceContentType ? { source_content_type: sourceContentType } : {}),
+        ...(sourceType ? { source_type: sourceType } : {}),
+      })
+      .select('id')
+      .single();
+  const { data: inserted, error: insErr } = insertResult;
   if ((insErr || !inserted) && emailIngestId && sourceAttachmentId && isUniqueViolation(insErr)) {
     const { data: winner } = await supabase
       .from('documents')
@@ -866,7 +905,9 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
   //     (auto-invoice when confident, else a draft to review).
   if (isOrder) {
     let order: OrderExtractionResult;
-    if (escalatedOrder) {
+    if (preExtractedOrder) {
+      order = preExtractedOrder;
+    } else if (escalatedOrder) {
       // Already read above while DECIDING whether to escalate at all — a
       // second live order-lane call here would re-read the same document for
       // a decision that has already been made.
@@ -888,7 +929,7 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
           // (Part 2 item 5). This is the natively-typed order path, not an
           // escalation, so it still runs its own retry loop when the
           // classification read never needed one.
-          orientationChecked: Boolean(cls.orientation_normalization?.applied),
+          orientationChecked: Boolean(cls?.orientation_normalization?.applied),
         });
       } catch (err) {
         await supabase.from('documents').update({ status: 'error' }).eq('id', documentId);
@@ -954,9 +995,26 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
       // Which model read it — see the same stamp in app/api/ai/extract.
       extraction_model: order.model,
       extraction_warning: order.warning ?? null,
-      structure_audit: order.structure_audit ?? cls.structure_audit ?? null,
+      // SOURCE METADATA, SPREAD BY THE ONE KEY IT IS CONTRACTED TO CARRY.
+      //
+      // This lands BELOW `totals` in the literal, so a blind `...extractionMetadata`
+      // would let any key a caller happened to put on that object win over a
+      // field this function computed itself — and `totals` is the worst possible
+      // thing to lose that way, because losing it is SILENT: the footer
+      // reconciliation simply stops running, and a document with no printed
+      // totals and a document whose totals got overwritten look identical
+      // afterwards. The type says `Pick<ExtractedData, 'message_order_evidence'>`,
+      // but the object crosses a call boundary from the mailbox worker, and a
+      // type is not a runtime guarantee. Naming the key makes the clobber
+      // structurally impossible instead of merely improbable — and if a second
+      // metadata key is ever added, it has to be named here too, which is
+      // exactly the review this deserves.
+      ...(extractionMetadata?.message_order_evidence
+        ? { message_order_evidence: extractionMetadata.message_order_evidence }
+        : {}),
+      structure_audit: order.structure_audit ?? cls?.structure_audit ?? null,
       orientation_normalization:
-        order.orientation_normalization ?? cls.orientation_normalization ?? null,
+        order.orientation_normalization ?? cls?.orientation_normalization ?? null,
       image_pixels: imagePixels,
       // Present only when the routing escalation above actually ran. Set
       // here because escalatedOrder is what got us into this branch at all —
@@ -969,6 +1027,21 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
           }
         : {}),
     };
+    let interpretationPreview = null;
+    if (customerMatch?.customerId) {
+      try {
+        interpretationPreview = await previewExistingCustomerInterpretation(supabase, {
+          orgId,
+          customerId: customerMatch.customerId,
+          lines: order.line_items,
+        });
+      } catch {
+        // Preview is advisory. A failed read never invokes a write fallback and
+        // never discards a reviewable source.
+      }
+    }
+    if (interpretationPreview) extractedData.customer_interpretation_preview = interpretationPreview;
+
     await supabase
       .from('documents')
       .update({
@@ -977,6 +1050,7 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
         document_type: 'order',
         extracted_data: extractedData,
         customer_id: customerMatch?.customerId ?? null,
+        ...(sourceType ? { source_type: sourceType } : {}),
       })
       .eq('id', documentId)
       .eq('org_id', orgId);
@@ -1019,6 +1093,10 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
   // is to stop that resolution happening on a document that has no supplier.
   // Best-effort: a failed identity read leaves `direction` unknown, which is
   // exactly the behaviour that shipped before this existed.
+  if (!cls) {
+    await supabase.from('documents').update({ status: 'error' }).eq('id', documentId);
+    return { ok: false, status: 500, error: 'The document classification result is unavailable.', documentId };
+  }
   let parties: DocumentPartiesVerdict = {
     direction: 'unknown',
     supplierName: cls.supplier,

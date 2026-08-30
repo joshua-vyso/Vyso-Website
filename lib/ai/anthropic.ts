@@ -16,6 +16,7 @@ import {
 import { parseLocaleNumber, inferDecimalSeparator, type DecimalSeparator } from '@/lib/platform/locale-number';
 import {
   buildOrderPrompt,
+  buildTextOrderPrompt,
   coerceOrderExtraction,
   type OrderExtractionResult,
 } from './order-prompt';
@@ -510,6 +511,26 @@ export async function extractOrderDocumentAnthropic(params: {
     ],
   });
 
+  return {
+    ...coerceOrderExtraction(textOf(message)),
+    model: `anthropic/${ORDER_EXTRACT_MODEL}`,
+  };
+}
+
+/** Text-only transport for a genuine order carried in an email body. */
+export async function extractOrderTextAnthropic(params: {
+  subject?: string | null;
+  senderName?: string | null;
+  senderEmail?: string | null;
+  receivedDateTime?: string | null;
+  body: string;
+  products?: string[];
+}): Promise<OrderExtractionResult> {
+  const message = await client().messages.create({
+    model: ORDER_EXTRACT_MODEL,
+    max_tokens: 16_000,
+    messages: [{ role: 'user', content: buildTextOrderPrompt(params) }],
+  });
   return {
     ...coerceOrderExtraction(textOf(message)),
     model: `anthropic/${ORDER_EXTRACT_MODEL}`,

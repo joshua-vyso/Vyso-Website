@@ -50,6 +50,7 @@ import {
 import { PrintSheetOverlay } from './PrintSheetOverlay';
 import { ProductSuggestInput } from './ProductSuggestInput';
 import type { ProductOption } from '@/lib/platform/docu/product-suggest';
+import type { CustomerInterpretationLinePreview } from '@/lib/platform/types';
 import { GRID_CELL_FOCUS, gridCell, useGridNavigation } from '@/hooks/useGridNavigation';
 import type { TaxInvoicePrintContext } from './PrintTaxInvoice';
 
@@ -98,6 +99,7 @@ interface Line {
   /** This line's match + price provenance, when the order has been synced once.
    *  Null on a document synced before provenance existed, or a hand-added line. */
   record: OrderLineRecord | null;
+  interpretation: CustomerInterpretationLinePreview | null;
 }
 
 let seq = 0;
@@ -668,6 +670,7 @@ export function OrderReviewEditor({
         // like the best-read line on the document.
         confidence: null,
         record: null,
+        interpretation: null,
       },
     ]);
     // Land the caret in the new row's product cell, so adding a line by keyboard
@@ -1263,6 +1266,33 @@ export function OrderReviewEditor({
                         </>
                       )}
                     </p>
+                  ) : null}
+                  {/* The READ-ONLY counterpart of the record-backed provenance
+                      block below, and deliberately just above it: this is what
+                      existing customer aliases and UOM rules WOULD say about the
+                      line, evaluated without writing a single one of them. It
+                      sits after the row's money evidence (amount · VAT · total
+                      and the cross-check) so that chain stays unbroken — those
+                      three are one argument about one row and reading them apart
+                      is reading them wrong. Conflicting rules are drawn in the
+                      same red as a mismatch because they mean the same thing:
+                      the machine declined to choose, and a human must. */}
+                  {l.interpretation ? (
+                    l.interpretation.uom_conflict_rule_ids.length ? (
+                      <p className="mt-1 px-1 text-[11.5px] leading-[1.5] text-[#A32D2D]">
+                        Existing customer UOM rules conflict — kept source UOM {l.interpretation.source_uom || 'blank'} for review.
+                      </p>
+                    ) : l.interpretation.product_alias_id || l.interpretation.uom_rule_id ? (
+                      <p className="mt-1 px-1 text-[11.5px] leading-[1.5] text-[#0F6E56]">
+                        Read-only customer preview
+                        {l.interpretation.product_alias_id && l.interpretation.interpreted_description
+                          ? ` · product → ${l.interpretation.interpreted_description}`
+                          : ''}
+                        {l.interpretation.uom_rule_id && l.interpretation.interpreted_uom
+                          ? ` · UOM ${l.interpretation.source_uom || 'blank'} → ${l.interpretation.interpreted_uom}`
+                          : ''}
+                      </p>
+                    ) : null
                   ) : null}
                   {r || bubble.kind !== 'none' ? (
                     <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 px-1 text-[11.5px] leading-[1.5]">

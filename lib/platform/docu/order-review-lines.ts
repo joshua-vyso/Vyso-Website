@@ -25,6 +25,7 @@
 import type { OrderLineRecord } from './order-line-match.ts';
 import { displayUnitForLine } from './customer-uom-rules.ts';
 import type { DocuExtractedData } from './types.ts';
+import type { CustomerInterpretationLinePreview } from '../types.ts';
 
 /** One editable row of the review grid. */
 export interface ReviewLine {
@@ -63,6 +64,8 @@ export interface ReviewLine {
   confidence: number | null;
   /** Match + price provenance, once the order has been synced. */
   record: OrderLineRecord | null;
+  /** Read-only unattended preview from existing customer mappings/rules. */
+  interpretation: CustomerInterpretationLinePreview | null;
 }
 
 /**
@@ -100,6 +103,7 @@ export function buildReviewLines(
     // row and not a low-confidence one; see the field's own comment above.
     confidence: typeof l.confidence === 'number' ? l.confidence : null,
     record: null,
+    interpretation: null,
   }));
   const paired = attachRecords(rows, extractedData?.order_lines);
   // ADDENDUM 4b (plan_customer_uom_rules.md): a line a customer UOM rule
@@ -109,7 +113,19 @@ export function buildReviewLines(
   // re-pair a "Run matching" rerun onto rows that may carry a unit edit the
   // reviewer has not saved yet (see its own docblock), and this override
   // would silently clobber that edit if it ran on every re-pair.
-  return paired.map((row) => ({ ...row, unit: displayUnitForLine(row.record, row.unit) }));
+  const previewByIndex = new Map((extractedData?.customer_interpretation_preview?.lines ?? [])
+    .map((preview) => [preview.line_index, preview] as const));
+  return paired.map((row, index) => {
+    const preview = previewByIndex.get(index) ?? null;
+    return {
+      ...row,
+      description: preview?.interpreted_description ?? row.description,
+      unit: row.record
+        ? displayUnitForLine(row.record, row.unit)
+        : preview?.interpreted_uom ?? row.unit,
+      interpretation: preview,
+    };
+  });
 }
 
 /**

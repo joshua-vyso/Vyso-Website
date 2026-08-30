@@ -207,6 +207,64 @@ export interface OrderDocumentTotals {
   grand_total?: string;
 }
 
+export type DocumentSourceType = 'pdf' | 'image' | 'spreadsheet' | 'email_body';
+export type OrderEvidenceSource = 'attachment' | 'email_body' | 'both';
+
+export interface MessageOrderConflict {
+  field: string;
+  line_index?: number;
+  attachment_value: string | null;
+  email_body_value: string | null;
+}
+
+export interface MessageOrderFieldProvenance {
+  source: OrderEvidenceSource;
+  attachment_value?: string | null;
+  email_body_value?: string | null;
+  conflict?: boolean;
+}
+
+export interface MessageOrderLineProvenance {
+  line_index: number;
+  source: OrderEvidenceSource;
+  raw_description: MessageOrderFieldProvenance;
+  quantity: MessageOrderFieldProvenance;
+  unit: MessageOrderFieldProvenance;
+}
+
+export interface MessageOrderEvidence {
+  primary_source: 'attachment' | 'email_body' | 'combined';
+  body_source_part_id: 'email-body';
+  attachment_source_ids: string[];
+  fields: Record<string, MessageOrderFieldProvenance>;
+  lines: MessageOrderLineProvenance[];
+  conflicts: MessageOrderConflict[];
+  requires_review: boolean;
+  multiple_order_sources: boolean;
+  /** Original attachment extraction, retained so retries never merge a merge. */
+  attachment_snapshot?: Record<string, unknown> | null;
+}
+
+export interface CustomerInterpretationLinePreview {
+  line_index: number;
+  source_description: string;
+  source_uom: string | null;
+  interpreted_stock_item_id: string | null;
+  interpreted_description: string | null;
+  product_alias_id: string | null;
+  product_alias_source: string | null;
+  interpreted_uom: string | null;
+  uom_rule_id: string | null;
+  uom_rule_count: number | null;
+  uom_conflict_rule_ids: string[];
+}
+
+export interface CustomerInterpretationPreview {
+  customer_id: string;
+  read_only: true;
+  lines: CustomerInterpretationLinePreview[];
+}
+
 /** The shape stored in `documents.extracted_data` (jsonb). */
 export interface ExtractedData {
   fields: ExtractedField[];
@@ -243,6 +301,10 @@ export interface ExtractedData {
   requested_delivery_date?: string | null;
   delivery_location?: string | null;
   order_notes?: string | null;
+  /** Message-level body/attachment reconciliation. Additive for old rows. */
+  message_order_evidence?: MessageOrderEvidence | null;
+  /** Existing customer mappings/rules evaluated without operational writes. */
+  customer_interpretation_preview?: CustomerInterpretationPreview | null;
   /** For uploaded customer ORDERS: the document's own printed footer totals.
    *  Absent on every historical read and on the many orders that print no
    *  footer at all — which is why nothing may treat its absence as zero. See
@@ -299,6 +361,8 @@ export interface Document {
   source_attachment_id?: string | null;
   /** Original attachment MIME type; Storage keeps the same value as object metadata. */
   source_content_type?: string | null;
+  /** Semantic source kind. Null on historical documents. */
+  source_type?: DocumentSourceType | null;
   uploaded_by: string | null;
   approved_by: string | null;
   approved_at: string | null;

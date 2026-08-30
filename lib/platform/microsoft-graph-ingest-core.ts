@@ -8,6 +8,7 @@ import type {
   MicrosoftGraphAttachmentMetadata,
   MicrosoftGraphMessageContent,
 } from './microsoft-graph-core.ts';
+import type { DocumentSourceType } from './types.ts';
 
 /** The first email-level taxonomy. Document parsing remains in the shared Doc-U pipeline. */
 export type MicrosoftEmailClassification =
@@ -73,6 +74,7 @@ export interface MicrosoftGraphIngestDependencies {
     filename: string;
     mediaType: string;
     sourceContentType: string;
+    sourceType: DocumentSourceType;
     sourceAttachmentId: string;
     note?: string;
     customerEvidence: {
@@ -81,6 +83,15 @@ export interface MicrosoftGraphIngestDependencies {
       subject: string | null;
       messageText: string | null;
     };
+  }) => Promise<MicrosoftGraphDocumentSinkResult>;
+  ingestBodyOrder: (input: {
+    message: MicrosoftGraphMessageContent;
+  }) => Promise<MicrosoftGraphDocumentSinkResult>;
+  reconcileBodyWithOrderDocument: (input: {
+    message: MicrosoftGraphMessageContent;
+    documentId: string;
+    attachmentSourceIds: string[];
+    multipleOrderSources: boolean;
   }) => Promise<MicrosoftGraphDocumentSinkResult>;
   recordMessage: (
     message: MicrosoftGraphMessageContent,
@@ -311,9 +322,25 @@ export function classifyMicrosoftEmail(input: {
     const sameClassSources = new Set(candidates
       .filter((candidate) => candidate.classification === chosen.classification)
       .map((candidate) => candidate.source));
+    // A PO attachment may carry the structured lines while the body carries
+    // only a real delivery/supply instruction. That is combined message
+    // evidence, but deliberately not enough to make a body-only order.
+    const bodyCorroboratesAttachmentOrder =
+      chosen.classification === 'customer_order' &&
+      chosen.source === 'attachment' &&
+      !message.orderIntentExcluded &&
+      message.evidence.some((entry) => [
+        'body:explicit-supply-request',
+        'message:order-document-label',
+        'message:order-reference',
+        'subject:standalone-order',
+      ].includes(entry)) &&
+      !message.evidence.includes('body:attachment-pointer-only');
     const primarySource = sameClassSources.size > 1
       ? 'combined'
-      : chosen.source;
+      : bodyCorroboratesAttachmentOrder
+        ? 'combined'
+        : chosen.source;
     return {
       classification: chosen.classification,
       confidence: Math.min(99, chosen.confidence + (primarySource === 'combined' ? 3 : 0)),
@@ -506,6 +533,8 @@ export async function ingestMicrosoftGraphMessage(
     documentsCreated: number;
     /** Existing Vyso copies that are still pending/errored remain explicit failures. */
     existingErrors?: readonly string[];
+    /** Existing successful attachment order documents, used after a crash/retry. */
+    existingOrderDocuments?: readonly { documentId: string; attachmentId: string }[];
   },
   dependencies: MicrosoftGraphIngestDependencies,
 ): Promise<MicrosoftGraphIngestResult> {
@@ -528,6 +557,7 @@ export async function ingestMicrosoftGraphMessage(
   const attachmentDiagnostics = diagnoseMicrosoftGraphAttachments(attachments);
   const usable = selectMicrosoftGraphAttachments(attachments);
   const alreadyDone = new Set(input.processedAttachmentIds);
+  const orderDocuments = [...(input.existingOrderDocuments ?? [])];
   let documentsCreated = input.documentsCreated;
   const errors: string[] = [...(input.existingErrors ?? [])];
 
@@ -556,6 +586,7 @@ export async function ingestMicrosoftGraphMessage(
         filename,
         mediaType: processingContentType,
         sourceContentType: attachment.contentType ?? 'application/octet-stream',
+        sourceType: processingContentType === 'application/pdf' ? 'pdf' : 'image',
         sourceAttachmentId: attachment.id,
         note: message.subject?.slice(0, 500),
         customerEvidence: {
@@ -577,11 +608,70 @@ export async function ingestMicrosoftGraphMessage(
       }
       if (result.ok) {
         classification = classificationFromDocumentType(classification, result.documentType);
+        if (result.documentId && result.documentType === 'order') {
+          orderDocuments.push({ documentId: result.documentId, attachmentId: attachment.id });
+        }
       } else {
         errors.push((result.error ?? 'Existing document parser failed.').slice(0, 300));
       }
     } catch (error) {
       errors.push(shortFailure(error, 'Attachment processing failed.'));
+    }
+  }
+
+  // Wave B: an explicit order carried in the body is a source part of this
+  // message. It either becomes the one body-only review document, or reconciles
+  // into the existing attachment-backed order. It never creates a second order
+  // merely because an attachment also contains order evidence.
+  const bodyOrderEvidence = Boolean(message.body?.content?.trim()) && (
+    classification.evidence.includes('message-ordering-intent') ||
+    (
+      classification.classification === 'customer_order' &&
+      classification.primarySource === 'combined' &&
+      classification.evidence.some((entry) => [
+        'body:explicit-supply-request',
+        'message:order-document-label',
+        'message:order-reference',
+        'subject:standalone-order',
+      ].includes(entry))
+    )
+  );
+  if (bodyOrderEvidence && !alreadyDone.has('email-body')) {
+    try {
+      const distinctOrderDocuments = [...new Map(orderDocuments.map((entry) => [entry.documentId, entry])).values()];
+      const bodyResult = distinctOrderDocuments.length > 0
+        ? await dependencies.reconcileBodyWithOrderDocument({
+            message,
+            documentId: distinctOrderDocuments[0].documentId,
+            attachmentSourceIds: distinctOrderDocuments.map((entry) => entry.attachmentId),
+            multipleOrderSources: distinctOrderDocuments.length > 1,
+          })
+        : await dependencies.ingestBodyOrder({ message });
+      if (bodyResult.ok && bodyResult.documentId) {
+        if (distinctOrderDocuments.length === 0) documentsCreated += 1;
+        alreadyDone.add('email-body');
+        await dependencies.recordAttachmentProcessed({
+          attachmentId: 'email-body',
+          documentId: bodyResult.documentId,
+          documentsCreated,
+          processedAttachmentIds: [...alreadyDone],
+        });
+        classification = {
+          ...classification,
+          classification: 'customer_order',
+          orderingIntentDetected: true,
+          primarySource: distinctOrderDocuments.length > 0 ? 'combined' : 'email_body',
+          reason: distinctOrderDocuments.length > 0 ? 'message-order-reconciled' : 'message-body-order-ingested',
+          evidence: boundedEvidence([...classification.evidence, 'email_body:order-source-processed']),
+        };
+        if (distinctOrderDocuments.length > 1) {
+          errors.push('Multiple order attachments require human review; only one canonical message order was reconciled.');
+        }
+      } else {
+        errors.push((bodyResult.error ?? 'Email body order processing failed.').slice(0, 300));
+      }
+    } catch (error) {
+      errors.push(shortFailure(error, 'Email body order processing failed.'));
     }
   }
 

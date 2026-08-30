@@ -349,3 +349,59 @@ test('ADDENDUM 4b: source preservation — the record\'s own uom_source_unit is 
   // it either.
   assert.equal(data.line_items?.[0]?.unit, 'KG');
 });
+
+test('Wave B: read-only customer interpretation preview opens on interpreted values and preserves source truth', () => {
+  const data: DocuExtractedData = {
+    ...withOneLine('KG'),
+    customer_interpretation_preview: {
+      customer_id: 'customer-capital',
+      read_only: true,
+      lines: [{
+        line_index: 0,
+        source_description: 'Grapes Black Punnet',
+        source_uom: 'KG',
+        interpreted_stock_item_id: 'stock-grapes-black',
+        interpreted_description: 'Black Grapes Punnet',
+        product_alias_id: 'alias-grapes-black',
+        product_alias_source: 'review_confirm',
+        interpreted_uom: 'punnet',
+        uom_rule_id: 'rule-punnet',
+        uom_rule_count: 1,
+        uom_conflict_rule_ids: [],
+      }],
+    },
+  };
+  const [line] = buildReviewLines(data, key);
+  assert.equal(line.description, 'Black Grapes Punnet');
+  assert.equal(line.unit, 'punnet');
+  assert.equal(line.interpretation?.source_description, 'Grapes Black Punnet');
+  assert.equal(line.interpretation?.source_uom, 'KG');
+  assert.equal(data.line_items?.[0]?.description, 'Grapes Black Punnet');
+  assert.equal(data.line_items?.[0]?.unit, 'KG');
+});
+
+test('Wave B: conflicting read-only UOM rules leave the source UOM in the editor', () => {
+  const data: DocuExtractedData = {
+    ...withOneLine('KG'),
+    customer_interpretation_preview: {
+      customer_id: 'customer-capital',
+      read_only: true,
+      lines: [{
+        line_index: 0,
+        source_description: 'Grapes Black Punnet',
+        source_uom: 'KG',
+        interpreted_stock_item_id: null,
+        interpreted_description: null,
+        product_alias_id: null,
+        product_alias_source: null,
+        interpreted_uom: 'KG',
+        uom_rule_id: null,
+        uom_rule_count: null,
+        uom_conflict_rule_ids: ['rule-a', 'rule-b'],
+      }],
+    },
+  };
+  const [line] = buildReviewLines(data, key);
+  assert.equal(line.unit, 'KG');
+  assert.deepEqual(line.interpretation?.uom_conflict_rule_ids, ['rule-a', 'rule-b']);
+});

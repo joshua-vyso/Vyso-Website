@@ -26,6 +26,10 @@ alter table email_ingests add column if not exists ordering_intent_detected bool
 alter table email_ingests add column if not exists classification_primary_source text;
 alter table email_ingests add column if not exists classification_evidence jsonb not null default '[]'::jsonb;
 alter table email_ingests add column if not exists attachment_diagnostics jsonb not null default '[]'::jsonb;
+-- Private Vyso-side copy of a message body when the body itself contributes
+-- order evidence. The raw body is never used as mailbox workflow state.
+alter table email_ingests add column if not exists body_source_storage_path text;
+alter table email_ingests add column if not exists body_source_content_type text;
 -- Existing/live notifications use the default REST id. Future immutable-id
 -- subscriptions opt in explicitly and stamp new rows with the other value.
 alter table email_ingests add column if not exists graph_id_type text not null default 'rest_id';
@@ -106,6 +110,17 @@ create trigger email_ingests_updated_at_trigger
 -- reached through documents.email_ingest_id -> email_ingests.
 alter table documents add column if not exists source_attachment_id text;
 alter table documents add column if not exists source_content_type text;
+alter table documents add column if not exists source_type text;
 create unique index if not exists documents_ingest_attachment_uidx
   on documents (email_ingest_id, source_attachment_id)
   where email_ingest_id is not null and source_attachment_id is not null;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'documents_source_type_check'
+  ) then
+    alter table documents add constraint documents_source_type_check
+      check (source_type is null or source_type in ('pdf', 'image', 'spreadsheet', 'email_body'));
+  end if;
+end $$;

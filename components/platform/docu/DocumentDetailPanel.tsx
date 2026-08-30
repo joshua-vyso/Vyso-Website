@@ -17,6 +17,7 @@ import { StatementTotalsCard } from './StatementTotalsCard';
 import { FlagsList } from './FlagsList';
 import { LineAuditNotice } from './LineAuditNotice';
 import { StructureAuditNotice } from './StructureAuditNotice';
+import { MessageOrderEvidenceNotice } from './MessageOrderEvidenceNotice';
 import { AiSummaryCard } from './AiSummaryCard';
 import { ConfidenceBreakdown } from './ConfidenceBreakdown';
 import { DocumentRelationshipFlow } from './DocumentRelationshipFlow';
@@ -90,7 +91,13 @@ export function DocumentDetailPanel({
   const preview = (
     <div className="flex flex-col rounded-2xl border border-[#EAEDF2] bg-white shadow-[0_1px_2px_rgba(20,24,20,0.03)]">
       <div className="flex items-center justify-between gap-3 border-b border-[#EEF1F5] px-6 py-5">
-        <h2 className="of-display text-[16px] font-semibold text-[#171A17]">Original document</h2>
+        <h2 className="of-display text-[16px] font-semibold text-[#171A17]">
+          {doc.source_type === 'email_body'
+            ? 'Original email body'
+            : extracted?.message_order_evidence?.primary_source === 'combined'
+              ? 'Original attachment'
+              : 'Original document'}
+        </h2>
         <div className="flex min-w-0 items-center gap-3">
           <span className="truncate text-[12px] text-[#A0A49C]">{doc.filename}</span>
           {/* Print the scan ITSELF — the secondary of the two print paths now that
@@ -186,6 +193,12 @@ export function DocumentDetailPanel({
         orientation={extracted?.orientation_normalization}
         className="mt-3"
       />
+      <div className="mt-3">
+        <MessageOrderEvidenceNotice
+          sourceType={doc.source_type}
+          evidence={extracted?.message_order_evidence}
+        />
+      </div>
 
       {/* Two main blocks — extracted data (left) + original preview (right).
           The preview cell stretches to the row height and holds a sticky child,

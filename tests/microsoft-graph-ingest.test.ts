@@ -55,6 +55,16 @@ function dependencies(
       documentId: 'document-1',
       documentType: 'invoice',
     }),
+    ingestBodyOrder: async () => ({
+      ok: true,
+      documentId: 'body-document-1',
+      documentType: 'order',
+    }),
+    reconcileBodyWithOrderDocument: async ({ documentId }) => ({
+      ok: true,
+      documentId,
+      documentType: 'order',
+    }),
     recordMessage: async () => {},
     recordAttachmentTotal: async () => {},
     recordAttachmentProcessed: async () => {},
@@ -371,7 +381,8 @@ test('unsupported attachments are left untouched without invoking download or pa
   assert.equal(finalMicrosoftGraphIngestStatus(result), 'failed');
 });
 
-test('zero-document status distinguishes reviewable loss from non-actionable correspondence', async () => {
+test('body-only order creates one reviewable source while non-actionable correspondence stays ignored', async () => {
+  let bodyCalls = 0;
   const bodyOrder = await ingestMicrosoftGraphMessage(
     { expectedMessageId: MESSAGE_ID, processedAttachmentIds: [], documentsCreated: 0 },
     dependencies({
@@ -382,10 +393,18 @@ test('zero-document status distinguishes reviewable loss from non-actionable cor
         bodyPreview: 'Please deliver 10kg potatoes and 5kg carrots Monday.',
       }),
       listAttachments: async () => [],
+      ingestBodyOrder: async () => {
+        bodyCalls += 1;
+        return { ok: true, documentId: 'body-document-1', documentType: 'order' };
+      },
     }),
   );
   assert.equal(bodyOrder.classification.orderingIntentDetected, true);
-  assert.equal(finalMicrosoftGraphIngestStatus(bodyOrder), 'failed');
+  assert.equal(bodyOrder.classification.primarySource, 'email_body');
+  assert.equal(bodyOrder.documentsCreated, 1);
+  assert.deepEqual(bodyOrder.processedAttachmentIds, ['email-body']);
+  assert.equal(bodyCalls, 1);
+  assert.equal(finalMicrosoftGraphIngestStatus(bodyOrder), 'done');
 
   const correspondence = await ingestMicrosoftGraphMessage(
     { expectedMessageId: MESSAGE_ID, processedAttachmentIds: [], documentsCreated: 0 },
@@ -401,6 +420,118 @@ test('zero-document status distinguishes reviewable loss from non-actionable cor
   );
   assert.equal(correspondence.classification.classification, 'general_correspondence');
   assert.equal(finalMicrosoftGraphIngestStatus(correspondence), 'ignored');
+});
+
+test('failed body-only extraction remains failed and retryable', async () => {
+  const result = await ingestMicrosoftGraphMessage(
+    { expectedMessageId: MESSAGE_ID, processedAttachmentIds: [], documentsCreated: 0 },
+    dependencies({
+      fetchMessage: async () => message({
+        subject: 'Order',
+        hasAttachments: false,
+        body: { contentType: 'text', content: 'Please deliver 10kg potatoes Monday.' },
+        bodyPreview: 'Please deliver 10kg potatoes Monday.',
+      }),
+      listAttachments: async () => [],
+      ingestBodyOrder: async () => ({ ok: false, error: 'Text order extraction failed.' }),
+    }),
+  );
+  assert.equal(result.documentsCreated, 0);
+  assert.deepEqual(result.processedAttachmentIds, []);
+  assert.match(result.errors[0], /Text order extraction failed/);
+  assert.equal(finalMicrosoftGraphIngestStatus(result), 'failed');
+});
+
+test('body plus order attachment reconciles into the attachment document, never a second order', async () => {
+  let bodyCreates = 0;
+  let reconciles = 0;
+  const result = await ingestMicrosoftGraphMessage(
+    { expectedMessageId: MESSAGE_ID, processedAttachmentIds: [], documentsCreated: 0 },
+    dependencies({
+      fetchMessage: async () => message({
+        subject: 'Order',
+        body: { contentType: 'text', content: 'Please deliver 10kg potatoes Monday.' },
+        bodyPreview: 'Please deliver 10kg potatoes Monday.',
+      }),
+      listAttachments: async () => [attachment({ name: 'PO_144463.pdf' })],
+      ingestDocument: async () => ({ ok: true, documentId: 'attachment-order-1', documentType: 'order' }),
+      ingestBodyOrder: async () => {
+        bodyCreates += 1;
+        return { ok: true, documentId: 'must-not-exist', documentType: 'order' };
+      },
+      reconcileBodyWithOrderDocument: async ({ documentId }) => {
+        reconciles += 1;
+        return { ok: true, documentId, documentType: 'order' };
+      },
+    }),
+  );
+  assert.equal(bodyCreates, 0);
+  assert.equal(reconciles, 1);
+  assert.equal(result.documentsCreated, 1);
+  assert.deepEqual(new Set(result.processedAttachmentIds), new Set(['attachment-1', 'email-body']));
+  assert.equal(result.classification.primarySource, 'combined');
+  assert.equal(finalMicrosoftGraphIngestStatus(result), 'done');
+});
+
+test('an attachment order plus body-only delivery instruction is combined evidence, not a second order', async () => {
+  let bodyCreates = 0;
+  let reconciles = 0;
+  const sourceMessage = message({
+    subject: 'PO attached',
+    body: { contentType: 'text', content: 'Please deliver to the rear loading bay.' },
+    bodyPreview: 'Please deliver to the rear loading bay.',
+  });
+  const classified = classifyMicrosoftEmail({
+    subject: sourceMessage.subject,
+    body: sourceMessage.body?.content,
+    bodyPreview: sourceMessage.bodyPreview,
+    attachments: [attachment({ name: 'PO_144463.pdf' })],
+  });
+  assert.equal(classified.classification, 'customer_order');
+  assert.equal(classified.primarySource, 'combined');
+
+  const result = await ingestMicrosoftGraphMessage(
+    { expectedMessageId: MESSAGE_ID, processedAttachmentIds: [], documentsCreated: 0 },
+    dependencies({
+      fetchMessage: async () => sourceMessage,
+      listAttachments: async () => [attachment({ name: 'PO_144463.pdf' })],
+      ingestDocument: async () => ({ ok: true, documentId: 'attachment-order-1', documentType: 'order' }),
+      ingestBodyOrder: async () => {
+        bodyCreates += 1;
+        return { ok: true, documentId: 'must-not-exist', documentType: 'order' };
+      },
+      reconcileBodyWithOrderDocument: async ({ documentId }) => {
+        reconciles += 1;
+        return { ok: true, documentId, documentType: 'order' };
+      },
+    }),
+  );
+  assert.equal(bodyCreates, 0);
+  assert.equal(reconciles, 1);
+  assert.equal(result.documentsCreated, 1);
+  assert.deepEqual(new Set(result.processedAttachmentIds), new Set(['attachment-1', 'email-body']));
+});
+
+test('processed email-body source is idempotent on retry', async () => {
+  let bodyCalls = 0;
+  const result = await ingestMicrosoftGraphMessage(
+    { expectedMessageId: MESSAGE_ID, processedAttachmentIds: ['email-body'], documentsCreated: 1 },
+    dependencies({
+      fetchMessage: async () => message({
+        subject: 'Order',
+        hasAttachments: false,
+        body: { contentType: 'text', content: 'Please deliver 10kg potatoes Monday.' },
+      }),
+      listAttachments: async () => [],
+      ingestBodyOrder: async () => {
+        bodyCalls += 1;
+        return { ok: true, documentId: 'duplicate', documentType: 'order' };
+      },
+    }),
+  );
+  assert.equal(bodyCalls, 0);
+  assert.equal(result.documentsCreated, 1);
+  assert.deepEqual(result.processedAttachmentIds, ['email-body']);
 });
 
 test('idempotent retry skips a Graph attachment already filed on an earlier attempt', async () => {
@@ -456,8 +587,8 @@ test('attachment retries use one deterministic Storage path and final status is 
   const adapterSource = readFileSync(new URL('../lib/platform/microsoft-graph-ingest.ts', import.meta.url), 'utf8');
 
   assert.match(documentSource, /createHash\('sha256'\)/);
-  assert.ok(documentSource.includes(".update(`${emailIngestId}\\0${sourceAttachmentId}`, 'utf8')"));
-  assert.match(documentSource, /email-ingests\/\$\{attachmentStorageKey\}/);
+  assert.ok(documentSource.includes(".update(`${emailIngestId}\\0${sourcePartId}`, 'utf8')"));
+  assert.match(documentSource, /return `\$\{orgId\}\/email-ingests\/\$\{key\}`/);
   assert.match(documentSource, /attachmentStorageKey && isUniqueViolation\(upErr\)/);
   assert.match(documentSource, /eq\('source_attachment_id', sourceAttachmentId\)/);
   assert.match(adapterSource, /finalMicrosoftGraphIngestStatus\(result\)/);
@@ -470,6 +601,9 @@ test('database migration enforces Graph message and attachment idempotency', () 
   assert.match(sql, /unique index if not exists documents_ingest_attachment_uidx/i);
   assert.match(sql, /graph_id_type text not null default 'rest_id'/i);
   assert.match(sql, /attachment_diagnostics jsonb not null default '\[\]'::jsonb/i);
+  assert.match(sql, /body_source_storage_path text/i);
+  assert.match(sql, /source_type text/i);
+  assert.match(sql, /'pdf', 'image', 'spreadsheet', 'email_body'/i);
 });
 
 test('persisted Microsoft work is recoverable without after()', () => {
@@ -492,6 +626,20 @@ test('deferred document ingestion cannot create supplier or operational side eff
   assert.match(source, /parties\.supplierName && !deferCommit/);
   assert.match(source, /if \(!deferCommit\) \{[\s\S]*?runDocumentSideEffects/);
   assert.match(source, /Deferred \(email\): stop here/);
+});
+
+test('email-body order source is private, deterministic, deferred and not a fake PDF', () => {
+  const source = readFileSync(new URL('../lib/platform/microsoft-message-order.ts', import.meta.url), 'utf8');
+  const adapter = readFileSync(new URL('../lib/platform/microsoft-graph-ingest.ts', import.meta.url), 'utf8');
+  assert.match(source, /sourceAttachmentId: EMAIL_BODY_SOURCE_PART_ID/);
+  assert.match(source, /sourceType: 'email_body'/);
+  assert.match(source, /mediaType: 'text\/plain; charset=utf-8'/);
+  assert.match(source, /Buffer\.from\(bodyText\(input\.message\), 'utf8'\)/);
+  assert.match(source, /return message\.body\?\.content \?\? ''/);
+  assert.match(source, /deferCommit: true/);
+  assert.doesNotMatch(source, /syncOrderFromDocument|\.from\('of_orders'\)|\.from\('of_invoices'\)|\.from\('pp_movements'\)/);
+  assert.match(adapter, /recoverableBodySource/);
+  assert.match(adapter, /row\.source_attachment_id !== 'email-body'/);
 });
 
 test('email-linked orders cannot enter the unmatched-customer auto-create path', () => {

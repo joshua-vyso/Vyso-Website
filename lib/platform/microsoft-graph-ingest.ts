@@ -3,6 +3,10 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { isUniqueViolation } from './db-errors';
 import { ingestDocument } from './document-ingest';
+import {
+  ingestMicrosoftEmailBodyOrder,
+  reconcileMicrosoftEmailBodyWithOrder,
+} from './microsoft-message-order';
 import { MAX_ATTACHMENT_BYTES } from './email-ingest-policy';
 import {
   downloadMicrosoftGraphFileAttachment,
@@ -113,7 +117,7 @@ export async function processMicrosoftGraphEmailIngest(
   // attachment id was copied to email_ingests.processed_attachment_ids.
   const { data: existingDocuments, error: existingError } = await supabase
     .from('documents')
-    .select('id, source_attachment_id, status')
+    .select('id, source_attachment_id, status, document_type')
     .eq('org_id', ingest.org_id)
     .eq('email_ingest_id', ingest.id)
     .not('source_attachment_id', 'is', null);
@@ -122,13 +126,28 @@ export async function processMicrosoftGraphEmailIngest(
     id: string;
     source_attachment_id: string | null;
     status: string;
+    document_type: string | null;
   }[];
   const processedIds = new Set(ingest.processed_attachment_ids ?? []);
   for (const row of existingRows) {
-    if (row.source_attachment_id) processedIds.add(row.source_attachment_id);
+    const recoverableBodySource =
+      row.source_attachment_id === 'email-body' && (row.status === 'pending' || row.status === 'error');
+    if (row.source_attachment_id && !recoverableBodySource) processedIds.add(row.source_attachment_id);
   }
-  const incompleteCopies = existingRows.filter((row) => row.status === 'pending' || row.status === 'error');
-  const successfulCopies = existingRows.length - incompleteCopies.length;
+  // A body source can be deterministically re-extracted into its existing row;
+  // do not poison the retry with the prior incomplete state. Attachment copies
+  // retain the existing Doc-U retry semantics.
+  const allIncompleteCopies = existingRows.filter((row) => row.status === 'pending' || row.status === 'error');
+  const incompleteCopies = allIncompleteCopies.filter((row) => row.source_attachment_id !== 'email-body');
+  const successfulCopies = existingRows.length - allIncompleteCopies.length;
+  const existingOrderDocuments = existingRows
+    .filter((row) =>
+      row.document_type === 'order' &&
+      (row.status === 'extracted' || row.status === 'approved') &&
+      Boolean(row.source_attachment_id) &&
+      row.source_attachment_id !== 'email-body',
+    )
+    .map((row) => ({ documentId: row.id, attachmentId: row.source_attachment_id as string }));
 
   const result = await ingestMicrosoftGraphMessage(
     {
@@ -138,6 +157,7 @@ export async function processMicrosoftGraphEmailIngest(
       existingErrors: incompleteCopies.length
         ? ['A stored Vyso document copy is still pending or failed extraction; retry it in Doc-U.']
         : [],
+      existingOrderDocuments,
     },
     {
       fetchMessage: async () => {
@@ -169,7 +189,7 @@ export async function processMicrosoftGraphEmailIngest(
         });
         return copy.bytes;
       },
-      ingestDocument: async ({ bytes, filename, mediaType, sourceContentType, sourceAttachmentId, note, customerEvidence }) =>
+      ingestDocument: async ({ bytes, filename, mediaType, sourceContentType, sourceType, sourceAttachmentId, note, customerEvidence }) =>
         ingestDocument({
           supabase,
           orgId: ingest.org_id,
@@ -182,7 +202,22 @@ export async function processMicrosoftGraphEmailIngest(
           emailIngestId: ingest.id,
           sourceAttachmentId,
           sourceContentType,
+          sourceType,
           deferCommit: true,
+        }),
+      ingestBodyOrder: async ({ message }) => ingestMicrosoftEmailBodyOrder(supabase, {
+        orgId: ingest.org_id,
+        emailIngestId: ingest.id,
+        message,
+      }),
+      reconcileBodyWithOrderDocument: async ({ message, documentId, attachmentSourceIds, multipleOrderSources }) =>
+        reconcileMicrosoftEmailBodyWithOrder(supabase, {
+          orgId: ingest.org_id,
+          emailIngestId: ingest.id,
+          documentId,
+          attachmentSourceIds,
+          multipleOrderSources,
+          message,
         }),
       recordMessage: async (message, classification) => {
         const { error } = await supabase

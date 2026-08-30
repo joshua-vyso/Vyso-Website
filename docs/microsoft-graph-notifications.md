@@ -92,7 +92,7 @@ Final email status uses the existing state model:
 
 - `done` only when a document was successfully processed;
 - `failed` when parsing/storage fails, a business document is unsupported, or a
-  body-only order is detected before body-source support exists;
+  detected body order cannot be preserved/extracted into review;
 - `ignored` for genuine non-actionable correspondence with no processable business
   document.
 
@@ -167,10 +167,9 @@ future cutover therefore requires a separately approved operation:
 
 Do not change the current subscription merely to test this preparation.
 
-## Deferred Wave B architecture
+## Email-body orders and message-level reconciliation
 
-Wave B remains deliberately unimplemented while customer-UOM/review work is uncommitted.
-Its locked design is message-level:
+Wave B keeps the email message as the intent envelope:
 
 ```text
 email message
@@ -184,17 +183,50 @@ message-level reconciliation
 one canonical review order
 ```
 
-The email body will be a first-class private source (`source_type=email_body`) with a
-deterministic source-part id such as `email-body`, not a fabricated PDF. A message with
-both body and attachment order evidence must produce one review object, preserve both
-values, and surface conflicts rather than creating two orders or silently overwriting
-one source.
+For a genuine body-only order, Vyso stores the exact Graph-returned text representation
+in the private `documents` bucket and files exactly one order document with:
 
-Customer aliases and UOM rules will be applied through a read-only preview helper. It
-will query existing organisation/customer-scoped rules, preserve raw source values, and
-return interpreted values with provenance. It must never invoke operational OrderFlow
-synchronisation or create/update customers, products, orders, invoices, stock,
-ProcurePulse, or SupplySync records.
+- `documents.source_type = 'email_body'`;
+- deterministic `source_attachment_id = 'email-body'`;
+- deterministic Storage key derived from `(email_ingest_id, 'email-body')`;
+- the same canonical order extraction schema as PDF/image orders;
+- `deferCommit: true`.
+
+`email_ingests.body_source_storage_path` and `body_source_content_type` are safe source
+references; raw body text is never copied into logs. The existing unique document index
+on `(email_ingest_id, source_attachment_id)` makes duplicate notifications, crashes and
+retries converge on the same document and Storage object. A pending/errored body row is
+recoverable into that same row by the cron/retry worker.
+
+When an attachment order and meaningful body order evidence coexist, the attachment
+document remains the one canonical review object. The body copy is privately preserved,
+then source fields are reconciled conservatively:
+
+- one source supplies a value: use it and record that source;
+- both agree after narrow normalization: use it with provenance `both`;
+- both provide different meaningful values: clear the canonical value, retain both
+  alternatives in `extracted_data.message_order_evidence`, and require human review;
+- lines join only on exact normalized product descriptions; similar products are never
+  fuzzy-merged;
+- clearly multiple order attachments are flagged as a known one-order-per-message
+  limitation.
+
+Doc-U labels body sources as **Email body** and reconciled sources as
+**Email + attachment**, and shows field/line conflicts with both values. The original
+source stays accessible through its short-lived private signed URL.
+
+Existing customer aliases and UOM rules are evaluated by a read-only preview helper.
+All three reads are scoped to the verified organisation and selected existing customer.
+The helper preserves the raw description/UOM and stores interpreted values plus rule
+provenance in `customer_interpretation_preview`; it contains no mutation or operational
+OrderFlow-sync path. The review grid opens on the previewed values, displays their source,
+and any actual write still requires the existing human Save/approval action.
+
+Before deploying Wave B, apply `supabase/microsoft-graph-ingest.sql` so production has
+the additive nullable source columns and `documents.source_type` check constraint.
+Historical rows remain valid. Do not backfill body orders until the migration and this
+code are deployed and the relevant failed/zero-document `email_ingests` rows have been
+identified in a fresh read-only audit.
 
 ## Expiration and renewal
 

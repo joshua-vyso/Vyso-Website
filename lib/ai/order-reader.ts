@@ -1,7 +1,8 @@
 import 'server-only';
-import { extractOrderDocumentAnthropic } from './anthropic';
+import { extractOrderDocumentAnthropic, extractOrderTextAnthropic } from './anthropic';
 import {
   buildOrderPrompt,
+  buildTextOrderPrompt,
   coerceOrderExtraction,
   openaiOrderModel,
   orderProvider,
@@ -88,6 +89,43 @@ export interface OrderReadParams {
    * unattended-document cost for a rotation search that already ran.
    */
   orientationChecked?: boolean;
+}
+
+export interface TextOrderReadParams {
+  subject?: string | null;
+  senderName?: string | null;
+  senderEmail?: string | null;
+  receivedDateTime?: string | null;
+  body: string;
+  products?: string[];
+}
+
+/** Read an order carried directly in message text into the canonical order shape. */
+export async function extractOrderText(params: TextOrderReadParams): Promise<OrderExtractionResult> {
+  if (!params.body.trim()) throw new Error('The email body is empty.');
+  const primary = orderProvider();
+  const readOpenAi = async () => {
+    if (!openaiConfigured()) throw new Error('OPENAI_API_KEY is not configured');
+    const model = openaiOrderModel();
+    const raw = await openaiJson({
+      model,
+      prompt: buildTextOrderPrompt(params),
+      maxTokens: 16_000,
+    });
+    return { ...coerceOrderExtraction(raw), model: `openai/${model}` };
+  };
+  const read = primary === 'openai' ? readOpenAi : () => extractOrderTextAnthropic(params);
+  const backup = primary === 'openai' ? () => extractOrderTextAnthropic(params) : readOpenAi;
+  try {
+    return withArithmetic(await read());
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const fallback = await backup();
+    return withArithmetic({
+      ...fallback,
+      warning: `Read by ${fallback.model} — the ${primary} text read failed: ${detail}`,
+    });
+  }
 }
 
 /**
