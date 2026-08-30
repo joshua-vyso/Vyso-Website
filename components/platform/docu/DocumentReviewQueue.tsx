@@ -122,7 +122,18 @@ export function DocumentReviewQueue({ docs, canReview }: { docs: DocumentWithSup
                   {who ? <span className="text-[#6B6F68]">{who}</span> : null}
                   <span className="of-num">{fmtWhen(d.created_at)}</span>
                   {items.length > 0 ? <span><span className="of-num">{items.length}</span> line{items.length === 1 ? '' : 's'}</span> : null}
-                  {typeof d.confidence === 'number' ? <span><span className="of-num">{d.confidence}%</span> confident</span> : null}
+                  {/* ABSENCE IS RENDERED, NOT SKIPPED. Since `coerceConfidence`
+                      stopped fabricating a 0 for a missing or string-typed
+                      answer, a null here means "the reader recorded none" —
+                      and silently omitting the chip made that look exactly
+                      like a document nobody had a concern about. The dash is
+                      the same one `ConfidenceText` has always drawn, and no
+                      number is invented to fill it. */}
+                  {typeof d.confidence === 'number' ? (
+                    <span><span className="of-num">{d.confidence}%</span> confident</span>
+                  ) : (
+                    <span>confidence <span className="of-num">—</span></span>
+                  )}
                 </div>
               </button>
 

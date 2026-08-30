@@ -28,7 +28,8 @@
  *  layer and trivial to unit test without constructing a full extraction. */
 export interface ClassificationSignal {
   document_type: string | null;
-  overall_confidence: number;
+  /** 0–100, or null when the read stated no confidence at all. */
+  overall_confidence: number | null;
   supplier?: string | null;
   bill_to?: string | null;
   fields?: Array<{ label?: string | null; value?: string | null }> | null;
@@ -68,7 +69,13 @@ function hasOrderCue(input: ClassificationSignal): boolean {
 export function decideClassificationRouting(input: ClassificationSignal): ClassificationRouting {
   if (input.document_type === 'order') return 'accept';
   const needsReview = input.structure_audit?.status === 'needs_review';
-  const lowConfidence = input.overall_confidence < 60;
+  // A MISSING confidence counts as the worst one. This gate only ever buys a
+  // second read — cheap, and `document-ingest.ts` still makes that read earn
+  // adoption on its own structural score — so the asymmetry is entirely in our
+  // favour: reading a fine document twice costs one model call, while trusting
+  // a read that would not even say how sure it was is the Phase 0 failure this
+  // whole module exists to catch.
+  const lowConfidence = (input.overall_confidence ?? 0) < 60;
   if (needsReview || lowConfidence || hasOrderCue(input)) return 'escalate_order';
   return 'accept';
 }

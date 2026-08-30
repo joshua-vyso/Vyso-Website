@@ -42,6 +42,19 @@ export function deriveFlags(
   // REAL — low extraction confidence
   if (typeof doc.confidence === 'number' && doc.confidence < DOC_LOW_CONFIDENCE_THRESHOLD) {
     add('low_confidence', `Overall confidence ${Math.round(doc.confidence)}% — manual review recommended.`, 'derived');
+  } else if (doc.confidence == null && doc.extracted_data != null) {
+    // A READ THAT RECORDED NO CONFIDENCE IS NOT A CONFIDENT READ. Since
+    // `coerceConfidence` stopped fabricating a 0 for a missing or string-typed
+    // answer, "unknown" is a state this column can genuinely hold — and the
+    // wrong thing to do with it is nothing, because a document with no
+    // confidence flag looks exactly like a document that scored 100.
+    //
+    // No number is invented in the message either: saying "0%" or "65%" here
+    // would put back the very figure the null exists to avoid. Gated on
+    // `extracted_data` being present so this fires only on documents somebody
+    // actually READ — every freshly uploaded row sits at confidence null with
+    // nothing extracted yet, and flagging those would bury the real ones.
+    add('low_confidence', 'The reader recorded no confidence for this document — worth a look.', 'derived');
   }
 
   // REAL — the photo, not the reader, was the limit.

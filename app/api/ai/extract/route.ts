@@ -182,6 +182,11 @@ export async function POST(req: Request) {
           line_items: order.line_items,
           customer_name: order.customer_name,
           customer_confidence: order.customer_confidence,
+          // The document's own printed footer totals, verbatim. Null when the
+          // paper printed no footer — which is most orders, and is why nothing
+          // downstream may read the absence as zero. See
+          // lib/platform/docu/order-line-totals.ts's reconcileDocumentTotals.
+          totals: order.totals ?? null,
           // Which model read it. One string, written once, so this never again
           // has to be inferred from the shape of the mistakes it made — and with
           // two providers in play, which PROVIDER served it too.

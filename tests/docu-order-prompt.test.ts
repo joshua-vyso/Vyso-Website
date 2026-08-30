@@ -45,6 +45,46 @@ test('the schema still asks for the four fields the post-processing depends on',
   }
 });
 
+// --- the VAT columns -------------------------------------------------------
+//
+// A Montecasino order prints Nett, VAT and Total on every row. The prompt used
+// to ask for "the row's own amount/nett/value column", which on that page names
+// three different numbers — and whichever the reader picked decided whether the
+// review screen went red on a correctly-read line. These guard the clauses that
+// removed the choice.
+
+test('the schema asks for the row VAT columns the tax-aware check depends on', () => {
+  for (const field of ['raw_tax_amount', 'tax_rate', 'tax_code', 'raw_total_amount']) {
+    assert.ok(ORDER_EXTRACT_INSTRUCTION.includes(`"${field}"`), `the schema names ${field}`);
+  }
+});
+
+test('raw_amount is pinned to the NET column, not "whichever amount is printed"', () => {
+  assert.match(ORDER_EXTRACT_INSTRUCTION, /raw_amount = the row's NET \/ GOODS-VALUE column/);
+  // The three-column rule, and the specific swap that would re-break it.
+  assert.match(ORDER_EXTRACT_INSTRUCTION, /THREE DIFFERENT NUMBERS AND EACH ONE HAS ITS OWN FIELD/);
+  assert.match(ORDER_EXTRACT_INSTRUCTION, /Do not put the inclusive total in raw_amount/);
+});
+
+test('a single-money-column row keeps the legacy behaviour and invents no VAT', () => {
+  // The zero-rated row and the row whose page does not itemise VAT are the same
+  // picture. Splitting one into a net and a VAT is fifteen percent of a wrong
+  // number on somebody's invoice.
+  assert.match(ORDER_EXTRACT_INSTRUCTION, /ONLY ONE MONEY COLUMN/);
+  assert.match(ORDER_EXTRACT_INSTRUCTION, /NEVER split it into a net and a VAT of your own making/);
+});
+
+test('the footer totals clause still refuses to add anything up', () => {
+  assert.ok(ORDER_EXTRACT_INSTRUCTION.includes('"totals"'));
+  for (const key of ['"subtotal"', '"tax_total"', '"freight"', '"discount"', '"grand_total"']) {
+    assert.ok(ORDER_EXTRACT_INSTRUCTION.includes(key), `the totals block names ${key}`);
+  }
+  assert.match(ORDER_EXTRACT_INSTRUCTION, /NEVER add the lines up yourself/);
+  // The whole reason a printed total is worth having: a computed one agrees
+  // with itself by construction and checks nothing.
+  assert.match(ORDER_EXTRACT_INSTRUCTION, /can only ever agree with itself/);
+});
+
 test('the two-column rule still says the unit cost is per UNIT quantity', () => {
   // "four boxes at a unit cost of 15.75 is a nett of 756.00, never 63.00" — the
   // avocado row, and the reason row-arithmetic.ts exists.
@@ -146,7 +186,13 @@ test('an unparseable reply is an empty extraction, never a throw', () => {
   const out = coerceOrderExtraction('I could not read this document, sorry.');
   assert.deepEqual(out.line_items, []);
   assert.equal(out.customer_name, null);
-  assert.equal(out.overall_confidence, 0);
+  // NULL, NOT 0 — and this assertion was 0 until the two Montecasino orders
+  // showed what that costs. A model that says nothing about its confidence has
+  // not told us it had none; writing 0 into `documents.confidence` puts "0%
+  // confident" in front of an owner whose document may have been read
+  // perfectly, and nothing downstream can tell that fabricated 0 from a real
+  // one. See `coerceConfidence`.
+  assert.equal(out.overall_confidence, null);
 });
 
 test('confidences are clamped to 0-100 whatever the model returned', () => {
@@ -165,6 +211,75 @@ test('an amount is never invented by the coercion — a blank stays blank', () =
     line_items: [{ description: 'Grapes White', quantity: '2', unit_price: '659.00' }],
   }));
   assert.equal(out.line_items[0].raw_amount, '');
+});
+
+test('the row VAT columns survive coercion verbatim, and a blank stays blank', () => {
+  // The Montecasino row: 1 × 338.00 net, 50.70 VAT, 388.70 inclusive. All three
+  // are evidence and none of them is arithmetic — see order-line-totals.ts.
+  const out = coerceOrderExtraction(JSON.stringify({
+    line_items: [
+      {
+        description: 'Chicken Breast Fillet',
+        quantity: '1',
+        unit_price: '338.00',
+        raw_amount: '338.00',
+        raw_tax_amount: '50.70',
+        tax_rate: '15%',
+        tax_code: 'A',
+        raw_total_amount: '388.70',
+        confidence: 97,
+      },
+      // A row from the same document that prints one money column only.
+      { description: 'Delivery Note', quantity: '1', unit_price: '12.50', raw_amount: '12.50' },
+    ],
+  }));
+  assert.equal(out.line_items[0].raw_amount, '338.00');
+  assert.equal(out.line_items[0].raw_tax_amount, '50.70');
+  assert.equal(out.line_items[0].tax_rate, '15%');
+  assert.equal(out.line_items[0].tax_code, 'A');
+  assert.equal(out.line_items[0].raw_total_amount, '388.70');
+  // A row with no VAT column is NOT a row with zero VAT — the reconciliation
+  // treats the two differently, so the coercion must not flatten them together.
+  assert.equal(out.line_items[1].raw_tax_amount, '');
+  assert.equal(out.line_items[1].raw_total_amount, '');
+});
+
+test('the footer totals block survives coercion, and an absent one stays absent', () => {
+  const withFooter = coerceOrderExtraction(JSON.stringify({
+    line_items: [],
+    totals: { subtotal: '338.00', tax_total: '50.70', freight: '', discount: '', grand_total: '388.70' },
+  }));
+  assert.deepEqual(withFooter.totals, { subtotal: '338.00', tax_total: '50.70', grand_total: '388.70' });
+
+  // A document with no footer stores NO totals key — not five empty strings
+  // dressed up as one, which would make every no-footer order look like an
+  // order whose totals we failed to read.
+  assert.equal(coerceOrderExtraction(JSON.stringify({ line_items: [] })).totals, undefined);
+  assert.equal(
+    coerceOrderExtraction(JSON.stringify({ line_items: [], totals: { subtotal: '', grand_total: '' } })).totals,
+    undefined,
+  );
+});
+
+test('a string-typed confidence is read, not zeroed — the prompt asks for strings', () => {
+  // "Output all numbers as plain strings" is in the instruction above. A reader
+  // that obeyed it used to score 0 on the header and 0 on every line.
+  const out = coerceOrderExtraction(JSON.stringify({
+    customer_confidence: '96',
+    overall_confidence: '97',
+    line_items: [{ description: 'X', confidence: '88%' }],
+  }));
+  assert.equal(out.overall_confidence, 97);
+  assert.equal(out.customer_confidence, 96);
+  assert.equal(out.line_items[0].confidence, 88);
+});
+
+test('an explicit zero confidence is kept as zero, never turned into "unknown"', () => {
+  // The mirror image of the missing-key case: a model that says it is not
+  // confident is telling us something, and flattening that to null would be the
+  // same crime in the other direction.
+  const out = coerceOrderExtraction(JSON.stringify({ line_items: [], overall_confidence: 0 }));
+  assert.equal(out.overall_confidence, 0);
 });
 
 test('comma-decimal unit-price evidence survives coercion for review', () => {

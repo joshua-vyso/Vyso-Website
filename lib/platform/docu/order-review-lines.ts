@@ -38,7 +38,29 @@ export interface ReviewLine {
   raw: string;
   /** The line total as printed in the paper's own amount column, verbatim. */
   raw_amount: string;
+  /** The row's own VAT, printed rate, tax code and VAT-inclusive total, each
+   *  verbatim and each blank on the many rows that print none of them. Carried
+   *  through the editor untouched for the same reason `raw_amount` is: they are
+   *  the evidence the row's two cross-checks are asked against, and a re-save
+   *  that dropped them would silently disarm those checks on every later open. */
+  raw_tax_amount: string;
+  tax_rate: string;
+  tax_code: string;
+  raw_total_amount: string;
   quantity_source: 'printed' | 'derived' | 'unresolved' | '';
+  /**
+   * The EXTRACTION's confidence for this line, carried through review unchanged.
+   *
+   * Here because the save handler used to stamp every line `confidence: 100` on
+   * its way out, which is not a correction, it is an erasure: after one Confirm
+   * a document that had been read at 40% on six rows was indistinguishable from
+   * one read perfectly, and the record of how well the model had actually done
+   * — the only thing that makes a later "why did this go wrong?" answerable —
+   * was gone. A reviewer confirming a line does not retroactively make the
+   * model certain of it. Null on a hand-added row: nothing read it, so there is
+   * no reading to report.
+   */
+  confidence: number | null;
   /** Match + price provenance, once the order has been synced. */
   record: OrderLineRecord | null;
 }
@@ -68,7 +90,15 @@ export function buildReviewLines(
     raw_unit_price: l.raw_unit_price ?? l.unit_price ?? '',
     raw: ((l.raw_description ?? '').trim() || (l.description ?? '').trim()).trim(),
     raw_amount: l.raw_amount ?? '',
+    raw_tax_amount: l.raw_tax_amount ?? '',
+    tax_rate: l.tax_rate ?? '',
+    tax_code: l.tax_code ?? '',
+    raw_total_amount: l.raw_total_amount ?? '',
     quantity_source: l.quantity_source ?? '',
+    // Whatever the extraction said, verbatim — including a genuine 0. Null only
+    // when the stored line carries no confidence at all, which is a historical
+    // row and not a low-confidence one; see the field's own comment above.
+    confidence: typeof l.confidence === 'number' ? l.confidence : null,
     record: null,
   }));
   const paired = attachRecords(rows, extractedData?.order_lines);

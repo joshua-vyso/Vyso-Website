@@ -4,6 +4,7 @@ import { coerceOrderExtraction } from '../lib/ai/order-prompt.ts';
 import { applyRowArithmeticToLines } from '../lib/platform/docu/row-arithmetic.ts';
 import { buildReviewLines } from '../lib/platform/docu/order-review-lines.ts';
 import type { DocuExtractedData } from '../lib/platform/docu/types.ts';
+import type { ExtractedLineItem } from '../lib/platform/types.ts';
 
 // ---------------------------------------------------------------------------
 // THE AVOCADO ROW, END TO END, THROUGH THE EDITOR'S OWN CODE PATH.
@@ -109,6 +110,76 @@ test('the editor opens on the POST-arithmetic avocado row, not 4 @ 15.75', () =>
   // The regression this file exists to prevent, stated as the number a human
   // would have read off the screen.
   assert.notEqual(Number(avocado.quantity) * Number(avocado.unit_price), 63);
+});
+
+test('each row opens carrying the EXTRACTION’s own confidence, not a flat 100', () => {
+  // The save handler used to stamp every line `confidence: 100` on its way out,
+  // which is not a correction but an erasure: after one Confirm, a page whose
+  // rows came back at 85 and 88 was indistinguishable from a page read
+  // perfectly, and "was this document hard to read?" stopped being answerable
+  // the moment a human touched it — precisely when somebody starts asking.
+  // Preserving it on the way OUT starts with carrying it on the way IN.
+  const lines = buildReviewLines(throughTheReader(SONNET_RESPONSE), key);
+  assert.equal(lines.find((l) => l.raw === 'FF - APPLES TOP RED BOX')!.confidence, 88);
+  assert.equal(lines.find((l) => l.raw === 'FF - AVOCADO BOX')!.confidence, 85);
+  // Two rows read differently well must not open looking the same.
+  assert.notEqual(
+    lines.find((l) => l.raw === 'FF - APPLES TOP RED BOX')!.confidence,
+    lines.find((l) => l.raw === 'FF - AVOCADO BOX')!.confidence,
+  );
+});
+
+test('an explicit zero line confidence opens as zero; an absent one opens as null', () => {
+  // The same rule the header confidence follows (see
+  // tests/docu-extraction-confidence.test.ts): a model saying "0" is telling us
+  // something, and a historical row that carries no confidence at all is
+  // unknown — never a low-confidence read, and never a perfect one.
+  const lines = buildReviewLines(
+    {
+      fields: [],
+      line_items: [
+        { description: 'Read badly', confidence: 0 },
+        // A row from before line confidences were stored. `confidence` is
+        // required on the type and absent in the jsonb, which is exactly the
+        // shape this branch exists for — hence the cast.
+        { description: 'Read long ago' } as unknown as ExtractedLineItem,
+      ],
+    },
+    key,
+  );
+  assert.equal(lines[0].confidence, 0);
+  assert.equal(lines[1].confidence, null);
+});
+
+test('the row’s VAT evidence reaches the editor verbatim, blanks included', () => {
+  const lines = buildReviewLines(
+    {
+      fields: [],
+      line_items: [
+        {
+          description: 'Chicken Breast Fillet',
+          quantity: '1',
+          unit_price: '338.00',
+          raw_amount: '338.00',
+          raw_tax_amount: '50.70',
+          tax_rate: '15%',
+          tax_code: 'A',
+          raw_total_amount: '388.70',
+          confidence: 97,
+        },
+        { description: 'Zero rated thing', quantity: '10', unit_price: '12.50', raw_amount: '125.00', confidence: 97 },
+      ],
+    },
+    key,
+  );
+  assert.equal(lines[0].raw_tax_amount, '50.70');
+  assert.equal(lines[0].tax_rate, '15%');
+  assert.equal(lines[0].tax_code, 'A');
+  assert.equal(lines[0].raw_total_amount, '388.70');
+  // A row with no VAT column is not a row with zero VAT — the cross-check
+  // treats the two differently, so the editor must not flatten them together.
+  assert.equal(lines[1].raw_tax_amount, '');
+  assert.equal(lines[1].raw_total_amount, '');
 });
 
 test("the tolerance still resolves a row whose nett was misread by half a percent", () => {

@@ -4,6 +4,7 @@ import type { AiSummary, StatementSummary } from '@/lib/platform/docu/types';
 import { auditLines, summariseAudit, type LineAuditSummary } from '@/lib/platform/docu/line-audit';
 import {
   auditExtractionStructure,
+  coerceConfidence,
   finalizeExtractionConfidence,
   shouldRetryPdfOrientation,
   type ExtractionStructureAudit,
@@ -120,7 +121,10 @@ export interface ExtractionResult {
   fields: ExtractedField[];
   line_items: ExtractedLineItem[];
   summary: StatementSummary | null;
-  overall_confidence: number;
+  /** 0–100, or NULL when the read stated no confidence. Nullable because a
+   *  fabricated 0 is indistinguishable from a genuine one — see
+   *  `coerceConfidence` in lib/platform/docu/extraction-quality.ts. */
+  overall_confidence: number | null;
   /** Arithmetic audit of the lines — null when they add up (or there was nothing
    *  to check). Persisted into `extracted_data.line_audit` by the callers. */
   line_audit: LineAuditSummary | null;
@@ -322,8 +326,13 @@ async function extractDocumentOnce(params: DocumentInput): Promise<ExtractionRes
   const fields = Array.isArray(parsed.fields) ? parsed.fields : [];
   const lines = Array.isArray(parsed.line_items) ? parsed.line_items : [];
   const summary = coerceSummary(parsed.summary);
-  const confidence =
-    typeof parsed.overall_confidence === 'number' ? parsed.overall_confidence : 0;
+  // NULL when the model stated no confidence, NOT 0. This line used to read
+  // `typeof parsed.overall_confidence === 'number' ? … : 0` while the very
+  // instruction above tells the model to "output numbers as plain strings" —
+  // so an obedient reader, or one that simply omitted the key, produced a
+  // document stamped 0% confident with every line item at 100. See
+  // `coerceConfidence` for why the honest answer is null and what it costs.
+  const confidence = coerceConfidence(parsed.overall_confidence);
 
   // ARITHMETIC AUDIT (lib/platform/docu/line-audit.ts). A photographed, skewed
   // table tempts the model into pairing each product with the NEIGHBOURING row's
@@ -361,8 +370,13 @@ async function extractDocumentOnce(params: DocumentInput): Promise<ExtractionRes
     fields,
     line_items: audit.repaired ?? lines,
     summary,
+    // A cap LOWERS a stated confidence; it never supplies one. With nothing
+    // stated there is nothing to clamp, and writing the cap itself into the
+    // column would turn "the reader said nothing" into "the reader said 70%".
     overall_confidence:
-      audit.confidenceCap != null ? Math.min(confidence, audit.confidenceCap) : confidence,
+      confidence != null && audit.confidenceCap != null
+        ? Math.min(confidence, audit.confidenceCap)
+        : confidence,
     line_audit: summariseAudit(audit),
   };
 }

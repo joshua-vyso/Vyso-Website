@@ -121,6 +121,33 @@ export interface ExtractedLineItem {
    *  Never computed; blank when the document prints no amount column.
    *  See lib/platform/docu/order-line-totals.ts. */
   raw_amount?: string;
+  /** For uploaded customer ORDERS whose paper prints a TAX-BEARING row: that
+   *  row's own VAT figure, its printed rate, its printed tax code, and the
+   *  VAT-INCLUSIVE row total — each verbatim, each blank when the row prints no
+   *  such column.
+   *
+   *  ADDITIVE, AND BESIDE `raw_amount` RATHER THAN INSTEAD OF IT. `raw_amount`
+   *  stays exactly what it has always been, the NET/goods column, and `amount`
+   *  keeps its current meaning everywhere downstream — nothing here is ever
+   *  read by OrderFlow, ProcurePulse or SupplySync. What these close is an
+   *  AMBIGUITY, not a gap: a row printing Net 338.00, VAT 50.70 and Total
+   *  388.70 was readable three ways, and whichever figure the reader chose for
+   *  `raw_amount` decided whether the review screen went red — 1 × 338.00
+   *  against a printed 388.70 is a false alarm on a perfectly correct read, and
+   *  a false alarm is how a real one stops being read. Three named columns mean
+   *  the reader never has to choose. Never computed by us or by the model;
+   *  blank is the honest answer, and the reconciliation depends on it being one.
+   *  See lib/platform/docu/order-line-totals.ts. */
+  raw_tax_amount?: string;
+  /** The rate as PRINTED ("15%", "15,00", "Z") — text, not a multiplier. We
+   *  never apply it: a rate we computed with would make the cross-check agree
+   *  with itself. It is shown to the reviewer and nothing else. */
+  tax_rate?: string;
+  /** The row's tax/VAT code exactly as printed ("A", "S1", "ZR"), or blank. */
+  tax_code?: string;
+  /** The VAT-INCLUSIVE row total as printed. NEVER written into `amount` or
+   *  `unit_price` — both of those are net everywhere they are read. */
+  raw_total_amount?: string;
   /** Unit price exactly as printed, before locale-aware canonicalisation. */
   raw_unit_price?: string;
   /** For uploaded customer ORDERS whose paper prints TWO quantity columns: the
@@ -153,6 +180,31 @@ export interface ExtractedLineItem {
   unit_price?: string;
   amount?: string;
   confidence: number;
+}
+
+/**
+ * The FOOTER totals an order document prints on itself, verbatim.
+ *
+ * Every field is optional because every one of them is optional on the paper,
+ * and an absent field is load-bearing: `reconcileDocumentTotals` SKIPS a check
+ * it has no printed figure for rather than treating the gap as a zero. A
+ * document that prints a grand total and no freight line is not a document
+ * whose freight is R 0.00 — it is a document that told us nothing about
+ * freight, and quietly adding zero to the sum is how a reconciliation starts
+ * failing on correctly-read paper.
+ *
+ * STRINGS, not numbers, for the same reason every `raw_*` field is a string:
+ * the moment this becomes a number somebody has decided what "1 234,56" means,
+ * and that decision belongs to the one shared locale-aware parser
+ * (lib/platform/locale-number.ts) at the point of use, steered by the whole
+ * document's separator hint — never to the reader, and never twice.
+ */
+export interface OrderDocumentTotals {
+  subtotal?: string;
+  tax_total?: string;
+  freight?: string;
+  discount?: string;
+  grand_total?: string;
 }
 
 /** The shape stored in `documents.extracted_data` (jsonb). */
@@ -191,6 +243,12 @@ export interface ExtractedData {
   requested_delivery_date?: string | null;
   delivery_location?: string | null;
   order_notes?: string | null;
+  /** For uploaded customer ORDERS: the document's own printed footer totals.
+   *  Absent on every historical read and on the many orders that print no
+   *  footer at all — which is why nothing may treat its absence as zero. See
+   *  `OrderDocumentTotals` above and `reconcileDocumentTotals` in
+   *  lib/platform/docu/order-line-totals.ts. */
+  totals?: OrderDocumentTotals | null;
   extraction_model?: string | null;
   extraction_warning?: string | null;
   /** Structural evidence-loss gate; additive for historical rows. */

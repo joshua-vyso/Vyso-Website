@@ -9,7 +9,13 @@ import type { ProductOption } from '@/lib/platform/docu/product-suggest';
 import { GRID_CELL_FOCUS, gridCell, useGridNavigation } from '@/hooks/useGridNavigation';
 import type { DocumentStatus, ExtractedField, ExtractedLineItem } from '@/lib/platform/types';
 import type { DocuExtractedData } from '@/lib/platform/docu/types';
-import { parseLocaleNumber, inferDecimalSeparator } from '@/lib/platform/locale-number';
+import { auditLines, summariseAudit } from '@/lib/platform/docu/line-audit';
+import type { StatementSummary } from '@/lib/platform/docu/types';
+import {
+  parseLocaleNumber,
+  inferDecimalSeparator,
+  type DecimalSeparator,
+} from '@/lib/platform/locale-number';
 
 function ConfidenceChip({ confidence }: { confidence: number }) {
   const low = confidence < FIELD_REVIEW_THRESHOLD;
@@ -30,6 +36,36 @@ const COLS = 'grid grid-cols-[1fr_64px_48px_70px_56px_76px_88px_24px] gap-2 item
  *  dedicated Supplier field above, so it's folded in and hidden from the grid. */
 const isSupplierLabel = (label: string): boolean =>
   /supplier|vendor/i.test(label) || label.trim().toLowerCase() === 'from';
+
+/**
+ * The document's own total, read off the fields the REVIEWER is now looking at.
+ *
+ * SAME RULE AS `documentTotal` IN lib/ai/anthropic.ts, deliberately: this feeds
+ * the same `auditLines` call, and an audit run on save that disagreed with the
+ * audit run at extraction about which field is "the total" would flip a
+ * document's verdict on every Save with nothing edited. That function is
+ * private to a `server-only` module and cannot be imported into a client
+ * component; if its rule changes, change this with it.
+ *
+ * A "VAT Total" / "Pallet Total" / "Balance" line is not the document's total,
+ * and returning null (no total) is a valid, common answer — `auditLines` then
+ * simply skips the sum cross-check rather than measuring against a wrong number.
+ */
+function reviewDocumentTotal(
+  fields: ExtractedField[],
+  summary: StatementSummary | null | undefined,
+  hint: DecimalSeparator | null,
+): number | null {
+  const opts = hint ? { decimalSeparator: hint } : undefined;
+  for (const f of fields) {
+    const label = (f.label ?? '').toLowerCase();
+    const isTotal = label.includes('total') || label.includes('amount due');
+    if (!isTotal || /vat|tax|pallet|balance/.test(label)) continue;
+    const n = parseLocaleNumber(f.value, opts);
+    if (n != null && n !== 0) return n;
+  }
+  return summary?.total_purchases ?? null;
+}
 
 export function ExtractionEditor({
   id,
@@ -125,6 +161,34 @@ export function ExtractionEditor({
     setBusy(true);
     const supabase = createClient();
     if (supabase) {
+      const nextFields = draft.filter((f) => !isSupplierLabel(f.label));
+      // RE-RUN THE ARITHMETIC AUDIT OVER THE CORRECTED LINES.
+      //
+      // `line_audit` was written once, at extraction, and never again — so the
+      // red "Line totals do not add up" notice and the amber row in the review
+      // queue both SURVIVED the correction that fixed them. A reviewer who
+      // retyped the one wrong amount, saved, and watched the same accusation
+      // come back has been told the product cannot see their work; the next
+      // thing they stop trusting is the warning itself, which is the only
+      // thing here worth protecting.
+      //
+      // The SAME call the extraction makes (lib/ai/anthropic.ts), with the same
+      // inputs, so a re-audit can only ever agree with a fresh read of the same
+      // data: one separator hint inferred from the header fields AND the lines
+      // together, and the document's own total by the same field rule. Nothing
+      // is repaired here — `auditLines` may hand back realigned lines when a
+      // whole column slid, and we deliberately keep the reviewer's OWN rows and
+      // store only the verdict. A save is not the place to move somebody's
+      // columns underneath them.
+      const auditHint = inferDecimalSeparator([
+        ...nextFields.map((f) => f.value),
+        ...lines.flatMap((l) => [l.quantity, l.unit_price, l.amount]),
+      ]);
+      const audit = auditLines({
+        lines,
+        total: reviewDocumentTotal(nextFields, extractedData?.summary, auditHint),
+        hint: auditHint,
+      });
       await supabase
         .from('documents')
         // Merge so the parsed statement summary + custom type survive a review.
@@ -135,9 +199,13 @@ export function ExtractionEditor({
             // The dedicated supplier below is the single source of truth — strip any
             // legacy supplier-labeled field so it can't resurrect a cleared/corrected
             // value via inferSupplierFromDoc's fields[] fallback.
-            fields: draft.filter((f) => !isSupplierLabel(f.label)),
+            fields: nextFields,
             line_items: lines,
             supplier: supplier.trim() || null,
+            // Written on EVERY save, null included: a clean audit must clear
+            // the stored one, and merging `...extractedData` would otherwise
+            // carry the stale note straight back in.
+            line_audit: summariseAudit(audit),
           },
         })
         .eq('id', id);

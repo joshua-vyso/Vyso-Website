@@ -11,8 +11,11 @@
  * path be smoke-tested from a plain node script before any of it was wired in.
  * `.ts`-suffixed relative import for the same reason.
  */
-import type { ExtractedLineItem } from '../platform/types.ts';
-import type { ExtractionStructureAudit } from '../platform/docu/extraction-quality.ts';
+import type { ExtractedLineItem, OrderDocumentTotals } from '../platform/types.ts';
+import {
+  coerceConfidence,
+  type ExtractionStructureAudit,
+} from '../platform/docu/extraction-quality.ts';
 import type { PdfOrientationNormalization } from '../platform/docu/pdf-orientation.ts';
 
 /** What one order read returns, whoever read it. */
@@ -28,7 +31,21 @@ export interface OrderExtractionResult {
   delivery_location?: string | null;
   order_notes?: string | null;
   line_items: ExtractedLineItem[];
-  overall_confidence: number;
+  /** The document's own printed footer totals, when it printed any. Additive:
+   *  absent on every historical read and on the many orders with no footer. */
+  totals?: OrderDocumentTotals;
+  /**
+   * 0–100, or NULL when the model did not state one.
+   *
+   * Nullable because the alternative was a lie: this used to be coerced with
+   * `typeof v === 'number' ? v : 0`, so an omitted key — or a key returned as
+   * the STRING this very prompt asks for ("Output all numbers as plain
+   * strings") — landed in `documents.confidence` as a flat 0.0 and told the
+   * owner their perfectly-read order had been read with no confidence at all.
+   * See `coerceConfidence`. `documents.confidence` is nullable, and
+   * `ConfidenceText` has always drawn null as "—".
+   */
+  overall_confidence: number | null;
   /** Additive review evidence; absent on historical extractions. */
   structure_audit?: ExtractionStructureAudit;
   /** Set only when this reader itself recovered a low-quality PDF rotation. */
@@ -130,8 +147,9 @@ Respond with ONLY a JSON object (no prose, no markdown code fences) of exactly t
   "delivery_location": string | null,
   "order_notes": string | null,
   "line_items": [
-    { "raw_description": string, "description": string, "quantity": string, "unit": string, "bulk_quantity": string, "bulk_unit": string, "unit_quantity": string, "raw_unit_price": string, "unit_price": string, "raw_amount": string, "confidence": number }
+    { "raw_description": string, "description": string, "quantity": string, "unit": string, "bulk_quantity": string, "bulk_unit": string, "unit_quantity": string, "raw_unit_price": string, "unit_price": string, "raw_amount": string, "raw_tax_amount": string, "tax_rate": string, "tax_code": string, "raw_total_amount": string, "confidence": number }
   ],
+  "totals": { "subtotal": string, "tax_total": string, "freight": string, "discount": string, "grand_total": string },
   "overall_confidence": number
 }
 TRANSCRIBE, DO NOT INTERPRET. Every character you copy off this document is evidence. Transcribe descriptions and numbers EXACTLY as printed — same letters, same digits, same spacing, same case, same abbreviations. Do NOT normalise, spell-correct, expand, translate or guess a character, and never replace a word on the page with a word you expected to see there: "GRAPES BLACK" is not "Graphis Black", "MUSHROOM GABLE" is not "Mushroom Garlic", "BRINJALS" is not "Cabbage", and a product you do not recognise is a product you transcribe letter by letter. If a character or digit is genuinely unclear, do NOT pick the likelier one — use the amount column cross-check described below to settle it, and if that cannot settle it either, lower that line's confidence and leave what you can actually see.
@@ -154,7 +172,9 @@ Rules:
     - unit = the counting unit as a short lowercase plural noun read from the text: "boxes","punnets","bags","kg","crates","trays","bunches","packets","pockets","each". "" if none is stated.
     - raw_unit_price = the price PER UNIT exactly as printed in the row's own unit-cost/rate column, including its decimal separator, else "" (many orders carry no prices at all).
     - unit_price = the same printed price. Vyso canonicalises it deterministically after extraction; do not canonicalise or compute it yourself.
-    - raw_amount = the LINE TOTAL as printed in the row's own amount/nett/value column ("569.90"), copied digit for digit, else "" when the document has no such column. This is NOT the unit price and NOT the document total, and you must NEVER compute it — if the row shows no amount, return "".
+    - raw_amount = the row's NET / GOODS-VALUE column as printed ("Nett Value", "Nett", "Net", "Value", "Amount Excl", or simply "Amount" on a row that prints one money column and no VAT beside it) — "569.90", copied digit for digit, else "" when the row shows no such column. This is NOT the unit price and NOT the document total, and you must NEVER compute it.
+    - raw_tax_amount, tax_rate, tax_code, raw_total_amount = the SAME ROW's own VAT figure, its printed rate, its printed tax code, and its VAT-INCLUSIVE row total — each copied character for character ("50.70", "15%", "A", "388.70"), else "" for any the row does not print. A ROW THAT PRINTS NET, VAT AND TOTAL IS PRINTING THREE DIFFERENT NUMBERS AND EACH ONE HAS ITS OWN FIELD: on "1 | 338.00 | 50.70 | 388.70", 338.00 is raw_amount, 50.70 is raw_tax_amount, 388.70 is raw_total_amount, and none of the three appears anywhere else. Do not put the inclusive total in raw_amount and do not put the net in raw_total_amount — the two are checked against each other, and swapping them turns a correctly read row into a red one.
+    - WHERE THE ROW PRINTS ONLY ONE MONEY COLUMN beside the price, that figure goes in raw_amount and raw_tax_amount, tax_rate, tax_code and raw_total_amount all stay "". Do not rule that a lone amount "must be" net or "must be" inclusive, and NEVER split it into a net and a VAT of your own making: a zero-rated row and a row whose VAT the page simply does not itemise look identical on paper, and a fifteen percent you invented is fifteen percent of a wrong number on somebody's invoice.
     - confidence = 0-100 for that line.
 - TWO QUANTITY COLUMNS ARE TWO DIFFERENT NUMBERS AND YOU MUST NOT COLLAPSE THEM. A printed purchase order often carries a BULK quantity with its own pack unit AND a UNIT quantity with its own unit — for example "4 | Box | 48 | Each | 15.75 | 756.00", which is four boxes containing forty-eight avocados at fifteen seventy-five each. Where the row prints both:
     - bulk_quantity = the outer/pack figure exactly as printed ("4"); bulk_unit = its unit ("Box").
@@ -162,7 +182,8 @@ Rules:
     - unit_price = the UNIT COST column exactly as printed ("15.75"). ON THESE DOCUMENTS THE UNIT COST IS THE PRICE OF ONE UNIT QUANTITY, NOT THE PRICE OF A BULK PACK — four boxes at a unit cost of 15.75 is a nett of 756.00, never 63.00.
   Copy all of them and do NOT multiply anything out, do NOT decide which one "the real quantity" is, and do NOT drop a column because it looks redundant. If the document prints only ONE quantity column, leave bulk_quantity, bulk_unit and unit_quantity as "".
 - USE THE AMOUNT COLUMN TO CHECK YOUR OWN DIGITS, never to invent them. When a row prints both a cost and an amount, some pairing of the row's own numbers should reproduce that amount. If none does, you have misread a digit somewhere in the row: LOOK AT THE ROW AGAIN and transcribe every figure afresh. Report what the paper actually shows even when they still disagree — a disagreement we can see is a question for a human, and a row silently "corrected" into agreement is a wrong invoice nobody catches.
-- Parse messy, conversational text: "hi can I get 5 strawberries and 2 boxes blueberries pls 🙏" -> two line items. Ignore greetings, small talk, delivery addresses, dates and totals.
+- "totals" = the document's OWN FOOTER TOTALS, copied digit for digit out of the block at the bottom of the page: "subtotal" = the goods/nett total, "tax_total" = the VAT/tax line, "freight" = delivery/carriage/handling, "discount" = any deduction, "grand_total" = the final amount payable. Return "" for every one the page does not print, and return "" for all five when the page prints no footer at all. NEVER add the lines up yourself, never derive one of these from the others, and never carry a figure across from a different document. A total we can see is a check on the rows above it; a total we computed can only ever agree with itself, which makes it worse than no total at all.
+- Parse messy, conversational text: "hi can I get 5 strawberries and 2 boxes blueberries pls 🙏" -> two line items. Ignore greetings, small talk, delivery addresses and dates; the printed footer totals go in "totals" and nowhere else.
 - NEVER COMPUTE OR INFER A VALUE. If a quantity, unit or price is missing, blank, smudged or unreadable, return "" for that field and lower that line's confidence. Do not derive it from a line total, from the document total, from a neighbouring row, or from what would make the arithmetic work. A blank we can ask about is worth more than a number that is merely consistent.
 - Output all numbers as plain strings (no currency symbols); all confidence values 0-100.`;
 
@@ -204,12 +225,39 @@ export function buildOrderPrompt(params: {
   return `${ORDER_EXTRACT_INSTRUCTION}${catalogueClause(params.products)}${noteClause(params.note)}\n\nFilename: ${params.filename}`;
 }
 
-const clampPct = (v: unknown): number => {
-  const n = typeof v === 'number' ? v : 0;
-  return Math.max(0, Math.min(100, Math.round(Number.isFinite(n) ? n : 0)));
-};
+/**
+ * A 0–100 confidence for a field that CANNOT be null.
+ *
+ * `ExtractedLineItem.confidence` and `customer_confidence` are numbers on rows
+ * that have shipped for months, and widening them would change what an existing
+ * field means rather than add a new one. So they keep the old floor of 0 — but
+ * they get the rest of `coerceConfidence` for free, which is the half that was
+ * actually broken here: a line that came back as the string "92", exactly as
+ * this prompt asks for, used to score 0.
+ */
+const pct = (v: unknown): number => coerceConfidence(v) ?? 0;
 
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+
+/**
+ * The footer totals block, verbatim.
+ *
+ * ABSENT RATHER THAN EMPTY when the reader returned nothing usable: a document
+ * that prints no footer must store no `totals` key at all, not five empty
+ * strings dressed up as one. `reconcileDocumentTotals` and the review editor
+ * both branch on presence, and a row of "" would make every no-footer order
+ * look like an order whose totals we failed to read.
+ */
+function coerceTotals(raw: unknown): OrderDocumentTotals | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  const out: OrderDocumentTotals = {};
+  for (const key of ['subtotal', 'tax_total', 'freight', 'discount', 'grand_total'] as const) {
+    const v = str(r[key]);
+    if (v) out[key] = v;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
 
 /**
  * Read a model's reply into the result shape. Never throws.
@@ -255,20 +303,38 @@ export function coerceOrderExtraction(raw: string): Omit<OrderExtractionResult, 
         // the row, and both the arithmetic resolver and the review editor's
         // cross-check are worthless without it. Never derived here.
         raw_amount: str(r.raw_amount),
-        confidence: clampPct(r.confidence),
+        // The VAT the row printed beside its net, and the inclusive total it
+        // printed beside both — evidence, exactly like `raw_amount` above, and
+        // for the same reason. They are what lets the review editor ask a
+        // tax-bearing row the RIGHT question ("does net + VAT reach the printed
+        // total?") instead of comparing quantity × price against a figure that
+        // was never meant to be their product. Never derived here: a blank stays
+        // blank, because a row with no VAT column is not a row with zero VAT and
+        // `grossMismatch` treats the two differently.
+        raw_tax_amount: str(r.raw_tax_amount),
+        tax_rate: str(r.tax_rate),
+        tax_code: str(r.tax_code),
+        raw_total_amount: str(r.raw_total_amount),
+        confidence: pct(r.confidence),
       } satisfies ExtractedLineItem;
     })
     .filter((l) => l.description);
 
+  const totals = coerceTotals(parsed.totals);
+
   return {
     customer_name: str(parsed.customer_name) || null,
-    customer_confidence: clampPct(parsed.customer_confidence),
+    customer_confidence: pct(parsed.customer_confidence),
     purchase_order_number: str(parsed.purchase_order_number) || null,
     order_date: str(parsed.order_date) || null,
     requested_delivery_date: str(parsed.requested_delivery_date) || null,
     delivery_location: str(parsed.delivery_location) || null,
     order_notes: str(parsed.order_notes) || null,
     line_items,
-    overall_confidence: clampPct(parsed.overall_confidence),
+    ...(totals ? { totals } : {}),
+    // NULL, NOT ZERO, when the model said nothing. See `coerceConfidence` — a
+    // fabricated 0 here is what put two correctly-read orders in front of their
+    // owner labelled "0% confident".
+    overall_confidence: coerceConfidence(parsed.overall_confidence),
   };
 }

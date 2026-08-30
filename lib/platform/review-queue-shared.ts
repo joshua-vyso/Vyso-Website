@@ -225,10 +225,18 @@ export function reviewDocumentDetail(row: ReviewDocumentRow): string {
   // both what happened and what is left to do; the confidence clause still
   // follows, because an outgoing document is read no more reliably than any other.
   const direction = outgoingDirection(row);
+  // A MISSING confidence gets its own sentence rather than silence. Since
+  // `coerceConfidence` (lib/platform/docu/extraction-quality.ts) stopped
+  // turning an omitted or string-typed answer into a flat 0, null is a state
+  // this column really holds — and a row that says nothing about confidence
+  // reads exactly like a row that scored 95. No number is invented in the
+  // wording, because inventing one is the whole thing the null avoids.
   const low =
-    typeof row.confidence === 'number' && row.confidence < DOC_LOW_CONFIDENCE_THRESHOLD
-      ? ` Read at ${Math.round(row.confidence)}% confidence, so it is worth a look.`
-      : '';
+    typeof row.confidence === 'number'
+      ? row.confidence < DOC_LOW_CONFIDENCE_THRESHOLD
+        ? ` Read at ${Math.round(row.confidence)}% confidence, so it is worth a look.`
+        : ''
+      : ' Confidence was not recorded for this read, so it is worth a look.';
   if (direction) return `${direction.note}. Waiting for your approval.${low}`;
   return `Extracted, waiting for your approval.${low}`;
 }

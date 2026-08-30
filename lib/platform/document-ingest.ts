@@ -938,6 +938,12 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
       requested_delivery_date: order.requested_delivery_date ?? null,
       delivery_location: order.delivery_location ?? null,
       order_notes: order.order_notes ?? null,
+      // The document's own printed footer totals, verbatim — see the same write
+      // in app/api/ai/extract. Null when the paper printed no footer, which is
+      // most orders and is precisely why the absence must never be read as
+      // zero: lib/platform/docu/order-line-totals.ts's reconcileDocumentTotals
+      // SKIPS a check it has no printed figure for rather than inventing one.
+      totals: order.totals ?? null,
       customer_id: customerMatch?.customerId ?? null,
       customer_match_confidence: customerMatch?.confidence ?? 0,
       customer_match_method: customerMatch?.method ?? 'unresolved',

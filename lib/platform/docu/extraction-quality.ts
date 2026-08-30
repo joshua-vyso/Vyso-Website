@@ -138,6 +138,53 @@ export function shouldRetryPdfOrientation(input: StructuralExtraction): boolean 
 }
 
 /**
+ * Read a model's stated confidence into a 0–100 number, or NULL when it did not
+ * state one.
+ *
+ * WHY THIS EXISTS. Both lanes used to do `typeof v === 'number' ? v : 0`, and
+ * both lanes ALSO instruct the model to "output all numbers as plain strings".
+ * A reader that obeyed its own prompt therefore scored zero, and so did a
+ * reader that simply omitted the key — two Montecasino orders sit in the
+ * database at a stored `confidence` of 0.0 with every line item at 100, which
+ * is not a document anybody read badly, it is a document nobody read the header
+ * of. Nothing downstream could tell that fabricated 0 from a genuine one, and
+ * "0% confident" is the single most alarming thing this product can say about a
+ * document that was in fact read perfectly.
+ *
+ * SO: MISSING IS NULL, NOT ZERO. `documents.confidence` has always been
+ * nullable and `ConfidenceText` has always rendered null as "—"; the honest
+ * answer was representable the whole time and we were writing a number instead.
+ * An EXPLICIT 0 still comes through as 0 — a model that says it is not
+ * confident is telling us something, and flattening that to "unknown" would be
+ * the same crime in the other direction.
+ *
+ * The rest is arithmetic on what a model plausibly returns:
+ *   - a string is trimmed, a trailing "%" dropped, then read as a number
+ *     ("97" → 97, "88%" → 88); anything non-numeric is null, never 0.
+ *   - a value strictly between 0 and 1 is read as a 0–1-scale probability and
+ *     scaled (0.92 → 92). The boundaries are excluded on purpose: 0 and 1 are
+ *     both perfectly ordinary percentage answers and neither is worth
+ *     reinterpreting.
+ *   - the result is clamped to 0–100 and rounded, so 900 → 100 and -40 → 0.
+ */
+export function coerceConfidence(v: unknown): number | null {
+  let n: number;
+  if (typeof v === 'number') {
+    n = v;
+  } else if (typeof v === 'string') {
+    const s = v.trim().replace(/%$/, '').trim();
+    if (!s) return null;
+    n = Number(s);
+  } else {
+    return null;
+  }
+  if (!Number.isFinite(n)) return null;
+  // 0–1 scale, exclusive of both ends — see the docblock.
+  if (n > 0 && n < 1) n = n * 100;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+/**
  * The one place both extraction wrappers (`lib/ai/anthropic.ts` extractDocument,
  * `lib/ai/order-reader.ts` extractOrderDocument) cap `overall_confidence` after
  * a read. Extracted so the cap rules sit under direct unit test, with no model
@@ -154,11 +201,21 @@ export function shouldRetryPdfOrientation(input: StructuralExtraction): boolean 
  * catch. Both caps sit under DOC_LOW_CONFIDENCE_THRESHOLD (80,
  * lib/platform/tokens.ts), so either one alone is enough to route the document
  * into human review rather than any auto-approval path.
+ *
+ * NULL PASSES STRAIGHT THROUGH, UNCAPPED AND UNFABRICATED. A cap is a CEILING
+ * on a number the model gave us; with no number there is nothing to lower, and
+ * writing 65 or 75 in place of "we don't know" would invent precisely the kind
+ * of confident-looking figure `coerceConfidence` above exists to stop
+ * inventing. The document still lands in review — a null confidence raises the
+ * `low_confidence` flag on its own (lib/platform/docu/flags.ts) and
+ * `decideClassificationRouting` reads it as worst-case — so nothing is let
+ * through by the pass-through; only a fake number is avoided.
  */
 export function finalizeExtractionConfidence(
-  confidence: number,
+  confidence: number | null,
   opts: { adoptedRotation: boolean; auditStatus: 'ok' | 'needs_review' },
-): number {
+): number | null {
+  if (confidence == null) return null;
   let result = confidence;
   if (opts.auditStatus === 'needs_review') result = Math.min(result, 65);
   if (opts.adoptedRotation) result = Math.min(result, 75);

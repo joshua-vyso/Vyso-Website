@@ -41,7 +41,10 @@ import {
   grossMismatch,
   lineGross,
   lineSeparatorHint,
+  lineTax,
+  lineTotal,
   orderSubtotal,
+  reconcileDocumentTotals,
   toPrintableLines,
 } from '@/lib/platform/docu/order-line-totals';
 import { PrintSheetOverlay } from './PrintSheetOverlay';
@@ -75,11 +78,23 @@ interface Line {
   /** The LINE TOTAL as printed in the paper's own amount column, read verbatim
    *  and never edited here. It is the independent witness the Amount column is
    *  checked against — see `grossMismatch`. Empty on the many orders that print
-   *  no amounts at all. */
+   *  no amounts at all. NET, on a document that separates net from VAT. */
   raw_amount: string;
+  /** The row's own VAT, printed rate, tax code and VAT-INCLUSIVE total, each
+   *  verbatim off the paper and never edited here. They are what let a
+   *  correctly-read VAT row (net 338.00 + VAT 50.70 = total 388.70) stay silent
+   *  instead of going red against its own inclusive total. Empty on every row
+   *  that prints a single money column. */
+  raw_tax_amount: string;
+  tax_rate: string;
+  tax_code: string;
+  raw_total_amount: string;
   /** How the parser obtained quantity. Derived values are called out beside the
    *  row so a reviewer never mistakes arithmetic for printed evidence. */
   quantity_source: 'printed' | 'derived' | 'unresolved' | '';
+  /** The EXTRACTION's confidence for this line, carried through review
+   *  UNCHANGED — see the same field on `ReviewLine`. Null on a hand-added row. */
+  confidence: number | null;
   /** This line's match + price provenance, when the order has been synced once.
    *  Null on a document synced before provenance existed, or a hand-added line. */
   record: OrderLineRecord | null;
@@ -272,6 +287,17 @@ export function OrderReviewEditor({
   // above. This is the check that would have caught "Apple Top Red @ 560.90"
   // against a printed 569.90 the moment the page rendered.
   const mismatched = countGrossMismatches(lines, lineHint);
+
+  // The document's own FOOTER, checked against the rows above it — null on the
+  // many orders that print no footer at all, which is why the panel below is
+  // drawn conditionally rather than left empty. A footer is a second, whole-page
+  // witness: the per-row check catches one transposed digit, and this catches a
+  // row we never read at all, which no amount of per-row arithmetic can. Read
+  // through the SAME `lineHint` as every other figure on this screen.
+  const footer = useMemo(
+    () => reconcileDocumentTotals(lines, extractedData?.totals, lineHint),
+    [lines, extractedData, lineHint],
+  );
 
   // The sheet the Print button previews: built from the CURRENT rows, not from
   // what is saved. A reviewer who has just corrected 560.90 to 569.90 and not
@@ -632,7 +658,15 @@ export function OrderReviewEditor({
         raw_unit_price: '',
         raw: '',
         raw_amount: '',
+        raw_tax_amount: '',
+        tax_rate: '',
+        tax_code: '',
+        raw_total_amount: '',
         quantity_source: 'unresolved',
+        // NULL, not 100. Nothing read this row, so there is no reading to
+        // report — and claiming a perfect one would make a typed line look
+        // like the best-read line on the document.
+        confidence: null,
         record: null,
       },
     ]);
@@ -694,6 +728,15 @@ export function OrderReviewEditor({
           // and a re-save that dropped it would silently disarm the cross-check
           // on every subsequent open of this document.
           raw_amount: l.raw_amount.trim(),
+          // The row's VAT evidence survives the round-trip for exactly the
+          // reason `raw_amount` does: drop it and the next open of this
+          // document compares quantity × unit price against a net it can no
+          // longer tell apart from an inclusive total, and a correctly read
+          // VAT row goes red again.
+          raw_tax_amount: l.raw_tax_amount.trim(),
+          tax_rate: l.tax_rate.trim(),
+          tax_code: l.tax_code.trim(),
+          raw_total_amount: l.raw_total_amount.trim(),
           quantity_source: l.quantity_source || undefined,
           // The gross the reviewer actually saw and signed off. The order sync
           // re-derives it from qty × unit_price anyway (of_order_items carries
@@ -701,7 +744,24 @@ export function OrderReviewEditor({
           // them), so this is the document's record rather than an input to the
           // invoice — which is why it can never drift from what was on screen.
           amount: lineGross(l, lineHint).toFixed(2),
-          confidence: 100,
+          // THE EXTRACTION'S OWN CONFIDENCE, NOT 100.
+          //
+          // This used to stamp every line 100 on the way out, and that is not a
+          // correction — it is the deletion of the only record of how well the
+          // model read this document. After one Confirm, a page whose six worst
+          // rows came back at 40% was indistinguishable from a page read
+          // perfectly, so "was this document hard to read?" stopped being
+          // answerable the moment a human touched it, which is precisely when
+          // somebody starts asking. A reviewer approving a row does not make
+          // the model retroactively certain of it; the reviewer's judgement is
+          // recorded by `status: 'reviewed'` on the document, which is the
+          // right place for it.
+          //
+          // 100 for a HAND-ADDED row only (confidence null — nothing read it):
+          // a human typing a product IS the record for that line, and it must
+          // not read as a low-confidence guess. Same rule, same number, as
+          // ExtractionEditor's "+ Add line".
+          confidence: l.confidence ?? 100,
         }));
       await supabase
         .from('documents')
@@ -1033,6 +1093,12 @@ export function OrderReviewEditor({
               const r = l.record;
               const gross = lineGross(l, lineHint);
               const off = grossMismatch(l, lineHint);
+              // The row's own VAT and inclusive total, parsed ONCE through the
+              // document's shared separator hint — never re-read per usage, and
+              // never off `off`, which is null on every correctly-read row and
+              // is exactly the row that most needs its three columns shown.
+              const rowTax = lineTax(l, lineHint);
+              const rowTotal = lineTotal(l, lineHint);
               // Show the paper's words whenever the billed name is not simply
               // them. A line we matched correctly still gets the "→" so the
               // reviewer can check the rewrite rather than trust it.
@@ -1143,6 +1209,31 @@ export function OrderReviewEditor({
                       Paper unit price: <span className="of-num font-medium">{l.raw_unit_price}</span>
                     </p>
                   ) : null}
+                  {/* The row's own three money columns, when it printed three.
+                      Shown so a reviewer checking against the paper is looking
+                      at the same shape the paper has — the Amount column above
+                      is net, always, and on a VAT document that number alone
+                      does not match anything printed on the row. Drawn only
+                      when a VAT was actually READ and is non-zero: a zero-rated
+                      row's "· VAT R 0.00 · Total R125.00" is three figures
+                      saying what one already said, and this screen's job is to
+                      spend the reviewer's attention only where there is
+                      something to see. The rate is printed as transcribed and
+                      never applied to anything. */}
+                  {rowTax != null && rowTax !== 0 ? (
+                    <p className="mt-1 px-1 text-[11.5px] leading-[1.5] text-[#6B6F68]">
+                      Amount <span className="of-num font-medium">{zar2(gross)}</span>
+                      <span className="mx-1">·</span>
+                      VAT <span className="of-num font-medium">{zar2(rowTax)}</span>
+                      {l.tax_rate ? <span className="ml-1 text-[#A0A49C]">({l.tax_rate})</span> : null}
+                      {rowTotal != null ? (
+                        <>
+                          <span className="mx-1">·</span>
+                          Total <span className="of-num font-medium">{zar2(rowTotal)}</span>
+                        </>
+                      ) : null}
+                    </p>
+                  ) : null}
                   {/* The cross-check, on the row it belongs to. Both figures,
                       no correction: we cannot know whether the quantity, the
                       price or the amount is the misread one, and picking for
@@ -1151,10 +1242,26 @@ export function OrderReviewEditor({
                       is what should appear here. */}
                   {off ? (
                     <p className="mt-1 px-1 text-[11.5px] leading-[1.5] text-[#A32D2D]">
-                      Doesn’t add up — paper shows{' '}
-                      <span className="of-num font-medium">{zar2(off.paper)}</span> for this line, this row comes to{' '}
-                      <span className="of-num font-medium">{zar2(off.gross)}</span>. Check the qty, the price or the
-                      amount against the document.
+                      {off.reason === 'vat_total' ? (
+                        <>
+                          {/* `gross` on a vat_total failure IS net + VAT, so the
+                              net is gross − VAT. Derived from the mismatch's own
+                              two figures rather than re-parsed off the row, so
+                              the sentence can never quote a third number. */}
+                          Doesn’t add up — net <span className="of-num font-medium">{zar2(off.gross - (off.tax ?? 0))}</span>{' '}
+                          plus VAT <span className="of-num font-medium">{zar2(off.tax ?? 0)}</span> comes to{' '}
+                          <span className="of-num font-medium">{zar2(off.gross)}</span>, but the paper’s total for this
+                          line is <span className="of-num font-medium">{zar2(off.paper)}</span>. Check the VAT or the
+                          total against the document.
+                        </>
+                      ) : (
+                        <>
+                          Doesn’t add up — qty × price comes to{' '}
+                          <span className="of-num font-medium">{zar2(off.gross)}</span>, the paper shows{' '}
+                          <span className="of-num font-medium">{zar2(off.paper)}</span> for this line. Check the qty, the
+                          price or the amount against the document.
+                        </>
+                      )}
                     </p>
                   ) : null}
                   {r || bubble.kind !== 'none' ? (
@@ -1304,6 +1411,45 @@ export function OrderReviewEditor({
           <span className="text-[#8A8E86]">Subtotal (excl. VAT) · blank prices fill from the price list</span>
           <span className="of-num text-[16px] font-semibold text-[#171A17]">{zar2(subtotal)}</span>
         </div>
+
+        {/* WHAT THE PAPER'S OWN FOOTER SAYS, beside what its rows come to.
+            Only drawn when the document printed a footer we could read — most
+            orders print none, and an always-present panel reading "—" would be
+            four lines of furniture on every one of them.
+            BOTH FIGURES, NO CORRECTION, exactly as the per-row check does it:
+            we cannot know whether a row was misread or the footer was, and
+            picking for the reviewer is how a wrong number becomes a confident
+            one. A footer that disagrees is the only signal on this screen
+            capable of catching a row that was never read at all. */}
+        {footer ? (
+          <div className="mt-3 border-t border-[#EEF1F5] pt-3">
+            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.06em] text-[#A0A49C]">
+              Printed on the document
+            </p>
+            {footer.checks.map((c) => (
+              <div key={c.label} className="flex items-center justify-between py-0.5 text-[12.5px]">
+                <span className={c.ok ? 'text-[#6B6F68]' : 'font-medium text-[#A32D2D]'}>{c.label}</span>
+                <span className="flex items-baseline gap-2">
+                  <span className="of-num text-[#8A8E86]">{zar2(c.expected)}</span>
+                  <span className="text-[#D3D6D0]">vs</span>
+                  <span className={`of-num font-semibold ${c.ok ? 'text-[#171A17]' : 'text-[#A32D2D]'}`}>
+                    {zar2(c.actual)}
+                  </span>
+                </span>
+              </div>
+            ))}
+            {footer.checks.some((c) => !c.ok) ? (
+              <p className="mt-1 text-[11.5px] leading-[1.5] text-[#A32D2D]">
+                {footer.checks
+                  .filter((c) => !c.ok)
+                  .map((c) => c.label.toLowerCase())
+                  .join(' and ')}{' '}
+                {footer.checks.filter((c) => !c.ok).length === 1 ? 'does' : 'do'} not match the document’s own figure —
+                a row may have been misread, or missed entirely. Check the items against the paper.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="flex items-center justify-end gap-3 rounded-b-2xl border-t border-[#EEF1F5] bg-white px-6 py-4">
