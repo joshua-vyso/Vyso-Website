@@ -8,7 +8,31 @@ import type {
   MicrosoftGraphAttachmentMetadata,
   MicrosoftGraphMessageContent,
 } from './microsoft-graph-core.ts';
+import { normalizeEmailHtml } from './docu/email-html-normalizer.ts';
 import type { DocumentSourceType } from './types.ts';
+
+/**
+ * An HTML file attachment big enough to hold a real purchase order and small
+ * enough to parse on a worker. The Four Seasons PO — twelve tables, a full line
+ * grid — is 26KB; this is forty times that, and matches the body ceiling.
+ */
+export const MAX_HTML_ATTACHMENT_BYTES = 1_000_000;
+
+/**
+ * The text every classification regex is run against.
+ *
+ * An HTML body is normalised FIRST. The regexes have always operated on plain
+ * text and they still do — what changed is that the text is now derived here,
+ * from the original markup, instead of by Exchange before Vyso saw it. Table
+ * cells are deliberately included: on a Belair-shaped order form every quantity
+ * lives inside the table, and stripping them would make an order stop looking
+ * like an order.
+ */
+export function classificationBodyText(message: Pick<MicrosoftGraphMessageContent, 'body'>): string {
+  const content = message.body?.content ?? '';
+  if ((message.body?.contentType ?? 'text').toLowerCase() !== 'html') return content;
+  return normalizeEmailHtml(content).text;
+}
 
 /** The first email-level taxonomy. Document parsing remains in the shared Doc-U pipeline. */
 export type MicrosoftEmailClassification =
@@ -83,6 +107,19 @@ export interface MicrosoftGraphIngestDependencies {
       subject: string | null;
       messageText: string | null;
     };
+  }) => Promise<MicrosoftGraphDocumentSinkResult>;
+  /**
+   * Parse a `text/html` attachment as an order document — locally, with no
+   * remote asset ever loaded out of it. Supplied by the server adapter, which
+   * owns the normalizer + order-reader call (see
+   * `ingestMicrosoftHtmlAttachmentOrder`).
+   */
+  ingestHtmlAttachmentOrder: (input: {
+    bytes: Uint8Array;
+    filename: string;
+    sourceContentType: string;
+    sourceAttachmentId: string;
+    message: MicrosoftGraphMessageContent;
   }) => Promise<MicrosoftGraphDocumentSinkResult>;
   ingestBodyOrder: (input: {
     message: MicrosoftGraphMessageContent;
@@ -427,8 +464,23 @@ function genericContentType(value: string | null | undefined): boolean {
 }
 
 function businessDocumentLike(extension: string | null, contentType: string): boolean {
-  if (extension && new Set(['pdf', 'xls', 'xlsx', 'csv', 'doc', 'docx', 'txt', 'rtf', 'eml']).has(extension)) return true;
-  return /(?:pdf|spreadsheet|excel|csv|word|rtf|message\/rfc822)/i.test(contentType);
+  if (extension && new Set(['pdf', 'xls', 'xlsx', 'csv', 'doc', 'docx', 'txt', 'rtf', 'eml', 'html', 'htm']).has(extension)) return true;
+  return /(?:pdf|spreadsheet|excel|csv|word|rtf|message\/rfc822|text\/html)/i.test(contentType);
+}
+
+/**
+ * A `text/html` FILE attachment — a purchase order printed to HTML by a
+ * procurement portal, which is how the Four Seasons order actually arrived.
+ *
+ * It was being triaged as `ignored_non_document` while the link-only body was
+ * read for the order that was sitting in this file all along. The extension is
+ * accepted alongside the MIME type because portals export these with generic
+ * `application/octet-stream` more often than they should.
+ */
+function htmlDocumentAttachment(extension: string | null, contentType: string): boolean {
+  const type = (contentType ?? '').split(';', 1)[0].trim().toLowerCase();
+  if (type === 'text/html' || type === 'application/xhtml+xml') return true;
+  return genericContentType(type) && (extension === 'html' || extension === 'htm');
 }
 
 /** Distinguish ignored mail furniture from a business document Vyso cannot process yet. */
@@ -464,15 +516,22 @@ export function diagnoseMicrosoftGraphAttachments(
     };
     const supported = selectIngestableAttachments([lite]).length === 1;
     const provisionalPdf = genericContentType(providerContentType) && extension === 'pdf';
-    if (supported || provisionalPdf) {
+    const htmlOrder = htmlDocumentAttachment(extension, providerContentType);
+    // An HTML purchase order is parsed locally, so its ceiling is the parser's,
+    // not the vision API's — and a portal export above it is a business document
+    // Vyso could not process, which is a finding, not furniture.
+    if (htmlOrder && attachment.size > MAX_HTML_ATTACHMENT_BYTES) {
+      return { ...base, disposition: 'unsupported_too_large', processingContentType: null, actionable: true };
+    }
+    if (supported || provisionalPdf || htmlOrder) {
       if (processable >= MAX_ATTACHMENTS_PER_EMAIL) {
         return { ...base, disposition: 'unsupported_attachment_limit', processingContentType: null, actionable: true };
       }
       processable += 1;
       return {
         ...base,
-        disposition: supported ? 'processable' : 'provisional_pdf',
-        processingContentType: supported ? providerContentType : 'application/pdf',
+        disposition: supported || htmlOrder ? 'processable' : 'provisional_pdf',
+        processingContentType: htmlOrder ? 'text/html' : supported ? providerContentType : 'application/pdf',
         actionable: true,
       };
     }
@@ -544,11 +603,16 @@ export async function ingestMicrosoftGraphMessage(
   }
 
   const attachments = message.hasAttachments ? await dependencies.listAttachments() : [];
+  // Graph now returns the body as the sender wrote it, so the FIRST thing done
+  // with it is to derive plain text from it — deterministically, locally, with
+  // no script execution and no remote fetches. Everything below reads this, and
+  // nothing below ever sees markup.
+  const bodySignalText = classificationBodyText(message);
   let classification = classifyMicrosoftEmail({
     subject: message.subject,
     senderName: message.from?.name,
     senderEmail: message.from?.address,
-    body: message.body?.content,
+    body: bodySignalText,
     bodyPreview: message.bodyPreview,
     attachments,
   });
@@ -581,21 +645,33 @@ export async function ingestMicrosoftGraphMessage(
         diagnostic.disposition = 'processable_verified_pdf';
       }
       const processingContentType = diagnostic?.processingContentType ?? attachment.contentType ?? 'application/octet-stream';
-      const result = await dependencies.ingestDocument({
-        bytes,
-        filename,
-        mediaType: processingContentType,
-        sourceContentType: attachment.contentType ?? 'application/octet-stream',
-        sourceType: processingContentType === 'application/pdf' ? 'pdf' : 'image',
-        sourceAttachmentId: attachment.id,
-        note: message.subject?.slice(0, 500),
-        customerEvidence: {
-          senderEmail: message.from?.address ?? null,
-          senderName: message.from?.name ?? null,
-          subject: message.subject ?? null,
-          messageText: (message.body?.content ?? message.bodyPreview ?? '').slice(0, 20_000) || null,
-        },
-      });
+      // AN HTML ATTACHMENT TAKES THE TEXT LANE, NOT THE VISION LANE. There is no
+      // image to look at and no page to render — the order is in the markup's
+      // own tables, and they are read deterministically before any model sees
+      // them.
+      const result = processingContentType === 'text/html'
+        ? await dependencies.ingestHtmlAttachmentOrder({
+            bytes,
+            filename,
+            sourceContentType: attachment.contentType ?? 'text/html',
+            sourceAttachmentId: attachment.id,
+            message,
+          })
+        : await dependencies.ingestDocument({
+            bytes,
+            filename,
+            mediaType: processingContentType,
+            sourceContentType: attachment.contentType ?? 'application/octet-stream',
+            sourceType: processingContentType === 'application/pdf' ? 'pdf' : 'image',
+            sourceAttachmentId: attachment.id,
+            note: message.subject?.slice(0, 500),
+            customerEvidence: {
+              senderEmail: message.from?.address ?? null,
+              senderName: message.from?.name ?? null,
+              subject: message.subject ?? null,
+              messageText: (bodySignalText || message.bodyPreview || '').slice(0, 20_000) || null,
+            },
+          });
       if (result.documentId) {
         if (result.ok) documentsCreated += 1;
         alreadyDone.add(attachment.id);
@@ -608,6 +684,15 @@ export async function ingestMicrosoftGraphMessage(
       }
       if (result.ok) {
         classification = classificationFromDocumentType(classification, result.documentType);
+        if (processingContentType === 'text/html') {
+          // One tag, spent deliberately: `boundedEvidence` keeps only twenty, and
+          // "the order came out of an attached HTML file" is the single fact that
+          // explains this document's whole provenance to whoever reads the row.
+          classification = {
+            ...classification,
+            evidence: boundedEvidence([...classification.evidence, 'attachment:parsed-html-order']),
+          };
+        }
         if (result.documentId && result.documentType === 'order') {
           orderDocuments.push({ documentId: result.documentId, attachmentId: attachment.id });
         }
@@ -623,7 +708,7 @@ export async function ingestMicrosoftGraphMessage(
   // message. It either becomes the one body-only review document, or reconciles
   // into the existing attachment-backed order. It never creates a second order
   // merely because an attachment also contains order evidence.
-  const bodyOrderEvidence = Boolean(message.body?.content?.trim()) && (
+  const bodyOrderEvidence = Boolean(bodySignalText.trim()) && (
     classification.evidence.includes('message-ordering-intent') ||
     (
       classification.classification === 'customer_order' &&

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  classificationBodyText,
   classifyMicrosoftEmail,
   diagnoseMicrosoftGraphAttachments,
   finalMicrosoftGraphIngestStatus,
@@ -54,6 +55,11 @@ function dependencies(
       ok: true,
       documentId: 'document-1',
       documentType: 'invoice',
+    }),
+    ingestHtmlAttachmentOrder: async () => ({
+      ok: true,
+      documentId: 'html-attachment-document-1',
+      documentType: 'order',
     }),
     ingestBodyOrder: async () => ({
       ok: true,
@@ -634,7 +640,14 @@ test('email-body order source is private, deterministic, deferred and not a fake
   assert.match(source, /sourceAttachmentId: EMAIL_BODY_SOURCE_PART_ID/);
   assert.match(source, /sourceType: 'email_body'/);
   assert.match(source, /mediaType: 'text\/plain; charset=utf-8'/);
-  assert.match(source, /Buffer\.from\(bodyText\(input\.message\), 'utf8'\)/);
+  // THE DOCUMENT HOLDS DERIVED TEXT, NEVER MARKUP. The stored object is served
+  // back into a reviewer's browser through a signed URL and an iframe, so
+  // sender-authored HTML must not be what lands there; the original is kept
+  // separately, privately, and is never rendered.
+  assert.match(source, /Buffer\.from\(storedText, 'utf8'\)/);
+  assert.match(source, /const storedText = prepared\.derivedText \|\| prepared\.original/);
+  assert.match(source, /EMAIL_BODY_ORIGINAL_SOURCE_PART_ID = 'email-body-original'/);
+  assert.match(source, /contentType: 'text\/html; charset=utf-8'/);
   assert.match(source, /return message\.body\?\.content \?\? ''/);
   assert.match(source, /deferCommit: true/);
   assert.doesNotMatch(source, /syncOrderFromDocument|\.from\('of_orders'\)|\.from\('of_invoices'\)|\.from\('pp_movements'\)/);
@@ -645,4 +658,164 @@ test('email-body order source is private, deterministic, deferred and not a fake
 test('email-linked orders cannot enter the unmatched-customer auto-create path', () => {
   const source = readFileSync(new URL('../lib/platform/orderflow-from-doc.ts', import.meta.url), 'utf8');
   assert.match(source, /if \(!customerId && !sourceDoc\.email_ingest_id\)/);
+});
+
+// ---------------------------------------------------------------------------
+// Email source usability: html bodies, html attachments, and the honest empty
+// order. Fixtures are ANONYMISED shapes of two real production messages.
+// ---------------------------------------------------------------------------
+
+/** A procurement-portal notification: metadata, a wrapped link, no goods. */
+const PORTAL_NOTIFICATION_BODY = '<html><body>Property: Riverbend<br>Reference Buyer PO number: RVB0044219<br><br>Sent By:<br>Dana Kruger<br><br>TO EDIT THE DOCUMENT CLICK THE BELOW LINK<br><a href="https://links.mailer-example.net/ls/click?upn=EXAMPLE-TOKEN-0000">http://riverbend.birchstreet.net</a><img src="https://links.mailer-example.net/wf/open?upn=EXAMPLE-TOKEN-0000" width="1" height="1"></body></html>';
+
+/** An Outlook standing order form: a real grid, three of its rows written in. */
+const ORDER_FORM_BODY = '<html><head><style>p { margin: 0 }</style></head><body><table class="MsoNormalTable">'
+  + '<tr><td><b>Item</b></td><td><b>UNIT</b></td><td><b>stock</b></td><td><b>order</b></td></tr>'
+  + '<tr><td>Carrots Baby</td><td>pkts</td><td>&nbsp;</td><td>1</td></tr>'
+  + '<tr><td>Coriander Fresh</td><td>KG</td><td>&nbsp;</td><td>200g</td></tr>'
+  + '<tr><td>Filler Product 3</td><td>BOX</td><td>&nbsp;</td><td>&nbsp;</td></tr>'
+  + '<tr><td>Potatoes Large</td><td>BAG</td><td>&nbsp;</td><td>2</td></tr>'
+  + '</table><p>Kind Regards</p><p>Dana Kruger</p></body></html>';
+
+test('classification reads an HTML body through the normalizer, table cells included', () => {
+  // The quantity signals on an order form live INSIDE the table. Before the
+  // normalizer they arrived pre-flattened from Exchange; now they are derived
+  // here, and an order form must still classify as an order.
+  const derived = classificationBodyText({
+    body: { contentType: 'html', content: ORDER_FORM_BODY },
+  });
+  assert.match(derived, /Carrots Baby/);
+  assert.match(derived, /200g/);
+  assert.ok(!derived.includes('MsoNormalTable'), 'no markup reaches the classifier');
+  assert.ok(!derived.includes('margin: 0'), 'no stylesheet reaches the classifier');
+
+  const result = classifyMicrosoftEmail({
+    subject: 'Order form - Riverbend',
+    body: derived,
+    bodyPreview: 'Order form',
+    senderName: 'Dana Kruger',
+    senderEmail: 'dana.kruger@riverbend-hotels.example',
+    attachments: [],
+  });
+  assert.equal(result.classification, 'customer_order');
+  assert.equal(result.orderingIntentDetected, true);
+});
+
+test('an html file attachment is a document, not mail furniture', () => {
+  const diagnostics = diagnoseMicrosoftGraphAttachments([
+    attachment({ id: 'html-1', name: 'PO_RVB0044219.html', contentType: 'text/html', size: 26_000 }),
+    attachment({ id: 'html-2', name: 'PO_RVB0044220.HTM', contentType: 'application/octet-stream', size: 12_000 }),
+    attachment({ id: 'html-3', name: 'huge_export.html', contentType: 'text/html', size: 2_000_000 }),
+    attachment({ id: 'inline-1', name: 'signature.html', contentType: 'text/html', size: 900, isInline: true }),
+  ]);
+  assert.equal(diagnostics[0].disposition, 'processable');
+  assert.equal(diagnostics[0].processingContentType, 'text/html');
+  assert.equal(diagnostics[1].disposition, 'processable');
+  assert.equal(diagnostics[1].processingContentType, 'text/html');
+  // Above the parser's ceiling it is a business document Vyso could not read —
+  // a finding, not something to drop silently.
+  assert.equal(diagnostics[2].disposition, 'unsupported_too_large');
+  assert.equal(diagnostics[2].actionable, true);
+  assert.equal(diagnostics[3].disposition, 'ignored_inline');
+  assert.deepEqual(
+    selectMicrosoftGraphAttachments([
+      attachment({ id: 'html-1', name: 'PO_RVB0044219.html', contentType: 'text/html', size: 26_000 }),
+    ]).map((entry) => entry.id),
+    ['html-1'],
+  );
+});
+
+test('the Four Seasons shape: a link-only body plus an html PO makes the ATTACHMENT canonical', async () => {
+  let htmlCalls = 0;
+  let visionCalls = 0;
+  let reconciledWith: string | null = null;
+  const result = await ingestMicrosoftGraphMessage(
+    { expectedMessageId: MESSAGE_ID, processedAttachmentIds: [], documentsCreated: 0 },
+    dependencies({
+      fetchMessage: async () => message({
+        subject: 'Purchase Order RVB0044219 - Riverbend',
+        hasAttachments: true,
+        body: { contentType: 'html', content: PORTAL_NOTIFICATION_BODY },
+        bodyPreview: 'Property: Riverbend Reference Buyer PO number: RVB0044219',
+      }),
+      listAttachments: async () => [
+        attachment({ id: 'html-1', name: 'PO_RVB0044219.html', contentType: 'text/html', size: 26_000 }),
+      ],
+      downloadAttachment: async () => new TextEncoder().encode('<table><tr><th>#</th><th>Product Desc.</th><th>Qty</th></tr><tr><td>1</td><td>Melon Sweet</td><td>6.00</td></tr></table>'),
+      ingestDocument: async () => {
+        visionCalls += 1;
+        return { ok: false, error: 'the vision lane must never see an html attachment' };
+      },
+      ingestHtmlAttachmentOrder: async ({ sourceAttachmentId, sourceContentType }) => {
+        htmlCalls += 1;
+        assert.equal(sourceAttachmentId, 'html-1');
+        assert.equal(sourceContentType, 'text/html');
+        return { ok: true, documentId: 'html-order-1', documentType: 'order' };
+      },
+      reconcileBodyWithOrderDocument: async ({ documentId }) => {
+        reconciledWith = documentId;
+        return { ok: true, documentId, documentType: 'order' };
+      },
+      ingestBodyOrder: async () => {
+        assert.fail('a body-only order must not be created when the attachment carries the PO');
+      },
+    }),
+  );
+  assert.equal(htmlCalls, 1);
+  assert.equal(visionCalls, 0);
+  assert.equal(reconciledWith, 'html-order-1', 'the body reconciles INTO the attachment order');
+  assert.equal(result.documentsCreated, 1, 'one order, not two');
+  assert.ok(result.classification.evidence.includes('attachment:parsed-html-order'));
+  assert.ok(result.classification.evidence.length <= 20, 'the evidence cap is respected');
+  assert.equal(result.errors.length, 0);
+  assert.equal(finalMicrosoftGraphIngestStatus(result), 'done');
+});
+
+test('the link-only body with NO attachment still files one reviewable document', async () => {
+  const result = await ingestMicrosoftGraphMessage(
+    { expectedMessageId: MESSAGE_ID, processedAttachmentIds: [], documentsCreated: 0 },
+    dependencies({
+      fetchMessage: async () => message({
+        subject: 'Purchase Order RVB0044219 - Riverbend',
+        hasAttachments: false,
+        body: { contentType: 'html', content: PORTAL_NOTIFICATION_BODY },
+        bodyPreview: 'Property: Riverbend Reference Buyer PO number: RVB0044219',
+      }),
+      listAttachments: async () => [],
+      // The zero-line assessment document: order intent, PO reference and the
+      // link preserved, and no line items invented.
+      ingestBodyOrder: async () => ({ ok: true, documentId: 'assessment-document-1', documentType: 'order' }),
+    }),
+  );
+  assert.equal(result.classification.classification, 'customer_order');
+  assert.equal(result.classification.orderingIntentDetected, true);
+  assert.equal(result.documentsCreated, 1);
+  // A document exists, so this ingest is DONE. It was reported as a parser
+  // failure before, which is the one thing that had not happened.
+  assert.equal(finalMicrosoftGraphIngestStatus(result), 'done');
+});
+
+test('no Graph call and no ingest path ever fetches a URL found in a message', () => {
+  const core = readFileSync(new URL('../lib/platform/microsoft-graph-ingest-core.ts', import.meta.url), 'utf8');
+  const normalizer = readFileSync(new URL('../lib/platform/docu/email-html-normalizer.ts', import.meta.url), 'utf8');
+  const assessment = readFileSync(new URL('../lib/platform/docu/body-source-assessment.ts', import.meta.url), 'utf8');
+  const order = readFileSync(new URL('../lib/platform/microsoft-message-order.ts', import.meta.url), 'utf8');
+  for (const source of [core, normalizer, assessment, order]) {
+    assert.doesNotMatch(source, /\bfetch\s*\(/, 'no new code path performs a request');
+    assert.doesNotMatch(source, /XMLHttpRequest|https?\.request|node-fetch|axios/);
+  }
+  // The href is stored and shown; it is never dereferenced.
+  assert.match(assessment, /NEVER fetched|never dereferenced|Never resolved/);
+  assert.match(normalizer, /^.*never fetched.*$/mi);
+});
+
+test('an html attachment is written as source_type html, with its real content type', () => {
+  const source = readFileSync(new URL('../lib/platform/microsoft-message-order.ts', import.meta.url), 'utf8');
+  assert.match(source, /sourceType: 'html'/);
+  assert.match(source, /sourceContentType: input\.attachment\.contentType/);
+  assert.match(source, /sourceAttachmentId: input\.attachment\.id/);
+  assert.match(source, /deferCommit: true/);
+  // The constraint that must be widened before an 'html' row can be written.
+  const sql = readFileSync(new URL('../supabase/microsoft-graph-ingest.sql', import.meta.url), 'utf8');
+  assert.match(sql, /'pdf', 'image', 'spreadsheet', 'email_body', 'html'/);
 });

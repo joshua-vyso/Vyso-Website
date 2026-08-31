@@ -15,6 +15,10 @@ import type {
   MessageOrderLineProvenance,
 } from '../types.ts';
 import { normaliseUnit } from './order-line-match.ts';
+import {
+  assessmentRequiresReview,
+  type BodySourceAssessment,
+} from './body-source-assessment.ts';
 
 export const EMAIL_BODY_SOURCE_PART_ID = 'email-body' as const;
 
@@ -108,8 +112,36 @@ function bodyOnlyLineProvenance(line: ExtractedLineItem, index: number): Message
   };
 }
 
+/**
+ * Fold a source assessment onto message evidence, additively.
+ *
+ * SEPARATE FROM RECONCILIATION ON PURPOSE. What the source WAS and whether body
+ * and attachment AGREE are two different findings, and merging them in one
+ * function is how "the body was a link" would end up looking like a conflict.
+ * `requires_review` is only ever raised here, never lowered: an assessment that
+ * needs a human cannot cancel a conflict that also needs one.
+ */
+export function withBodySourceAssessment(
+  evidence: MessageOrderEvidence,
+  assessment: BodySourceAssessment | null | undefined,
+): MessageOrderEvidence {
+  if (!assessment) return evidence;
+  return {
+    ...evidence,
+    body_content_kind: assessment.body_content_kind,
+    body_parse_status: assessment.body_parse_status,
+    canonical_order_status: assessment.canonical_order_status,
+    external_source: assessment.external_source ?? null,
+    detected_line_signals: assessment.detected_line_signals ?? null,
+    requires_review: evidence.requires_review || assessmentRequiresReview(assessment),
+  };
+}
+
 /** Provenance for a body-only order; no attachment-shaped placeholder is made. */
-export function bodyOnlyOrderEvidence(body: OrderExtractionResult): MessageOrderEvidence {
+export function bodyOnlyOrderEvidence(
+  body: OrderExtractionResult,
+  assessment?: BodySourceAssessment | null,
+): MessageOrderEvidence {
   const fields: Record<string, MessageOrderFieldProvenance> = {};
   for (const [field, value] of Object.entries({
     customer_name: body.customer_name,
@@ -121,7 +153,7 @@ export function bodyOnlyOrderEvidence(body: OrderExtractionResult): MessageOrder
   })) {
     if (clean(value)) fields[field] = oneSource(value, 'email_body');
   }
-  return {
+  return withBodySourceAssessment({
     primary_source: 'email_body',
     body_source_part_id: EMAIL_BODY_SOURCE_PART_ID,
     attachment_source_ids: [],
@@ -130,7 +162,49 @@ export function bodyOnlyOrderEvidence(body: OrderExtractionResult): MessageOrder
     conflicts: [],
     requires_review: false,
     multiple_order_sources: false,
-  };
+  }, assessment);
+}
+
+/**
+ * Provenance for an order read out of ONE attachment, with no body reading.
+ *
+ * The HTML purchase-order attachment lane (the real Four Seasons order) needs
+ * this: it is an attachment-primary order, and claiming `email_body` provenance
+ * for it — the only body-shaped helper that existed — would put the body's name
+ * on every field that actually came off the attached document.
+ */
+export function attachmentOnlyOrderEvidence(
+  attachment: OrderExtractionResult,
+  attachmentSourceId: string,
+  assessment?: BodySourceAssessment | null,
+): MessageOrderEvidence {
+  const fields: Record<string, MessageOrderFieldProvenance> = {};
+  for (const [field, value] of Object.entries({
+    customer_name: attachment.customer_name,
+    purchase_order_number: attachment.purchase_order_number,
+    order_date: attachment.order_date,
+    requested_delivery_date: attachment.requested_delivery_date,
+    delivery_location: attachment.delivery_location,
+    order_notes: attachment.order_notes,
+  })) {
+    if (clean(value)) fields[field] = oneSource(value, 'attachment');
+  }
+  return withBodySourceAssessment({
+    primary_source: 'attachment',
+    body_source_part_id: EMAIL_BODY_SOURCE_PART_ID,
+    attachment_source_ids: [attachmentSourceId],
+    fields,
+    lines: attachment.line_items.map((line, index) => ({
+      line_index: index,
+      source: 'attachment' as const,
+      raw_description: oneSource(line.raw_description ?? line.description, 'attachment'),
+      quantity: oneSource(line.quantity, 'attachment'),
+      unit: oneSource(line.unit, 'attachment'),
+    })),
+    conflicts: [],
+    requires_review: false,
+    multiple_order_sources: false,
+  }, assessment);
 }
 
 function combinedLine(

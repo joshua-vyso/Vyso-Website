@@ -115,12 +115,22 @@ create unique index if not exists documents_ingest_attachment_uidx
   on documents (email_ingest_id, source_attachment_id)
   where email_ingest_id is not null and source_attachment_id is not null;
 
+-- 'html' is a first-class source: a procurement portal emails the purchase order
+-- as a text/html file attachment (the Four Seasons PO — twelve tables, a full
+-- line grid — arrives exactly this way), and Vyso now parses it locally instead
+-- of discarding it. NULL stays reserved for historical/unknown sources.
+--
+-- AN EXISTING DATABASE IS NOT WIDENED BY THIS BLOCK — it is guarded on the
+-- constraint's absence, so where the old four-value check already exists it is
+-- left alone and an 'html' insert fails with 23514. The drop-and-recreate is
+-- run by hand before deploy; it is in the completion report and in
+-- .ai/plan_email_source_usability.md (D6).
 do $$
 begin
   if not exists (
     select 1 from pg_constraint where conname = 'documents_source_type_check'
   ) then
     alter table documents add constraint documents_source_type_check
-      check (source_type is null or source_type in ('pdf', 'image', 'spreadsheet', 'email_body'));
+      check (source_type is null or source_type in ('pdf', 'image', 'spreadsheet', 'email_body', 'html'));
   end if;
 end $$;

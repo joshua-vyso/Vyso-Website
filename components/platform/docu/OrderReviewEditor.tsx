@@ -186,6 +186,12 @@ export function OrderReviewEditor({
 
   const extractedName = extractedData?.customer_name ?? '';
   const extractedConf = extractedData?.customer_confidence ?? null;
+  // Zero lines with a REASON behind them — see the empty-state block below.
+  // Absent on every document filed before the source assessment existed, which
+  // is why the plain wording stays the default rather than the exception.
+  const canonicalOrderStatus = extractedData?.message_order_evidence?.canonical_order_status ?? null;
+  const emptyLinesAreExplained =
+    canonicalOrderStatus === 'unavailable' || canonicalOrderStatus === 'unsafe';
   const initialCustomer =
     (linkedOrder?.customer_id ? customers.find((c) => c.id === linkedOrder.customer_id) : null) ??
     (initialCustomerId ? customers.find((c) => c.id === initialCustomerId) : null) ??
@@ -1089,7 +1095,23 @@ export function OrderReviewEditor({
           <span />
         </div>
         {lines.length === 0 ? (
-          <p className="py-6 text-center text-[13px] text-[#8A8E86]">No items read — add what the customer ordered.</p>
+          /* "NO ITEMS READ" IS AN ACCUSATION, AND ON TWO DOCUMENTS IT IS A FALSE
+             ONE. When the source assessment says the lines are UNAVAILABLE (they
+             live in the customer's own portal — the email carried a PO number and
+             a link and no goods at all) or UNSAFE (the row structure did not
+             survive, so any quantity attached to any product would be a guess),
+             the emptiness is the finding, not a failure to read. The notice above
+             says which, in the document's own terms. Adding lines by hand stays
+             exactly where it was — the "+ Add item" button above this block is
+             untouched — because a reviewer typing in what the portal shows them is
+             precisely the workflow this unblocks. */
+          emptyLinesAreExplained ? (
+            <p className="py-6 text-center text-[13px] text-[#8A8E86]">
+              No line items came with this email — see the source note above, then add what the customer ordered.
+            </p>
+          ) : (
+            <p className="py-6 text-center text-[13px] text-[#8A8E86]">No items read — add what the customer ordered.</p>
+          )
         ) : (
           <div className="space-y-2" ref={gridRef} onKeyDown={onGridKeyDown}>
             {lines.map((l, i) => {

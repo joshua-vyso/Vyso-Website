@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { OrderExtractionResult } from '../lib/ai/order-prompt.ts';
 import {
+  attachmentOnlyOrderEvidence,
   bodyOnlyOrderEvidence,
   EMAIL_BODY_SOURCE_PART_ID,
   reconcileMessageOrder,
+  withBodySourceAssessment,
 } from '../lib/platform/docu/message-order-reconciliation.ts';
 
 function order(overrides: Partial<OrderExtractionResult> = {}): OrderExtractionResult {
@@ -262,4 +264,97 @@ test('the conflict cap is a ceiling on a reading, never a reading of its own', (
   });
   assert.ok(uncapped.evidence.conflicts.length > 0);
   assert.equal(uncapped.order.overall_confidence, null);
+});
+
+// ---------------------------------------------------------------------------
+// Source assessment on message evidence. Additive: every field below is absent
+// on rows filed before it existed, and nothing here changes reconciliation.
+// ---------------------------------------------------------------------------
+
+test('a body-only order carries its source assessment, and an unavailable one needs review', () => {
+  const assessment = {
+    body_content_kind: 'external_link' as const,
+    body_parse_status: 'unavailable' as const,
+    canonical_order_status: 'unavailable' as const,
+    external_source: {
+      provider: 'birchstreet',
+      host: 'riverbend.birchstreet.net',
+      href: 'https://links.mailer-example.net/ls/click?upn=EXAMPLE-TOKEN-0000',
+      link_text: 'http://riverbend.birchstreet.net',
+    },
+    detected_line_signals: { product_like_count: 9, quantity_coverage: 0 },
+  };
+  const evidence = bodyOnlyOrderEvidence(order({ line_items: [] }), assessment);
+  assert.equal(evidence.primary_source, 'email_body');
+  assert.equal(evidence.body_content_kind, 'external_link');
+  assert.equal(evidence.canonical_order_status, 'unavailable');
+  assert.equal(evidence.external_source?.provider, 'birchstreet');
+  assert.equal(evidence.detected_line_signals?.product_like_count, 9);
+  assert.equal(evidence.requires_review, true);
+  // The PO reference and customer are still on the document — that is what
+  // makes a zero-line order reviewable rather than empty.
+  assert.equal(evidence.fields.purchase_order_number?.email_body_value, 'PO-123');
+});
+
+test('an assessment never lowers requires_review, and no assessment leaves evidence untouched', () => {
+  const conflicted = withBodySourceAssessment(
+    { ...bodyOnlyOrderEvidence(order()), requires_review: true },
+    {
+      body_content_kind: 'structured_html',
+      body_parse_status: 'complete',
+      canonical_order_status: 'ready',
+      external_source: null,
+      detected_line_signals: { product_like_count: 8, quantity_coverage: 1 },
+    },
+  );
+  assert.equal(conflicted.requires_review, true, 'a ready body cannot cancel a conflict');
+
+  const untouched = bodyOnlyOrderEvidence(order());
+  assert.equal(untouched.requires_review, false);
+  assert.equal(untouched.canonical_order_status, undefined);
+  assert.equal(untouched.body_content_kind, undefined);
+});
+
+test('an attachment-only order claims attachment provenance, not the body it arrived beside', () => {
+  const evidence = attachmentOnlyOrderEvidence(order(), 'graph-attachment-9', {
+    body_content_kind: 'structured_html',
+    body_parse_status: 'complete',
+    canonical_order_status: 'ready',
+    external_source: null,
+    detected_line_signals: { product_like_count: 2, quantity_coverage: 1 },
+  });
+  assert.equal(evidence.primary_source, 'attachment');
+  assert.deepEqual(evidence.attachment_source_ids, ['graph-attachment-9']);
+  assert.equal(evidence.lines[0].source, 'attachment');
+  assert.equal(evidence.lines[0].quantity.attachment_value, '10');
+  assert.equal(evidence.fields.customer_name?.attachment_value, 'The Capital');
+  assert.equal(evidence.requires_review, false);
+  assert.equal(evidence.canonical_order_status, 'ready');
+});
+
+test('reconciliation itself is unchanged by the assessment — it is folded on afterwards', () => {
+  const reconciled = reconcileMessageOrder({
+    attachment: order(),
+    body: order({ line_items: [] }),
+    attachmentSourceIds: ['graph-attachment-9'],
+  });
+  assert.equal(reconciled.evidence.canonical_order_status, undefined);
+  const withAssessment = withBodySourceAssessment(reconciled.evidence, {
+    body_content_kind: 'external_link',
+    body_parse_status: 'unavailable',
+    canonical_order_status: 'ready',
+    external_source: {
+      provider: 'birchstreet',
+      host: 'riverbend.birchstreet.net',
+      href: 'https://links.mailer-example.net/ls/click?upn=EXAMPLE-TOKEN-0000',
+      link_text: 'http://riverbend.birchstreet.net',
+    },
+    detected_line_signals: { product_like_count: 9, quantity_coverage: 1 },
+  });
+  // The body was a portal link AND the merged order is ready off the
+  // attachment: two true statements about one message.
+  assert.equal(withAssessment.body_content_kind, 'external_link');
+  assert.equal(withAssessment.canonical_order_status, 'ready');
+  assert.deepEqual(withAssessment.lines, reconciled.evidence.lines);
+  assert.deepEqual(withAssessment.conflicts, reconciled.evidence.conflicts);
 });

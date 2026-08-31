@@ -161,6 +161,8 @@ export function DocumentReviewQueue({ docs, canReview }: { docs: DocumentWithSup
                   <MessageOrderEvidenceNotice
                     sourceType={d.source_type}
                     evidence={data?.message_order_evidence}
+                    customerName={data?.customer_name ?? null}
+                    purchaseOrderNumber={data?.purchase_order_number ?? null}
                     compact
                   />
                 </div>

@@ -214,12 +214,38 @@ test('one-message ingestion read is GET-only and selects body plus conversation 
     url.searchParams.get('$select'),
     'id,subject,from,receivedDateTime,body,bodyPreview,hasAttachments,conversationId',
   );
-  assert.equal(
-    new Headers(requestedInit?.headers).get('prefer'),
-    'outlook.body-content-type="text"',
-  );
+  // NO `outlook.body-content-type="text"`. Asking Exchange for text made
+  // Exchange the parser, and it flattened a 100-row order table to one cell per
+  // line before Vyso saw it. The body now arrives as the sender wrote it and is
+  // read locally — see lib/platform/docu/email-html-normalizer.ts.
+  assert.equal(new Headers(requestedInit?.headers).get('prefer'), null);
   assert.equal(message.conversationId, 'conversation-1');
   assert.equal(message.body?.content, 'Invoice attached.');
+});
+
+test('an html body is returned and recorded as html, not asked for as text', async () => {
+  let requestedInit: RequestInit | undefined;
+  const fetchMock: typeof fetch = async (_input, init) => {
+    requestedInit = init;
+    return Response.json({
+      id: 'message-1',
+      subject: 'Order form',
+      from: { emailAddress: { name: 'Customer', address: 'buyer@example.com' } },
+      receivedDateTime: '2026-08-30T08:00:00Z',
+      hasAttachments: false,
+      conversationId: 'conversation-1',
+      body: { contentType: 'html', content: '<html><body><table><tr><td>Carrots</td><td>2</td></tr></table></body></html>' },
+      bodyPreview: 'Carrots 2',
+    });
+  };
+  const message = await fetchMicrosoftGraphMessage(
+    { accessToken: 'test-token', mailbox: 'orders@turnnslice.com', messageId: 'message-1' },
+    fetchMock,
+  );
+  assert.equal(requestedInit?.method, 'GET');
+  assert.equal(new Headers(requestedInit?.headers).get('prefer'), null);
+  assert.equal(message.body?.contentType, 'html');
+  assert.match(message.body?.content ?? '', /<table>/);
 });
 
 test('immutable-id reads are an explicit opt-in and keep every mailbox operation GET-only', async () => {
@@ -256,7 +282,7 @@ test('immutable-id reads are an explicit opt-in and keep every mailbox operation
   }, attachmentFetch);
 
   assert.deepEqual(requests.map((request) => request.method), ['GET', 'GET']);
-  assert.equal(new Headers(requests[0]?.headers).get('prefer'), 'outlook.body-content-type="text", IdType="ImmutableId"');
+  assert.equal(new Headers(requests[0]?.headers).get('prefer'), 'IdType="ImmutableId"');
   assert.equal(new Headers(requests[1]?.headers).get('prefer'), 'IdType="ImmutableId"');
 });
 

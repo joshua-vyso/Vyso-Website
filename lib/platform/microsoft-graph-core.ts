@@ -419,10 +419,23 @@ export async function fetchMicrosoftGraphMessage(
     headers: {
       accept: 'application/json',
       authorization: `Bearer ${accessToken}`,
-      prefer: [
-        'outlook.body-content-type="text"',
-        immutableIdPreference(input.idType),
-      ].filter(Boolean).join(', '),
+      // NO `outlook.body-content-type="text"` HERE, AND THAT IS THE FIX.
+      //
+      // Asking Exchange for text made Exchange the parser: the Belair order
+      // arrived as one Outlook `MsoNormalTable` of 100 rows × 4 columns, and the
+      // server flattened it to one cell per line — no row delimiter, no column
+      // delimiter — before Vyso ever saw a byte of it. Eight rows carried an
+      // order quantity; what the reader got was a column-less list, and what the
+      // customer got back was 97 lines, 92 of them with no quantity, and the
+      // three gram quantities gone. The markup was never the problem; losing it
+      // was. Graph now returns the body as the sender wrote it (html or text),
+      // `contentType` is recorded faithfully, and
+      // lib/platform/docu/email-html-normalizer.ts does the reading — locally,
+      // with no script execution and no remote fetches of any kind.
+      //
+      // Still GET-only, still the same `$select`, still the same idType
+      // handling; this header is the ONLY thing that changed.
+      ...(immutableIdPreference(input.idType) ? { prefer: immutableIdPreference(input.idType)! } : {}),
     },
     cache: 'no-store',
   });

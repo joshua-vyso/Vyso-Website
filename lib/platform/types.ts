@@ -330,8 +330,69 @@ export interface OrderDocumentTotals {
   grand_total?: string;
 }
 
-export type DocumentSourceType = 'pdf' | 'image' | 'spreadsheet' | 'email_body';
+/**
+ * What KIND of thing the document arrived as.
+ *
+ * 'html' is a first-class source, not a fallback: the Four Seasons purchase
+ * order arrives as a 26KB `text/html` file attachment carrying the complete PO
+ * (twelve tables, a real line grid), and it was being discarded as
+ * `ignored_non_document` while a link-only body was read for the order. NULL
+ * stays reserved for historical and unknown sources — encoding "this is HTML" as
+ * an absence would make a parsed PO indistinguishable from a row filed before
+ * this column existed.
+ *
+ * The `documents_source_type_check` constraint must be widened before an 'html'
+ * row can be written — see supabase/microsoft-graph-ingest.sql.
+ */
+export type DocumentSourceType = 'pdf' | 'image' | 'spreadsheet' | 'email_body' | 'html';
 export type OrderEvidenceSource = 'attachment' | 'email_body' | 'both';
+
+/**
+ * THE THREE QUESTIONS ABOUT AN EMAIL SOURCE, kept apart on purpose.
+ *
+ * `body_content_kind` says what the message physically contained;
+ * `body_parse_status` says how much of it Vyso could read; and
+ * `canonical_order_status` says whether an order may be built from it. They were
+ * one question until a link-only Four Seasons notification (no goods in it at
+ * all) and a server-flattened Belair order form (a real 100-row table, shredded
+ * in transit) both came out the same way: as an order with lines nobody sent.
+ *
+ * The verdicts are decided in lib/platform/docu/body-source-assessment.ts.
+ */
+export type BodyContentKind =
+  | 'plain_text'
+  | 'structured_html'
+  | 'external_link'
+  | 'malformed_structured_content'
+  | 'informational'
+  | 'unknown';
+
+export type BodyParseStatus = 'complete' | 'partial' | 'unavailable' | 'unsafe_to_infer';
+
+export type CanonicalOrderStatus = 'ready' | 'partial' | 'unavailable' | 'unsafe' | 'conflict';
+
+/**
+ * The system the order actually lives in, when the email only points at it.
+ *
+ * METADATA ONLY. Nothing in Vyso fetches `href`, follows a redirect, or reads
+ * anything from `host` — it is stored so a REVIEWER can click it, and shown to
+ * them with the sender's own displayed URL as the label rather than the tracking
+ * wrapper the href usually is.
+ */
+export interface ExternalOrderSource {
+  /** Deterministic from the hostname: 'birchstreet' | 'coupa' | 'sap_ariba' | null. */
+  provider: string | null;
+  host: string;
+  href: string;
+  link_text: string | null;
+}
+
+export interface BodySourceSignals {
+  /** How many product-like values were visible in the source. */
+  product_like_count: number;
+  /** Share of extracted lines carrying a usable quantity, 0–1. */
+  quantity_coverage: number;
+}
 
 export interface MessageOrderConflict {
   field: string;
@@ -366,6 +427,23 @@ export interface MessageOrderEvidence {
   multiple_order_sources: boolean;
   /** Original attachment extraction, retained so retries never merge a merge. */
   attachment_snapshot?: Record<string, unknown> | null;
+  /**
+   * WHAT THE SOURCE WAS AND WHETHER AN ORDER COULD HONESTLY BE BUILT FROM IT.
+   *
+   * All five keys are additive and absent on every row filed before them, which
+   * is why nothing may read their absence as a verdict — an old body order has
+   * no assessment, not an assessment of 'unknown'. Written by
+   * lib/platform/docu/body-source-assessment.ts, which is the only module
+   * allowed to decide them. They ride INSIDE this object rather than as new
+   * top-level `extracted_data` keys precisely so they cross document-ingest's
+   * named-key spread on the one key that is already named there.
+   */
+  body_content_kind?: BodyContentKind | null;
+  body_parse_status?: BodyParseStatus | null;
+  canonical_order_status?: CanonicalOrderStatus | null;
+  /** The portal the order actually lives in. Recorded, NEVER fetched. */
+  external_source?: ExternalOrderSource | null;
+  detected_line_signals?: BodySourceSignals | null;
 }
 
 export interface CustomerInterpretationLinePreview {

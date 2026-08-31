@@ -5,6 +5,7 @@ import { isUniqueViolation } from './db-errors';
 import { ingestDocument } from './document-ingest';
 import {
   ingestMicrosoftEmailBodyOrder,
+  ingestMicrosoftHtmlAttachmentOrder,
   reconcileMicrosoftEmailBodyWithOrder,
 } from './microsoft-message-order';
 import { MAX_ATTACHMENT_BYTES } from './email-ingest-policy';
@@ -204,6 +205,13 @@ export async function processMicrosoftGraphEmailIngest(
           sourceContentType,
           sourceType,
           deferCommit: true,
+        }),
+      ingestHtmlAttachmentOrder: async ({ bytes, filename, sourceContentType, sourceAttachmentId, message }) =>
+        ingestMicrosoftHtmlAttachmentOrder(supabase, {
+          orgId: ingest.org_id,
+          emailIngestId: ingest.id,
+          message,
+          attachment: { id: sourceAttachmentId, name: filename, contentType: sourceContentType, bytes },
         }),
       ingestBodyOrder: async ({ message }) => ingestMicrosoftEmailBodyOrder(supabase, {
         orgId: ingest.org_id,

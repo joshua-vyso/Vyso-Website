@@ -95,9 +95,14 @@ export function DocumentDetailPanel({
         <h2 className="of-display text-[16px] font-semibold text-[#171A17]">
           {doc.source_type === 'email_body'
             ? 'Original email body'
-            : extracted?.message_order_evidence?.primary_source === 'combined'
-              ? 'Original attachment'
-              : 'Original document'}
+            : // An HTML attachment's stored object is the DERIVED TEXT, never the
+              // markup — sender-authored HTML is not put in this iframe — so the
+              // heading says what the reviewer is actually looking at.
+              doc.source_type === 'html' || doc.source_content_type === 'text/html'
+              ? 'Attached order (HTML, read as text)'
+              : extracted?.message_order_evidence?.primary_source === 'combined'
+                ? 'Original attachment'
+                : 'Original document'}
         </h2>
         <div className="flex min-w-0 items-center gap-3">
           <span className="truncate text-[12px] text-[#A0A49C]">{doc.filename}</span>
@@ -198,6 +203,8 @@ export function DocumentDetailPanel({
         <MessageOrderEvidenceNotice
           sourceType={doc.source_type}
           evidence={extracted?.message_order_evidence}
+          customerName={extracted?.customer_name ?? null}
+          purchaseOrderNumber={extracted?.purchase_order_number ?? null}
         />
       </div>
 

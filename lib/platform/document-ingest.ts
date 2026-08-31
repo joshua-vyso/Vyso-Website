@@ -35,6 +35,7 @@ import {
   type CustomerIdentityEvidence,
 } from '@/lib/platform/docu/customer-match';
 import { previewExistingCustomerInterpretation } from '@/lib/platform/docu/customer-interpretation-preview';
+import { assessmentAdmitsZeroLines } from '@/lib/platform/docu/body-source-assessment';
 import type { DocumentSourceType, DocumentType, ExtractedData } from '@/lib/platform/types';
 
 /**
@@ -963,7 +964,24 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
       }
     }
     // A model/JSON failure reads as empty — surface it rather than filing a blank order.
-    if (!order.customer_name && order.line_items.length === 0) {
+    //
+    // UNLESS THE EMPTINESS IS THE FINDING. An email whose order lives in the
+    // customer's procurement portal (the Four Seasons notification: property,
+    // buyer, PO number, a link, and no goods anywhere) has no lines to read, and
+    // a source whose row structure did not survive has none that could be
+    // trusted. Both are reviewable documents, not failed reads, and
+    // `assessmentAdmitsZeroLines` is the only thing allowed to say so — see
+    // lib/platform/docu/body-source-assessment.ts. A document with nothing on it
+    // at all still 422s, exactly as before.
+    const assessedZeroLineOrder =
+      order.line_items.length === 0 &&
+      assessmentAdmitsZeroLines(extractionMetadata?.message_order_evidence) &&
+      Boolean(
+        order.customer_name ||
+        order.purchase_order_number ||
+        extractionMetadata?.message_order_evidence?.external_source,
+      );
+    if (!assessedZeroLineOrder && !order.customer_name && order.line_items.length === 0) {
       await supabase.from('documents').update({ status: 'error' }).eq('id', documentId);
       return {
         ok: false,
@@ -1035,6 +1053,15 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
       // structurally impossible instead of merely improbable — and if a second
       // metadata key is ever added, it has to be named here too, which is
       // exactly the review this deserves.
+      //
+      // THE SOURCE ASSESSMENT RIDES INSIDE `message_order_evidence` — it is not
+      // a second key here, and that was a deliberate choice rather than an
+      // oversight. `body_content_kind`, `body_parse_status`,
+      // `canonical_order_status`, `external_source` and `detected_line_signals`
+      // are all statements about the same message evidence this key already
+      // carries, and a duplicate top-level copy would be a second place for the
+      // verdict to live, drift, and disagree with itself. One named key in,
+      // one named key out; the Pick therefore needs no widening.
       ...(extractionMetadata?.message_order_evidence
         ? { message_order_evidence: extractionMetadata.message_order_evidence }
         : {}),

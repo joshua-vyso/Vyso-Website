@@ -98,6 +98,12 @@ export interface TextOrderReadParams {
   receivedDateTime?: string | null;
   body: string;
   products?: string[];
+  /**
+   * Set by the caller when `body` carries SERIALISED TABLES recovered by
+   * lib/platform/docu/email-html-normalizer.ts. Adds the order-form clause —
+   * see `buildTextOrderPrompt` — and nothing else.
+   */
+  hasTables?: boolean;
 }
 
 /** Read an order carried directly in message text into the canonical order shape. */

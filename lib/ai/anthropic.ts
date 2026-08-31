@@ -631,6 +631,8 @@ export async function extractOrderTextAnthropic(params: {
   receivedDateTime?: string | null;
   body: string;
   products?: string[];
+  /** Carries recovered tables — adds the order-form clause. See buildTextOrderPrompt. */
+  hasTables?: boolean;
 }): Promise<OrderExtractionResult> {
   const message = await client().messages.create({
     model: ORDER_EXTRACT_MODEL,
