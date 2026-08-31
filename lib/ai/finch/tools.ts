@@ -234,15 +234,16 @@ const DOCU_TOOLS: AgentTool[] = [
   {
     name: 'docu_find_documents',
     description:
-      'Search Doc-U for documents (invoices, statements, delivery notes, price lists, uploaded orders) by supplier name, document type, status and/or an upload date range. Returns a compact list: filename, type, supplier, date, extraction confidence, status, and total (when the document has one). Call this when the user asks to find, show or list documents — e.g. "last week\'s Umgeni invoices" or "statements still pending review". It does NOT return a document\'s contents — follow up with docu_get_document_summary on a result\'s id for that.',
+      'Search Doc-U for documents (invoices, statements, delivery notes, price lists, uploaded orders, expense receipts) by supplier name, document type, status and/or an upload date range. Returns a compact list: filename, type, supplier, date, extraction confidence, status, and total (when the document has one). Call this when the user asks to find, show or list documents — e.g. "last week\'s Umgeni invoices" or "statements still pending review". It does NOT return a document\'s contents — follow up with docu_get_document_summary on a result\'s id for that.',
     input_schema: {
       type: 'object',
       properties: {
         supplier: { type: 'string', description: 'Supplier name, or part of it, to filter by (partial match).' },
         document_type: {
           type: 'string',
-          enum: ['invoice', 'statement', 'delivery_note', 'price_list', 'order'],
-          description: 'Restrict to one document type.',
+          enum: ['invoice', 'statement', 'delivery_note', 'price_list', 'order', 'expense_receipt'],
+          description:
+            'Restrict to one document type. "expense_receipt" is a till slip (restaurant, fuel, hotel, parking) — an expense the business paid, with no stock, supplier or order behind it.',
         },
         status: {
           type: 'string',

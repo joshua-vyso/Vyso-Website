@@ -1,7 +1,10 @@
 import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
 import type { AiSummary, StatementSummary } from '@/lib/platform/docu/types';
+import type { FinancialDocument } from '@/lib/platform/types';
 import { auditLines, summariseAudit, type LineAuditSummary } from '@/lib/platform/docu/line-audit';
+import { coerceExpenseCategory } from '@/lib/platform/docu/expense-categories';
+import { deriveCashEffect, financialSeparatorHint } from '@/lib/platform/docu/financial-document';
 import {
   auditExtractionStructure,
   coerceConfidence,
@@ -107,6 +110,7 @@ export type ExtractedDocType =
   | 'delivery_note'
   | 'price_list'
   | 'order'
+  | 'expense_receipt'
   | null;
 
 export interface ExtractionResult {
@@ -122,6 +126,11 @@ export interface ExtractionResult {
   fields: ExtractedField[];
   line_items: ExtractedLineItem[];
   summary: StatementSummary | null;
+  /** An EXPENSE RECEIPT's money, verbatim — null on every other document type.
+   *  Mirrors `summary` exactly: a type-specific block the reader fills, coerced
+   *  here, stored in the same jsonb and rendered by one card. See
+   *  lib/platform/docu/financial-document.ts for what is asked of it. */
+  financial_document: FinancialDocument | null;
   /** 0–100, or NULL when the read stated no confidence. Nullable because a
    *  fabricated 0 is indistinguishable from a genuine one — see
    *  `coerceConfidence` in lib/platform/docu/extraction-quality.ts. */
@@ -145,11 +154,11 @@ function textOf(message: Anthropic.Message): string {
 }
 
 const EXTRACT_INSTRUCTION = `You are Doc-U, Vyso's product-line extractor for SME food & wholesale businesses.
-The attached document is a supplier/market statement, invoice, delivery note, price list, or order. It contains a table of PRODUCT PURCHASE LINES.
-Extract ONLY the product line items — do NOT extract header/summary/account/banking/VAT/balance/total fields.
+The attached document is a supplier/market statement, invoice, delivery note, price list, order, or expense receipt. It contains a table of PRODUCT PURCHASE LINES — or, on an expense receipt, of the items consumed.
+Extract ONLY the line items — do NOT extract header/summary/account/banking/VAT/balance/total fields. On an expense receipt those figures go in "financial_document" below, and nowhere else.
 Respond with ONLY a JSON object (no prose, no markdown code fences) of exactly this shape:
 {
-  "document_type": "invoice" | "statement" | "delivery_note" | "price_list" | "order",
+  "document_type": "invoice" | "statement" | "delivery_note" | "price_list" | "order" | "expense_receipt",
   "supplier": string | null,
   "supplier_vat": string | null,
   "bill_to": string | null,
@@ -180,6 +189,24 @@ Respond with ONLY a JSON object (no prose, no markdown code fences) of exactly t
     "net_financial_transactions": number | null,
     "audit_error": number | null
   } | null,
+  "financial_document": {
+    "merchant": string,
+    "receipt_reference": string,
+    "receipt_datetime": string,
+    "member_or_account": string,
+    "subtotal": string,
+    "gratuity": string,
+    "tax_amount": string,
+    "total": string,
+    "currency": string,
+    "payment_method": string,
+    "funding_account": string,
+    "opening_balance": string,
+    "settlement_amount": string,
+    "closing_balance": string,
+    "expense_category": string,
+    "notes": string
+  } | null,
   "overall_confidence": number
 }
 Rules:
@@ -187,6 +214,16 @@ Rules:
 - "supplier_vat": the VAT / tax registration number printed against that SAME issuing party (usually directly under its name or in its footer), exactly as shown. Do NOT return a VAT number that belongs to the recipient, and do not return one you are unsure the issuer owns — null is the right answer when the page does not make ownership obvious.
 - "bill_to": the party being BILLED — the name under "Invoice To", "Bill To", "Sold To", "Customer", "Deliver To", or the account holder named in a statement header. It is the mirror image of "supplier": one is who the document is FROM, the other is who it is TO, and they are never the same business. Return the name only (no address lines, no account code), cleaned to Title Case with any legal suffix kept. Use null if the document names no recipient.
 - "summary": if the document has a TRANSACTION SUMMARY / account-totals block (opening balance, closing/system balance, total purchases, VAT, pallet refunds/usage, payments, audit error), extract those figures as plain NUMBERS — strip currency symbols and thousands separators, keep the sign as printed (money out may be negative). Map: opening_balance, payments (or "net financial transactions" if no explicit payments line → put it in net_financial_transactions), total_purchases, total_pallet_refunds (pallet refunds/deposits), total_pallet_usage (pallet usage fee), vat ("VAT included in above transactions"), total_charges, closing_balance ("system closing balance"), audit_error. statement_date = the date printed next to the closing balance / "as at" date, exactly as shown (e.g. "23/MAY/2026"). If there is NO totals block, set "summary" to null.
+- "document_type": choose "expense_receipt" for a TILL SLIP — a restaurant, bar, fuel, hotel, parking, toll or retail receipt recording something the business CONSUMED and paid for. Its marks are a merchant trading name rather than a supplier account, a settlement taken on the spot (card, cash, member account, room charge) rather than terms, and rows that are meals, drinks, litres or nights rather than stock to be sold on. A supplier's invoice for produce, meat, packaging or any goods bought for resale or production is NOT an expense receipt — it stays "invoice", even when it was paid immediately. WHEN IN DOUBT between "invoice" and "expense_receipt" on a document whose rows are products destined for resale or stock, choose "invoice".
+- "financial_document": fill this ONLY when document_type is "expense_receipt"; set it to null for every other type. Every value is a STRING, transcribed EXACTLY as printed, keeping the decimal mark the document itself uses, with currency symbols and thousands separators stripped. Return "" for anything the slip does not print — "" is the right answer and a blank is not a zero. NEVER compute, derive, complete or reconcile any figure here: a total you worked out from the rows is not the total the till printed, and this block is only worth having because each figure in it is independent evidence.
+    - merchant = the trading name at the head of the slip. receipt_reference = its bill/slip/table/invoice number. receipt_datetime = the date and (if shown) time, exactly as printed. member_or_account = the member, account, room or card-holder the slip is charged to.
+    - subtotal = the goods/food total BEFORE any service charge. gratuity = the service charge / tip / gratuity line. total = the slip's own grand total.
+    - tax_amount = the VAT figure as printed. On these slips VAT is ALREADY INCLUDED IN the total — it is a portion OF that total, never an amount to be added to it. Do not add it to anything, and never put the gratuity here: a service charge is not a tax.
+    - currency = the symbol or code as printed ("R", "ZAR"). payment_method = how it was settled, as printed ("Card", "Cash", "Member account", "Room charge"). funding_account = the account the settlement was drawn from, when the slip names one.
+    - opening_balance, settlement_amount, closing_balance = the pre-funded / member-account balance BEFORE the settlement, the amount settled, and the balance AFTER it — but ONLY when the slip actually prints them. Leave all three "" when it does not. settlement_amount is the amount settled as a POSITIVE figure ("643.10"), never the signed movement printed in a balance column ("-643.10").
+    - expense_category = ONE of exactly these labels, copied verbatim, or "" when none clearly fits: Meals & entertainment, Fuel, Travel, Accommodation, Parking, Office expenses, Subscriptions, Repairs & maintenance, Professional services, Other. Do not invent a label, and do not use "Other" to mean "unsure" — "" is the honest answer when you are unsure.
+    - notes = anything else printed that a reviewer would want quoted (a covers count, a table number, a voucher). "" if there is nothing.
+  On an expense receipt the line_items are the ITEMS CONSUMED: one row per printed item, with description, quantity, unit_price and amount copied from the slip. Do not force produce fields onto them — weight, units_per_box, total_kg and unit stay "" unless the slip itself prints them.
 - Include EVERY product row across ALL pages and ALL "PURCHASES ON CARD ID" sections. Do not skip or summarise rows.
 - The commodity cell is often a messy comma-separated string like "BABY BUTTERNUT,300G PUNNE,*,0,*,12,*" or "ORANGES,6KG POCKET,NAVEL,2,M,*". From it derive:
     - description = the produce name, cleaned and Title Case (e.g. "Baby Butternut", "Oranges Navel"). Drop packaging words, grade codes, asterisks, and stray numeric codes.
@@ -327,6 +364,13 @@ async function extractDocumentOnce(params: DocumentInput): Promise<ExtractionRes
   const fields = Array.isArray(parsed.fields) ? parsed.fields : [];
   const lines = Array.isArray(parsed.line_items) ? parsed.line_items : [];
   const summary = coerceSummary(parsed.summary);
+  // Gated on the TYPE, not merely on the key being present: a reader that fills
+  // a financial block on an invoice has told us something about its own
+  // confusion, not something about the invoice, and storing that block would
+  // put an expense card on a supplier bill. The block only means anything on
+  // the one type it was written for.
+  const financialDocument =
+    parsed.document_type === 'expense_receipt' ? coerceFinancialDocument(parsed.financial_document, lines) : null;
   // NULL when the model stated no confidence, NOT 0. This line used to read
   // `typeof parsed.overall_confidence === 'number' ? … : 0` while the very
   // instruction above tells the model to "output numbers as plain strings" —
@@ -371,6 +415,7 @@ async function extractDocumentOnce(params: DocumentInput): Promise<ExtractionRes
     fields,
     line_items: audit.repaired ?? lines,
     summary,
+    financial_document: financialDocument,
     // A cap LOWERS a stated confidence; it never supplies one. With nothing
     // stated there is nothing to clamp, and writing the cap itself into the
     // column would turn "the reader said nothing" into "the reader said 70%".
@@ -435,6 +480,67 @@ function coerceSummary(raw: unknown): StatementSummary | null {
   // If literally nothing was parsed, treat as no summary.
   const hasAny = Object.values(out).some((v) => v != null);
   return hasAny ? out : null;
+}
+
+/**
+ * Coerce a parsed expense-receipt block into a `FinancialDocument`, or null.
+ *
+ * STRINGS STAY STRINGS. `coerceSummary` above turns a statement's totals into
+ * numbers because that is what a statement block has always been; this one does
+ * the opposite and keeps every money field exactly as the reader typed it. The
+ * reason is `lib/platform/locale-number.ts`: "643,10" means one thing on a South
+ * African slip and another on an American one, and the decision belongs to the
+ * one shared parser at the point of use, steered by the whole document's
+ * separator hint — not to `Number()` here, once, invisibly, before anything has
+ * seen the rest of the page.
+ *
+ * `cash_effect` IS NOT READ FROM THE MODEL. It is derived from the balance
+ * figures the model transcribed (`deriveCashEffect`), because it is a claim
+ * about money leaving an account and the document is not entitled to make it —
+ * only its arithmetic is. A reader could otherwise return "prefund_drawdown" on
+ * a card slip and nothing would contradict it.
+ *
+ * The suggested category is validated against the fixed list and drops to null
+ * when it is not on it — see expense-categories.ts on why "" must not become
+ * "Other".
+ */
+function coerceFinancialDocument(raw: unknown, lines: ExtractedLineItem[]): FinancialDocument | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const s = raw as Record<string, unknown>;
+  const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+  const out = {
+    merchant: str(s.merchant),
+    receipt_reference: str(s.receipt_reference),
+    receipt_datetime: str(s.receipt_datetime),
+    member_or_account: str(s.member_or_account),
+    subtotal: str(s.subtotal),
+    gratuity: str(s.gratuity),
+    tax_amount: str(s.tax_amount),
+    total: str(s.total),
+    currency: str(s.currency),
+    payment_method: str(s.payment_method),
+    funding_account: str(s.funding_account),
+    opening_balance: str(s.opening_balance),
+    settlement_amount: str(s.settlement_amount),
+    closing_balance: str(s.closing_balance),
+    notes: str(s.notes),
+    expense_category: coerceExpenseCategory(s.expense_category),
+    // Placeholder only — replaced on the very next line by the derivation. It
+    // is written as 'unknown' rather than left undefined so that no code path,
+    // however it exits, can produce a block that asserts a cash movement.
+    cash_effect: 'unknown' as const,
+  };
+  // A block with no merchant AND no money in it is not a receipt block, it is a
+  // key the reader emitted out of obligation. Same judgement `coerceSummary`
+  // makes: an object of empty strings is worse than null, because null renders
+  // nothing while the object renders an empty expense card.
+  const hasAny = out.merchant !== '' || out.total !== '' || out.subtotal !== '' || out.settlement_amount !== '';
+  if (!hasAny) return null;
+  // ONE reading of this receipt's number format, from its own header figures AND
+  // its rows together — the same shared-hint discipline the line audit follows,
+  // so the stamped cash effect can never disagree with what the review card
+  // computes from the identical figures.
+  return { ...out, cash_effect: deriveCashEffect(out, financialSeparatorHint(out, lines)) };
 }
 
 // ---------------------------------------------------------------------------

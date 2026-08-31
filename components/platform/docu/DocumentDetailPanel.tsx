@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ConfidenceText, StatusPill } from '@/components/platform/ui';
 import { ExtractionEditor } from '@/components/platform/ExtractionEditor';
 import { OrderReviewEditor, type CustomerLite, type LinkedOrder } from './OrderReviewEditor';
+import { ReceiptReviewCard } from './ReceiptReviewCard';
 import { ApprovalActions } from './ApprovalActions';
 import { DocumentPreview } from './DocumentPreview';
 import { DocumentRename } from './DocumentRename';
@@ -214,6 +215,19 @@ export function DocumentDetailPanel({
             orgUnits={orgUnits}
             products={products}
             printContext={printContext}
+          />
+        ) : doc.document_type === 'expense_receipt' ? (
+          /* A THIRD ARM, not a variant of the generic editor. The generic one is
+             a table of fields and product lines, which is the right shape for a
+             supplier invoice and the wrong one for a till slip: it has no place
+             to say "VAT included", no place to say what settling it did to a
+             member balance, and — worst — no place to say that approving it
+             moves no stock. See ReceiptReviewCard. */
+          <ReceiptReviewCard
+            documentId={doc.id}
+            extractedData={extracted}
+            confidence={doc.confidence}
+            supplierName={doc.supplier?.name ?? extracted?.supplier ?? null}
           />
         ) : (
           <ExtractionEditor

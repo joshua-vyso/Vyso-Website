@@ -30,6 +30,15 @@ const RULES: Record<DocumentType, { key: FeatureKey; reason: string; recommended
     { key: 'orderflow', reason: 'Track the purchase order', recommended: true },
     { key: 'procurepulse', reason: 'Forecast incoming stock', recommended: false },
   ],
+  // EMPTY, AND THE EMPTINESS IS THE FEATURE. An expense receipt feeds no module:
+  // there is no stock in a lunch, no supplier behind the restaurant, no order to
+  // track and no price worth benchmarking. `getRoutes` returns [] and the
+  // "Push to…" menu draws nothing, so the screen offers no button whose only
+  // possible outcome is the contamination `runDocumentSideEffects` refuses one
+  // layer down. `RULES` is a `Record<DocumentType, …>`, so this entry is not
+  // optional — which is the point: a sixth document type cannot be added without
+  // someone answering this question in writing.
+  expense_receipt: [],
 };
 
 export function getRoutes(docType: DocumentType | null): ModuleRoute[] {

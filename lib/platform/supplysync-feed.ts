@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { docTotal } from '@/lib/platform/docu/extract';
+import { isFinancialOnly } from '@/lib/platform/docu/business-effect';
 import { isUniqueViolation } from '@/lib/platform/db-errors';
 import type { DocumentType, ExtractedData } from '@/lib/platform/types';
 
@@ -194,6 +195,21 @@ export async function feedDocumentToSupplySync(
   },
 ): Promise<{ fed: boolean; reason?: string }> {
   if (doc.document_type === 'order') return { fed: false, reason: 'orders-route-to-orderflow' };
+  // A FINANCIAL-ONLY DOCUMENT HAS NO SUPPLIER TO INTELLIGENCE. An expense
+  // receipt's merchant sold the business a meal, not goods on account: there is
+  // no relationship to put on a timeline, and its total in the spend rollups
+  // would inflate a "supplier's" purchases with money that never went to a
+  // supplier. `runDocumentSideEffects` already refuses to call us for one of
+  // these — this is the second lock on the same door, because this function is
+  // also reachable from app/api/ai/extract's manual-upload path.
+  //
+  // ONE MORE DENY, NOT AN ALLOW-LIST REWRITE. Flipping this to an allow-list
+  // would silently change behaviour for every type NOT on it — including a null
+  // document_type, which currently feeds as a generic 'document_received' event
+  // and has done since this function shipped. That is a separate decision with
+  // its own evidence, and smuggling it in beside an expense-receipt fix is how
+  // an unrelated regression gets attributed to the wrong change.
+  if (isFinancialOnly(doc)) return { fed: false, reason: 'financial-only-document' };
   if (!doc.supplier_id) return { fed: false, reason: 'no-supplier' };
 
   const { data: sup } = await supabase

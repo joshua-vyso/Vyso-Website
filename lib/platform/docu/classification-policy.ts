@@ -65,9 +65,32 @@ function hasOrderCue(input: ClassificationSignal): boolean {
  * confidence is low, or when the document's own text is shaped like a
  * purchase order/requisition — any one signal is enough, because the whole
  * point is to catch the case where the OTHER two signals stayed quiet.
+ *
+ * AN EXPENSE RECEIPT IS ACCEPTED ON TWO OF THE THREE SIGNALS' SILENCE, and it is
+ * the one exception to the rule above. The two cheap signals — a failed
+ * structure audit, a low or missing confidence — are things a till slip trips
+ * routinely and innocently: it is a photograph of thermal paper with four rows
+ * on it, so a reader that is honestly unsure about it is being honest, not
+ * wrong about what it is. Escalating on that alone would hand the slip to the
+ * ORDER lane, and the order lane's job is to find an order in what it is
+ * given — an order which, if adopted, creates an OrderFlow order and stock
+ * movements for a lunch. The asymmetry that makes escalation cheap everywhere
+ * else ("it only buys a second read") does not hold here, because the second
+ * read's whole tendency is towards the one outcome this document type exists to
+ * prevent.
+ *
+ * So the receipt escalates on EVIDENCE ONLY: the document's own text has to say
+ * "purchase order" or carry a PO number before we will ask the order lane about
+ * it. That leaves the genuine confusion case — a purchase order misclassified
+ * as a receipt — caught by the cue that would identify it either way, and
+ * everything else accepted as read. Every other path through this function is
+ * untouched.
  */
 export function decideClassificationRouting(input: ClassificationSignal): ClassificationRouting {
   if (input.document_type === 'order') return 'accept';
+  if (input.document_type === 'expense_receipt') {
+    return hasOrderCue(input) ? 'escalate_order' : 'accept';
+  }
   const needsReview = input.structure_audit?.status === 'needs_review';
   // A MISSING confidence counts as the worst one. This gate only ever buys a
   // second read — cheap, and `document-ingest.ts` still makes that read earn

@@ -23,6 +23,10 @@ export const DOC_TYPES: readonly DocTypeMeta[] = [
   { key: 'delivery_note', label: 'Delivery notes', tint: '#FBEEDA', iconBg: '#854F0B' },
   { key: 'price_list', label: 'Price lists', tint: '#ECEAFB', iconBg: '#5B4FD6' },
   { key: 'order', label: 'Orders', tint: '#FBE7EC', iconBg: '#C0345A' },
+  // Expense receipts get a tile, a folder and a filter chip like every other
+  // type — they are excluded from operational ROUTING, not from Doc-U. A
+  // financial document nobody can find is a financial document nobody files.
+  { key: 'expense_receipt', label: 'Expense receipts', tint: '#EDF0E9', iconBg: '#4A6136' },
 ];
 
 /**
@@ -48,6 +52,7 @@ export const DOC_TYPE_LABEL: Record<DocumentType, string> = {
   delivery_note: 'Delivery note',
   price_list: 'Price list',
   order: 'Order',
+  expense_receipt: 'Expense receipt',
 };
 
 /**

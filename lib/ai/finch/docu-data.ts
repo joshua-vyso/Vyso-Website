@@ -24,7 +24,14 @@ function must<T>(res: { data: T | null; error: { message: string } | null }, lab
   return (res.data ?? ([] as unknown as T)) as T;
 }
 
-const DOC_TYPES: readonly DocumentType[] = ['invoice', 'statement', 'delivery_note', 'price_list', 'order'];
+const DOC_TYPES: readonly DocumentType[] = [
+  'invoice',
+  'statement',
+  'delivery_note',
+  'price_list',
+  'order',
+  'expense_receipt',
+];
 const DOC_STATUSES: readonly DocumentStatus[] = [
   'pending',
   'extracted',

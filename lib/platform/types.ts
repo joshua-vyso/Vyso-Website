@@ -46,7 +46,130 @@ export type DocumentType =
   | 'statement'
   | 'delivery_note'
   | 'price_list'
-  | 'order';
+  | 'order'
+  /** A till slip: restaurant, fuel, hotel, parking — consumption the business
+   *  PAID FOR, as opposed to stock it bought to sell on. The distinction is not
+   *  cosmetic. Until this type existed a Country Club lunch classified as
+   *  'invoice' and was therefore filed as a supplier bill: the restaurant became
+   *  a suppliers row, its meal lines became ProcurePulse stock, and its total
+   *  joined that "supplier's" spend history. "Not operationally relevant" is not
+   *  the same as "financially irrelevant" — the expense is real and belongs in
+   *  Doc-U; it simply has no order, no stock and no supplier behind it. See
+   *  lib/platform/docu/business-effect.ts for the dimension that enforces that. */
+  | 'expense_receipt';
+
+/**
+ * WHAT A DOCUMENT DOES TO THE BUSINESS, as opposed to what it looks like.
+ *
+ * `document_type` answers "what is this piece of paper"; this answers the
+ * question every downstream module was actually asking when it switched on the
+ * type — "does this move stock/orders/suppliers, does it move money, or
+ * neither?" Those are two questions, and collapsing them into one is what let a
+ * restaurant receipt walk into ProcurePulse: it is shaped like an invoice, so
+ * every allow-list keyed on shape said yes.
+ *
+ *   - `operational_financial` — the ordinary case. Stock or orders move AND
+ *     money moves: invoices, statements, delivery notes, customer orders.
+ *   - `financial_only` — money moved, nothing operational did. Expense
+ *     receipts. HARD-EXCLUDED from every operational write; still reviewed,
+ *     still reconciled, still an expense.
+ *   - `operational_only` — informs operations, bills nothing. A price list.
+ *   - `informational` — neither. Reserved; nothing derives it today.
+ *
+ * Stored additively in `extracted_data.business_effect` and DERIVED from
+ * `document_type` when that key is absent, so no historical row needs a
+ * backfill. Read it ONLY through `documentBusinessEffect` — the raw key is
+ * jsonb a reader wrote, and a gate that trusts it directly is a gate that
+ * trusts the document about its own routing.
+ */
+export type DocumentBusinessEffect =
+  | 'operational_financial'
+  | 'financial_only'
+  | 'operational_only'
+  | 'informational';
+
+/**
+ * WHAT ACTUALLY HAPPENED TO CASH, and — far more importantly — what did not.
+ *
+ * A receipt dated today is not evidence of money leaving a bank account today.
+ * The Country Club slip settles against a PRE-FUNDED member balance: the cash
+ * left the bank on whatever day that balance was topped up, which the receipt
+ * does not print and we therefore do not know. Recognising the expense on the
+ * receipt date is correct; asserting a bank movement on that date is a
+ * fabrication a bookkeeper would have to unpick.
+ *
+ * So there are exactly two values, and neither of them names a bank:
+ *   - `prefund_drawdown` — the paper printed opening/settlement/closing figures
+ *     AND they reconcile, so we can say the member balance went down. That is a
+ *     statement about the balance, not about the bank.
+ *   - `unknown` — everything else, INCLUDING a receipt that plainly says "Card".
+ *     A card slip does not tell us when the acquirer settled either.
+ *
+ * There is deliberately no 'direct' member. The moment one exists somebody will
+ * post it to a cash account on the receipt's date.
+ */
+export type CashEffect = 'prefund_drawdown' | 'unknown';
+
+/**
+ * An expense receipt's money, exactly as the till printed it.
+ *
+ * EVERY FIGURE IS A VERBATIM STRING and "" means the paper printed nothing —
+ * the same contract as `OrderDocumentTotals` below, for the same reason: the
+ * moment one of these becomes a number, somebody has decided what "1 234,56"
+ * means, and that decision belongs to the shared locale-aware parser at the
+ * point of use (steered by the document's own separator hint), never to the
+ * reader and never twice.
+ *
+ * NOTHING HERE IS EVER COMPUTED — not by the model, not by us. A subtotal we
+ * derived from the lines would agree with the lines by construction, and
+ * `reconcileFinancialDocument` would then be checking our arithmetic against
+ * itself instead of against the paper. The whole value of this block is that
+ * every figure in it is an independent witness.
+ *
+ * See lib/platform/docu/financial-document.ts for what is asked of these
+ * figures and — the longer list — what is deliberately not.
+ */
+export interface FinancialDocument {
+  /** The trading name on the slip ("The Country Club Johannesburg"). */
+  merchant: string;
+  /** Bill/table/slip/invoice number as printed. */
+  receipt_reference: string;
+  /** Date and (when printed) time, exactly as shown — never normalised here. */
+  receipt_datetime: string;
+  /** Member/account/room/card-holder identifier the slip is charged against. */
+  member_or_account: string;
+  /** Goods/food subtotal BEFORE any gratuity, as printed. */
+  subtotal: string;
+  /** Service charge / tip, as printed. It is NOT tax and never enters the VAT
+   *  figure — see the reconciliation module's docblock. */
+  gratuity: string;
+  /** VAT as printed, and on a South African till slip this is VAT ALREADY
+   *  INCLUDED IN the total, not an amount to add to it. */
+  tax_amount: string;
+  /** The slip's own grand total. */
+  total: string;
+  /** Currency symbol/code as printed ("R", "ZAR"), or "". */
+  currency: string;
+  /** "Card", "Cash", "Member account", "Room charge" — as printed. */
+  payment_method: string;
+  /** The account the settlement was taken from, when the slip names one. */
+  funding_account: string;
+  /** Pre-fund/member balance BEFORE this settlement, when printed. */
+  opening_balance: string;
+  /** The amount settled, POSITIVE — never the signed movement in a balance
+   *  column. See reconcileFinancialDocument for why the sign matters. */
+  settlement_amount: string;
+  /** Balance AFTER this settlement, when printed. */
+  closing_balance: string;
+  /** Anything else the reviewer would want quoted. */
+  notes: string;
+  /** One of EXPENSE_CATEGORIES, suggested by the reader and validated against
+   *  that list (an unrecognised suggestion becomes null, never a new category).
+   *  The reviewer can change it and nothing locks it — see expense-categories.ts. */
+  expense_category?: string | null;
+  /** Derived, never transcribed: `deriveCashEffect` in financial-document.ts. */
+  cash_effect: CashEffect;
+}
 
 export interface Organisation {
   id: string;
@@ -311,6 +434,15 @@ export interface ExtractedData {
    *  `OrderDocumentTotals` above and `reconcileDocumentTotals` in
    *  lib/platform/docu/order-line-totals.ts. */
   totals?: OrderDocumentTotals | null;
+  /** For EXPENSE RECEIPTS: the slip's money, verbatim — see `FinancialDocument`.
+   *  Absent on every other document type and on everything filed before this
+   *  existed, which is why nothing may read its absence as "no expense". */
+  financial_document?: FinancialDocument | null;
+  /** What this document does to the business — stamped at ingest, DERIVED from
+   *  `document_type` when absent so historical rows need no backfill. Never read
+   *  this key directly: `documentBusinessEffect` (lib/platform/docu/business-effect.ts)
+   *  is the only sanctioned reader, and every routing gate goes through it. */
+  business_effect?: DocumentBusinessEffect | null;
   extraction_model?: string | null;
   extraction_warning?: string | null;
   /** Structural evidence-loss gate; additive for historical rows. */

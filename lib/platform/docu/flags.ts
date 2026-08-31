@@ -6,6 +6,7 @@ import { DOC_LOW_CONFIDENCE_THRESHOLD } from '@/lib/platform/tokens';
 import type { DocumentWithSupplier } from '@/lib/platform/types';
 import type { DocuExtractedData, DocumentFlag, FlagKind, FlagSeverity } from './types';
 import { docTotal, findFieldValue } from './extract';
+import { isFinancialOnly } from './business-effect';
 import { lowResolutionNote } from './image-size';
 
 export const FLAG_META: Record<FlagKind, { label: string; severity: FlagSeverity }> = {
@@ -120,7 +121,16 @@ export function deriveFlags(
   // carry the reviewed gross, so without this gate every order over R12k would
   // raise a spend flag reading "above the usual range for this supplier" — on a
   // document that has no supplier at all, only a customer.
-  const total = doc.document_type === 'order' ? null : docTotal(doc);
+  //
+  // Financial-only documents are excluded for exactly the same reason, one step
+  // further along: an expense receipt HAS no supplier and never will, so
+  // "above the usual range for this supplier" is a sentence about a relationship
+  // that does not exist — and there is no spend history to have a usual range
+  // in, because the SupplySync feed refuses these documents by design. A big
+  // hotel bill is a real thing to notice; this flag is simply not the mechanism
+  // that can notice it honestly.
+  const total =
+    doc.document_type === 'order' || isFinancialOnly(doc) ? null : docTotal(doc);
   if (total != null && total > 12000) {
     add('unusual_spend', `Total of R ${Math.round(total).toLocaleString('en-ZA')} is above the usual range for this supplier.`, 'mock');
   }

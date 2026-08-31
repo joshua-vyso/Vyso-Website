@@ -253,16 +253,33 @@ export async function syncOrderFromDocument(
 
   const { data: docRow } = await db
     .from('documents')
-    .select('id, extracted_data, customer_id, email_ingest_id')
+    .select('id, document_type, extracted_data, customer_id, email_ingest_id')
     .eq('id', documentId)
     .eq('org_id', orgId)
     .maybeSingle();
   if (!docRow) return { ok: false, reason: 'doc-not-found' };
   const sourceDoc = docRow as {
+    document_type?: string | null;
     extracted_data?: ExtractedData;
     customer_id?: string | null;
     email_ingest_id?: string | null;
   };
+  // THE LAST LINE OF DEFENCE, AND IT HAD NONE UNTIL NOW. This function creates
+  // customers, products, an order, an invoice and stock movements out of
+  // whatever line items it is handed — it never asked what KIND of document
+  // they came off. Its three callers each gate on `document_type === 'order'`
+  // independently, which is three chances to add a fourth caller that doesn't;
+  // and the document that would arrive through such a gap is precisely the one
+  // that must never come through it, since a restaurant receipt's four rows are
+  // structurally indistinguishable from a small order.
+  //
+  // A guard three callers make redundant is a guard that costs one query column
+  // and removes an entire class of future accident. It reports failure the way
+  // every other refusal in this function does — `{ ok: false, reason }`, never a
+  // throw — so `runDocumentSideEffects` turns it into the same "could not build
+  // the order" error a real failure produces, and the document stays in the
+  // queue rather than being marked approved with nothing behind it.
+  if (sourceDoc.document_type !== 'order') return { ok: false, reason: 'not-an-order-document' };
   const ed = (sourceDoc.extracted_data ?? {}) as ExtractedData;
   const lines = ed.line_items ?? [];
 

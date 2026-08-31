@@ -27,7 +27,30 @@ const TYPE_LABEL: Record<string, string> = {
   delivery_note: 'Delivery note',
   price_list: 'Price list',
   order: 'Order',
+  expense_receipt: 'Expense receipt',
 };
+
+/**
+ * What pressing Save actually does to this document — said in the document's own
+ * terms rather than in the queue's default ones.
+ *
+ * THE OLD SENTENCE WAS A PROMISE THIS ROW CANNOT KEEP. It read "Saving updates
+ * stock and supplier prices" for everything that was not an order, and on an
+ * expense receipt that is not a softening or a simplification — it is the exact
+ * opposite of what happens. `runDocumentSideEffects` returns before it touches
+ * anything (see its financial-only gate), so the one thing the reviewer is told
+ * about the button is the one thing it will not do. Telling them nothing at all
+ * would be better; telling them the truth is better still, because "no stock,
+ * supplier or order changes" is precisely the reassurance that makes approving a
+ * restaurant slip feel safe rather than reckless.
+ */
+function savingNote(documentType: string | null): string {
+  if (documentType === 'order') return 'Saving creates the OrderFlow order.';
+  if (documentType === 'expense_receipt') {
+    return 'Saving records the expense — no stock, supplier or order changes.';
+  }
+  return 'Saving updates stock and supplier prices.';
+}
 
 function fmtWhen(iso: string): string {
   const d = new Date(iso);
@@ -210,9 +233,7 @@ export function DocumentReviewQueue({ docs, canReview }: { docs: DocumentWithSup
                   <Link href={`/app/docu/${d.id}`} className="font-medium text-[#1F5FA8] hover:underline">
                     Open full document →
                   </Link>
-                  <span className="text-[#8A8E86]">
-                    Saving {d.document_type === 'order' ? 'creates the OrderFlow order' : 'updates stock and supplier prices'}.
-                  </span>
+                  <span className="text-[#8A8E86]">{savingNote(d.document_type)}</span>
                 </div>
               </div>
             ) : null}

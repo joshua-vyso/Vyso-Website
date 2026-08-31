@@ -14,9 +14,14 @@
  * views never recompute it per render.
  */
 
-import { parseAmount } from '@/lib/platform/docu/extract';
-import type { ExtractedData } from '@/lib/platform/types';
-import type { SupplierPricingRecord } from '@/lib/platform/supplysync-data';
+// `.ts`-suffixed relative specifiers, not the `@/` alias, because `node --test`
+// resolves neither extensionless ESM specifiers nor the alias — and the docblock
+// above claims this module is pure and testable, which was true of the maths and
+// not of the loading. Same convention as order-line-totals.ts and line-audit.ts.
+// Specifiers only: no symbol, signature or line of logic moved.
+import { parseAmount } from './docu/extract.ts';
+import type { ExtractedData } from './types.ts';
+import type { SupplierPricingRecord } from './supplysync-data.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -160,7 +165,18 @@ export function readPriceObservations(
   const out: PriceObservation[] = [];
   for (const d of docs) {
     if (!d.supplier_id) continue;
-    if (d.document_type && !PRICED_DOC_TYPES.has(d.document_type)) continue;
+    // A DOCUMENT THAT DOES NOT SAY WHAT IT IS DOES NOT GET TO SET A PRICE. The
+    // guard used to read `if (d.document_type && !PRICED_DOC_TYPES.has(...))`,
+    // which is an allow-list with a hole in it: a null type failed the first
+    // condition and sailed through, so an unclassified document's line prices
+    // became observed supplier prices — and an expense receipt, once it lost its
+    // type for any reason, would put a R47.60 Coke Zero into a supplier's price
+    // history as the price of "coke zero". The allow-list is the whole point of
+    // having one; a missing type must fail it, not skip it.
+    //
+    // `expense_receipt` needs no clause of its own here — it is simply not on
+    // the list, which is how a properly-closed allow-list is supposed to work.
+    if (!d.document_type || !PRICED_DOC_TYPES.has(d.document_type)) continue;
     const ssId = bridge.get(d.supplier_id);
     if (!ssId) continue;
     const date = (d.created_at ?? '').slice(0, 10);

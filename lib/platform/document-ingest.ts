@@ -9,6 +9,7 @@ import {
   type StructuralExtraction,
 } from '@/lib/platform/docu/extraction-quality';
 import { decideClassificationRouting } from '@/lib/platform/docu/classification-policy';
+import { businessEffectForType, isFinancialOnly } from '@/lib/platform/docu/business-effect';
 import { imagePixelSize } from '@/lib/platform/docu/image-size';
 import { syncOrderFromDocument } from '@/lib/platform/orderflow-from-doc';
 import { feedDocumentToProcurePulse, orgHasProcurePulse } from '@/lib/platform/procurepulse-feed';
@@ -356,7 +357,27 @@ export async function runDocumentSideEffects(
     /** When the document was filed — dates the SupplySync timeline event. */
     created_at?: string | null;
   },
-): Promise<{ orderSync?: unknown }> {
+): Promise<{ orderSync?: unknown; skipped?: 'financial_only' }> {
+  // THE GATE. Every confirm path in the product crosses this function — Doc-U's
+  // Save, the Review chat's approve, the chat drop, the email deferred commit —
+  // which is exactly why the financial-only exclusion is the FIRST thing it
+  // does, before the order branch, before the feature lookups, before anything
+  // has a chance to write. A restaurant receipt has no order to build, no stock
+  // to move, no supplier to create and nothing to put on a supplier's timeline;
+  // the R643.10 is a real expense and it is recognised by the document existing
+  // and being reviewed, not by any of those.
+  //
+  // The exclusions further downstream (SupplySync's deny-list, the price
+  // observer's guard, syncOrderFromDocument's own type check) are defence in
+  // depth and stay where they are. This one is the load-bearing gate: it is the
+  // only place that catches EVERY path at once, and a new caller added a year
+  // from now inherits it without knowing it exists.
+  //
+  // Returned explicitly rather than as a bare `{}` so a caller can tell "no
+  // side effects were appropriate" from "side effects ran and found nothing to
+  // do" — two outcomes that look identical from the outside and mean opposite
+  // things when a document turns out to be missing from ProcurePulse.
+  if (isFinancialOnly(doc)) return { skipped: 'financial_only' };
   if (doc.document_type === 'order') {
     const orderSync = await syncOrderFromDocument(supabase, { documentId: doc.id, orgId: doc.org_id });
     // syncOrderFromDocument REPORTS failure by returning { ok: false, reason }, it does not
@@ -971,6 +992,11 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
     }
     const extractedData: ExtractedData = {
       fields: [],
+      // An order moves stock AND money, which is the ordinary answer — but it is
+      // stamped rather than left to derive, so that "has a business_effect" and
+      // "was filed since the dimension existed" stay the same statement on every
+      // path out of this pipeline. See lib/platform/docu/business-effect.ts.
+      business_effect: businessEffectForType('order'),
       line_items: order.line_items,
       customer_name: order.customer_name,
       customer_confidence: order.customer_confidence,
@@ -1113,12 +1139,31 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
     /* unknown direction — carry on exactly as before */
   }
 
+  // WHAT THIS DOCUMENT MOVES, decided from the type the classification settled
+  // on — the stamp below is written from this, so it is derived here once and
+  // read twice rather than asked twice. Not `documentBusinessEffect(doc)`: there
+  // is no stored stamp to prefer yet, and this line is what creates it.
+  const businessEffect = businessEffectForType(documentType);
+  const financialOnly = businessEffect === 'financial_only';
+
   let supplierId: string | null = null;
+  // NO SUPPLIER IS EVER CREATED FROM AN EXPENSE RECEIPT. The Country Club is not
+  // a vendor of this business — it sold it lunch — and `resolveSupplierProfile`
+  // does not merely look one up, it CREATES the suppliers row and the SupplySync
+  // profile behind it. Left ungated, every restaurant, filling station and
+  // parking garage the org ever visits becomes a permanent supplier with a spend
+  // history, and the supplier list stops being a list of suppliers.
+  //
+  // The merchant name is still read, still stored in `extracted_data.supplier`,
+  // and still shown on the receipt card. What is refused is the WRITE — the
+  // reviewer sees exactly who the slip is from without the org's vendor list
+  // acquiring a restaurant.
+  //
   // Deferred email ingest is a READ/FILE/EXTRACT boundary only. Supplier resolution
   // can create both a suppliers row and a SupplySync profile, so it belongs behind
   // the same human approval boundary as stock, orders and invoices. The extracted
   // supplier name remains in extracted_data for the reviewer to confirm/link.
-  if (parties.supplierName && !deferCommit) {
+  if (parties.supplierName && !deferCommit && !financialOnly) {
     try {
       supplierId = await resolveSupplierProfile(supabase, orgId, parties.supplierName);
     } catch {
@@ -1141,6 +1186,20 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
     image_pixels: imagePixels,
     // Only set when the org issued it — lib/platform/docu/document-direction.ts.
     direction: parties.record,
+    // WHAT THIS DOCUMENT MOVES, recorded beside what it is. Stamped on every
+    // document, not just receipts: a stamp that appeared only on the excluded
+    // type would make its ABSENCE the real signal, and absence is also what a
+    // legacy row looks like. Written, every row, from this moment on — while
+    // `documentBusinessEffect` keeps deriving the same answer for the rows filed
+    // before today, which is what makes a backfill unnecessary rather than
+    // merely deferred.
+    business_effect: businessEffect,
+    // An EXPENSE RECEIPT's money, verbatim, or null — the reader fills this only
+    // for that type (see coerceFinancialDocument). It is the entire financial
+    // record of the document: nothing downstream will ever build an order,
+    // invoice or stock movement from it, so if the figures are not kept here
+    // they are not kept anywhere.
+    financial_document: cls.financial_document,
     // Present only when the routing escalation above ran and LOST — the
     // classification read (already flagged by its own structure audit above)
     // is what's being stored here, and this is the reviewer's evidence that a

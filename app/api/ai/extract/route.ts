@@ -12,6 +12,7 @@ import { syncOrderFromDocument } from '@/lib/platform/orderflow-from-doc';
 import { classifyDocumentParties, resolveSupplierProfile } from '@/lib/platform/document-ingest';
 import type { DocumentPartiesVerdict } from '@/lib/platform/document-ingest';
 import { autoForwardDocumentToHubdoc } from '@/lib/platform/hubdoc';
+import { businessEffectForType } from '@/lib/platform/docu/business-effect';
 import { imagePixelSize } from '@/lib/platform/docu/image-size';
 import type { Document } from '@/lib/platform/types';
 
@@ -275,11 +276,27 @@ export async function POST(req: Request) {
     /* unknown direction — carry on exactly as before */
   }
 
+  // WHAT THIS DOCUMENT MOVES — derived from the type this read settled on, and
+  // stamped into `extracted_data` below so this path and the ingest pipeline
+  // file identical rows. See lib/platform/docu/business-effect.ts.
+  const businessEffect = businessEffectForType(documentType);
+  const financialOnly = businessEffect === 'financial_only';
+
   // Resolve (or create) the extracted supplier into a suppliers row and link the
   // document, so the inbox, supplier intel and the ProcurePulse feed all see a
   // real counterparty. Best-effort — never block extraction on this.
+  //
+  // NOT FOR AN EXPENSE RECEIPT. `resolveSupplierProfile` creates the suppliers
+  // row and the SupplySync profile behind it, and the merchant on a till slip is
+  // not a vendor of this business — see the same refusal, with the same
+  // reasoning, in document-ingest.ts. The merchant name still reaches
+  // `extracted_data.supplier` and the receipt card; only the write is refused.
   let supplierId = doc.supplier_id;
-  if (parties.supplierName) {
+  if (financialOnly) {
+    // Left exactly as it was found. An expense receipt must neither create a
+    // supplier nor CLEAR one a human deliberately linked earlier — doing
+    // nothing is the only move here that cannot lose information.
+  } else if (parties.supplierName) {
     try {
       supplierId = (await resolveSupplierProfile(supabase, doc.org_id, parties.supplierName)) ?? doc.supplier_id;
     } catch {
@@ -309,6 +326,13 @@ export async function POST(req: Request) {
     // Written on every document, not just orders: an invoice photographed too
     // small misreads exactly the same way an order does.
     image_pixels: imagePixels,
+    // What this document moves, and — on an expense receipt only — its money,
+    // verbatim. Both stamped on the manual-upload path exactly as the ingest
+    // pipeline stamps them, because a receipt uploaded from the Doc-U screen and
+    // one forwarded by email must be the same row afterwards. See
+    // lib/platform/docu/business-effect.ts and financial-document.ts.
+    business_effect: businessEffect,
+    financial_document: result.financial_document,
   };
 
   const { error: updateErr } = await supabase

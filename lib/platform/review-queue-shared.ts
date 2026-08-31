@@ -79,7 +79,12 @@ export type ReviewKind = 'document' | 'quote_request';
  */
 export type ReviewModuleKey = 'docu' | 'orderflow';
 
-export type ReviewTaskId = 'docu:invoices' | 'docu:statements' | 'docu:flagged' | 'orderflow:quotes';
+export type ReviewTaskId =
+  | 'docu:invoices'
+  | 'docu:statements'
+  | 'docu:expenses'
+  | 'docu:flagged'
+  | 'orderflow:quotes';
 
 export interface ReviewTask {
   id: ReviewTaskId;
@@ -109,6 +114,14 @@ export const REVIEW_MODULES: readonly { key: ReviewModuleKey; label: string }[] 
 export const REVIEW_TASKS: readonly ReviewTask[] = [
   { id: 'docu:invoices', module: 'docu', label: 'Invoices to approve', approvable: true },
   { id: 'docu:statements', module: 'docu', label: 'Statements', approvable: true },
+  // ITS OWN PILE, NOT "INVOICES". Approving an invoice and approving an expense
+  // receipt look identical on screen and do entirely different things: one
+  // updates stock, supplier prices and a supplier's spend history, the other
+  // records that lunch was bought. Filing receipts under "Invoices to approve"
+  // would tell the reviewer they are approving the first while they are in fact
+  // approving the second — and the heading is the only sentence in this queue
+  // that some of them will read.
+  { id: 'docu:expenses', module: 'docu', label: 'Expense receipts', approvable: true },
   { id: 'docu:flagged', module: 'docu', label: 'Flagged — Vyso could not read these', approvable: false },
   { id: 'orderflow:quotes', module: 'orderflow', label: 'Quote requests', approvable: false },
 ];
@@ -270,6 +283,7 @@ function outgoingDirection(row: ReviewDocumentRow): DocumentDirectionRecord | nu
  */
 export function reviewDocumentTask(row: Pick<ReviewDocumentRow, 'status' | 'document_type'>): ReviewTaskId {
   if (row.status === 'error') return 'docu:flagged';
+  if (row.document_type === 'expense_receipt') return 'docu:expenses';
   return row.document_type === 'statement' ? 'docu:statements' : 'docu:invoices';
 }
 

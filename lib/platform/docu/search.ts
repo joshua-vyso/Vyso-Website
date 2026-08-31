@@ -17,13 +17,18 @@ export const SEARCH_EXAMPLES = [
 const TYPE_WORDS: [RegExp, DocumentType][] = [
   [/delivery\s*notes?/, 'delivery_note'],
   [/price\s*lists?/, 'price_list'],
+  // BEFORE the bare `receipts?` alternative it shares a suffix with, and before
+  // `invoices?` for the same reason the two entries above sit where they do:
+  // this list stops at the first match, so the more specific phrase has to be
+  // asked first or "expense receipts" would never be reachable.
+  [/(?:expense\s*)?receipts?/, 'expense_receipt'],
   [/invoices?/, 'invoice'],
   [/statements?/, 'statement'],
   [/orders?/, 'order'],
 ];
 
 const OPERATOR_WORDS =
-  /(invoices?|statements?|delivery\s*notes?|price\s*lists?|orders?|above|over|more\s*than|with|price\s*spikes?|duplicates?|credit\s*notes?|from|last\s*(?:week|month)|mentioning|r?\s*[\d.,]+\s*[km]?)/g;
+  /(invoices?|statements?|delivery\s*notes?|price\s*lists?|orders?|(?:expense\s*)?receipts?|above|over|more\s*than|with|price\s*spikes?|duplicates?|credit\s*notes?|from|last\s*(?:week|month)|mentioning|r?\s*[\d.,]+\s*[km]?)/g;
 
 export function parseSearch(query: string): ParsedSearch {
   const text = query.trim();

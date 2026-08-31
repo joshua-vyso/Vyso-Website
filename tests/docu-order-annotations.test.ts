@@ -225,7 +225,11 @@ function persistedByExtraction(): DocuExtractedData {
 
 function seededDb(extracted: DocuExtractedData): FakeDb {
   return new FakeDb({
-    documents: [{ id: DOC, org_id: ORG, extracted_data: extracted }],
+    // `document_type` is seeded because `syncOrderFromDocument` now reads it and
+    // refuses any row that is not an order — its own last line of defence, added
+    // with the financial-document lane. The fixture always MEANT an order; it
+    // simply never had to say so while nothing asked.
+    documents: [{ id: DOC, org_id: ORG, document_type: 'order', extracted_data: extracted }],
     of_orders: [],
     of_order_items: [],
     of_customers: [],
@@ -393,7 +397,8 @@ function seededCapitalDb(
   opts: { uomRules?: Record<string, unknown>[]; aliases?: Record<string, unknown>[] } = {},
 ): FakeDb {
   return new FakeDb({
-    documents: [{ id: CAP_DOC, org_id: CAP_ORG, extracted_data: extracted }],
+    // See the note on the fixture above: an order document must now say it is one.
+    documents: [{ id: CAP_DOC, org_id: CAP_ORG, document_type: 'order', extracted_data: extracted }],
     of_orders: [],
     of_order_items: [],
     of_customers: [{ id: CAPITAL, org_id: CAP_ORG, name: 'Capital' }],
