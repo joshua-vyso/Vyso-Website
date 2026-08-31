@@ -937,6 +937,18 @@ export function OrderReviewEditor({
           ) : (
             <p className="mt-1.5 text-[12px] text-[#854F0B]">No customer name was read — pick or create one.</p>
           )}
+          {/* THE HUMAN, BESIDE THE BUSINESS RATHER THAN INSTEAD OF IT.
+              Until `contact_person` existed the order prompt guaranteed a
+              PERSON on email and a BUSINESS on a printed PO, into the same
+              field — so "Keshisha Ramsewak" arrived in the customer slot with
+              nowhere to say which property she buys for, and the resolver
+              matched people and companies interchangeably. Two names, two
+              lines, and the field above stays the business. */}
+          {extractedData?.contact_person ? (
+            <p className="mt-1 text-[12px] text-[#A0A49C]">
+              Contact: <span className="text-[#6B6F68]">{extractedData.contact_person}</span>
+            </p>
+          ) : null}
           {extractedData?.customer_match_method && extractedData.customer_match_method !== 'unresolved' ? (
             <p className="mt-1 text-[12px] text-[#2F6B45]">
               Matched to an existing customer · {extractedData.customer_match_method.replaceAll('_', ' ')}

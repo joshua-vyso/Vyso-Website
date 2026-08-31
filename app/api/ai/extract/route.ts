@@ -9,10 +9,20 @@ import { syncOrderFromDocument } from '@/lib/platform/orderflow-from-doc';
 // Shared with the chat + inbound-email ingest so supplier resolution behaves
 // identically everywhere: alias ruling → suppliers row (race-safe) → SupplySync
 // profile, with the org's own name never becoming a supplier.
-import { classifyDocumentParties, resolveSupplierProfile } from '@/lib/platform/document-ingest';
+import {
+  classifyDocumentParties,
+  lookupSupplierProfile,
+  resolveSupplierProfile,
+} from '@/lib/platform/document-ingest';
 import type { DocumentPartiesVerdict } from '@/lib/platform/document-ingest';
 import { autoForwardDocumentToHubdoc } from '@/lib/platform/hubdoc';
-import { businessEffectForType } from '@/lib/platform/docu/business-effect';
+import {
+  businessEffectForType,
+  financialEffectForType,
+  isCreditDocumentType,
+  isCustomerSideCredit,
+} from '@/lib/platform/docu/business-effect';
+import { resolveExistingCustomerForOrg } from '@/lib/platform/docu/customer-match';
 import { imagePixelSize } from '@/lib/platform/docu/image-size';
 import type { Document } from '@/lib/platform/types';
 
@@ -281,6 +291,13 @@ export async function POST(req: Request) {
   // file identical rows. See lib/platform/docu/business-effect.ts.
   const businessEffect = businessEffectForType(documentType);
   const financialOnly = businessEffect === 'financial_only';
+  // The same two derivations the ingest pipeline makes, from the same pure
+  // helpers — a credit uploaded from the Doc-U screen and one forwarded by
+  // email must be the same row afterwards. See
+  // lib/platform/docu/business-effect.ts.
+  const financialEffect = financialEffectForType(documentType);
+  const isCredit = isCreditDocumentType(documentType);
+  const customerSideCredit = isCustomerSideCredit(documentType);
 
   // Resolve (or create) the extracted supplier into a suppliers row and link the
   // document, so the inbox, supplier intel and the ProcurePulse feed all see a
@@ -296,6 +313,21 @@ export async function POST(req: Request) {
     // Left exactly as it was found. An expense receipt must neither create a
     // supplier nor CLEAR one a human deliberately linked earlier — doing
     // nothing is the only move here that cannot lose information.
+  } else if (customerSideCredit) {
+    // NO SUPPLIER RESOLUTION FOR A CUSTOMER-SIDE CREDIT. The counterparty on a
+    // Montecasino credit request is a customer; running the supplier chain over
+    // it would put the org's own customer into its vendor list. Left as found,
+    // for the same "cannot lose information" reason as the receipt above.
+  } else if (parties.supplierName && documentType === 'supplier_credit_note') {
+    // LOOKUP, NEVER CREATE. A credit note is often the first — or only —
+    // document an org ever receives from a counterparty, and a refund is not
+    // evidence that somebody is a supplier. Unresolved stays unresolved and the
+    // reviewer decides. See `lookupSupplierProfile`.
+    try {
+      supplierId = (await lookupSupplierProfile(supabase, doc.org_id, parties.supplierName)) ?? doc.supplier_id;
+    } catch {
+      /* keep the existing supplier_id */
+    }
   } else if (parties.supplierName) {
     try {
       supplierId = (await resolveSupplierProfile(supabase, doc.org_id, parties.supplierName)) ?? doc.supplier_id;
@@ -306,6 +338,23 @@ export async function POST(req: Request) {
     // The org issued it: drop any supplier this document was previously (wrongly)
     // linked to. Leaving a stale link is how a re-extraction would keep the bug.
     supplierId = null;
+  }
+
+  // THE CUSTOMER BEHIND A CUSTOMER-SIDE CREDIT — read-only, on the manual
+  // upload lane exactly as on the email lane. `documents.customer_id` is the
+  // whole plumbing: the customer profile page already lists documents by that
+  // column, so the credit request appears on the customer's page with no new
+  // table and no second surface to keep in step. Creates nothing.
+  let creditCustomerMatch = null;
+  if (customerSideCredit) {
+    try {
+      creditCustomerMatch = await resolveExistingCustomerForOrg(supabase, doc.org_id, {
+        extractedCustomerName: result.bill_to,
+        documentTitle: doc.filename,
+      });
+    } catch {
+      /* fail closed — no customer id is written, the document still reviews */
+    }
   }
 
   const extractedData = {
@@ -333,6 +382,24 @@ export async function POST(req: Request) {
     // lib/platform/docu/business-effect.ts and financial-document.ts.
     business_effect: businessEffect,
     financial_document: result.financial_document,
+    // A CREDIT's figures and references, verbatim, and which way it points —
+    // both null on every non-credit type. `financial_effect` is derived from
+    // `document_type`, never from anything the reader said about direction.
+    // Neither key posts anything.
+    credit_document: isCredit ? result.credit_document : null,
+    financial_effect: financialEffect,
+    ...(creditCustomerMatch
+      ? {
+          customer_id: creditCustomerMatch.customerId,
+          customer_match_confidence: creditCustomerMatch.confidence,
+          customer_match_method: creditCustomerMatch.method,
+          customer_match_reason: creditCustomerMatch.reason,
+          customer_match_ambiguous: creditCustomerMatch.ambiguous,
+          customer_match_candidates: creditCustomerMatch.candidates,
+          customer_match_evidence: creditCustomerMatch.evidence,
+          customer_match_via: creditCustomerMatch.matchedVia,
+        }
+      : {}),
   };
 
   const { error: updateErr } = await supabase
@@ -346,6 +413,10 @@ export async function POST(req: Request) {
       // Written even when null: an outgoing document whose customer we could not
       // recognise must CLEAR any stale linkage, not inherit one.
       ...(parties.direction === 'outgoing' ? { customer_id: parties.customerId } : {}),
+      // LAST, so it wins over the direction check's own single-name guess for
+      // the same reason it does in the ingest pipeline: the resolver ran the
+      // whole evidence ladder, `matchCounterparty` compared one string.
+      ...(creditCustomerMatch ? { customer_id: creditCustomerMatch.customerId } : {}),
     })
     .eq('id', doc.id);
   if (updateErr) {

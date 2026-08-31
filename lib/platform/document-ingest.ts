@@ -9,7 +9,18 @@ import {
   type StructuralExtraction,
 } from '@/lib/platform/docu/extraction-quality';
 import { decideClassificationRouting } from '@/lib/platform/docu/classification-policy';
-import { businessEffectForType, isFinancialOnly } from '@/lib/platform/docu/business-effect';
+import {
+  businessEffectForType,
+  financialEffectForType,
+  isCreditDocumentType,
+  isCustomerSideCredit,
+  isFinancialOnly,
+} from '@/lib/platform/docu/business-effect';
+import {
+  detectOrderAmendment,
+  isOrderAmendmentDocument,
+  resolveAmendmentLink,
+} from '@/lib/platform/docu/order-amendment';
 import { imagePixelSize } from '@/lib/platform/docu/image-size';
 import { syncOrderFromDocument } from '@/lib/platform/orderflow-from-doc';
 import { feedDocumentToProcurePulse, orgHasProcurePulse } from '@/lib/platform/procurepulse-feed';
@@ -156,6 +167,70 @@ export async function resolveSupplierProfile(
     }
   }
   return supplierId;
+}
+
+/**
+ * THE SAME CHAIN, WITH THE CREATE TAKEN OUT.
+ *
+ * `resolveSupplierProfile` above does not merely look a supplier up: it calls
+ * `resolveSupplierId`, which INSERTS a `suppliers` row when none matches, and
+ * then creates the SupplySync profile behind it. That is right for an invoice —
+ * a supplier who has just billed us is a supplier — and wrong for a credit
+ * note, for one specific reason: a credit note is very often the FIRST document
+ * an org ever receives from a counterparty, or the only one. Eat Your Greens
+ * CRN0012368 arrived with no Eat Your Greens supplier anywhere in the org and
+ * no `ss_supplier_history` row, and the honest reading of that is "we do not
+ * know who this is", not "here is a new vendor". Creating one from a refund
+ * would put a business into the supplier list on the strength of money going
+ * the wrong way.
+ *
+ * So this resolves against what already exists — the confirmed alias ruling
+ * first, then an existing `suppliers` row by name — and returns NULL when
+ * nothing matches. A null lands the document in review with `supplier_id`
+ * unset, the extracted merchant name still in `extracted_data.supplier` and on
+ * the credit card, and a human deciding whether this counterparty is a supplier
+ * of theirs. Nothing is created, nothing is adopted, nothing is bridged.
+ *
+ * The org's own name is refused here too, on the same EXACT normalised equality
+ * as the creating variant — a credit note on our own letterhead is one we
+ * issued, and the issuer of that is not a supplier.
+ */
+export async function lookupSupplierProfile(
+  supabase: SupabaseClient,
+  orgId: string,
+  rawName: string,
+): Promise<string | null> {
+  const trimmed = rawName.trim();
+  if (!trimmed) return null;
+
+  const { data: org } = await supabase
+    .from('organisations')
+    .select('name')
+    .eq('id', orgId)
+    .maybeSingle<{ name: string }>();
+  const orgNorm = org?.name ? normalizeSupplierName(org.name) : '';
+  const nameNorm = normalizeSupplierName(trimmed);
+  if (orgNorm && nameNorm && orgNorm === nameNorm) return null;
+
+  try {
+    const alias = await lookupSupplierAlias(supabase, orgId, trimmed);
+    if (alias?.status === 'dismissed') return null;
+    if (alias?.status === 'confirmed' && alias.supplierId) return alias.supplierId;
+  } catch {
+    /* alias table not migrated yet — fall through to the name lookup */
+  }
+
+  // escapeLike for the same reason `resolveSupplierId` does it: the name came
+  // off a document, so % and _ are literals, not patterns.
+  const { data } = await supabase
+    .from('suppliers')
+    .select('id')
+    .eq('org_id', orgId)
+    .ilike('name', escapeLike(trimmed))
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return (data as { id: string } | null)?.id ?? null;
 }
 
 /**
@@ -378,7 +453,7 @@ export async function runDocumentSideEffects(
     /** When the document was filed — dates the SupplySync timeline event. */
     created_at?: string | null;
   },
-): Promise<{ orderSync?: unknown; skipped?: 'financial_only' }> {
+): Promise<{ orderSync?: unknown; skipped?: 'financial_only' | 'order_amendment' }> {
   // THE GATE. Every confirm path in the product crosses this function — Doc-U's
   // Save, the Review chat's approve, the chat drop, the email deferred commit —
   // which is exactly why the financial-only exclusion is the FIRST thing it
@@ -399,6 +474,27 @@ export async function runDocumentSideEffects(
   // do" — two outcomes that look identical from the outside and mean opposite
   // things when a document turns out to be missing from ProcurePulse.
   if (isFinancialOnly(doc)) return { skipped: 'financial_only' };
+  // AN AMENDMENT IS ABOUT AN ORDER; IT IS NOT ONE.
+  //
+  // The PO 144583 email — "please deliver Wednesday, not today" — is
+  // document_type 'order' by every signal the pipeline reads, and running the
+  // order sync on it is what produced a SECOND OrderFlow order beside the real
+  // PO's, with zero lines, for a customer called "Keshisha Ramsewak". The
+  // dedupe key on of_orders is source_document_id, so a second email about one
+  // purchase order is a second order by construction, and the shared
+  // of_next_number invoice counter advances for it.
+  //
+  // SO THE BRANCH RETURNS BEFORE `syncOrderFromDocument`, EXPLICITLY. The
+  // document is still filed, still reviewed, still linked to the order it names
+  // (read-only — see lib/platform/docu/order-amendment.ts), and the change it
+  // asks for is applied by a human or not at all. `skipped` is named for the
+  // same reason 'financial_only' is: "no side effects were appropriate" and
+  // "side effects ran and found nothing to do" look identical from outside and
+  // mean opposite things when somebody goes looking for the missing order.
+  //
+  // `documents_created` semantics are untouched: the review document exists, so
+  // the ingest still counts one.
+  if (isOrderAmendmentDocument(doc)) return { skipped: 'order_amendment' };
   if (doc.document_type === 'order') {
     const orderSync = await syncOrderFromDocument(supabase, { documentId: doc.id, orgId: doc.org_id });
     // syncOrderFromDocument REPORTS failure by returning { ok: false, reason }, it does not
@@ -1135,6 +1231,39 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
         documentId,
       };
     }
+    // IS THIS A NEW ORDER, OR A CHANGE TO ONE THAT ALREADY EXISTS?
+    //
+    // Deterministic and BEFORE the customer match, because the answer decides
+    // what kind of document this is — and because the model is not consulted:
+    // the order prompt now tells it not to fabricate lines for an amendment,
+    // but an instruction is a tendency and this gates whether an operational
+    // write runs at all. See lib/platform/docu/order-amendment.ts for the PO
+    // 144583 case and the exact gate.
+    const amendmentDetection = detectOrderAmendment({
+      subject: customerEvidence?.subject ?? note ?? null,
+      text: customerEvidence?.messageText ?? null,
+      orderNotes: order.order_notes ?? null,
+      extractedPurchaseOrderNumber: order.purchase_order_number ?? null,
+      lineCount: order.line_items.length,
+    });
+    // THE LINK IS A READ. It resolves which live order document carries the
+    // same purchase_order_number and records the answer — one, none or several.
+    // Nothing about the order it names is touched, now or later, by any code
+    // path: applying an amendment is a human's decision.
+    let orderAmendment = amendmentDetection.amendment;
+    if (orderAmendment) {
+      try {
+        orderAmendment = await resolveAmendmentLink(supabase, {
+          orgId,
+          amendment: orderAmendment,
+          excludeDocumentId: documentId,
+        });
+      } catch {
+        // A failed lookup leaves link_status 'unresolved' — the honest answer,
+        // and exactly the behaviour that shipped before linkage existed.
+      }
+    }
+
     // Microsoft email is unattended. Resolve only against this verified org's
     // existing directory and keep uncertain candidates as review evidence. This
     // never creates or edits a customer; an unresolved name stays unresolved.
@@ -1144,6 +1273,17 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
         customerMatch = await resolveExistingCustomerForOrg(supabase, orgId, {
           ...(customerEvidence ?? {}),
           extractedCustomerName: order.customer_name,
+          // THE TWO STRINGS THAT USED TO GO NOWHERE. `subject` was loaded and
+          // read only by the identifier arm; `documentTitle` did not exist at
+          // all. Both carry the business name on exactly the documents where
+          // the extracted name is a person — which is most email orders, and is
+          // the Scooters case (document f3f894e6: "Scooters Pizza Rosebank" in
+          // the subject, in of_customers verbatim, and 'no-customer-signal' on
+          // the row). The filename is the title on an uploaded or attached
+          // document; on an email body it is the subject-derived name, which
+          // costs nothing and repeats no evidence.
+          documentTitle: filename,
+          contactPersonName: order.contact_person ?? null,
           purchaseOrderNumber: order.purchase_order_number,
           deliveryLocation: order.delivery_location,
         });
@@ -1163,6 +1303,19 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
       line_items: order.line_items,
       customer_name: order.customer_name,
       customer_confidence: order.customer_confidence,
+      // The human, beside the business rather than instead of it. Extraction
+      // values are never overwritten by resolution: if the matcher lands a
+      // business customer while the reader could only see a person, the person
+      // stays here and the resolved business arrives via customer_id — see the
+      // review editor, which shows both.
+      contact_person: order.contact_person ?? null,
+      // WHAT THIS MESSAGE WANTS DONE WITH AN ORDER. Stamped on every order
+      // document from here on, including the ordinary ones ('new_order'), for
+      // the same reason `business_effect` is stamped on every document: a key
+      // that appeared only on the excluded case would make its ABSENCE the real
+      // signal, and absence is also what every legacy row looks like.
+      business_event: amendmentDetection.event,
+      ...(orderAmendment ? { order_amendment: orderAmendment } : {}),
       purchase_order_number: order.purchase_order_number ?? null,
       order_date: order.order_date ?? null,
       requested_delivery_date: order.requested_delivery_date ?? null,
@@ -1181,6 +1334,12 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
       customer_match_ambiguous: customerMatch?.ambiguous ?? false,
       customer_match_candidates: customerMatch?.candidates ?? [],
       customer_match_evidence: customerMatch?.evidence ?? null,
+      // WHICH KIND OF NAME EARNED THE MATCH — business or contact person. It is
+      // recorded because "the customer was resolved" and "a person we happen to
+      // know works there was resolved" used to be the same row, and the
+      // precedence rule ("a person never outranks an explicit business name")
+      // is unfalsifiable without it.
+      customer_match_via: customerMatch?.matchedVia ?? null,
       // Which model read it — see the same stamp in app/api/ai/extract.
       extraction_model: order.model,
       extraction_warning: order.warning ?? null,
@@ -1318,6 +1477,13 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
   // is no stored stamp to prefer yet, and this line is what creates it.
   const businessEffect = businessEffectForType(documentType);
   const financialOnly = businessEffect === 'financial_only';
+  // WHICH WAY A CREDIT POINTS — pure, from the settled type, and null on
+  // everything else. See `financialEffectForType`: the direction of a credit is
+  // the one fact a reader must never supply, because reversing it moves money
+  // the wrong way in both sets of books at once.
+  const financialEffect = financialEffectForType(documentType);
+  const isCredit = isCreditDocumentType(documentType);
+  const customerSideCredit = isCustomerSideCredit(documentType);
 
   let supplierId: string | null = null;
   // NO SUPPLIER IS EVER CREATED FROM AN EXPENSE RECEIPT. The Country Club is not
@@ -1336,11 +1502,63 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
   // can create both a suppliers row and a SupplySync profile, so it belongs behind
   // the same human approval boundary as stock, orders and invoices. The extracted
   // supplier name remains in extracted_data for the reviewer to confirm/link.
-  if (parties.supplierName && !deferCommit && !financialOnly) {
+  //
+  // A CREDIT NOTE RESOLVES BUT NEVER CREATES, AND A CUSTOMER-SIDE CREDIT DOES
+  // NOT RESOLVE A SUPPLIER AT ALL.
+  //
+  //  - `supplier_credit_note`: `lookupSupplierProfile` matches an existing
+  //    supplier or alias and returns null otherwise. Eat Your Greens
+  //    CRN0012368 arrived at an org with no Eat Your Greens supplier row and no
+  //    history against one; "we do not know who this is" is the honest answer
+  //    to that, and creating a vendor on the strength of money coming BACK is
+  //    not. It runs on the deferred (email) lane too, unlike the creating
+  //    variant, precisely because it creates nothing there is a human approval
+  //    boundary to protect.
+  //  - `customer_credit_request` / `customer_credit_note`: NO supplier
+  //    resolution of any kind. The counterparty on a Montecasino credit request
+  //    is a CUSTOMER, and running the supplier chain over it would put the
+  //    org's own customer into its vendor list. They resolve a customer below
+  //    instead.
+  if (customerSideCredit) {
+    // Deliberately nothing. See above.
+  } else if (parties.supplierName && documentType === 'supplier_credit_note') {
+    try {
+      supplierId = await lookupSupplierProfile(supabase, orgId, parties.supplierName);
+    } catch {
+      /* keep it unlinked — a credit from a supplier we cannot find is review work */
+    }
+  } else if (parties.supplierName && !deferCommit && !financialOnly) {
     try {
       supplierId = await resolveSupplierProfile(supabase, orgId, parties.supplierName);
     } catch {
       /* keep it unlinked */
+    }
+  }
+
+  // THE CUSTOMER BEHIND A CUSTOMER-SIDE CREDIT, on EVERY lane — upload, chat
+  // drop and unattended email alike, and regardless of `deferCommit`, because
+  // this resolution creates nothing. `resolveExistingCustomerForOrg` can only
+  // return a row that already exists and has no mutation API at all.
+  //
+  // Writing `documents.customer_id` is the entire plumbing: the customer
+  // profile page already lists documents by that column
+  // (orderflow-data.ts:204), so a Montecasino credit request appears on
+  // Montecasino's page the moment it is filed, with no new table, no join and
+  // no second surface to keep in step.
+  let creditCustomerMatch = null;
+  if (customerSideCredit) {
+    try {
+      creditCustomerMatch = await resolveExistingCustomerForOrg(supabase, orgId, {
+        ...(customerEvidence ?? {}),
+        // `bill_to` is the recipient on a document the org issued, which on a
+        // customer credit is the customer. The credit's own reason line is not
+        // identity and is not offered here.
+        extractedCustomerName: cls.bill_to,
+        documentTitle: filename,
+      });
+    } catch {
+      // Fail closed: no customer id is written, the document still reviews.
+      creditCustomerMatch = null;
     }
   }
   const extractedData = {
@@ -1367,6 +1585,26 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
     // before today, which is what makes a backfill unnecessary rather than
     // merely deferred.
     business_effect: businessEffect,
+    // A CREDIT DOCUMENT's figures and references, verbatim, and which way it
+    // points. Both null on every non-credit type. `financial_effect` is derived
+    // from `document_type` and NOT from anything the reader said about
+    // direction — see financialEffectForType. Neither key posts anything: no
+    // AP, no AR, no stock, no average cost, no Xero write happens because a
+    // credit was filed.
+    credit_document: isCredit ? cls.credit_document : null,
+    financial_effect: financialEffect,
+    ...(creditCustomerMatch
+      ? {
+          customer_id: creditCustomerMatch.customerId,
+          customer_match_confidence: creditCustomerMatch.confidence,
+          customer_match_method: creditCustomerMatch.method,
+          customer_match_reason: creditCustomerMatch.reason,
+          customer_match_ambiguous: creditCustomerMatch.ambiguous,
+          customer_match_candidates: creditCustomerMatch.candidates,
+          customer_match_evidence: creditCustomerMatch.evidence,
+          customer_match_via: creditCustomerMatch.matchedVia,
+        }
+      : {}),
     // An EXPENSE RECEIPT's money, verbatim, or null — the reader fills this only
     // for that type (see coerceFinancialDocument). It is the entire financial
     // record of the document: nothing downstream will ever build an order,
@@ -1396,6 +1634,14 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
       // Written even when null: an outgoing document whose customer we could not
       // recognise must CLEAR any stale linkage, not inherit one.
       ...(parties.direction === 'outgoing' ? { customer_id: parties.customerId } : {}),
+      // A CUSTOMER-SIDE CREDIT'S OWN RESOLUTION WINS, and it is spread LAST so
+      // it does. The direction check above runs on every document and may have
+      // decided 'outgoing' for a customer credit note (it is on our letterhead,
+      // after all) — but `matchCounterparty` compares one extracted name
+      // against of_customers, whereas the resolver ran the whole evidence
+      // ladder over the same org. Two answers to one question, and the better-
+      // evidenced one is the one that lands on the row.
+      ...(creditCustomerMatch ? { customer_id: creditCustomerMatch.customerId } : {}),
     })
     .eq('id', documentId);
 

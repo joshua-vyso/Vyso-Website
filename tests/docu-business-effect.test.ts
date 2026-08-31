@@ -62,9 +62,22 @@ test('every other document type keeps the effect it has always behaved as having
   assert.equal(businessEffectForType('order'), 'operational_financial');
   assert.equal(businessEffectForType('price_list'), 'operational_only');
   assert.equal(businessEffectForType('expense_receipt'), 'financial_only');
+  // The three credit types are `operational_financial` deliberately, and the
+  // choice is argued in business-effect.ts: `financial_only` would also switch
+  // off the SupplySync feed, and a supplier credit note BELONGS on the
+  // supplier's timeline. What excludes credits from stock/spend/price is the
+  // six allow-lists that name their members, not this dimension.
+  assert.equal(businessEffectForType('supplier_credit_note'), 'operational_financial');
+  assert.equal(businessEffectForType('customer_credit_request'), 'operational_financial');
+  assert.equal(businessEffectForType('customer_credit_note'), 'operational_financial');
   // Only ONE type is financial-only. A second one appearing here is a routing
-  // change, not a refactor.
-  const types: DocumentType[] = ['invoice', 'statement', 'delivery_note', 'price_list', 'order', 'expense_receipt'];
+  // change, not a refactor. The list is spelled out rather than derived so that
+  // adding a `DocumentType` without adding it here leaves this assertion
+  // trivially true — which is why it is kept in step by hand, every time.
+  const types: DocumentType[] = [
+    'invoice', 'statement', 'delivery_note', 'price_list', 'order', 'expense_receipt',
+    'supplier_credit_note', 'customer_credit_request', 'customer_credit_note',
+  ];
   assert.deepEqual(types.filter((t) => businessEffectForType(t) === 'financial_only'), ['expense_receipt']);
 });
 
@@ -194,7 +207,13 @@ test('the Push-to menu is empty for an expense receipt', () => {
 
 test('the unusual-spend flag does not fire on a document with no supplier to compare against', () => {
   const source = src('lib/platform/docu/flags.ts');
-  assert.match(source, /doc\.document_type === 'order' \|\| isFinancialOnly\(doc\)/);
+  // The gate was EXTENDED, not replaced: the credit types joined it (a refund
+  // reported as unusual spend is the inversion the credit work exists to stop),
+  // and both original exclusions are still on the same expression.
+  assert.match(
+    source,
+    /doc\.document_type === 'order' \|\| isCreditDocumentType\(doc\.document_type\) \|\| isFinancialOnly\(doc\)/,
+  );
 });
 
 // ---------------------------------------------------------------------------

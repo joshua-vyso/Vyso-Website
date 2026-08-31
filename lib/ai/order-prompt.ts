@@ -20,10 +20,17 @@ import type { PdfOrientationNormalization } from '../platform/docu/pdf-orientati
 
 /** What one order read returns, whoever read it. */
 export interface OrderExtractionResult {
-  /** The buying customer's name (WhatsApp contact / email sender / note), or null. */
+  /** The BUYING BUSINESS's name, or null. Was "the buying customer's name
+   *  (WhatsApp contact / email sender / note)" — which is how a person's name
+   *  ended up here on every email order the product has ever read. */
   customer_name: string | null;
   /** 0–100 confidence that customer_name was read correctly. */
   customer_confidence: number;
+  /** The HUMAN who sent or signed the order, kept apart from the business that
+   *  placed it. Additive: absent on every historical read, which is why nothing
+   *  may treat its absence as "there is no contact". See
+   *  `ExtractedData.contact_person`. */
+  contact_person?: string | null;
   /** Optional header fields. Absent/null on historical reads and informal orders. */
   purchase_order_number?: string | null;
   order_date?: string | null;
@@ -141,6 +148,7 @@ Respond with ONLY a JSON object (no prose, no markdown code fences) of exactly t
 {
   "customer_name": string | null,
   "customer_confidence": number,
+  "contact_person": string | null,
   "purchase_order_number": string | null,
   "order_date": string | null,
   "requested_delivery_date": string | null,
@@ -154,13 +162,20 @@ Respond with ONLY a JSON object (no prose, no markdown code fences) of exactly t
 }
 TRANSCRIBE, DO NOT INTERPRET. Every character you copy off this document is evidence. Transcribe descriptions and numbers EXACTLY as printed — same letters, same digits, same spacing, same case, same abbreviations. Do NOT normalise, spell-correct, expand, translate or guess a character, and never replace a word on the page with a word you expected to see there: "GRAPES BLACK" is not "Graphis Black", "MUSHROOM GABLE" is not "Mushroom Garlic", "BRINJALS" is not "Cabbage", and a product you do not recognise is a product you transcribe letter by letter. If a character or digit is genuinely unclear, do NOT pick the likelier one — use the amount column cross-check described below to settle it, and if that cannot settle it either, lower that line's confidence and leave what you can actually see.
 Rules:
-- "customer_name" = who PLACED the order. Read it from the most reliable cue:
+- "customer_name" = THE BUSINESS THAT PLACED THE ORDER. A business, not a person. Read it from the FIRST of these cues the document actually offers:
+    1. An explicit business name in the SUBJECT LINE or the document's own title ("Scooters Pizza Rosebank – order", "PO 144583 Montecasino").
+    2. The buyer named in a printed PO header: "Purchaser", "Ordered By", "Order From", "Bill To", "Invoice To", "Customer", "Account Name", or the buyer's own letterhead at the top. BEWARE THE OPPOSITE FIELD: "Deliver To", "Delivery Address", "Ship To" and "Supplier" name the business RECEIVING or FULFILLING the order, which is us and is never the answer. When the page prints both — "Purchaser: Bakubung Bush Lodge" and "Deliver To: Turn 'n Slice" — the purchaser is the customer.
+    3. A business name in the sign-off or signature block ("Kind regards, Thabo — Doppio Zero Bel Air").
+    4. The sender's ORGANISATION where the message shows one — a company in the signature, or the organisation the email domain plainly belongs to.
+  A PERSON'S NAME IS NOT A CUSTOMER NAME. "Keshisha Ramsewak", "Ashan Ajoodha" and "Chef Thabo" are people; they go in "contact_person" and never here. If the only identifiable name on the whole document is a person's, put that person in "contact_person" and give "customer_name" the best remaining BUSINESS cue — a shop name in the subject, a property in the sign-off — or "" if there is genuinely none. A WhatsApp chat header that carries a SHOP name ("Scooters Rosebank") is a business cue and belongs here; one that carries only a person or a phone number is not, and goes to "contact_person".
+  Return the cleaned name in Title Case. Use null only if there is genuinely no business name anywhere.
+- "customer_confidence" (0-100): how sure you are the BUSINESS name is right. A printed "Purchaser" line or a shop name in the subject is high (85-100); a business inferred from an email domain or a signature is moderate; a guess is low (<60). Do NOT score your confidence in the person's name here — that is a different field and a different question.
+- "contact_person" = THE HUMAN who sent, signed or placed this order. Read it from the most reliable cue:
     - WhatsApp screenshot: the CONTACT NAME in the chat header at the very top of the screen. NOT a phone number if a saved name is shown, NOT "you", and NEVER the business receiving the order. If only a phone number is shown, return that number.
     - Email: the SENDER's display name. If only an email address is shown, derive a name from the local-part before "@", title-cased and split on "."/"_"/"-" (e.g. "john.smith@shop.co.za" -> "John Smith").
-    - Printed purchase order: the party the order is FROM — the BUYER. A printed PO almost always labels them outright, and the label is the strongest cue on the page: "Purchaser", "Ordered By", "Order From", "Bill To", "Invoice To", "Customer", "Account Name", or the buyer's own letterhead at the top. Read the name next to whichever of those the page prints. BEWARE THE OPPOSITE FIELD: "Deliver To", "Delivery Address", "Ship To" and "Supplier" name the business RECEIVING or FULFILLING the order, which is us and is never the answer. When the page prints both — "Purchaser: Bakubung Bush Lodge" and "Deliver To: Turn 'n Slice" — the purchaser is the customer.
-    - Handwritten / typed note: a name by "from", "customer", "client", a shop name, or the sign-off.
-  Return the cleaned name in Title Case. Use null only if there is genuinely no name anywhere.
-- "customer_confidence" (0-100): how sure you are the name is right. A clear WhatsApp contact header or email sender display name is high (85-100); a name guessed from a phone number or an ambiguous scrawl is low (<60).
+    - Printed purchase order: the person named against "Ordered By", "Buyer", "Requested By", "Contact" or the signature block.
+    - Handwritten / typed note: the name by "from", "customer", "client", or the sign-off.
+  Return the person's name in Title Case, or null when nobody is named. This field and "customer_name" answer two different questions and a document routinely answers only one of them — put the person here even when you could not find a business at all, and put the business in "customer_name" even when nobody signed it.
 - "purchase_order_number" = the PO/order reference exactly as printed, without inventing one from the filename.
 - "order_date" and "requested_delivery_date" = the dates exactly as printed. Do not infer a missing year or rewrite an ambiguous date.
 - "delivery_location" = the printed Deliver To / Ship To location or address. This is delivery evidence, never the customer identity by itself.
@@ -184,6 +199,8 @@ Rules:
 - USE THE AMOUNT COLUMN TO CHECK YOUR OWN DIGITS, never to invent them. When a row prints both a cost and an amount, some pairing of the row's own numbers should reproduce that amount. If none does, you have misread a digit somewhere in the row: LOOK AT THE ROW AGAIN and transcribe every figure afresh. Report what the paper actually shows even when they still disagree — a disagreement we can see is a question for a human, and a row silently "corrected" into agreement is a wrong invoice nobody catches.
 - "totals" = the document's OWN FOOTER TOTALS, copied digit for digit out of the block at the bottom of the page: "subtotal" = the goods/nett total, "tax_total" = the VAT/tax line, "freight" = delivery/carriage/handling, "discount" = any deduction, "grand_total" = the final amount payable. Return "" for every one the page does not print, and return "" for all five when the page prints no footer at all. NEVER add the lines up yourself, never derive one of these from the others, and never carry a figure across from a different document. A total we can see is a check on the rows above it; a total we computed can only ever agree with itself, which makes it worse than no total at all.
 - Parse messy, conversational text: "hi can I get 5 strawberries and 2 boxes blueberries pls 🙏" -> two line items. Ignore greetings, small talk, delivery addresses and dates; the printed footer totals go in "totals" and nowhere else.
+- A MESSAGE THAT CHANGES AN EXISTING ORDER IS NOT AN ORDER, AND HAS NO LINE ITEMS. When the text asks for something to be done to an order that already exists — "please deliver Wednesday, not today", "cancel PO 144583", "add 4 boxes tomatoes to the order", "put the order on hold", "the delivery address has changed" — it is an AMENDMENT. Return "line_items": [] unless the message itself prints new rows, put the PO or order reference it names in "purchase_order_number", and describe the change in its own words in "order_notes". Do NOT reconstruct the original order's items from memory, from the PO number, or from what a typical order looks like: the goods are on the ORIGINAL order and this message is not it. A fabricated line here becomes a second real order for goods nobody asked for twice.
+- IN A REQUISITION-STYLE TABLE, SOME COLUMNS ARE REFERENCE DATA AND NOT PRICES. Purchase requisitions frequently print columns headed "Compliance", "Primary Vendor", "Preferred Supplier", "Vendor Price", "Contract Price", "Last Price" or "Budget" beside the goods. Those record who the approved supplier is and what the reference rate was — they are NOT this row's unit_price, NOT its amount, and NEVER line items of their own. Use only the row's own order/unit-cost and value columns; if the row prints no price of its own, return "" rather than borrowing the vendor's.
 - NEVER COMPUTE OR INFER A VALUE. If a quantity, unit or price is missing, blank, smudged or unreadable, return "" for that field and lower that line's confidence. Do not derive it from a line total, from the document total, from a neighbouring row, or from what would make the arithmetic work. A blank we can ask about is worth more than a number that is merely consistent.
 - Output all numbers as plain strings (no currency symbols); all confidence values 0-100.`;
 
@@ -393,6 +410,11 @@ export function coerceOrderExtraction(raw: string): Omit<OrderExtractionResult, 
   return {
     customer_name: str(parsed.customer_name) || null,
     customer_confidence: pct(parsed.customer_confidence),
+    // Null rather than "" when the reader named nobody, matching every other
+    // optional identity field here — and absent on a historical read, which is
+    // why the customer matcher treats it as "no evidence" and never as "there
+    // is no contact".
+    contact_person: str(parsed.contact_person) || null,
     purchase_order_number: str(parsed.purchase_order_number) || null,
     order_date: str(parsed.order_date) || null,
     requested_delivery_date: str(parsed.requested_delivery_date) || null,

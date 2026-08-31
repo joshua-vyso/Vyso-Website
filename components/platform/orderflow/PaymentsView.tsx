@@ -505,7 +505,22 @@ function ReceiptCell({ payment, invoiceNumber }: { payment: OfPayment; invoiceNu
           org_id: org.id,
           filename: file.name,
           status: 'reviewed',
-          document_type: 'receipt',
+          // `payment_proof`, NOT 'receipt' and NOT 'expense_receipt'.
+          //
+          // This insert has been FAILING since the day it shipped: 'receipt' is
+          // in no `DocumentType` union and — verified by probe against
+          // production — is refused by `documents_document_type_check`, so
+          // every attach threw 23514 and surfaced as the generic message below.
+          // Production holds zero rows of it, so nothing needs migrating.
+          //
+          // And the fix is not `expense_receipt`. That type means the business
+          // consumed something and paid for it, and IS the record of that
+          // expense; this file is evidence for a payment the org RECEIVED,
+          // whose amount, method, date and reference are already in
+          // `of_payments` one row away. Filing an EFT confirmation as an
+          // expense receipt would recognise an expense for a customer's
+          // payment. See `DocumentType` in lib/platform/types.ts.
+          document_type: 'payment_proof',
           storage_path: path,
           uploaded_by: userId,
           entity_type: 'payment',

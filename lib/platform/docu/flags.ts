@@ -6,7 +6,7 @@ import { DOC_LOW_CONFIDENCE_THRESHOLD } from '@/lib/platform/tokens';
 import type { DocumentWithSupplier } from '@/lib/platform/types';
 import type { DocuExtractedData, DocumentFlag, FlagKind, FlagSeverity } from './types';
 import { docTotal, findFieldValue } from './extract';
-import { isFinancialOnly } from './business-effect';
+import { isCreditDocumentType, isFinancialOnly } from './business-effect';
 import { lowResolutionNote } from './image-size';
 
 export const FLAG_META: Record<FlagKind, { label: string; severity: FlagSeverity }> = {
@@ -129,8 +129,17 @@ export function deriveFlags(
   // in, because the SupplySync feed refuses these documents by design. A big
   // hotel bill is a real thing to notice; this flag is simply not the mechanism
   // that can notice it honestly.
+  //
+  // A CREDIT IS EXCLUDED FOR THE OPPOSITE REASON TO BOTH OF THOSE, and it is
+  // the sharpest of the three. `docTotal` sums line amounts, and a credit's
+  // amounts are the paper's own — which on CRN0012368 means R335.00 of money
+  // coming BACK. Feeding that into a flag whose whole sentence is "above the
+  // usual range for this supplier" would report a refund as unusual spend: the
+  // exact inversion this feature exists to stop, wearing a warning badge.
   const total =
-    doc.document_type === 'order' || isFinancialOnly(doc) ? null : docTotal(doc);
+    doc.document_type === 'order' || isCreditDocumentType(doc.document_type) || isFinancialOnly(doc)
+      ? null
+      : docTotal(doc);
   if (total != null && total > 12000) {
     add('unusual_spend', `Total of R ${Math.round(total).toLocaleString('en-ZA')} is above the usual range for this supplier.`, 'mock');
   }

@@ -1,7 +1,7 @@
 import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
 import type { AiSummary, StatementSummary } from '@/lib/platform/docu/types';
-import type { FinancialDocument } from '@/lib/platform/types';
+import type { CreditDocument, FinancialDocument } from '@/lib/platform/types';
 import { auditLines, summariseAudit, type LineAuditSummary } from '@/lib/platform/docu/line-audit';
 import { coerceExpenseCategory } from '@/lib/platform/docu/expense-categories';
 import { deriveCashEffect, financialSeparatorHint } from '@/lib/platform/docu/financial-document';
@@ -14,6 +14,7 @@ import {
 } from '@/lib/platform/docu/extraction-quality';
 import {
   pdfOrientationCandidates,
+  pdfRotationSuspect,
   type PdfOrientationNormalization,
 } from '@/lib/platform/docu/pdf-orientation';
 import { parseLocaleNumber, inferDecimalSeparator, type DecimalSeparator } from '@/lib/platform/locale-number';
@@ -104,6 +105,31 @@ export interface ExtractedLineItem {
   confidence: number;
 }
 
+/**
+ * The types the classification read is allowed to return.
+ *
+ * NOT COMPILE-FORCED AGAINST `DocumentType`, and that is the silent hazard this
+ * comment exists to name: this union and the prompt's own enum string below are
+ * two separate hand-maintained lists, and a type missing from EITHER of them is
+ * a type the model can never emit. Before the three credit types were added
+ * here, `credit_note` was a verdict the email classifier reached at confidence
+ * 97 and the document reader had no way to say at all — so it said "invoice",
+ * and CRN0012368 was filed as spend. Add a `DocumentType` member, add it here,
+ * and add it to `EXTRACT_INSTRUCTION`'s enum.
+ *
+ * `payment_proof` IS THE ONE DELIBERATE OMISSION, from this union and from the
+ * prompt enum alike. That type is written directly by OrderFlow's payments
+ * ledger, which already knows which `of_payments` row the file is proof OF and
+ * files it at status 'reviewed' without ever passing through this reader. A
+ * classifier looking at a loose bank pop in Doc-U has no payment to attach it
+ * to, so the best it could do is stamp `payment_proof` on a document that
+ * proves nothing in particular — worse than leaving it honestly unclassified,
+ * and it would put a stray EFT confirmation into a pile whose entire purpose is
+ * to be the evidence behind a figure already on the books. If loose payment
+ * proofs are ever to be recognised on upload, that feature needs a way to LINK
+ * them as much as a way to name them; adding the enum member alone would ship
+ * half of it.
+ */
 export type ExtractedDocType =
   | 'invoice'
   | 'statement'
@@ -111,6 +137,9 @@ export type ExtractedDocType =
   | 'price_list'
   | 'order'
   | 'expense_receipt'
+  | 'supplier_credit_note'
+  | 'customer_credit_request'
+  | 'customer_credit_note'
   | null;
 
 export interface ExtractionResult {
@@ -131,6 +160,12 @@ export interface ExtractionResult {
    *  here, stored in the same jsonb and rendered by one card. See
    *  lib/platform/docu/financial-document.ts for what is asked of it. */
   financial_document: FinancialDocument | null;
+  /** A CREDIT DOCUMENT's own figures and references, verbatim — null on every
+   *  other type. Mirrors `financial_document` exactly, including the type gate
+   *  in `extractDocumentOnce`: a reader that fills this on an invoice has told
+   *  us about its own confusion, not about the invoice. See `CreditDocument` in
+   *  lib/platform/types.ts for why the signs are kept as printed. */
+  credit_document: CreditDocument | null;
   /** 0–100, or NULL when the read stated no confidence. Nullable because a
    *  fabricated 0 is indistinguishable from a genuine one — see
    *  `coerceConfidence` in lib/platform/docu/extraction-quality.ts. */
@@ -154,11 +189,11 @@ function textOf(message: Anthropic.Message): string {
 }
 
 const EXTRACT_INSTRUCTION = `You are Doc-U, Vyso's product-line extractor for SME food & wholesale businesses.
-The attached document is a supplier/market statement, invoice, delivery note, price list, order, or expense receipt. It contains a table of PRODUCT PURCHASE LINES — or, on an expense receipt, of the items consumed.
-Extract ONLY the line items — do NOT extract header/summary/account/banking/VAT/balance/total fields. On an expense receipt those figures go in "financial_document" below, and nowhere else.
+The attached document is a supplier/market statement, invoice, delivery note, price list, order, expense receipt, or CREDIT DOCUMENT. It contains a table of PRODUCT PURCHASE LINES — or, on an expense receipt, of the items consumed; on a credit document, of the goods being credited.
+Extract ONLY the line items — do NOT extract header/summary/account/banking/VAT/balance/total fields. On an expense receipt those figures go in "financial_document" below, on a credit document in "credit_document", and nowhere else.
 Respond with ONLY a JSON object (no prose, no markdown code fences) of exactly this shape:
 {
-  "document_type": "invoice" | "statement" | "delivery_note" | "price_list" | "order" | "expense_receipt",
+  "document_type": "invoice" | "statement" | "delivery_note" | "price_list" | "order" | "expense_receipt" | "supplier_credit_note" | "customer_credit_request" | "customer_credit_note",
   "supplier": string | null,
   "supplier_vat": string | null,
   "bill_to": string | null,
@@ -207,6 +242,16 @@ Respond with ONLY a JSON object (no prose, no markdown code fences) of exactly t
     "expense_category": string,
     "notes": string
   } | null,
+  "credit_document": {
+    "credit_reference": string,
+    "original_invoice_reference": string,
+    "po_reference": string,
+    "reason": string,
+    "net_amount": string,
+    "tax_amount": string,
+    "total_amount": string,
+    "currency": string
+  } | null,
   "overall_confidence": number
 }
 Rules:
@@ -215,6 +260,19 @@ Rules:
 - "bill_to": the party being BILLED — the name under "Invoice To", "Bill To", "Sold To", "Customer", "Deliver To", or the account holder named in a statement header. It is the mirror image of "supplier": one is who the document is FROM, the other is who it is TO, and they are never the same business. Return the name only (no address lines, no account code), cleaned to Title Case with any legal suffix kept. Use null if the document names no recipient.
 - "summary": if the document has a TRANSACTION SUMMARY / account-totals block (opening balance, closing/system balance, total purchases, VAT, pallet refunds/usage, payments, audit error), extract those figures as plain NUMBERS — strip currency symbols and thousands separators, keep the sign as printed (money out may be negative). Map: opening_balance, payments (or "net financial transactions" if no explicit payments line → put it in net_financial_transactions), total_purchases, total_pallet_refunds (pallet refunds/deposits), total_pallet_usage (pallet usage fee), vat ("VAT included in above transactions"), total_charges, closing_balance ("system closing balance"), audit_error. statement_date = the date printed next to the closing balance / "as at" date, exactly as shown (e.g. "23/MAY/2026"). If there is NO totals block, set "summary" to null.
 - "document_type": choose "expense_receipt" for a TILL SLIP — a restaurant, bar, fuel, hotel, parking, toll or retail receipt recording something the business CONSUMED and paid for. Its marks are a merchant trading name rather than a supplier account, a settlement taken on the spot (card, cash, member account, room charge) rather than terms, and rows that are meals, drinks, litres or nights rather than stock to be sold on. A supplier's invoice for produce, meat, packaging or any goods bought for resale or production is NOT an expense receipt — it stays "invoice", even when it was paid immediately. WHEN IN DOUBT between "invoice" and "expense_receipt" on a document whose rows are products destined for resale or stock, choose "invoice".
+- A DOCUMENT THAT CALLS ITSELF A CREDIT IS NEVER AN INVOICE. If the page is headed "Credit Note", "Credit Memo", "Credit Request", "Credit Application", "CRN", or otherwise says on its face that it credits, refunds, returns or reverses a previous charge, it is one of the three credit types below and never "invoice" — not even when it is laid out exactly like an invoice, which it usually is, because it is the same stationery with a different heading. An invoice asks for money; a credit gives money back or asks for money back, and calling the second one the first files a refund as a purchase.
+    - "supplier_credit_note" = a credit ISSUED TO US BY A SUPPLIER. Its letterhead is the supplier's, we are the party named under "Credit To" / "Customer" / "Account", and it reduces what we owe them. Same direction as a supplier invoice: it came from outside, addressed to us.
+    - "customer_credit_request" = a CUSTOMER ASKING US for a credit, and nobody has agreed to it yet. Its marks are the word "Request" or "Application" in the title, an approval/authorisation block that is blank or unsigned, and columns comparing what was expected against what was invoiced. It is a claim, not a settled document.
+    - "customer_credit_note" = a FINALISED credit WE HAVE ISSUED to a customer. Our letterhead, the customer named as the recipient, no approval still outstanding.
+  Decide the SIDE the same way you decide it for an invoice: by whose letterhead the document carries and who is named as the recipient. If the direction is genuinely unreadable, prefer "supplier_credit_note" only when the issuer is plainly not us; otherwise say the type you can actually support and lower overall_confidence.
+- "credit_document": fill this ONLY when document_type is one of the three credit types; set it to null for every other type. Every value is a STRING transcribed EXACTLY as printed, with currency symbols and thousands separators stripped and the document's own decimal mark kept. Return "" for anything the page does not print — "" is the right answer and a blank is not a zero. NEVER compute, derive, complete or reconcile any figure here.
+    - KEEP THE SIGN THE PAPER PRINTS. A credit that prints "-52.58", "(52.58)" or "52.58 CR" is stating the direction the money moves, and that is part of the figure: copy it as shown. Do NOT drop a minus sign, do NOT convert brackets into a positive number, and do NOT "tidy" a CR suffix away. A credit written as a positive number on a page that says CREDIT everywhere is still copied exactly as it appears.
+    - credit_reference = the credit's own number, as printed ("CRN0012368", "Credit Request 6275"). original_invoice_reference = the invoice this credit is raised against ("105177"). po_reference = the purchase order that original order carried ("144426"). Each of these is a DIFFERENT number and each has its own field; do not put one in another's slot and do not repeat one across all three.
+    - reason = why the credit is being raised, in the document's own words ("short delivered", "quality claim", "price difference"). Quote it; do not summarise it.
+    - net_amount, tax_amount, total_amount = the credit's own goods value, its VAT line, and the amount actually being credited or claimed — the line labelled "Total Credit", "Credit Requested", "Total Credit Requested (Inclusive VAT)", "Nett CR" or equivalent.
+    - A COMPARISON COLUMN IS NOT AN AMOUNT. Credit requests routinely print "Expected" beside "Invoiced" so a human can see the difference; those columns are working, not the credit. The credit is the figure the page names as the credit. Never take a number from an expected/invoiced/original-price column as total_amount, and never treat those columns as line items of their own.
+    - currency = the symbol or code as printed ("R", "ZAR").
+  On a credit document the line_items are the goods being credited, one row per printed row, exactly as for an invoice — with their printed signs kept.
 - "financial_document": fill this ONLY when document_type is "expense_receipt"; set it to null for every other type. Every value is a STRING, transcribed EXACTLY as printed, keeping the decimal mark the document itself uses, with currency symbols and thousands separators stripped. Return "" for anything the slip does not print — "" is the right answer and a blank is not a zero. NEVER compute, derive, complete or reconcile any figure here: a total you worked out from the rows is not the total the till printed, and this block is only worth having because each figure in it is independent evidence.
     - merchant = the trading name at the head of the slip. receipt_reference = its bill/slip/table/invoice number. receipt_datetime = the date and (if shown) time, exactly as printed. member_or_account = the member, account, room or card-holder the slip is charged to.
     - subtotal = the goods/food total BEFORE any service charge. gratuity = the service charge / tip / gratuity line. total = the slip's own grand total.
@@ -252,10 +310,21 @@ export async function extractDocument(params: {
   let bestScore = auditExtractionStructure(initial).score;
   let orientation: PdfOrientationNormalization | undefined;
 
-  // First read unchanged. Only a structurally bad single-page PDF pays for
-  // alternate rotation reads, and the winner is chosen by evidence preservation
-  // rather than by a preferred document type or party name.
-  if (isPdf && shouldRetryPdfOrientation(initial)) {
+  // First read unchanged. A structurally bad single-page PDF pays for alternate
+  // rotation reads — and so, now, does one whose own `/Rotate` is non-zero,
+  // however well its first read scored. The winner is still chosen by evidence
+  // preservation rather than by a preferred document type or party name.
+  //
+  // THE STATEMENT LANE IS WHERE THE SECOND TRIGGER MATTERS MOST. This function
+  // is the classification read, and classification is what Scan B of the F&B
+  // requisition got catastrophically wrong: a sideways page with no text layer
+  // was typed `statement` at confidence 95 and its forty fabricated market rows
+  // scored 81 "ok", so `shouldRetryPdfOrientation` never fired and a
+  // hallucination locked in a document type. The deterministic trigger means a
+  // rotated page cannot reach that verdict without the rotation candidates
+  // having been compared first. See lib/platform/docu/pdf-orientation.ts.
+  const rotationSuspect = isPdf ? await pdfRotationSuspect(params.base64) : false;
+  if (isPdf && (rotationSuspect || shouldRetryPdfOrientation(initial))) {
     try {
       const variants = await pdfOrientationCandidates(params.base64);
       const attempted: number[] = [];
@@ -371,6 +440,14 @@ async function extractDocumentOnce(params: DocumentInput): Promise<ExtractionRes
   // the one type it was written for.
   const financialDocument =
     parsed.document_type === 'expense_receipt' ? coerceFinancialDocument(parsed.financial_document, lines) : null;
+  // Gated on the TYPE for exactly the reason above, and with one extra
+  // consequence of its own: `financial_effect` downstream is stamped from
+  // `document_type`, so a credit block hanging off an invoice would be a set of
+  // credit figures with no direction attached to them — figures nobody could
+  // safely read. Only the three credit types carry one.
+  const creditDocument = CREDIT_TYPES.has(parsed.document_type ?? '')
+    ? coerceCreditDocument(parsed.credit_document)
+    : null;
   // NULL when the model stated no confidence, NOT 0. This line used to read
   // `typeof parsed.overall_confidence === 'number' ? … : 0` while the very
   // instruction above tells the model to "output numbers as plain strings" —
@@ -416,6 +493,7 @@ async function extractDocumentOnce(params: DocumentInput): Promise<ExtractionRes
     line_items: audit.repaired ?? lines,
     summary,
     financial_document: financialDocument,
+    credit_document: creditDocument,
     // A cap LOWERS a stated confidence; it never supplies one. With nothing
     // stated there is nothing to clamp, and writing the cap itself into the
     // column would turn "the reader said nothing" into "the reader said 70%".
@@ -430,6 +508,48 @@ async function extractDocumentOnce(params: DocumentInput): Promise<ExtractionRes
 /** A trimmed string, or null — for the model's optional free-text fields. */
 function cleanString(v: unknown): string | null {
   return typeof v === 'string' && v.trim() ? v.trim() : null;
+}
+
+/** The three types that own a `credit_document`. A Set rather than three
+ *  comparisons because the same question is asked in the ingest pipeline and
+ *  the extract route, and two of three is the way this gets written wrong. */
+const CREDIT_TYPES = new Set([
+  'supplier_credit_note',
+  'customer_credit_request',
+  'customer_credit_note',
+]);
+
+/**
+ * The credit block, verbatim.
+ *
+ * A THIN, SUSPICIOUS COERCION AND NOTHING MORE. Every field is a string the
+ * document printed, so all this does is keep strings, trim them, and refuse
+ * anything that is not one — no parsing, no sign normalisation, no arithmetic,
+ * no cross-checking one figure against another. That restraint IS the feature:
+ * the whole reason `credit_document` exists is that the invoice schema had
+ * nowhere to put "Nett CR −52.58" and a reader helpfully offered 154.42 from
+ * the EXPECTED column instead. A coercion that "fixed up" a minus sign or
+ * derived a missing total would be the same helpfulness one layer down.
+ *
+ * ABSENT RATHER THAN EMPTY when the reader returned nothing usable — the same
+ * contract as `coerceTotals` in order-prompt.ts, so a credit that printed no
+ * figures we could read is distinguishable from one whose figures are blank.
+ */
+function coerceCreditDocument(raw: unknown): CreditDocument | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const s = (key: string): string => (typeof r[key] === 'string' ? (r[key] as string).trim() : '');
+  const block: CreditDocument = {
+    credit_reference: s('credit_reference'),
+    original_invoice_reference: s('original_invoice_reference'),
+    po_reference: s('po_reference'),
+    reason: s('reason'),
+    net_amount: s('net_amount'),
+    tax_amount: s('tax_amount'),
+    total_amount: s('total_amount'),
+    currency: s('currency'),
+  };
+  return Object.values(block).some((v) => v !== '') ? block : null;
 }
 
 /** The document's own total, for the audit's line-sum cross-check: an extracted

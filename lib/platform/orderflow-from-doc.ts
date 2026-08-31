@@ -57,6 +57,7 @@ import {
   type OrderPriceSource,
 } from './docu/order-line-match.ts';
 import { applyAgentDecisions, buildAgentRequests } from './docu/order-match-agent.ts';
+import { isOrderAmendmentDocument } from './docu/order-amendment.ts';
 import { indexAliasesForCustomer, lookupAlias } from './docu/customer-item-alias.ts';
 import {
   applyCustomerUomRules,
@@ -280,6 +281,20 @@ export async function syncOrderFromDocument(
   // the order" error a real failure produces, and the document stays in the
   // queue rather than being marked approved with nothing behind it.
   if (sourceDoc.document_type !== 'order') return { ok: false, reason: 'not-an-order-document' };
+  // THE SAME GUARD, ONE DIMENSION ACROSS, AND FOR THE SAME REASON THE ONE ABOVE
+  // EXISTS. `runDocumentSideEffects` already returns before reaching this
+  // function when the document is an amendment — that is the load-bearing gate
+  // and it catches every commit path at once. This is the defence in depth
+  // beside it: an amendment IS document_type 'order', so the type check above
+  // waves it straight through, and this function's whole job is to turn
+  // whatever it is handed into an order, an invoice and stock movements.
+  //
+  // What comes through the gap is precisely the document that must not: the PO
+  // 144583 email carries zero lines and a person's name, and building an order
+  // out of it is what put a second, empty OrderFlow order beside the real PO's.
+  // Reports failure the way every other refusal here does — { ok: false,
+  // reason } — so the caller's error path is unchanged.
+  if (isOrderAmendmentDocument(sourceDoc)) return { ok: false, reason: 'order-amendment-not-a-new-order' };
   const ed = (sourceDoc.extracted_data ?? {}) as ExtractedData;
   const lines = ed.line_items ?? [];
 
@@ -789,9 +804,30 @@ export async function syncOrderFromDocument(
     await db.from('of_orders').update({ customer_id: customerId, status, invoice_number: inv }).eq('id', orderId);
     await db.from('of_order_items').delete().eq('order_id', orderId);
   } else {
+    // `customer_po` — THE COLUMN THAT WAS ALWAYS THERE AND NEVER WRITTEN.
+    //
+    // `of_orders.customer_po` has existed since the schema shipped, and this
+    // insert has never populated it, while the same PO number sat in
+    // `extracted_data.purchase_order_number` on the document one row away.
+    // Nothing could look an order up by the buyer's own reference — which is
+    // the reference a buyer emails about ("please deliver PO 144583
+    // Wednesday"), the one printed on their delivery note, and the one their
+    // accounts department quotes back on a query.
+    //
+    // AT CREATION TIME ONLY, and the `else` branch above proves it: the update
+    // path deliberately does not touch this column. An order somebody has
+    // already reviewed may carry a PO a human typed or corrected, and a re-sync
+    // must not overwrite that with whatever the extractor read this time.
     const { data: created, error: insErr } = await db
       .from('of_orders')
-      .insert({ org_id: orgId, customer_id: customerId, status, invoice_number: inv, source_document_id: documentId })
+      .insert({
+        org_id: orgId,
+        customer_id: customerId,
+        status,
+        invoice_number: inv,
+        source_document_id: documentId,
+        customer_po: ed.purchase_order_number ?? null,
+      })
       .select('id')
       .single();
     if (insErr || !created) return { ok: false, reason: insErr?.message ?? 'order-insert-failed' };

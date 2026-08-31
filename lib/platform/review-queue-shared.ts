@@ -29,6 +29,8 @@ import { PRELUDE_END, REVIEW_CHAT_MODULE } from './finch-chats-shared.ts';
 import type { Document } from './types.ts';
 import type { DocuExtractedData } from './docu/types.ts';
 import type { DocumentDirectionRecord } from './docu/document-direction.ts';
+import { isCreditDocumentType } from './docu/business-effect.ts';
+import { isOrderAmendmentDocument } from './docu/order-amendment.ts';
 
 // Re-exported so the Review wave's own files have one import site, while the
 // value itself lives where `splitChats` can reach it without a cycle.
@@ -83,6 +85,8 @@ export type ReviewTaskId =
   | 'docu:invoices'
   | 'docu:statements'
   | 'docu:expenses'
+  | 'docu:credits'
+  | 'docu:order_changes'
   | 'docu:flagged'
   | 'orderflow:quotes';
 
@@ -122,6 +126,22 @@ export const REVIEW_TASKS: readonly ReviewTask[] = [
   // approving the second — and the heading is the only sentence in this queue
   // that some of them will read.
   { id: 'docu:expenses', module: 'docu', label: 'Expense receipts', approvable: true },
+  // ITS OWN PILE FOR THE SAME REASON EXPENSES HAVE ONE, and a sharper one. A
+  // credit note filed under "Invoices to approve" tells the reviewer they are
+  // approving a bill while they are approving a refund — the exact inversion
+  // that put CRN0012368 in the database as a positive R335.00 invoice line. The
+  // heading is the sentence that says which way the money goes.
+  //
+  // `approvable: false`: there is no one-call approve for a credit, because
+  // "approve" would have to mean something operational and nothing operational
+  // happens. Confirming a credit files and routes it; it posts no AP, no AR and
+  // no claim. The queue must not offer a batch button whose name promises more
+  // than the pipeline does.
+  { id: 'docu:credits', module: 'docu', label: 'Credit notes & requests', approvable: false },
+  // AND ITS OWN PILE AGAIN, for the same reason once more: an order amendment is
+  // not an order to approve. Batch-approving PO 144583's date-change email
+  // alongside four real orders is how it became a real order in the first place.
+  { id: 'docu:order_changes', module: 'docu', label: 'Order changes to review', approvable: false },
   { id: 'docu:flagged', module: 'docu', label: 'Flagged — Vyso could not read these', approvable: false },
   { id: 'orderflow:quotes', module: 'orderflow', label: 'Quote requests', approvable: false },
 ];
@@ -281,9 +301,24 @@ function outgoingDirection(row: ReviewDocumentRow): DocumentDirectionRecord | nu
  * the pile a document is filed in should not move because someone typed
  * "Market sheet" over it.
  */
-export function reviewDocumentTask(row: Pick<ReviewDocumentRow, 'status' | 'document_type'>): ReviewTaskId {
+export function reviewDocumentTask(
+  // `extracted_data` is OPTIONAL, not merely nullable, and the distinction is
+  // the legacy row: a document filed before `business_event` existed carries no
+  // such key, and a signature that demanded one would be asserting that every
+  // caller can supply an answer this function must be able to do without.
+  // Absent reads exactly as a row with no business_event — an ordinary order.
+  row: Pick<ReviewDocumentRow, 'status' | 'document_type'> &
+    Partial<Pick<ReviewDocumentRow, 'extracted_data'>>,
+): ReviewTaskId {
   if (row.status === 'error') return 'docu:flagged';
   if (row.document_type === 'expense_receipt') return 'docu:expenses';
+  if (isCreditDocumentType(row.document_type)) return 'docu:credits';
+  // ASKED OF THE SECOND DIMENSION, not of the type — an amendment IS an 'order'
+  // document, so a type-only ladder files the PO 144583 email under "Invoices
+  // to approve" beside real orders. `isOrderAmendmentDocument` reads
+  // `extracted_data.business_event` and answers false for every legacy order,
+  // which have no such key.
+  if (isOrderAmendmentDocument(row)) return 'docu:order_changes';
   return row.document_type === 'statement' ? 'docu:statements' : 'docu:invoices';
 }
 

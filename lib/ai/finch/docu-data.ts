@@ -24,6 +24,12 @@ function must<T>(res: { data: T | null; error: { message: string } | null }, lab
   return (res.data ?? ([] as unknown as T)) as T;
 }
 
+/**
+ * The types `find_documents` will filter on. NOT compile-forced against
+ * `DocumentType` — `readonly DocumentType[]` accepts a list that is missing
+ * members — so a new type omitted here is a type the agent silently cannot
+ * search for, and the owner is told "no documents" about documents that exist.
+ */
 const DOC_TYPES: readonly DocumentType[] = [
   'invoice',
   'statement',
@@ -31,6 +37,14 @@ const DOC_TYPES: readonly DocumentType[] = [
   'price_list',
   'order',
   'expense_receipt',
+  'supplier_credit_note',
+  'customer_credit_request',
+  'customer_credit_note',
+  // Included even though nothing CLASSIFIES a payment proof: the agent's job
+  // here is to find documents that exist, and these exist. A type the owner can
+  // see in Doc-U but Finch cannot search for is a worse answer than no answer,
+  // because "I found no payment proofs" reads as a fact about the business.
+  'payment_proof',
 ];
 const DOC_STATUSES: readonly DocumentStatus[] = [
   'pending',

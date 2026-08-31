@@ -88,6 +88,34 @@ function hasOrderCue(input: ClassificationSignal): boolean {
  */
 export function decideClassificationRouting(input: ClassificationSignal): ClassificationRouting {
   if (input.document_type === 'order') return 'accept';
+  // A CREDIT IS NEVER ESCALATED TO THE ORDER LANE, on any signal, and this is
+  // the one arm with no cue-based escape hatch at all.
+  //
+  // The expense-receipt arm below still escalates on EVIDENCE — a till slip
+  // that says "purchase order" on it might really be one. A credit document
+  // cannot be, and the cue that would trigger it is guaranteed to be present:
+  // Credit Request 6275 prints "PO 144426" on its face, because naming the
+  // purchase order behind the original invoice is WHAT A CREDIT REQUEST IS FOR.
+  // So `hasOrderCue` fires on essentially every well-formed credit.
+  //
+  // And the order lane's job is to find an order in whatever it is handed. If
+  // its read scored better, `document-ingest.ts` would adopt it, retype the
+  // document 'order', and build an OrderFlow order — with an invoice number
+  // drawn from the shared counter — out of a document asking for money back.
+  // That is CRN0012368's failure with an extra step: not merely a credit filed
+  // as spend, but a credit filed as a sale.
+  //
+  // The asymmetry that makes escalation cheap everywhere else ("it only buys a
+  // second read") does not hold here for the same reason it does not hold for a
+  // receipt: the second read's whole tendency is towards the one outcome this
+  // type exists to prevent.
+  if (
+    input.document_type === 'supplier_credit_note' ||
+    input.document_type === 'customer_credit_request' ||
+    input.document_type === 'customer_credit_note'
+  ) {
+    return 'accept';
+  }
   if (input.document_type === 'expense_receipt') {
     return hasOrderCue(input) ? 'escalate_order' : 'accept';
   }

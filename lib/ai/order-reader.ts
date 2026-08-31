@@ -15,7 +15,7 @@ import {
   finalizeExtractionConfidence,
   shouldRetryPdfOrientation,
 } from '@/lib/platform/docu/extraction-quality';
-import { pdfOrientationCandidates } from '@/lib/platform/docu/pdf-orientation';
+import { pdfOrientationCandidates, pdfRotationSuspect } from '@/lib/platform/docu/pdf-orientation';
 
 /**
  * The order lane's READER, and the only thing application code calls to read an
@@ -147,7 +147,21 @@ export async function extractOrderDocument(params: OrderReadParams): Promise<Ord
   const initial = await readOrderOnce(params);
   const isPdf =
     params.mediaType === 'application/pdf' || params.filename.toLowerCase().endsWith('.pdf');
-  if (params.orientationChecked || !isPdf || !shouldRetryPdfOrientation(initial)) {
+  // TWO TRIGGERS, EITHER OF WHICH OPENS THE ROTATION SEARCH.
+  //
+  // `shouldRetryPdfOrientation` is the post-hoc one — the read came back
+  // structurally poor, so try the page another way up. It has always been here
+  // and it stays.
+  //
+  // `pdfRotationSuspect` is the deterministic one, and it is new because the
+  // post-hoc gate provably cannot see the case it exists for: Scan B of the
+  // F&B requisition (/Rotate 270, no text layer) came back CONFIDENTLY WRONG —
+  // a fabricated forty-line market statement that scored 81 and passed its own
+  // audit — so nothing about that read was ever going to ask for a second
+  // opinion. The page's own metadata said it was sideways before a single token
+  // was spent. See lib/platform/docu/pdf-orientation.ts.
+  const rotationSuspect = isPdf && !params.orientationChecked ? await pdfRotationSuspect(params.base64) : false;
+  if (params.orientationChecked || !isPdf || (!rotationSuspect && !shouldRetryPdfOrientation(initial))) {
     const structureAudit = auditExtractionStructure(initial);
     return {
       ...initial,

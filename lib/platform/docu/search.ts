@@ -15,6 +15,20 @@ export const SEARCH_EXAMPLES = [
 ];
 
 const TYPE_WORDS: [RegExp, DocumentType][] = [
+  // THE THREE CREDIT PHRASES GO FIRST, and the ordering is load-bearing exactly
+  // as it is for "expense receipts" below: this list stops at the first match,
+  // and every one of these phrases contains the bare word `notes?` that
+  // `delivery\s*notes?` does not claim but `credit\s*notes?` would lose to if
+  // the specific phrase were asked second. "supplier credit note" also contains
+  // "credit note", so the two-sided phrases are asked before the bare one.
+  [/supplier\s*credit\s*(?:notes?|memos?)/, 'supplier_credit_note'],
+  [/customer\s*credit\s*requests?/, 'customer_credit_request'],
+  [/credit\s*requests?/, 'customer_credit_request'],
+  [/customer\s*credit\s*(?:notes?|memos?)/, 'customer_credit_note'],
+  // BEFORE the bare `receipts?` alternative below, which would otherwise claim
+  // "payment receipts" for `expense_receipt` — the exact conflation the type
+  // exists to prevent, reproduced in a search box.
+  [/payment\s*proofs?|proof\s*of\s*payment|payment\s*receipts?|remittance(?:\s*advice)?/, 'payment_proof'],
   [/delivery\s*notes?/, 'delivery_note'],
   [/price\s*lists?/, 'price_list'],
   // BEFORE the bare `receipts?` alternative it shares a suffix with, and before
@@ -28,7 +42,7 @@ const TYPE_WORDS: [RegExp, DocumentType][] = [
 ];
 
 const OPERATOR_WORDS =
-  /(invoices?|statements?|delivery\s*notes?|price\s*lists?|orders?|(?:expense\s*)?receipts?|above|over|more\s*than|with|price\s*spikes?|duplicates?|credit\s*notes?|from|last\s*(?:week|month)|mentioning|r?\s*[\d.,]+\s*[km]?)/g;
+  /(invoices?|statements?|delivery\s*notes?|price\s*lists?|orders?|(?:expense\s*)?receipts?|(?:supplier|customer)?\s*credit\s*(?:notes?|memos?|requests?)|payment\s*proofs?|proof\s*of\s*payment|remittance(?:\s*advice)?|above|over|more\s*than|with|price\s*spikes?|duplicates?|credit\s*notes?|from|last\s*(?:week|month)|mentioning|r?\s*[\d.,]+\s*[km]?)/g;
 
 export function parseSearch(query: string): ParsedSearch {
   const text = query.trim();
@@ -52,7 +66,18 @@ export function parseSearch(query: string): ParsedSearch {
 
   if (/price\s*spikes?/.test(lower)) parsed.flag = 'price_spike';
   else if (/duplicates?/.test(lower)) parsed.flag = 'duplicate_invoice';
-  else if (/credit/.test(lower)) parsed.flag = 'credit_note';
+  // THE FLAG IS THE FALLBACK, NOT AN ADDITION. `credit_note` is a keyword flag
+  // — it fires when the word "credit" appears anywhere in a document's filename,
+  // fields or lines — and it existed because there WAS no credit document type
+  // to search for. Now that there is one, asking for both would AND a precise
+  // type filter together with a keyword guess, and hide a correctly typed
+  // supplier credit note whose filename happens to read "CRN0012368.pdf".
+  //
+  // A BARE "credit notes" STILL LANDS HERE, deliberately: it names no side, and
+  // the three types differ by exactly which side they are on. Guessing one of
+  // them would be the Doppio mistake in a search box — so the query keeps its
+  // pre-existing keyword behaviour and finds all three.
+  else if (!parsed.docType && /credit/.test(lower)) parsed.flag = 'credit_note';
 
   return parsed;
 }

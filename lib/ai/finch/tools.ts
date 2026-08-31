@@ -241,9 +241,20 @@ const DOCU_TOOLS: AgentTool[] = [
         supplier: { type: 'string', description: 'Supplier name, or part of it, to filter by (partial match).' },
         document_type: {
           type: 'string',
-          enum: ['invoice', 'statement', 'delivery_note', 'price_list', 'order', 'expense_receipt'],
+          enum: [
+            'invoice',
+            'statement',
+            'delivery_note',
+            'price_list',
+            'order',
+            'expense_receipt',
+            'supplier_credit_note',
+            'customer_credit_request',
+            'customer_credit_note',
+            'payment_proof',
+          ],
           description:
-            'Restrict to one document type. "expense_receipt" is a till slip (restaurant, fuel, hotel, parking) — an expense the business paid, with no stock, supplier or order behind it.',
+            'Restrict to one document type. "expense_receipt" is a till slip (restaurant, fuel, hotel, parking) — an expense the business paid, with no stock, supplier or order behind it. The three credit types are money going the OTHER way: "supplier_credit_note" is a credit a supplier issued us (we owe them less), "customer_credit_request" is a customer asking us for one (agreed by nobody yet), "customer_credit_note" is one we have issued to a customer. None of them is an invoice and none of them counts as spend. "payment_proof" is evidence for a payment already recorded against an invoice — an EFT confirmation, bank pop or remittance advice; it is NOT an expense receipt and recognises no expense of its own.',
         },
         status: {
           type: 'string',

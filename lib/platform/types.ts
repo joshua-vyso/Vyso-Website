@@ -56,7 +56,71 @@ export type DocumentType =
    *  the same as "financially irrelevant" — the expense is real and belongs in
    *  Doc-U; it simply has no order, no stock and no supplier behind it. See
    *  lib/platform/docu/business-effect.ts for the dimension that enforces that. */
-  | 'expense_receipt';
+  | 'expense_receipt'
+  /**
+   * THE THREE CREDIT PAPERS, and there are three of them because a credit note
+   * is not one document — it is one WORD printed on three documents that point
+   * in different directions and mean opposite things to the money.
+   *
+   * Until they existed the document layer had no credit type at all, so the
+   * email classifier's `credit_note` verdict (confidence 96–97, the highest
+   * priority in the whole ladder) arrived at a document layer that could only
+   * coerce it to 'invoice'. Eat Your Greens CRN0012368 is what that costs: a
+   * credit was stored as `invoice` at confidence 92 with a POSITIVE 335.00
+   * line, and 'invoice' is a member of every operational allow-list there is —
+   * spend, stock, price observation. A refund was filed as a purchase.
+   *
+   *   - `supplier_credit_note` — a supplier issued US a credit. It REDUCES what
+   *     we owe them. Belongs on the supplier's profile and timeline; belongs in
+   *     NO spend, stock or price-observation query, because a credit that joins
+   *     a spend rollup as a positive number inflates the very figure it exists
+   *     to reduce.
+   *   - `customer_credit_request` — a CUSTOMER is asking us for a credit and
+   *     nobody has agreed to it yet. Montecasino Credit Request 6275 is this
+   *     document, and it was stored as an outgoing `invoice` for 154.42 — the
+   *     EXPECTED column — while the paper said Nett CR −52.58. A request is not
+   *     an obligation; it is a claim to review, so it moves no receivable.
+   *   - `customer_credit_note` — a credit we have actually ISSUED to a
+   *     customer. It reduces what they owe us.
+   *
+   * NONE of them posts anything. They are filed, resolved to a counterparty and
+   * reviewed; `of_credit_notes` and `ss_supplier_credits` stay the manual claims
+   * systems they are today. See `DocumentFinancialEffect` below for the
+   * dimension that records which direction each one points.
+   */
+  | 'supplier_credit_note'
+  | 'customer_credit_request'
+  | 'customer_credit_note'
+  /**
+   * PROOF THAT A PAYMENT HAPPENED — an EFT confirmation, a bank pop, a deposit
+   * slip, a customer's remittance advice, a card slip.
+   *
+   * IT IS NOT AN EXPENSE RECEIPT, and the distinction is the whole reason it is
+   * its own type rather than a reuse of that one. They look identical in the
+   * hand and mean opposite things in the books:
+   *
+   *   - An `expense_receipt` is evidence that THE BUSINESS CONSUMED SOMETHING
+   *     AND PAID FOR IT. Money out. The expense is recognised BY that document
+   *     existing and being reviewed — nothing else in Vyso records it.
+   *   - A `payment_proof` is evidence for a payment the business ALREADY
+   *     RECORDED. In the one place that writes it today (OrderFlow's payments
+   *     ledger) that payment is money IN, against an invoice the org issued,
+   *     and its amount, method, date and reference are already in `of_payments`.
+   *     The document adds no money to anything; it is the paperwork behind a
+   *     figure that is already on the books.
+   *
+   * Conflating them would file a R643.10 EFT confirmation the same way as a
+   * R643.10 restaurant slip — recognising an expense for a customer's payment,
+   * which is the same class of error as filing a credit note as a purchase.
+   *
+   * NOT PART OF THE CLASSIFICATION PROMPT'S ENUM, deliberately — see
+   * `ExtractedDocType` in lib/ai/anthropic.ts. This type is written directly by
+   * the screen that already knows which payment the file is proof OF; a reader
+   * looking at a loose bank pop in Doc-U has no payment record to attach it to,
+   * and a document typed `payment_proof` while proving nothing in particular is
+   * worse than one honestly left unclassified.
+   */
+  | 'payment_proof';
 
 /**
  * WHAT A DOCUMENT DOES TO THE BUSINESS, as opposed to what it looks like.
@@ -71,8 +135,16 @@ export type DocumentType =
  *   - `operational_financial` — the ordinary case. Stock or orders move AND
  *     money moves: invoices, statements, delivery notes, customer orders.
  *   - `financial_only` — money moved, nothing operational did. Expense
- *     receipts. HARD-EXCLUDED from every operational write; still reviewed,
- *     still reconciled, still an expense.
+ *     receipts, and payment proofs. HARD-EXCLUDED from every operational write;
+ *     still reviewed, still reconciled, still filed. NOTE that this value says
+ *     nothing about WHICH WAY the money went or whether this document is what
+ *     recognises it: an expense receipt IS the record of its expense, while a
+ *     payment proof is paperwork behind a payment `of_payments` already holds.
+ *     Every reader of this value today uses it to REFUSE work — no reader
+ *     asserts "therefore an expense exists" — which is what lets the two share
+ *     it. `document_type` is the dimension that keeps them apart, and every
+ *     type-keyed surface (label, tile, review pile, routing rules, the receipt
+ *     review card) treats them as the different documents they are.
  *   - `operational_only` — informs operations, bills nothing. A price list.
  *   - `informational` — neither. Reserved; nothing derives it today.
  *
@@ -466,6 +538,131 @@ export interface CustomerInterpretationPreview {
   lines: CustomerInterpretationLinePreview[];
 }
 
+/**
+ * WHAT THE MESSAGE IS DOING TO AN ORDER — the dimension `document_type` cannot
+ * carry, because an amendment is not a piece of paper.
+ *
+ * PO 144583 is the case. A one-line email from the buyer — "please deliver
+ * Wednesday, not today" — carried the PO number, no goods, and every cue of an
+ * order document. The pipeline made it a NEW zero-line order document with
+ * customer_name "Keshisha Ramsewak" (the person who typed it), unlinked to the
+ * real PO document that already sat in the org with the same
+ * purchase_order_number on it. The linkage evidence existed on both rows and
+ * nothing read it.
+ *
+ * SO: NOT A DOCUMENT TYPE. Adding `order_amendment` to `DocumentType` would say
+ * the email is a different KIND of paper, when it is the same kind of message
+ * about an order that already exists. `document_type` stays 'order' — that is
+ * what the reader read — and this second axis says what the message wants done
+ * with it. Every value except 'new_order' means NOTHING OPERATIONAL MAY RUN:
+ * `runDocumentSideEffects` returns before `syncOrderFromDocument`, so no second
+ * order is created, no invoice number is drawn from the shared counter, and the
+ * existing order is not touched. The amendment is a review card and a link.
+ *
+ * ABSENT ON EVERYTHING THAT IS NOT AN ORDER-RELATED MESSAGE, and absent on
+ * every row filed before it existed — which is why nothing may read its absence
+ * as 'new_order'. The gates ask "is this one of the amendment family?", never
+ * "is this new_order?", so a legacy order behaves exactly as it always has.
+ */
+export type OrderBusinessEvent =
+  | 'new_order'
+  | 'order_amendment'
+  | 'order_cancellation'
+  | 'order_hold'
+  | 'order_instruction_update';
+
+/** What KIND of change an amendment asks for, and what it says about it. */
+export type OrderAmendmentType =
+  | 'delivery_date_change'
+  | 'quantity_change'
+  | 'address_change'
+  | 'cancellation'
+  | 'hold'
+  | 'instruction';
+
+/**
+ * The amendment, its referenced PO, and whether we found the order it means.
+ *
+ * `linked_order_document_id` is a READ. Nothing in this block authorises a
+ * write to the order it names: the linkage exists so a reviewer opening the
+ * amendment can see the order, and so the order's own page can eventually show
+ * that somebody asked for a change. Applying the change is a human's decision
+ * and there is no code path that makes it automatically.
+ */
+export interface OrderAmendment {
+  amendment_type: OrderAmendmentType;
+  /** The PO the message names, verbatim. Null when it names none. */
+  referenced_po: string | null;
+  /** What the message says it was, and what it asks it to become — both
+   *  verbatim, both optional, because most amendments state only the new value. */
+  previous_value?: string | null;
+  requested_value?: string | null;
+  /** The sentence the change was read out of, quoted. Never a paraphrase. */
+  note?: string | null;
+  /** Set ONLY on `link_status: 'linked'` — exactly one live order document in
+   *  this org carries the same purchase_order_number. */
+  linked_order_document_id?: string | null;
+  /**
+   * 'linked' = exactly one match. 'unresolved' = none (or no PO was named).
+   * 'ambiguous' = more than one, which is a question for a human and never a
+   * reason to pick the newest. The Doppio rule, applied to orders.
+   */
+  link_status: 'linked' | 'unresolved' | 'ambiguous';
+}
+
+/**
+ * A CREDIT DOCUMENT'S OWN FIGURES AND REFERENCES, verbatim.
+ *
+ * EVERY VALUE IS A STRING TRANSCRIBED AS PRINTED — the same contract as
+ * `FinancialDocument` and `OrderDocumentTotals`, for the same reason, plus one
+ * that belongs to credits alone: THE SIGN IS PART OF THE FIGURE. A credit that
+ * prints "-52.58" or "(52.58)" or "52.58 CR" is telling us which way the money
+ * goes, and `Math.abs` anywhere in this path turns a refund into a charge.
+ * Nothing here is ever computed, completed or reconciled — Credit Request 6275
+ * was stored at 154.42 because a reader picked up the EXPECTED column and the
+ * invoice schema had nowhere to put "Nett CR −52.58" or the two references that
+ * make the document mean anything.
+ *
+ * `""` means the paper printed nothing, and a blank is not a zero.
+ */
+export interface CreditDocument {
+  /** The credit's own number — "CRN0012368", "Credit Request 6275". */
+  credit_reference: string;
+  /** The invoice this credit is against, as printed ("105177"). */
+  original_invoice_reference: string;
+  /** The PO the original order carried, as printed ("144426"). */
+  po_reference: string;
+  /** Why, in the document's own words. Never summarised. */
+  reason: string;
+  net_amount: string;
+  tax_amount: string;
+  /** The credit actually being claimed or issued — the "Total Credit Requested
+   *  (Inclusive VAT)" line. NOT an expected-vs-invoiced comparison column. */
+  total_amount: string;
+  currency: string;
+}
+
+/**
+ * WHICH WAY A CREDIT POINTS, derived from the type and nothing else.
+ *
+ * Deterministic on purpose: the direction of a credit is the one thing a
+ * reader must never be trusted to decide, because getting it backwards moves
+ * money the wrong way in both books at once. `document_type` is settled by the
+ * classification (which has direction evidence of its own); this is a pure
+ * function of that settled type — see `financialEffectForType`.
+ *
+ * NONE of these three values causes a posting. They are what the review card
+ * says out loud and what a future AR/AP integration would key on; today they
+ * are a label on a document nobody has agreed to yet.
+ */
+export type DocumentFinancialEffect =
+  /** supplier_credit_note — we owe the supplier less. */
+  | 'reduces_payable'
+  /** customer_credit_request — a claim, agreed by nobody. Moves nothing. */
+  | 'pending_credit_request'
+  /** customer_credit_note — the customer owes us less. */
+  | 'reduces_receivable';
+
 /** The shape stored in `documents.extracted_data` (jsonb). */
 export interface ExtractedData {
   fields: ExtractedField[];
@@ -477,12 +674,32 @@ export interface ExtractedData {
   customer_name?: string | null;
   /** Confidence (0–100) that customer_name was read correctly. */
   customer_confidence?: number | null;
+  /**
+   * THE HUMAN, kept apart from the business.
+   *
+   * The order prompt used to guarantee a PERSON on email and a BUSINESS on a
+   * printed PO, into the same field, so "Ashan Ajoodha" and "Scooters Pizza
+   * Rosebank" were the same kind of answer to the resolver — and the resolver
+   * pooled contact names with company names to match either. A person's name in
+   * the customer slot is not a bad read; it is a right answer to the wrong
+   * question, and the field it belongs in did not exist.
+   *
+   * Additive and absent on every historical row, which is why the customer
+   * matcher treats a missing contact_person as "no evidence", never as "there
+   * is no contact". The precedent is `of_quote_requests.business_name` +
+   * `contact_name`, which has carried this split since email ingest shipped.
+   */
+  contact_person?: string | null;
   /** Existing-customer link evidence. All fields are additive for old rows. */
   customer_id?: string | null;
   customer_match_confidence?: number | null;
   customer_match_method?: string | null;
   customer_match_reason?: string | null;
   customer_match_ambiguous?: boolean | null;
+  /** 'business_name' | 'contact_person' — which kind of name earned the match.
+   *  Null when nothing resolved, absent on every historical row. See
+   *  `CustomerMatchVia` in lib/platform/docu/customer-match.ts. */
+  customer_match_via?: string | null;
   customer_match_candidates?: Array<{
     customer_id: string;
     customer_name: string;
@@ -496,12 +713,42 @@ export interface ExtractedData {
     extracted_customer_name: string | null;
     purchase_order_number: string | null;
     delivery_location: string | null;
+    /** The subject and the document's own title, BOUNDED — the two places a
+     *  business name hides when the sender is a person. Recorded so an
+     *  'ambiguous-email-domain' verdict can be argued with: the Doppio case was
+     *  undebuggable precisely because the subject token "BALLYOAKS" that would
+     *  have explained it was never written down. Additive; null on every row
+     *  filed before the matcher read them. */
+    subject?: string | null;
+    document_title?: string | null;
+    contact_person_name?: string | null;
   } | null;
   purchase_order_number?: string | null;
   order_date?: string | null;
   requested_delivery_date?: string | null;
   delivery_location?: string | null;
   order_notes?: string | null;
+  /**
+   * WHAT THIS MESSAGE WANTS DONE WITH AN ORDER — see `OrderBusinessEvent`.
+   *
+   * Present only on order-related messages, absent everywhere else and on every
+   * row filed before it existed. Read it through
+   * `isAmendmentEvent` (lib/platform/docu/order-amendment.ts); a gate that
+   * compares against 'new_order' directly would treat every legacy order as an
+   * amendment the day this key shipped.
+   */
+  business_event?: OrderBusinessEvent | null;
+  /** The change itself, when `business_event` is one of the amendment family.
+   *  Read-only linkage — see `OrderAmendment`. */
+  order_amendment?: OrderAmendment | null;
+  /** A CREDIT DOCUMENT's own figures and references, verbatim — filled only for
+   *  the three credit types, null on everything else. See `CreditDocument`, and
+   *  note that its signs are the paper's own. */
+  credit_document?: CreditDocument | null;
+  /** Which way a credit points, stamped deterministically from `document_type`.
+   *  Null on every non-credit document. Causes no posting — see
+   *  `DocumentFinancialEffect`. */
+  financial_effect?: DocumentFinancialEffect | null;
   /** Message-level body/attachment reconciliation. Additive for old rows. */
   message_order_evidence?: MessageOrderEvidence | null;
   /** Existing customer mappings/rules evaluated without operational writes. */

@@ -134,11 +134,29 @@ export async function ensureSupplySyncProfile(
   throw error ?? new Error('Could not create the SupplySync profile');
 }
 
+/**
+ * `Partial<Record<…>>`, WHICH MEANS THIS IS A DENY-LIST WEARING AN ALLOW-LIST'S
+ * CLOTHES: a type that is not named here does not fail to compile, it falls
+ * through to the generic 'document_received' event. That silence is what makes
+ * naming the credit type worth doing rather than leaving to the default.
+ *
+ * A supplier credit note DOES belong on the supplier's timeline — it is the
+ * relationship doing something, and CRN0012368 vanishing from Eat Your Greens'
+ * history is half of what went wrong with it. 'document_received' would put it
+ * there under a label that says nothing about which way the money went.
+ *
+ * ONLY the supplier-side credit. `customer_credit_request` and
+ * `customer_credit_note` are about a CUSTOMER: there is no supplier profile for
+ * them to land on, `feedDocumentToSupplySync` bails on `!doc.supplier_id`
+ * before it reaches this map, and they are deliberately left to fall through
+ * rather than given a label that implies a supplier relationship exists.
+ */
 const HISTORY_EVENT_BY_TYPE: Partial<Record<Exclude<DocumentType, null>, string>> = {
   invoice: 'invoice_received',
   statement: 'statement_received',
   delivery_note: 'delivery_note_received',
   price_list: 'price_list_received',
+  supplier_credit_note: 'credit_note_received',
 };
 
 const DOC_LABEL: Partial<Record<Exclude<DocumentType, null>, string>> = {
@@ -146,11 +164,28 @@ const DOC_LABEL: Partial<Record<Exclude<DocumentType, null>, string>> = {
   statement: 'Statement',
   delivery_note: 'Delivery note',
   price_list: 'Price list',
+  supplier_credit_note: 'Credit note',
 };
 
-/** Document types that represent an actual billed amount (used for spend
- *  rollups). Excludes price_list (no purchase) and delivery_note (duplicates an
- *  invoice's amounts). A supplier bills via invoice OR statement, not both. */
+/**
+ * Document types that represent an actual billed amount (used for spend
+ * rollups). Excludes price_list (no purchase) and delivery_note (duplicates an
+ * invoice's amounts). A supplier bills via invoice OR statement, not both.
+ *
+ * AND EXPLICITLY NOT `supplier_credit_note`, which is the one exclusion here
+ * that is easy to talk yourself out of — a credit note is unmistakably "an
+ * actual billed amount", it just points the other way. `docTotal` sums the
+ * lines as printed, so CRN0012368 would add R335.00 to Eat Your Greens' spend
+ * rollup: a refund inflating the very figure it exists to reduce, and the
+ * arithmetic would still be arithmetic all the way down.
+ *
+ * Making credits reduce spend correctly is a real feature and this is not it —
+ * it needs signed amounts, a rule for what a credit with no matched invoice
+ * means, and a decision about which month it lands in. Until somebody does that
+ * work, a credit stays off the rollup entirely, which is wrong by exactly the
+ * credit's value and never wrong by twice it. Asserted in
+ * tests/docu-credit-routing.test.ts.
+ */
 const SPEND_DOC_TYPES = ['invoice', 'statement'] as const;
 
 const zar = new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 });

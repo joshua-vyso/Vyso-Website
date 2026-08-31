@@ -6,6 +6,8 @@ import { ConfidenceText, StatusPill } from '@/components/platform/ui';
 import { ExtractionEditor } from '@/components/platform/ExtractionEditor';
 import { OrderReviewEditor, type CustomerLite, type LinkedOrder } from './OrderReviewEditor';
 import { ReceiptReviewCard } from './ReceiptReviewCard';
+import { AmendmentReviewCard } from './AmendmentReviewCard';
+import { CreditReviewCard } from './CreditReviewCard';
 import { ApprovalActions } from './ApprovalActions';
 import { DocumentPreview } from './DocumentPreview';
 import { DocumentRename } from './DocumentRename';
@@ -30,6 +32,8 @@ import { deriveFlags } from '@/lib/platform/docu/flags';
 import { deriveSupplierIntelligence } from '@/lib/platform/docu/supplier-intel';
 import { getMissingDocs } from '@/lib/platform/docu/missing-docs';
 import { inferSupplierFromDoc } from '@/lib/platform/docu/supplier-match';
+import { isCreditDocumentType } from '@/lib/platform/docu/business-effect';
+import { isOrderAmendmentDocument } from '@/lib/platform/docu/order-amendment';
 import type { ProductOption } from '@/lib/platform/docu/product-suggest';
 import type { AiSummary, DocuExtractedData } from '@/lib/platform/docu/types';
 import type { DocumentFolder, DocumentWithSupplier, FeatureKey } from '@/lib/platform/types';
@@ -88,6 +92,24 @@ export function DocumentDetailPanel({
   const autoMatched = !doc.supplier && match.matched && match.canonical != null;
   const extracted = (doc.extracted_data as DocuExtractedData | null) ?? null;
   const statementSummary = extracted?.summary ?? null;
+  /**
+   * THE CUSTOMER, RESOLVED IF WE HAVE ONE AND READ IF WE DO NOT.
+   *
+   * The resolver's answer wins because it is the better-evidenced one — it ran
+   * a whole ladder over the org's own directory, where `customer_name` is what
+   * one model saw on one page and, on every email order before this feature,
+   * was usually a person. `customers` is the org's list, already loaded for the
+   * order editor's picker, so this costs no query.
+   *
+   * EXTRACTION IS NOT OVERWRITTEN, HERE OR ANYWHERE. `extracted_data
+   * .customer_name` keeps the paper's own words; this is a display preference,
+   * computed at render, and both values remain on the row.
+   */
+  const customerDisplayName =
+    (doc.customer_id ? customers.find((c) => c.id === doc.customer_id)?.name : null) ??
+    extracted?.customer_name ??
+    extracted?.bill_to ??
+    null;
 
   const preview = (
     <div className="flex flex-col rounded-2xl border border-[#EAEDF2] bg-white shadow-[0_1px_2px_rgba(20,24,20,0.03)]">
@@ -267,7 +289,39 @@ export function DocumentDetailPanel({
           The preview cell stretches to the row height and holds a sticky child,
           so the preview stays in view while the long list scrolls the page. */}
       <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
-        {doc.document_type === 'order' ? (
+        {/* AN AMENDMENT IS ASKED FIRST, BEFORE THE ORDER ARM, because it IS an
+            'order' document — that is what the reader read — and the order arm
+            would happily draw an Items panel and a "+ Add item" for a message
+            that has no items and must never become an order. See
+            AmendmentReviewCard, and lib/platform/docu/order-amendment.ts for
+            the PO 144583 case. `isOrderAmendmentDocument` answers false for
+            every legacy order, which carries no business_event at all. */}
+        {isOrderAmendmentDocument(doc) ? (
+          <AmendmentReviewCard
+            documentId={doc.id}
+            extractedData={extracted}
+            confidence={doc.confidence}
+            /* The RESOLVED business first — that is the point of the whole
+               customer-vs-contact split — falling back to whatever the reader
+               managed to read. Extraction is never overwritten by resolution. */
+            customerName={customerDisplayName}
+          />
+        ) : isCreditDocumentType(doc.document_type) && doc.document_type ? (
+          <CreditReviewCard
+            documentId={doc.id}
+            documentType={doc.document_type}
+            extractedData={extracted}
+            confidence={doc.confidence}
+            /* Supplier-side credits carry a supplier; customer-side ones carry
+               a customer, and never the other way round — see the ingest
+               pipeline, which refuses to run supplier resolution on them. */
+            counterpartyName={
+              doc.document_type === 'supplier_credit_note'
+                ? doc.supplier?.name ?? extracted?.supplier ?? null
+                : customerDisplayName
+            }
+          />
+        ) : doc.document_type === 'order' ? (
           <OrderReviewEditor
             documentId={doc.id}
             extractedData={extracted}

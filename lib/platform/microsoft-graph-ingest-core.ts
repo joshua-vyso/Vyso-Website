@@ -204,6 +204,24 @@ const AVAILABILITY_ENQUIRY_RE = /\b(?:do\s+you\s+have|is|are)\b[^.!?\n]{0,80}\b(
 const COMPLAINT_RE = /\b(?:complaint|quality\s+issue|issue\s+with|problem\s+with|damaged|incorrect|wrong|short[- ]delivered|not\s+happy|return(?:ing)?|refund)\b/i;
 const HISTORIC_ORDER_RE = /\b(?:status\s+of|follow(?:ing)?\s+up\s+on|regarding|about|where\s+is|delayed)\b[^.!?\n]{0,80}\b(?:order|po|delivery)\b/i;
 const ATTACHED_ONLY_RE = /\b(?:please|kindly)\s+(?:see|find)\s+(?:the\s+)?attached\b/i;
+/**
+ * A REQUEST TO CHANGE AN EXISTING ORDER — recorded as EVIDENCE ONLY.
+ *
+ * Deliberately NOT joined to `excludedIntent` beside the enquiry and complaint
+ * tags, and the distinction is the whole reason this constant is here rather
+ * than on that list. Those tags mean "this is not an order, file nothing"; an
+ * amendment is genuinely about an order, genuinely deserves a document, and the
+ * only thing it must not do is create a second one. Suppressing ordering intent
+ * would lose the PO 144583 message entirely — the reviewer would never see that
+ * the customer asked for Wednesday.
+ *
+ * The routing decision is made deterministically one layer down, on the read
+ * itself, by lib/platform/docu/order-amendment.ts. This is the tag that lets
+ * somebody reading the ingest row see WHY that document came out as an
+ * amendment.
+ */
+const AMENDMENT_REQUEST_RE =
+  /\b(?:please\s+)?(?:cancel|amend|change|reschedule|hold)\b[^.!?\n]{0,60}\b(?:p\.?o\.?|purchase\s+order|order|delivery)\b|\bdeliver(?:y)?\b[^.!?\n]{0,60}\bnot\s+(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\bamendment\s+to\s+(?:p\.?o\.?|order)\b/i;
 
 function quantityLineCount(value: string): number {
   return [...value.matchAll(QUANTITY_UNIT_RE)].length;
@@ -258,6 +276,10 @@ function messageCandidates(input: {
   if (availabilityEnquiry) evidence.push('message:availability-enquiry');
   if (complaint) evidence.push('message:complaint');
   if (historicReference) evidence.push('message:historic-order-reference');
+  // Evidence, never suppression — see AMENDMENT_REQUEST_RE. `orderingIntent`
+  // below is computed from `excludedIntent`, which this tag is deliberately not
+  // part of, so the amendment still becomes a reviewable document.
+  if (AMENDMENT_REQUEST_RE.test(combined)) evidence.push('message:order-amendment-request');
 
   if (/\b(?:credit\s+note|credit\s+memo|tax\s+credit)\b/.test(combined)) {
     candidates.push({ classification: 'credit_note', confidence: 96, source: 'email_body', reason: 'message-credit-note-label' });

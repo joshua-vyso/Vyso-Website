@@ -39,6 +39,29 @@ const RULES: Record<DocumentType, { key: FeatureKey; reason: string; recommended
   // optional — which is the point: a sixth document type cannot be added without
   // someone answering this question in writing.
   expense_receipt: [],
+  // EMPTY FOR THE SAME REASON, ONE STEP FURTHER ALONG. A credit note is not
+  // nothing — it is a real financial document with a real counterparty — but
+  // there is no module here it can be PUSHED into without lying. ProcurePulse
+  // would take its lines as stock received; PricePilot would take its rates as
+  // a price observation; the SupplySync entry it does deserve is written by the
+  // feed at commit, not by a person choosing it off a menu. CRN0012368 became a
+  // positive 335.00 invoice line precisely because every shape-keyed list said
+  // yes to it, and a "Push to…" menu is one more list that would.
+  //
+  // The reviewer is not left with nothing: `CreditReviewCard` states the credit,
+  // its references and which way it points, and the document files against the
+  // supplier or the customer like any other. What is refused is the button whose
+  // only possible outcome is a credit counted as a purchase.
+  supplier_credit_note: [],
+  customer_credit_request: [],
+  customer_credit_note: [],
+  // EMPTY, AND HERE THE EMPTINESS IS ALMOST TAUTOLOGICAL. A payment proof is
+  // paperwork behind a payment OrderFlow has already recorded — there is no
+  // module left to push it into, because the one module that cares about it
+  // already has it, linked by `of_payments.receipt_document_id`. Offering
+  // "Push to ProcurePulse" on a bank pop would be offering to turn a customer's
+  // EFT into stock.
+  payment_proof: [],
 };
 
 export function getRoutes(docType: DocumentType | null): ModuleRoute[] {
