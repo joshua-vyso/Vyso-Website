@@ -10,6 +10,7 @@ import { GRID_CELL_FOCUS, gridCell, useGridNavigation } from '@/hooks/useGridNav
 import type { DocumentStatus, ExtractedField, ExtractedLineItem } from '@/lib/platform/types';
 import type { DocuExtractedData } from '@/lib/platform/docu/types';
 import { auditLines, summariseAudit } from '@/lib/platform/docu/line-audit';
+import { documentCounterpartyRole } from '@/lib/platform/docu/document-direction';
 import type { StatementSummary } from '@/lib/platform/docu/types';
 import {
   parseLocaleNumber,
@@ -101,10 +102,28 @@ export function ExtractionEditor({
   };
   const [draft, setDraft] = useState<ExtractedField[]>(() => fields.map((f) => ({ ...f })));
   const [lines, setLines] = useState<ExtractedLineItem[]>(() => lineItems.map((l) => ({ ...l })));
-  // The dedicated supplier field. Falls back to a legacy "Supplier"/"Vendor"/"From"
-  // field for documents extracted before supplier capture existed.
-  const [supplier, setSupplier] = useState<string>(
-    () => extractedData?.supplier ?? fields.find((f) => isSupplierLabel(f.label))?.value ?? '',
+  /**
+   * WHICH PARTY THIS FIELD IS FOR — read once from the stored direction.
+   *
+   * On an INCOMING document this is 'supplier' and everything below behaves
+   * exactly as it always has. On an OUTGOING one it is 'customer', because the
+   * issuer is the org itself: invoice 105375 offered a "Supplier" box, empty,
+   * with a placeholder suggesting a market agent — an invitation to type the
+   * business's own name into the slot that makes it its own vendor, which is
+   * the failure `resolveSupplierProfile`'s guard exists to prevent.
+   */
+  const counterpartyRole = documentCounterpartyRole(extractedData);
+  const outgoing = counterpartyRole === 'customer';
+  // The dedicated counterparty field. Falls back to a legacy "Supplier"/"Vendor"/"From"
+  // field for documents extracted before supplier capture existed; on an outgoing
+  // document it is seeded from the resolved customer, then the name as printed.
+  const [party, setParty] = useState<string>(() =>
+    outgoing
+      ? (extractedData?.direction?.customer_name ??
+        extractedData?.direction?.counterparty_as_read ??
+        extractedData?.bill_to ??
+        '')
+      : (extractedData?.supplier ?? fields.find((f) => isSupplierLabel(f.label))?.value ?? ''),
   );
   const [busy, setBusy] = useState(false);
   const { gridRef, onKeyDown: onGridKeyDown } = useGridNavigation<HTMLDivElement>();
@@ -201,7 +220,14 @@ export function ExtractionEditor({
             // value via inferSupplierFromDoc's fields[] fallback.
             fields: nextFields,
             line_items: lines,
-            supplier: supplier.trim() || null,
+            // OUTGOING: the supplier slot STAYS NULL and the correction lands
+            // on `bill_to`, the field that actually names the other party on a
+            // document the org issued. A reviewer's typing must never be able
+            // to put a name — least of all the org's own — back into the slot
+            // that turns a business into its own vendor.
+            ...(outgoing
+              ? { supplier: null, bill_to: party.trim() || null }
+              : { supplier: party.trim() || null }),
             // Written on EVERY save, null included: a clean audit must clear
             // the stored one, and merging `...extractedData` would otherwise
             // carry the stale note straight back in.
@@ -239,19 +265,27 @@ export function ExtractionEditor({
       </div>
 
       <div className="px-6 py-5">
-        {/* Supplier — the selling party. Extracted from the document header; editable
-            here so a missed or mis-read counterparty can be corrected before it feeds
-            ProcurePulse's per-product supplier prices. */}
+        {/* THE COUNTERPARTY — the selling party on a document we received, the
+            BUYING party on one we issued. Extracted from the document header;
+            editable here so a missed or mis-read counterparty can be corrected
+            before it feeds ProcurePulse's per-product supplier prices. The
+            outgoing placeholder names a customer, because the old one ("or the
+            market agent") was an invitation to type a supplier onto an invoice
+            that has none — see invoice 105375. */}
         <div className="mb-5">
           <label htmlFor="doc-supplier" className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.05em] text-[#8A8E86]">
-            Supplier
+            {outgoing ? 'Customer' : 'Supplier'}
           </label>
           <input
             id="doc-supplier"
             type="text"
-            value={supplier}
-            onChange={(e) => setSupplier(e.target.value)}
-            placeholder="e.g. Bacca Valley (Pty) Ltd — or the market agent"
+            value={party}
+            onChange={(e) => setParty(e.target.value)}
+            placeholder={
+              outgoing
+                ? 'e.g. Montecasino — the customer you invoiced'
+                : 'e.g. Bacca Valley (Pty) Ltd — or the market agent'
+            }
             className="h-11 w-full max-w-md rounded-[12px] border border-[#E4E9F0] bg-white px-4 text-[14px] text-[#171A17] outline-none placeholder:text-[#A0A49C] focus:border-[#3E7BC4]"
           />
         </div>

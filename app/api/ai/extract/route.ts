@@ -23,6 +23,7 @@ import {
   isCustomerSideCredit,
 } from '@/lib/platform/docu/business-effect';
 import { resolveExistingCustomerForOrg } from '@/lib/platform/docu/customer-match';
+import { documentCounterpartyRole } from '@/lib/platform/docu/document-direction';
 import { imagePixelSize } from '@/lib/platform/docu/image-size';
 import type { Document } from '@/lib/platform/types';
 
@@ -372,6 +373,10 @@ export async function POST(req: Request) {
     orientation_normalization: result.orientation_normalization ?? null,
     // Only set when the org issued it — lib/platform/docu/document-direction.ts.
     direction: parties.record,
+    // The same word the ingest pipeline stamps, for the same reason a receipt
+    // uploaded here and one forwarded by email must be the same row afterwards:
+    // 'customer' on an outgoing document, 'supplier' on everything else.
+    counterparty_role: documentCounterpartyRole({ direction: parties.record }),
     // Written on every document, not just orders: an invoice photographed too
     // small misreads exactly the same way an order does.
     image_pixels: imagePixels,

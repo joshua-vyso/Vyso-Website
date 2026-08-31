@@ -104,11 +104,38 @@ export function AmendmentReviewCard({
 
         {/* THE SENDER'S OWN SENTENCE, quoted rather than paraphrased. It is the
             only thing on this screen a human can act on, and a summary of it
-            would be Vyso deciding what the customer meant. */}
+            would be Vyso deciding what the customer meant.
+
+            ON A CANCELLATION IT IS LABELLED, and that label is the reviewer's
+            defence against this screen being wrong. PO JBG0118352 was stamped
+            'order_cancellation' off a Conditions-of-Purchase sentence — "…
+            reserves the absolute right to cancel this Order" — printed on a
+            genuine four-line purchase order. The detector no longer reads a
+            formal document's own terms, but a heuristic that has been wrong
+            once can be wrong again, and a reviewer who can SEE the sentence can
+            recognise boilerplate in a second. One who is only told "Order
+            cancellation" cannot. */}
         {amendment?.note ? (
-          <blockquote className="mt-4 rounded-[14px] border-l-2 border-[#C9DEF7] bg-[#F5F9FE] px-3.5 py-2.5 text-[13px] leading-[1.55] text-[#3E4A57]">
-            “{amendment.note}”
-          </blockquote>
+          <div className="mt-4">
+            {cancelled ? (
+              <p className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.06em] text-[#A0A49C]">
+                The sentence Vyso read as a cancellation
+              </p>
+            ) : null}
+            <blockquote className="rounded-[14px] border-l-2 border-[#C9DEF7] bg-[#F5F9FE] px-3.5 py-2.5 text-[13px] leading-[1.55] text-[#3E4A57]">
+              “{amendment.note}”
+            </blockquote>
+            {cancelled ? (
+              <p className="mt-1.5 text-[12px] text-[#6B6F68]">
+                If that is standard terms-and-conditions text rather than somebody asking to cancel, this is
+                not a cancellation — open it in OrderFlow and treat it as the order it is.
+              </p>
+            ) : null}
+          </div>
+        ) : cancelled ? (
+          <p className="mt-4 rounded-[14px] border-l-2 border-[#C9DEF7] bg-[#F5F9FE] px-3.5 py-2.5 text-[13px] leading-[1.55] text-[#6B6F68]">
+            Vyso quoted no sentence for this cancellation — there is nothing here to check it against.
+          </p>
         ) : null}
 
         {/* WHICH ORDER THIS IS ABOUT — one, none, or several, and never a guess.

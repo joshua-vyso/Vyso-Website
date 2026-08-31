@@ -107,6 +107,12 @@ export interface MicrosoftGraphIngestDependencies {
       subject: string | null;
       messageText: string | null;
     };
+    /** The covering email's body, for the amendment detector. A PDF or a photo
+     *  of a purchase order is a FORMAL DOCUMENT: its own printed conditions are
+     *  not a request to cancel anything, and only the message that carried it
+     *  is allowed to ask for a change. See lib/platform/docu/order-amendment.ts
+     *  and the PO JBG0118352 case. */
+    messageBodyText?: string | null;
   }) => Promise<MicrosoftGraphDocumentSinkResult>;
   /**
    * Parse a `text/html` attachment as an order document — locally, with no
@@ -738,6 +744,12 @@ export async function ingestMicrosoftGraphMessage(
               subject: message.subject ?? null,
               messageText: (bodySignalText || message.bodyPreview || '').slice(0, 20_000) || null,
             },
+            // The same string, under the name that says what it IS. On this
+            // lane the two happen to coincide — the message text here has
+            // always been the covering email's, never the attachment's — and
+            // passing it explicitly is what keeps the detector's scoping a
+            // property of the call site rather than of a coincidence.
+            messageBodyText: (bodySignalText || message.bodyPreview || '').slice(0, 20_000) || null,
           });
       if (result.documentId) {
         if (result.ok && !replacingSource) documentsCreated += 1;

@@ -50,7 +50,18 @@ export function DocumentReviewPane({
       />
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5">
-        <Field label="Supplier" value={detail.supplier ?? '—'} />
+        {/* THE OTHER PARTY, UNDER THE NAME IT ACTUALLY HAS. Invoice 105375 is an
+            invoice Turn 'n Slice ISSUED — its direction was read correctly, its
+            supplier correctly left null, and this row still printed
+            "Supplier: —" directly above a note saying "Outgoing invoice —
+            customer not recognised". A hardcoded label cannot be right on both
+            kinds of document, and the record already knows which kind this is.
+            Incoming documents are byte-for-byte unchanged: role 'supplier',
+            value `detail.supplier`, em dash when there is none. */}
+        <Field
+          label={detail.counterpartyRole === 'customer' ? 'Customer' : 'Supplier'}
+          value={(detail.counterpartyRole === 'customer' ? detail.counterparty : detail.supplier) ?? '—'}
+        />
         <Field label="Type" value={detail.documentType} />
         <Field label="Number" value={detail.number ?? '—'} />
         <Field label="Date" value={detail.date ?? '—'} />

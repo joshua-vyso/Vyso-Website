@@ -285,6 +285,35 @@ export function matchCounterparty(
   if (!wanted) return NO_MATCH('no_name');
   if (customers.length === 0) return NO_MATCH('no_customers');
 
+  // THE TRADING NAME IS THE ONE THE DIRECTORY KNOWS. Invoice 105375 is billed
+  // to "Tsogo Sun Casino's Pty Ltd t/a Montecasino", and the org's customer
+  // list holds "Montecasino" — nothing else. Scored whole, the legal name and
+  // the trading name share almost no tokens (Dice well under 0.75) and a
+  // correctly-read counterparty missed by a mile.
+  //
+  // So the printed name is tried whole FIRST, then each trading-as segment on
+  // its own, and the best answer any of them gives is the answer. Same
+  // threshold, same near-tie rule, same refusal to create: this widens what is
+  // COMPARED, never what is accepted. Two "Montecasino" rows in the directory
+  // still come back 'ambiguous', which is the correct answer to a duplicate —
+  // a human merges them, this function does not choose between them.
+  const attempts = [wanted, ...tradingAsSegments(rawName)];
+  let best: CounterpartyMatch | null = null;
+  for (const attempt of attempts) {
+    const match = matchOneName(attempt, customers);
+    // An 'ambiguous' verdict is never traded away for a later segment's win:
+    // once the directory has shown it holds two equally good answers, picking
+    // one on a different reading of the same name is exactly the coin flip the
+    // margin rule exists to refuse.
+    if (match.missReason === 'ambiguous') return match;
+    if (!best || (match.score ?? 0) > (best.score ?? 0)) best = match;
+  }
+  return best ?? NO_MATCH('below_threshold');
+}
+
+/** One name against the directory — the original rule, unchanged. */
+function matchOneName(wanted: string, customers: CounterpartyCandidate[]): CounterpartyMatch {
+  if (!wanted) return NO_MATCH('no_name');
   const scored = customers
     .map((c) => ({ c, norm: normaliseParty(c.name) }))
     .filter((r) => r.norm.length > 0)
@@ -296,6 +325,24 @@ export function matchCounterparty(
   if (top.score < COUNTERPARTY_DICE) return NO_MATCH('below_threshold');
   if (scored.length > 1 && top.score - scored[1].score < AMBIGUOUS_MARGIN) return NO_MATCH('ambiguous');
   return { customerId: top.c.id, customerName: top.c.name, score: top.score, missReason: null };
+}
+
+/** "t/a" and "trading as", the two forms South African invoices actually print. */
+const TRADING_AS_RE = /\bt\/a\b|\btrading\s+as\b/i;
+
+/**
+ * The normalised name on each side of a printed "t/a" / "trading as".
+ *
+ * Returns nothing when the name carries no such marker, which is almost every
+ * name — so the ordinary path costs one failed regex test and no extra scoring.
+ */
+export function tradingAsSegments(rawName: string | null | undefined): string[] {
+  const raw = (rawName ?? '').trim();
+  if (!raw || !TRADING_AS_RE.test(raw)) return [];
+  return raw
+    .split(new RegExp(TRADING_AS_RE.source, 'ig'))
+    .map((segment) => normaliseParty(segment))
+    .filter((segment) => segment.length >= MIN_IDENTITY_CHARS);
 }
 
 // ---------------------------------------------------------------------------
@@ -355,4 +402,74 @@ export function isOutgoingDocument(
   extracted: { direction?: DocumentDirectionRecord | null } | null | undefined,
 ): boolean {
   return extracted?.direction?.direction === 'outgoing';
+}
+
+// ---------------------------------------------------------------------------
+// What to CALL the other party
+// ---------------------------------------------------------------------------
+
+/** The other party's role on this document, from the org's point of view. */
+export type DocumentCounterpartyRole = 'supplier' | 'customer';
+
+/**
+ * WHAT THE OTHER PARTY IS TO US — one word, derived, and the same word
+ * everywhere.
+ *
+ * THE FAILURE THIS CLOSES. Invoice 105375 was read correctly, stored correctly
+ * and filed correctly: direction 'outgoing', issuer "Turn n Slice HO (Pty) Ltd",
+ * counterparty "Tsogo Sun Casino's Pty Ltd", supplier resolution properly
+ * skipped, ProcurePulse properly refusing it. Then three screens printed the
+ * word "Supplier" over it — twice with a dash beside it, because an outgoing
+ * document has no supplier by construction — while the flag on the SAME SCREEN
+ * read "Outgoing invoice — customer not recognised". Nothing was mis-stored.
+ * The labels contradicted the record.
+ *
+ * DERIVED, NOT REQUIRED. Every historical row answers correctly without a
+ * backfill: no `direction` means incoming or unknown, and both are 'supplier'
+ * — which is exactly what those rows have always displayed. The stamped
+ * `counterparty_role` is the same answer written down, for the same reason
+ * `business_effect` is stamped: so that "has a role" and "was filed since the
+ * dimension existed" stay separate statements.
+ */
+export function documentCounterpartyRole(
+  extracted:
+    | { counterparty_role?: DocumentCounterpartyRole | null; direction?: DocumentDirectionRecord | null }
+    | null
+    | undefined,
+): DocumentCounterpartyRole {
+  // The STAMP first, when the row carries one — a row filed since this shipped
+  // has the answer written on it and does not need it worked out again. Every
+  // row filed before falls through to the derivation, which reads the direction
+  // record those rows already carry (or don't, which is 'supplier').
+  const stamped = extracted?.counterparty_role;
+  if (stamped === 'customer' || stamped === 'supplier') return stamped;
+  return isOutgoingDocument(extracted) ? 'customer' : 'supplier';
+}
+
+/** 'Customer' or 'Supplier' — the field label and the column heading. */
+export function counterpartyRoleLabel(role: DocumentCounterpartyRole): string {
+  return role === 'customer' ? 'Customer' : 'Supplier';
+}
+
+/**
+ * The counterparty's name for display, in evidence order.
+ *
+ * The RESOLVED name wins because it is a row in the org's own directory that
+ * somebody created; `counterparty_as_read` is unverified document text and is
+ * shown only when there is nothing better. On an incoming document this is the
+ * supplier as it has always been resolved, and the caller passes it in.
+ */
+export function counterpartyDisplayName(
+  extracted: { direction?: DocumentDirectionRecord | null; supplier?: string | null } | null | undefined,
+  resolvedName: string | null | undefined,
+): string | null {
+  if (isOutgoingDocument(extracted)) {
+    return (
+      (resolvedName ?? '').trim() ||
+      (extracted?.direction?.customer_name ?? '').trim() ||
+      (extracted?.direction?.counterparty_as_read ?? '').trim() ||
+      null
+    );
+  }
+  return (resolvedName ?? '').trim() || (extracted?.supplier ?? '').trim() || null;
 }

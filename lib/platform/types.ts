@@ -669,6 +669,23 @@ export interface ExtractedData {
   line_items?: ExtractedLineItem[];
   /** The selling/issuing party extracted from the document header (the counterparty). */
   supplier?: string | null;
+  /**
+   * WHAT THE OTHER PARTY IS TO US — 'customer' on a document the org issued,
+   * 'supplier' on everything else.
+   *
+   * Stamped beside `direction` on both extraction lanes, and jsonb-additive, so
+   * there is no migration and no backfill: `documentCounterpartyRole`
+   * (lib/platform/docu/document-direction.ts) derives the identical answer for
+   * every legacy row from `direction` alone, and 'supplier' is what those rows
+   * have always displayed. Written down anyway for the same reason
+   * `business_effect` is — a key that appeared only on the unusual case would
+   * make its ABSENCE the real signal, and absence is also what history looks
+   * like.
+   *
+   * Invoice 105375 is why it exists: an outgoing invoice whose stored direction
+   * was right and whose three screens all said "Supplier: —".
+   */
+  counterparty_role?: 'supplier' | 'customer' | null;
   /** For uploaded customer ORDERS (document_type='order'): the buying customer's
    *  name read from a WhatsApp contact header / email sender / handwritten note. */
   customer_name?: string | null;

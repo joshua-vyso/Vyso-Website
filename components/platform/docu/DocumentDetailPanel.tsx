@@ -34,6 +34,10 @@ import { getMissingDocs } from '@/lib/platform/docu/missing-docs';
 import { inferSupplierFromDoc } from '@/lib/platform/docu/supplier-match';
 import { isCreditDocumentType } from '@/lib/platform/docu/business-effect';
 import { isOrderAmendmentDocument } from '@/lib/platform/docu/order-amendment';
+import {
+  counterpartyDisplayName,
+  documentCounterpartyRole,
+} from '@/lib/platform/docu/document-direction';
 import type { ProductOption } from '@/lib/platform/docu/product-suggest';
 import type { AiSummary, DocuExtractedData } from '@/lib/platform/docu/types';
 import type { DocumentFolder, DocumentWithSupplier, FeatureKey } from '@/lib/platform/types';
@@ -111,6 +115,24 @@ export function DocumentDetailPanel({
     extracted?.bill_to ??
     null;
 
+  /**
+   * THE NAME UNDER THE FILENAME, and which party it belongs to.
+   *
+   * On an incoming document this is `supplierName` and nothing has changed. On
+   * an OUTGOING one — invoice 105375, TnS letterhead, billed to Tsogo Sun t/a
+   * Montecasino — the old fallback printed "Unknown supplier" at the top of a
+   * page whose own flag said "Outgoing invoice — customer not recognised". The
+   * supplier is not unknown; there isn't one. So the header names the customer,
+   * resolved if the matcher landed one and as printed if it did not, and says
+   * plainly when neither exists rather than inventing a missing vendor.
+   */
+  const counterpartyRole = documentCounterpartyRole(extracted);
+  const counterpartyHeading =
+    counterpartyRole === 'customer'
+      ? (counterpartyDisplayName(extracted, doc.customer_id ? customerDisplayName : null) ??
+        'Customer not recognised')
+      : supplierName;
+
   const preview = (
     <div className="flex flex-col rounded-2xl border border-[#EAEDF2] bg-white shadow-[0_1px_2px_rgba(20,24,20,0.03)]">
       <div className="flex items-center justify-between gap-3 border-b border-[#EEF1F5] px-6 py-5">
@@ -182,7 +204,7 @@ export function DocumentDetailPanel({
             </Link>
             <div className="min-w-0">
               <h1 className="of-display truncate text-[18px] font-semibold text-[#171A17]">{doc.filename}</h1>
-              <div className="mt-0.5 text-[13px] text-[#6B6F68]">{supplierName}</div>
+              <div className="mt-0.5 text-[13px] text-[#6B6F68]">{counterpartyHeading}</div>
             </div>
           </div>
           <StatusPill status={doc.status} />
@@ -225,7 +247,7 @@ export function DocumentDetailPanel({
           <div className="min-w-0">
             <DocumentRename documentId={doc.id} filename={doc.filename} />
             <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[13px]">
-              <span className="text-[#6B6F68]">{supplierName}</span>
+              <span className="text-[#6B6F68]">{counterpartyHeading}</span>
               {autoMatched ? (
                 <span className="inline-flex items-center rounded-full bg-[#E6F1FB] px-2.5 py-1 text-[11px] font-medium text-[#0C447C]">
                   auto-matched · <span className="of-num">{match.confidence}%</span>

@@ -18,6 +18,7 @@ import {
 } from '@/lib/platform/docu/business-effect';
 import {
   detectOrderAmendment,
+  formalDocumentSourceKind,
   isOrderAmendmentDocument,
   resolveAmendmentLink,
 } from '@/lib/platform/docu/order-amendment';
@@ -35,6 +36,7 @@ import {
 import { isUniqueViolation } from '@/lib/platform/db-errors';
 import {
   buildDirectionRecord,
+  documentCounterpartyRole,
   matchCounterparty,
   resolveDocumentDirection,
   type CounterpartyCandidate,
@@ -414,6 +416,28 @@ export interface IngestDocumentInput {
   sourceContentType?: string | null;
   /** Semantic source kind. Email bodies are text sources, never fabricated PDFs. */
   sourceType?: DocumentSourceType | null;
+  /**
+   * THE COVERING EMAIL'S OWN BODY, on the lanes where the filed document is an
+   * ATTACHMENT rather than the message.
+   *
+   * `customerEvidence.messageText` cannot serve this purpose and must not be
+   * repurposed for it: on the HTML attachment lane it deliberately carries the
+   * ATTACHMENT's text, because that is where the customer's name is printed and
+   * the identity resolver needs it (the Four Seasons order names its property
+   * nowhere else). That is the right string for "who is this from" and the
+   * wrong one for "what is this message asking for" — which is the whole of the
+   * PO JBG0118352 bug. So the two questions get two fields.
+   *
+   * Absent on the message lanes, where the message text IS the body.
+   */
+  messageBodyText?: string | null;
+  /**
+   * The formal document's OWN text, read for explicit STATUS evidence only
+   * ("Status: Cancelled", "Status: Accepted") and never for change cues. Null
+   * whenever the source is a photograph or a PDF the model read visually —
+   * there is no text stream to quote, and no status claim is then made.
+   */
+  documentSourceText?: string | null;
   /**
    * A source-specific reader may supply the canonical order extraction. This
    * skips file classification/vision but reuses the exact same persistence,
@@ -841,6 +865,8 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
     sourceAttachmentId = null,
     sourceContentType = null,
     sourceType = null,
+    messageBodyText = null,
+    documentSourceText = null,
     preExtractedOrder = null,
     extractionMetadata = null,
     deferCommit = false,
@@ -1239,11 +1265,26 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
     // but an instruction is a tendency and this gates whether an operational
     // write runs at all. See lib/platform/docu/order-amendment.ts for the PO
     // 144583 case and the exact gate.
+    //
+    // AND WHAT IT IS ALLOWED TO ASK THAT OF. `formalDocumentSourceKind` is the
+    // input-scope half of the PO JBG0118352 fix: on the attachment lanes the
+    // thing under detection IS the order, so its own text and the `order_notes`
+    // the reader absorbed from it are withheld from the cue ladder and only the
+    // covering email speaks. The document keeps one voice — an explicit status
+    // line — through `documentText`. See the module docblock for why all three
+    // layers were needed.
+    const amendmentSourceKind = formalDocumentSourceKind(sourceType);
     const amendmentDetection = detectOrderAmendment({
       subject: customerEvidence?.subject ?? note ?? null,
-      text: customerEvidence?.messageText ?? null,
+      text:
+        amendmentSourceKind === 'formal_document'
+          ? messageBodyText
+          : (customerEvidence?.messageText ?? null),
+      documentText: amendmentSourceKind === 'formal_document' ? documentSourceText : null,
+      sourceKind: amendmentSourceKind,
       orderNotes: order.order_notes ?? null,
       extractedPurchaseOrderNumber: order.purchase_order_number ?? null,
+      requestedDeliveryDate: order.requested_delivery_date ?? null,
       lineCount: order.line_items.length,
     });
     // THE LINK IS A READ. It resolves which live order document carries the
@@ -1577,6 +1618,10 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
     image_pixels: imagePixels,
     // Only set when the org issued it — lib/platform/docu/document-direction.ts.
     direction: parties.record,
+    // WHAT THE OTHER PARTY IS TO US, in one word, so every screen that names
+    // the counterparty names it the same way. Derived from the record directly
+    // above, which is why no legacy row needs a backfill to answer correctly.
+    counterparty_role: documentCounterpartyRole({ direction: parties.record }),
     // WHAT THIS DOCUMENT MOVES, recorded beside what it is. Stamped on every
     // document, not just receipts: a stamp that appeared only on the excluded
     // type would make its ABSENCE the real signal, and absence is also what a

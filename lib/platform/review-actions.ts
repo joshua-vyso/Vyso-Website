@@ -46,6 +46,11 @@ import {
   type ClaimedDocumentRow,
 } from './document-ingest';
 import { documentTypeLabel } from './documents';
+import {
+  counterpartyDisplayName,
+  documentCounterpartyRole,
+  type DocumentCounterpartyRole,
+} from './docu/document-direction';
 import { docTotal, findFieldValue, parseAmount } from './docu/extract';
 import { hubdocStateForDocument } from './hubdoc';
 import { logActivity } from './orderflow-activity';
@@ -492,6 +497,16 @@ export interface ReviewDocumentDetail {
   documentType: string;
   status: string;
   supplier: string | null;
+  /**
+   * WHAT TO CALL THE OTHER PARTY on this document — 'customer' when the org
+   * issued it, 'supplier' otherwise. Invoice 105375 is why the pane no longer
+   * hardcodes the word: it printed "Supplier: —" over an outgoing invoice while
+   * the note underneath it read "Outgoing invoice — customer not recognised".
+   */
+  counterpartyRole: DocumentCounterpartyRole;
+  /** That party's name, for the role above. Null when there is nothing to show,
+   *  which on an outgoing document means the customer was not recognised. */
+  counterparty: string | null;
   /** The document's own number, when one was extracted. */
   number: string | null;
   date: string | null;
@@ -624,6 +639,10 @@ async function loadDocumentDetail(
       documentType: documentTypeLabel(row),
       status: row.status,
       supplier: row.supplier?.name?.trim() || null,
+      // Derived from the stored direction, so every historical row answers
+      // 'supplier' and shows exactly what it has always shown.
+      counterpartyRole: documentCounterpartyRole(row.extracted_data),
+      counterparty: counterpartyDisplayName(row.extracted_data, row.supplier?.name ?? null),
       number: findFieldValue(row, 'invoice number', 'document number', 'number', 'reference'),
       date: findFieldValue(row, 'date', 'issued'),
       total: docTotal(row),

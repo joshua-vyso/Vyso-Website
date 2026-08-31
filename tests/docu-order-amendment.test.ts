@@ -5,10 +5,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   decideAmendmentLink,
   detectOrderAmendment,
+  formalDocumentSourceKind,
   isAmendmentEvent,
   isOrderAmendmentDocument,
   referencedPurchaseOrder,
   resolveAmendmentLink,
+  stripBoilerplateSections,
 } from '../lib/platform/docu/order-amendment.ts';
 import { reviewDocumentTask } from '../lib/platform/review-queue-shared.ts';
 import type { OrderAmendment } from '../lib/platform/types.ts';
@@ -380,4 +382,327 @@ test('ANALYTICS: customer_po is written at CREATION only, never on a re-sync', (
   assert.equal(updateBranch.includes('customer_po'), false);
   // Exactly ONE write site in the whole file.
   assert.equal((orderflow.match(/customer_po/g) ?? []).length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// PO JBG0118352 — the boilerplate cancellation.
+//
+// A genuine four-line purchase order, attached to an email as HTML, stamped
+// `business_event: 'order_cancellation'` off ONE sentence in its own Conditions
+// of Purchase footer: "The Purchaser reserves the absolute right to cancel this
+// Order". Everything else about the read was right — the four lines, the total,
+// the delivery date, the contact. On the reviewer's Save it would have been
+// refused an OrderFlow order, because an amendment is refused one by design.
+//
+// THREE THINGS WERE WRONG AND ALL THREE ARE FIXED HERE, so each is tested on
+// its own as well as together: the detector was fed the document's own text,
+// the cue could not tell a right from a request, and the gate let any
+// non-instruction cue bypass the zero-lines leg.
+//
+// SYNTHETIC, like every fixture in this file. The reference numbers and the
+// SHAPES are the ones that failed; the text is reconstructed, and neither live
+// document is read, reprocessed or mutated by anything here.
+// ---------------------------------------------------------------------------
+
+/** The attached purchase order, as the normalizer flattens it: one text stream,
+ *  header, line grid and legal footer with no boundary between them. */
+const JBG_ATTACHMENT = [
+  'PURCHASE ORDER',
+  'Order No: JBG0118352',
+  'Status: Accepted',
+  'Supplier: Turn n Slice HO (Pty) Ltd',
+  'Deliver To: 80 Westcliff Drive',
+  'Requested Delivery Date: 09/01/2026',
+  'Contact Person: Canaan Myeni',
+  '',
+  '# Item SKU Product Desc. Qty UOM Price Extension',
+  '1 CHR2 Chillies Red 2 KG 57.70 115.40',
+  '2 PPM5 Peppers Mixed 5 KG 47.70 238.50',
+  '3 TOM10 Tomatoes 10 KG 19.40 194.00',
+  '4 POTN10 Potatoes New 10 KG 8.20 82.00',
+  'Total 629.90',
+  '',
+  'CONDITIONS OF PURCHASE',
+  '1. The Purchaser reserves the absolute right to cancel this Order in whole or in part at any time before delivery.',
+  '2. The Vendor shall indemnify the Purchaser against all claims arising from the goods supplied.',
+  '3. This Order may be cancelled in the event of a failure to deliver on the requested date.',
+].join('\n');
+
+/** The covering email. It asks for nothing, which is the point: the order is
+ *  the attachment, and the message is a compliments slip. */
+const JBG_COVERING_EMAIL = 'Good day, please find attached our purchase order. Regards, Canaan Myeni';
+
+/** What the reader absorbed into `order_notes` — the leak the prompt clause now
+ *  forbids, kept here because the detector must be safe even when it happens. */
+const JBG_ABSORBED_NOTES =
+  'The Purchaser reserves the absolute right to cancel this Order in whole or in part at any time before delivery.';
+
+test('1. THE CASE. A four-line PO whose footer reserves a right to cancel is a NEW ORDER', () => {
+  const detection = detectOrderAmendment({
+    sourceKind: 'formal_document',
+    subject: 'Purchase Order JBG0118352',
+    // Only the covering message speaks on this lane.
+    text: JBG_COVERING_EMAIL,
+    documentText: JBG_ATTACHMENT,
+    orderNotes: JBG_ABSORBED_NOTES,
+    extractedPurchaseOrderNumber: 'JBG0118352',
+    requestedDeliveryDate: '09/01/2026',
+    lineCount: 4,
+  });
+  assert.equal(detection.event, 'new_order');
+  assert.equal(detection.amendment, null);
+});
+
+test('2. LAYER 2 ALONE. Even fed the whole document, rights language is not a request', () => {
+  // The exact inputs the old call site produced: the attachment's own text as
+  // `text`, its absorbed T&C as `orderNotes`, and no source kind at all. The
+  // window guard and the section strip have to hold this on their own.
+  const detection = detectOrderAmendment({
+    subject: 'Purchase Order JBG0118352',
+    text: JBG_ATTACHMENT,
+    orderNotes: JBG_ABSORBED_NOTES,
+    extractedPurchaseOrderNumber: 'JBG0118352',
+    requestedDeliveryDate: '09/01/2026',
+    lineCount: 4,
+  });
+  assert.equal(detection.event, 'new_order');
+});
+
+test('3. LAYER 2. Generic rights and conditional clauses raise no cancellation, alone or together', () => {
+  for (const clause of [
+    'The Purchaser reserves the absolute right to cancel this Order at any time.',
+    'The Purchaser reserves the right to cancel the order without penalty.',
+    'This Order may be cancelled in the event of a failure to deliver on time.',
+    'The Purchaser shall be entitled to cancel the order if the vendor is late.',
+    'In the event of cancellation of the order, no charge shall arise.',
+    'The Purchaser has the option to cancel this purchase order on written notice.',
+  ]) {
+    assert.equal(
+      detectOrderAmendment({
+        subject: 'Purchase Order JBG0118352',
+        text: clause,
+        extractedPurchaseOrderNumber: 'JBG0118352',
+        lineCount: 0,
+      }).event,
+      'new_order',
+      `boilerplate must not cancel an order: ${clause}`,
+    );
+  }
+});
+
+test('4. LAYER 3 ALONE. A cancellation cue over four priced lines needs transactional evidence', () => {
+  // A cue that clears the window guard, on a document that priced four lines
+  // and named a day to deliver them. Before the gate repair, `cancellation !==
+  // 'instruction'` was the whole test and this passed straight through.
+  const withLines = detectOrderAmendment({
+    subject: 'Purchase Order JBG0118352',
+    text: 'The order is cancelled under clause 7 of the supply agreement.',
+    extractedPurchaseOrderNumber: 'JBG0118352',
+    requestedDeliveryDate: '09/01/2026',
+    lineCount: 4,
+  });
+  assert.equal(withLines.event, 'new_order');
+
+  // THE GATE IS ABOUT THE LINES, NOT ABOUT SUPPRESSING CANCELLATIONS. The same
+  // sentence on a message that read no goods is still a cancellation, exactly
+  // as it was before.
+  const withoutLines = detectOrderAmendment({
+    subject: 'Purchase Order JBG0118352',
+    text: 'The order is cancelled under clause 7 of the supply agreement.',
+    extractedPurchaseOrderNumber: 'JBG0118352',
+    lineCount: 0,
+  });
+  assert.equal(withoutLines.event, 'order_cancellation');
+});
+
+test('5. A real request to cancel is still a cancellation, lines and boilerplate notwithstanding', () => {
+  const detection = detectOrderAmendment({
+    sourceKind: 'formal_document',
+    subject: 'Purchase Order JBG0118352 — please cancel',
+    text: 'Please cancel PO JBG0118352, the function has been called off. Regards, Canaan Myeni',
+    documentText: JBG_ATTACHMENT,
+    extractedPurchaseOrderNumber: 'JBG0118352',
+    requestedDeliveryDate: '09/01/2026',
+    lineCount: 4,
+  });
+  assert.equal(detection.event, 'order_cancellation');
+  assert.equal(detection.amendment?.amendment_type, 'cancellation');
+  assert.equal(detection.amendment?.referenced_po, 'JBG0118352');
+  // The QUOTED SENTENCE is the sender's, and the reviewer sees it — which is
+  // how a boilerplate stamp gets recognised as one when a heuristic misses.
+  assert.match(detection.amendment?.note ?? '', /Please cancel PO JBG0118352/);
+  // It must NEVER be the contract clause.
+  assert.equal(/reserves the absolute right/i.test(detection.amendment?.note ?? ''), false);
+});
+
+test('6. A formal document may still declare its OWN state — Status: Cancelled', () => {
+  const cancelledPo = JBG_ATTACHMENT.replace('Status: Accepted', 'Status: Cancelled');
+  const detection = detectOrderAmendment({
+    sourceKind: 'formal_document',
+    subject: 'Purchase Order JBG0118352',
+    text: JBG_COVERING_EMAIL,
+    documentText: cancelledPo,
+    extractedPurchaseOrderNumber: 'JBG0118352',
+    requestedDeliveryDate: '09/01/2026',
+    lineCount: 4,
+  });
+  assert.equal(detection.event, 'order_cancellation');
+  assert.match(detection.amendment?.note ?? '', /Status: Cancelled/);
+
+  // "has been cancelled" is the same claim in prose — printed in the document's
+  // own body, ABOVE its conditions, which is where a document says things about
+  // itself. (Below that heading is contract text and is not read at all; test
+  // 10 covers the cut.)
+  assert.equal(
+    detectOrderAmendment({
+      sourceKind: 'formal_document',
+      subject: 'Purchase Order JBG0118352',
+      text: JBG_COVERING_EMAIL,
+      documentText: JBG_ATTACHMENT.replace(
+        'Total 629.90',
+        'Total 629.90\nThis order has been cancelled by the buyer.',
+      ),
+      extractedPurchaseOrderNumber: 'JBG0118352',
+      lineCount: 4,
+    }).event,
+    'order_cancellation',
+  );
+});
+
+test('7. THE FOUR SEASONS SHAPE. A portal notification with no goods is a new order', () => {
+  // The zero-line case the pipeline already admits as reviewable: property,
+  // buyer, PO number, a link, and the order itself living in the customer's
+  // procurement portal. Nothing here asks for a change, so nothing here is one.
+  const detection = detectOrderAmendment({
+    sourceKind: 'formal_document',
+    subject: 'New Purchase Order JBG0118352 for 80 Westcliff Drive',
+    text: 'A new purchase order has been raised for your attention. View it in the supplier portal.',
+    documentText: JBG_ATTACHMENT,
+    extractedPurchaseOrderNumber: 'JBG0118352',
+    requestedDeliveryDate: '09/01/2026',
+    lineCount: 0,
+  });
+  assert.equal(detection.event, 'new_order');
+  assert.equal(detection.amendment, null);
+});
+
+test('8. INPUT SCOPE. A formal document contributes no cue text, and no absorbed notes', () => {
+  // The same absorbed T&C that produced the live stamp, with the section
+  // markers deleted so the strip cannot help — the SCOPE has to be what holds.
+  const notes = 'The Purchaser may cancel this Order at will and cancel the delivery on notice.';
+  assert.equal(
+    detectOrderAmendment({
+      sourceKind: 'formal_document',
+      subject: 'Purchase Order JBG0118352',
+      text: JBG_COVERING_EMAIL,
+      orderNotes: notes,
+      documentText: `Cancel this order. Cancel the delivery. ${notes}`,
+      extractedPurchaseOrderNumber: 'JBG0118352',
+      lineCount: 4,
+    }).event,
+    'new_order',
+  );
+  // And the message lane keeps its inputs: the same notes on an EMAIL still
+  // reach the ladder, where the window guard is what answers them.
+  assert.equal(
+    detectOrderAmendment({
+      subject: 'PO 144583',
+      orderNotes: 'Please cancel PO 144583.',
+      extractedPurchaseOrderNumber: '144583',
+      lineCount: 0,
+    }).event,
+    'order_cancellation',
+  );
+});
+
+test('9. The lanes: pdf, image and html are formal documents; a body and an upload are messages', () => {
+  assert.equal(formalDocumentSourceKind('pdf'), 'formal_document');
+  assert.equal(formalDocumentSourceKind('image'), 'formal_document');
+  assert.equal(formalDocumentSourceKind('html'), 'formal_document');
+  assert.equal(formalDocumentSourceKind('email_body'), 'message');
+  assert.equal(formalDocumentSourceKind('spreadsheet'), 'message');
+  // An upload carries no source type at all, and its inputs are unchanged.
+  assert.equal(formalDocumentSourceKind(null), 'message');
+  assert.equal(formalDocumentSourceKind(undefined), 'message');
+});
+
+test('10. stripBoilerplateSections cuts at the legal heading and fails OPEN', () => {
+  const stripped = stripBoilerplateSections(JBG_ATTACHMENT);
+  assert.match(stripped, /Potatoes New/, 'the order survives');
+  assert.equal(stripped.includes('reserves the absolute right'), false, 'the footer does not');
+  assert.equal(stripped.includes('CONDITIONS OF PURCHASE'), false);
+
+  // No marker → the text, whole and unchanged. This is the ordinary case.
+  const plain = 'Please deliver Wednesday and not today.';
+  assert.equal(stripBoilerplateSections(plain), plain);
+  // A marker mid-sentence is not a heading; truncating there would throw away a
+  // message over an aside.
+  const aside = 'All supplied subject to our standard terms and conditions. Please cancel PO 144583.';
+  assert.equal(stripBoilerplateSections(aside), aside);
+  // A heading on the first line would leave nothing — the original is returned
+  // rather than an empty string, because reading nothing is not failing open.
+  const allLegal = 'Terms and Conditions\nThe Purchaser reserves the right to cancel.';
+  assert.equal(stripBoilerplateSections(allLegal), allLegal);
+  assert.equal(stripBoilerplateSections(null), '');
+});
+
+test('REGRESSION: PO 144583 is byte-for-byte the amendment it has always been', () => {
+  // The whole point of the three layers is that they touch nothing on the
+  // message lane. This is test 5 above, re-asserted after the change, field for
+  // field including the quoted sentence.
+  const detection = detectOrderAmendment({
+    subject: 'PO 144583 - delivery',
+    text: 'Good morning, please can you deliver this order on Wednesday and not today. Thank you.',
+    orderNotes: 'Deliver Wednesday, not today.',
+    extractedPurchaseOrderNumber: '144583',
+    lineCount: 0,
+  });
+  assert.equal(detection.event, 'order_amendment');
+  assert.deepEqual(detection.amendment, {
+    amendment_type: 'delivery_date_change',
+    referenced_po: '144583',
+    // Quoted from the first character of the haystack because nothing before
+    // the cue ends a sentence — the exact string this shipped with, kept here
+    // verbatim so a change to the quoting rule cannot pass unnoticed.
+    note: 'PO 144583 - delivery\nDeliver Wednesday, not today',
+    link_status: 'unresolved',
+  });
+});
+
+test('WIRING: the detector is scoped at the call site, and the attachment lane threads the real body', () => {
+  const ingest = src('lib/platform/document-ingest.ts');
+  // The lane decides the inputs, not a coincidence about which string a
+  // neighbouring feature happened to populate.
+  assert.match(ingest, /const amendmentSourceKind = formalDocumentSourceKind\(sourceType\);/);
+  assert.match(ingest, /amendmentSourceKind === 'formal_document'\s*\n?\s*\?\s*messageBodyText/);
+  assert.match(ingest, /documentText: amendmentSourceKind === 'formal_document' \? documentSourceText : null,/);
+
+  // The HTML attachment lane keeps the attachment's text for IDENTITY (the
+  // customer is named nowhere else) and hands the covering email to detection.
+  const messageOrder = src('lib/platform/microsoft-message-order.ts');
+  assert.match(messageOrder, /messageBodyText: prepareBodySource\(input\.message\)\.derivedText/);
+  assert.match(messageOrder, /documentSourceText: normalized\.text/);
+  // The pdf/image lane passes the covering body under its own name too.
+  assert.match(src('lib/platform/microsoft-graph-ingest-core.ts'), /messageBodyText: \(bodySignalText \|\| message\.bodyPreview/);
+});
+
+test('THE REVIEWER CAN SEE THE SENTENCE. The cancellation view quotes its own evidence', () => {
+  const card = code('components/platform/docu/AmendmentReviewCard.tsx');
+  // The quote is drawn, and on a cancellation it is LABELLED as the thing the
+  // verdict rests on — which is what lets a reviewer recognise boilerplate.
+  assert.match(card, /amendment\.note/);
+  assert.match(card, /The sentence Vyso read as a cancellation/);
+  // And when there is no sentence, the screen says so rather than staying quiet
+  // about having nothing to show.
+  assert.match(card, /quoted no sentence for this cancellation/);
+});
+
+test('PROMPT: order_notes are the current order\'s instructions, never terms and conditions', () => {
+  const prompt = src('lib/ai/order-prompt.ts');
+  const clause = prompt.slice(prompt.indexOf('- "order_notes"'), prompt.indexOf('- "line_items"'));
+  assert.match(clause, /NEVER put terms and conditions/i);
+  assert.match(clause, /conditions of purchase/i);
+  assert.match(clause, /indemnit/i);
+  assert.match(clause, /rights language/i);
+  assert.match(clause, /is not order notes/i);
 });

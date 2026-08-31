@@ -573,7 +573,7 @@ export async function processMicrosoftGraphEmailIngest(
         });
         return copy.bytes;
       },
-      ingestDocument: async ({ bytes, filename, mediaType, sourceContentType, sourceType, sourceAttachmentId, note, customerEvidence }) => {
+      ingestDocument: async ({ bytes, filename, mediaType, sourceContentType, sourceType, sourceAttachmentId, note, customerEvidence, messageBodyText }) => {
         const supersede = supersedeIntentFor(sourceAttachmentId);
         const outcome = await ingestDocument({
           supabase,
@@ -584,6 +584,11 @@ export async function processMicrosoftGraphEmailIngest(
           filename,
           note,
           customerEvidence,
+          // The covering email's own body — the only voice the amendment
+          // detector hears on a formal-document lane. A PDF's printed
+          // conditions are not a request; see the PO JBG0118352 note in
+          // lib/platform/docu/order-amendment.ts.
+          messageBodyText: messageBodyText ?? null,
           emailIngestId: ingest.id,
           sourceAttachmentId,
           sourceContentType,

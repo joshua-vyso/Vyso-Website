@@ -460,8 +460,22 @@ export async function ingestMicrosoftHtmlAttachmentOrder(
       senderEmail: input.message.from?.address ?? null,
       senderName: input.message.from?.name ?? null,
       subject: input.message.subject ?? null,
+      // THE ATTACHMENT'S TEXT, AND IT STAYS THAT WAY. This string answers "who
+      // is this from" — the Four Seasons purchase order names its property in
+      // the attachment and nowhere else, so the identity resolver would lose
+      // the customer if this became the covering body. What it must NOT do any
+      // more is answer "what is this message asking for": that question now has
+      // its own field below, because conflating the two is what let PO
+      // JBG0118352's Conditions-of-Purchase footer cancel a live order.
       messageText: normalized.text.slice(0, 20_000) || null,
     },
+    // The COVERING EMAIL, for the amendment detector alone. On the Four Seasons
+    // message this is a portal link and a greeting — which is exactly right: a
+    // covering note that asks for nothing means the attachment is a new order.
+    messageBodyText: prepareBodySource(input.message).derivedText.slice(0, 20_000) || null,
+    // The attachment's own text, read for an explicit status line and nothing
+    // else. Its prose never reaches the cue ladder.
+    documentSourceText: normalized.text.slice(0, 20_000) || null,
     emailIngestId: input.emailIngestId,
     // The Graph attachment id, so the existing (email_ingest_id,
     // source_attachment_id) unique index makes a retry a no-op rather than a
