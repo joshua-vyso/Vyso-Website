@@ -25,6 +25,10 @@ export default async function DocuConfidencePage() {
     .from('documents')
     .select('*, supplier:suppliers(id,name,initials)')
     .eq('org_id', session.org?.id ?? '')
+    // A replaced document is not a second document to act on. Superseded rows
+    // stay in the database as the record of what was read before, and stay
+    // reachable at /app/docu/<id>, but they never occupy a live list.
+    .is('superseded_at', null)
     .order('confidence', { ascending: true, nullsFirst: false });
 
   const docs = (data ?? []) as DocumentWithSupplier[];

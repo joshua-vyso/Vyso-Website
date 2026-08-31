@@ -70,11 +70,29 @@ export interface MicrosoftGraphMessagePage {
 
 export interface MicrosoftGraphMessageContent extends MicrosoftGraphMessageMetadata {
   conversationId: string | null;
+  /**
+   * RFC 5322 Message-ID — the message's BUSINESS identity, and the one thing
+   * about it that survives the folder moves that kill REST ids. Selected on
+   * every single-message read so a new ingest can record it at creation time,
+   * which is what makes a future re-resolution (or an ImmutableId cutover)
+   * a lookup instead of a search.
+   */
+  internetMessageId: string | null;
   body: {
     contentType: string | null;
     content: string | null;
   } | null;
   bodyPreview: string | null;
+}
+
+/**
+ * One candidate returned by a FILTERED mailbox search. Deliberately not
+ * `MicrosoftGraphMessageContent`: a search never selects a body, because the
+ * resolver's job is to decide WHICH message this is, not to read it.
+ */
+export interface MicrosoftGraphMessageLocatorCandidate extends MicrosoftGraphMessageMetadata {
+  conversationId: string | null;
+  internetMessageId: string | null;
 }
 
 export interface MicrosoftGraphAttachmentMetadata {
@@ -142,6 +160,7 @@ interface GraphMessagePayload {
   receivedDateTime?: unknown;
   hasAttachments?: unknown;
   conversationId?: unknown;
+  internetMessageId?: unknown;
   body?: {
     contentType?: unknown;
     content?: unknown;
@@ -167,6 +186,10 @@ export class MicrosoftGraphHttpError extends Error {
     | 'token'
     | 'messages'
     | 'message-read'
+    // A FILTERED, read-only mailbox search used only by the controlled
+    // re-resolution path. Kept a distinct operation so a search failure can
+    // never be mistaken for a message read (and vice versa) in a log or a test.
+    | 'message-search'
     | 'attachment-list'
     | 'attachment-download'
     | 'subscription-create'
@@ -203,7 +226,7 @@ function graphRequestId(response: Response, payload?: GraphErrorPayload): string
 }
 
 function graphReadError(
-  operation: 'message-read' | 'attachment-list' | 'attachment-download',
+  operation: 'message-read' | 'message-search' | 'attachment-list' | 'attachment-download',
   response: Response,
   payload: GraphErrorPayload,
   accessToken: string,
@@ -412,7 +435,12 @@ export async function fetchMicrosoftGraphMessage(
   );
   url.searchParams.set(
     '$select',
-    'id,subject,from,receivedDateTime,body,bodyPreview,hasAttachments,conversationId',
+    // internetMessageId IS ADDITIVE AND LOAD-BEARING. Every new ingest records it
+    // at creation, so the business identity of a message is captured while the
+    // REST id still works — which is the difference between a future
+    // re-resolution being a one-shot `$filter` lookup and being a mailbox-wide
+    // heuristic search. Nothing else about this request changed.
+    'id,subject,from,receivedDateTime,body,bodyPreview,hasAttachments,conversationId,internetMessageId',
   );
   const response = await fetchImpl(url, {
     method: 'GET',
@@ -461,11 +489,141 @@ export async function fetchMicrosoftGraphMessage(
   return {
     ...metadata,
     conversationId: stringOrNull(payload.conversationId),
+    internetMessageId: stringOrNull(payload.internetMessageId),
     body,
     bodyPreview: stringOrNull(payload.bodyPreview),
     httpStatus: response.status,
     requestId: graphRequestId(response),
   };
+}
+
+/**
+ * "The message is not where its stored id says it is."
+ *
+ * This is the ONE error that may start a re-resolution. Every other Graph
+ * failure — throttling, a token problem, a 5xx — propagates untouched, because
+ * searching a mailbox in response to a transient fault would turn a retry into
+ * a guess. Exchange answers a dead REST id with 404/ErrorItemNotFound; both are
+ * accepted because the code is absent on some error shapes.
+ */
+export function isMicrosoftGraphItemNotFound(error: unknown): boolean {
+  if (!(error instanceof MicrosoftGraphHttpError)) return false;
+  if (error.graphCode === 'ErrorItemNotFound' || error.graphCode === 'ErrorInvalidIdMalformed') return true;
+  return error.httpStatus === 404;
+}
+
+/**
+ * The fields a locator search selects. No body, no bodyPreview: deciding WHICH
+ * message this is must not pull message content into the resolver at all.
+ */
+const MICROSOFT_GRAPH_LOCATOR_FIELDS =
+  'id,subject,from,receivedDateTime,hasAttachments,conversationId,internetMessageId';
+
+/** Bounded: a resolver that reads an unbounded page is a mailbox enumerator. */
+const MAX_LOCATOR_CANDIDATES = 50;
+
+/**
+ * OData escapes a single quote by DOUBLING it. Without this a subject or an id
+ * containing an apostrophe would terminate the literal early and change the
+ * meaning of the filter — the string-injection bug, in OData's clothing.
+ */
+function odataStringLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+function mapLocatorCandidate(value: unknown): MicrosoftGraphMessageLocatorCandidate | null {
+  const metadata = mapMessage(value);
+  if (!metadata) return null;
+  const raw = value as GraphMessagePayload;
+  return {
+    ...metadata,
+    conversationId: stringOrNull(raw.conversationId),
+    internetMessageId: stringOrNull(raw.internetMessageId),
+  };
+}
+
+/**
+ * A FILTERED, GET-only search of one mailbox. The only two callers are the
+ * resolver's two lookups, and the filter string is always built here from a
+ * single escaped value — there is deliberately no way to pass arbitrary OData
+ * in, for the same reason there is no generic Graph request helper in this file.
+ *
+ * The search covers the WHOLE mailbox, Deleted Items included, which is the
+ * entire point: the mail this runs against has already been moved out of the
+ * Inbox by an external actor. No folder is ever enumerated; Exchange evaluates
+ * the filter server-side, with no ConsistencyLevel or $count header required
+ * (verified against the live tenant for both filters below).
+ */
+async function searchMicrosoftGraphMessages(
+  input: { accessToken: string; mailbox: string; filter: string; top: number; idType?: MicrosoftGraphIdType },
+  fetchImpl: typeof fetch,
+): Promise<MicrosoftGraphMessageLocatorCandidate[]> {
+  const accessToken = required(input.accessToken, 'Microsoft access token');
+  const mailbox = required(input.mailbox, 'Microsoft mailbox');
+  const url = new URL(`${MICROSOFT_GRAPH_API}/users/${encodeURIComponent(mailbox)}/messages`);
+  // URLSearchParams percent-encodes the value — conversation ids carry '=' and
+  // internetMessageIds carry '<', '>' and '@', all of which must survive intact.
+  url.searchParams.set('$filter', input.filter);
+  url.searchParams.set('$select', MICROSOFT_GRAPH_LOCATOR_FIELDS);
+  url.searchParams.set('$top', String(Math.min(Math.max(input.top, 1), MAX_LOCATOR_CANDIDATES)));
+
+  const response = await fetchImpl(url, {
+    method: 'GET',
+    headers: {
+      accept: 'application/json',
+      authorization: `Bearer ${accessToken}`,
+      ...(immutableIdPreference(input.idType) ? { prefer: immutableIdPreference(input.idType)! } : {}),
+    },
+    cache: 'no-store',
+  });
+  const payload = (await jsonObject(response)) as GraphMessageListPayload & GraphErrorPayload;
+  if (!response.ok) throw graphReadError('message-search', response, payload, accessToken);
+  if (!Array.isArray(payload.value)) {
+    throw new MicrosoftGraphHttpError({
+      operation: 'message-search',
+      httpStatus: response.status,
+      graphCode: 'InvalidResponse',
+      requestId: graphRequestId(response),
+      detail: 'Microsoft Graph returned no message list.',
+    });
+  }
+  return payload.value.map(mapLocatorCandidate).filter((entry) => entry !== null);
+}
+
+/** Locate a message by its RFC business identity. Exactly one hit is expected. */
+export async function findMicrosoftGraphMessagesByInternetMessageId(
+  input: { accessToken: string; mailbox: string; internetMessageId: string; top?: number; idType?: MicrosoftGraphIdType },
+  fetchImpl: typeof fetch = fetch,
+): Promise<MicrosoftGraphMessageLocatorCandidate[]> {
+  const value = required(input.internetMessageId, 'Microsoft Graph internet message id');
+  return searchMicrosoftGraphMessages(
+    {
+      accessToken: input.accessToken,
+      mailbox: input.mailbox,
+      filter: `internetMessageId eq ${odataStringLiteral(value)}`,
+      top: input.top ?? 10,
+      idType: input.idType,
+    },
+    fetchImpl,
+  );
+}
+
+/** Locate a message's CONVERSATION. Never sufficient alone — see the resolver. */
+export async function findMicrosoftGraphMessagesByConversationId(
+  input: { accessToken: string; mailbox: string; conversationId: string; top?: number; idType?: MicrosoftGraphIdType },
+  fetchImpl: typeof fetch = fetch,
+): Promise<MicrosoftGraphMessageLocatorCandidate[]> {
+  const value = required(input.conversationId, 'Microsoft Graph conversation id');
+  return searchMicrosoftGraphMessages(
+    {
+      accessToken: input.accessToken,
+      mailbox: input.mailbox,
+      filter: `conversationId eq ${odataStringLiteral(value)}`,
+      top: input.top ?? MAX_LOCATOR_CANDIDATES,
+      idType: input.idType,
+    },
+    fetchImpl,
+  );
 }
 
 function mapAttachment(value: unknown): MicrosoftGraphAttachmentMetadata | null {

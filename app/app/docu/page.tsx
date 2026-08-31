@@ -80,6 +80,10 @@ export default async function DocuInboxPage() {
       .from('documents')
       .select(DOC_HUB_COLS)
       .eq('org_id', orgId)
+      // A replaced document is not a second document to act on. Superseded rows
+      // stay in the database as the record of what was read before, and stay
+      // reachable at /app/docu/<id>, but they never occupy a live list.
+      .is('superseded_at', null)
       .order('created_at', { ascending: false }),
     supabase
       .from('document_folders')

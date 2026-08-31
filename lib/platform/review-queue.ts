@@ -115,6 +115,11 @@ async function loadDocuments(supabase: ReviewClient, orgId: string): Promise<Rev
     .select(DOCUMENT_COLS)
     .eq('org_id', orgId)
     .in('status', ['extracted', 'pending', 'error'])
+    // A SUPERSEDED DOCUMENT IS NOT AWAITING A DECISION. It was replaced by a
+    // controlled reprocess, its successor is in this queue instead, and asking a
+    // person to review both would be asking them to approve the same purchase
+    // order twice. It stays reachable by direct id, for audit.
+    .is('superseded_at', null)
     .order('created_at', { ascending: false })
     .limit(SOURCE_LIMIT)
     .returns<ReviewDocumentRow[]>();

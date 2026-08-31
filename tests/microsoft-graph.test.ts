@@ -193,6 +193,7 @@ test('one-message ingestion read is GET-only and selects body plus conversation 
       receivedDateTime: '2026-08-28T08:38:57Z',
       hasAttachments: true,
       conversationId: 'conversation-1',
+      internetMessageId: '<IOA76937@example.com>',
       body: { contentType: 'text', content: 'Invoice attached.' },
       bodyPreview: 'Invoice attached.',
     });
@@ -210,9 +211,14 @@ test('one-message ingestion read is GET-only and selects body plus conversation 
     url.pathname,
     '/v1.0/users/orders%40turnnslice.com/messages/message-1',
   );
+  // internetMessageId joined this $select so every NEW ingest records the
+  // message's RFC business identity while its REST locator still works. A REST
+  // id dies when the message is moved to another folder; the Message-ID does
+  // not, so this is what makes a later re-resolution a lookup rather than a
+  // mailbox-wide search. Nothing else about the request changed.
   assert.equal(
     url.searchParams.get('$select'),
-    'id,subject,from,receivedDateTime,body,bodyPreview,hasAttachments,conversationId',
+    'id,subject,from,receivedDateTime,body,bodyPreview,hasAttachments,conversationId,internetMessageId',
   );
   // NO `outlook.body-content-type="text"`. Asking Exchange for text made
   // Exchange the parser, and it flattened a 100-row order table to one cell per
@@ -220,6 +226,7 @@ test('one-message ingestion read is GET-only and selects body plus conversation 
   // read locally — see lib/platform/docu/email-html-normalizer.ts.
   assert.equal(new Headers(requestedInit?.headers).get('prefer'), null);
   assert.equal(message.conversationId, 'conversation-1');
+  assert.equal(message.internetMessageId, '<IOA76937@example.com>');
   assert.equal(message.body?.content, 'Invoice attached.');
 });
 

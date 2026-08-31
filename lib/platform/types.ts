@@ -573,6 +573,25 @@ export interface Document {
   source_content_type?: string | null;
   /** Semantic source kind. Null on historical documents. */
   source_type?: DocumentSourceType | null;
+  /**
+   * SUPERSEDE, the only four columns a controlled reprocess is ever allowed to
+   * write on an OLD document. Nothing else about it is touched: not its status,
+   * not its extracted_data, not its Storage object. A superseded document is
+   * still the honest record of what Vyso read at the time, which is precisely
+   * why it is marked rather than deleted or rewritten.
+   *
+   * `superseded_at` is also the partial-unique-index predicate
+   * (documents_ingest_attachment_uidx ... where superseded_at is null), so it is
+   * what lets a REPLACEMENT row exist for the same (email_ingest_id,
+   * source_attachment_id) pair without two active copies ever coexisting.
+   */
+  superseded_at?: string | null;
+  /** The replacement. Null on an in-flight swap — see the crash compensator. */
+  superseded_by_document_id?: string | null;
+  /** Set on the NEW document, pointing back at what it replaced. */
+  supersedes_document_id?: string | null;
+  /** The human reason the reprocess was requested. Never message content. */
+  supersede_reason?: string | null;
   uploaded_by: string | null;
   approved_by: string | null;
   approved_at: string | null;
@@ -584,6 +603,75 @@ export interface Document {
   created_at: string;
   updated_at: string;
 }
+
+/**
+ * The email_ingests columns a controlled reprocess adds.
+ *
+ * BUSINESS IDENTITY IS NOT THE PROVIDER LOCATOR, and conflating the two is what
+ * broke every historical candidate: `graph_message_id` is a REST id, REST ids are
+ * folder-dependent, and an external actor moving processed mail to Deleted Items
+ * kills them all. So the original id is frozen forever (it is the idempotency key
+ * and the historical provenance), `graph_message_id_resolved` carries the current
+ * locator, and `internet_message_id` carries the RFC business identity that
+ * survives any folder move — and is the key an ImmutableId cutover would reuse.
+ */
+export interface EmailIngestIdentityColumns {
+  /** RFC 5322 Message-ID. The stable business identity. */
+  internet_message_id?: string | null;
+  /** Current provider locator. The fetch layer uses `resolved ?? original`. */
+  graph_message_id_resolved?: string | null;
+}
+
+/** The single in-flight controlled-reprocess intent. Cleared on completion. */
+export interface EmailIngestPendingReprocess {
+  action: 'retry_failed' | 'supersede_source';
+  /** 'admin:<user id>' | 'cron_secret'. Never a token or a secret. */
+  initiator: string;
+  reason: string;
+  at: string;
+  /** supersede_source only: 'email-body' or a Graph attachment id. */
+  target_source?: string | null;
+  /**
+   * The status the ingest held BEFORE it was requeued. A 'done' ingest whose
+   * reprocess attempt fails is restored to 'done' — a failed experiment must
+   * never downgrade a good result.
+   */
+  prior_status?: string | null;
+}
+
+/** One append-only audit event on email_ingests.reprocess_log. */
+export type EmailIngestReprocessLogEntry =
+  | {
+      kind: 'id_resolution';
+      at: string;
+      initiator: string;
+      original: string;
+      resolved: string;
+      method: 'internet_message_id' | 'conversation_exact_match';
+      /** Match fields already on the row, plus a HASH of the subject — never its text. */
+      evidence: {
+        received_at: string | null;
+        from: string | null;
+        subject_sha256: string | null;
+      };
+    }
+  | {
+      kind: 'supersede';
+      at: string;
+      initiator: string;
+      reason: string;
+      target_source: string;
+      old_document_id: string | null;
+      new_document_id: string | null;
+      outcome: 'superseded' | 'no_replacement' | 'failed';
+      /** Bounded and redacted. Never a raw body, token or secret. */
+      error?: string | null;
+    }
+  | {
+      kind: 'log_truncated';
+      at: string;
+      dropped: number;
+    };
 
 /** Document joined with a thin supplier projection — used by list/table views. */
 export interface DocumentWithSupplier extends Document {

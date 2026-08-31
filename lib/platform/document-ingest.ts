@@ -315,6 +315,26 @@ export interface IngestDocumentInput {
   emailIngestId?: string | null;
   /** Provider attachment id, used to heal retries without filing the same copy twice. */
   sourceAttachmentId?: string | null;
+  /**
+   * The Storage part id, when it must differ from `sourceAttachmentId`.
+   *
+   * Storage objects are uploaded with `upsert:false` and their path is
+   * sha256(ingestId + part id), so a path is WRITE-ONCE by construction — which
+   * is exactly the property that keeps a superseding run from overwriting the
+   * bytes the old document is still serving. A supersede passes a versioned part
+   * id ('<source>:supersede:<oldDocumentId>'); everything else passes nothing and
+   * keeps today's path byte-for-byte.
+   */
+  storagePartId?: string | null;
+  /**
+   * SUPERSEDE MODE: replace this exact document with the one about to be filed.
+   *
+   * Set only by the controlled reprocess path. The old row is marked superseded
+   * immediately before the insert and un-marked if the insert fails — see the
+   * ordering note at the insert itself, which is where the whole compensation
+   * argument lives.
+   */
+  supersede?: { documentId: string; reason: string } | null;
   /** Original provider MIME type, retained independently of Storage metadata. */
   sourceContentType?: string | null;
   /** Semantic source kind. Email bodies are text sources, never fabricated PDFs. */
@@ -701,6 +721,8 @@ export type IngestDocumentResult =
       supplier?: string | null;
       itemCount: number;
       orderSync?: unknown;
+      /** Set only when this run actually replaced an older document. */
+      supersededDocumentId?: string | null;
     }
   | { ok: false; status: number; error: string; documentId?: string };
 
@@ -726,6 +748,8 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
     preExtractedOrder = null,
     extractionMetadata = null,
     deferCommit = false,
+    storagePartId = null,
+    supersede = null,
   } = input;
 
   let recoveringDocumentId: string | null = null;
@@ -740,6 +764,12 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
       .eq('org_id', orgId)
       .eq('email_ingest_id', emailIngestId)
       .eq('source_attachment_id', sourceAttachmentId)
+      // A SUPERSEDED ROW DOES NOT BLOCK ITS OWN REPLACEMENT. It is still the
+      // historical record of that source, but it is no longer the active copy,
+      // and this is the same predicate as the partial unique index — so the
+      // pre-flight check and the database's own race guard agree on what "the
+      // existing copy" means.
+      .is('superseded_at', null)
       .limit(1)
       .maybeSingle();
     if (existingError) {
@@ -747,7 +777,23 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
     }
     if (existing) {
       const row = existing as { id: string; status: string; document_type: string | null };
-      if (row.status === 'extracted' || row.status === 'approved') {
+      // SUPERSEDE MODE MEANS EXACTLY THIS ROW. The check below is the "a copy
+      // already exists, do nothing" guard that makes every ordinary retry a
+      // no-op — and a supersede is the one run that must NOT be a no-op, because
+      // an operator has explicitly asked for this source to be read again. It is
+      // narrowed to the named document id: if the active copy is no longer the
+      // one the request was raised against, something changed underneath the
+      // request and the honest answer is to refuse, not to replace a row nobody
+      // reviewed.
+      if (supersede && supersede.documentId !== row.id) {
+        return {
+          ok: false,
+          status: 409,
+          error: 'The active document for this source is no longer the one the reprocess targeted.',
+          documentId: row.id,
+        };
+      }
+      if (!supersede && (row.status === 'extracted' || row.status === 'approved')) {
         return {
           ok: true,
           documentId: row.id,
@@ -758,9 +804,14 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
       // A body source is extracted before it crosses the Storage/DB boundary.
       // If the function died after inserting its deterministic document row,
       // retry may heal that same row instead of creating another or stranding it.
-      if (preExtractedOrder && sourceAttachmentId === 'email-body' && (row.status === 'pending' || row.status === 'error')) {
+      const healableBodyRow =
+        Boolean(preExtractedOrder) && sourceAttachmentId === 'email-body' &&
+        (row.status === 'pending' || row.status === 'error');
+      // A supersede falls through to the extraction + swap below; it is the one
+      // caller that intends to file a SECOND row for this source.
+      if (!supersede && healableBodyRow) {
         recoveringDocumentId = row.id;
-      } else {
+      } else if (!supersede) {
         return {
           ok: false,
           status: 409,
@@ -852,8 +903,13 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
   // Email attachments use a deterministic, opaque path. If a function dies after
   // Storage accepts the bytes but before the documents row is inserted, the retry
   // reuses this exact object instead of creating an orphaned second copy.
+  // `storagePartId` defaults to the source id, so every existing caller keeps
+  // the exact path it has always used. A supersede passes a versioned part id
+  // instead: the old object is never overwritten (nor could it be — upsert is
+  // false), and re-running the same supersede lands on the same deterministic
+  // path, so a retry is idempotent rather than a second orphaned copy.
   const attachmentStorageKey = emailIngestId && sourceAttachmentId
-    ? emailSourceStoragePath(orgId, emailIngestId, sourceAttachmentId)
+    ? emailSourceStoragePath(orgId, emailIngestId, storagePartId ?? sourceAttachmentId)
     : null;
   const storagePath = attachmentStorageKey
     ? attachmentStorageKey
@@ -876,6 +932,65 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
 
   // 3. Insert the Doc-U documents row (Orders folder for orders).
   const folderId = isOrder ? await ordersFolderId(supabase, orgId, userId) : null;
+
+  // ── THE SUPERSEDE SWAP, AND WHY IT IS ORDERED LIKE THIS ──────────────────
+  //
+  // Everything expensive and everything fallible-for-business-reasons has
+  // already happened by the time execution reaches this line: the bytes are in
+  // Storage and, on every reprocess lane, the extraction is complete. That is
+  // deliberate — a reprocess that fails to READ the source must leave the old
+  // document exactly as it was, so the read happens first and the swap happens
+  // last (a failure above this point simply returns, having touched nothing).
+  //
+  // The two rows then cannot both be active for one instant, because the partial
+  // unique index (email_ingest_id, source_attachment_id) WHERE superseded_at IS
+  // NULL forbids it — that index is the whole reason this is an ordered pair of
+  // writes rather than one. So: mark the old row superseded IMMEDIATELY before
+  // the insert (which is what frees the index slot), then insert.
+  //
+  // And if the insert then fails, COMPENSATE: un-mark the old row and return the
+  // failure. The old document goes back to being the active result, which is the
+  // invariant this whole feature is built to protect — a failed reprocess must
+  // never leave an email with no live document. The remaining crash window (a
+  // process killed between the two writes) is closed on the other side, by the
+  // reclaim compensator in microsoft-graph-ingest.ts, which finds a superseded
+  // row that never got a successor and restores it before re-attempting.
+  if (supersede) {
+    const { data: marked, error: markError } = await supabase
+      .from('documents')
+      .update({ superseded_at: new Date().toISOString(), supersede_reason: supersede.reason.slice(0, 500) })
+      .eq('id', supersede.documentId)
+      .eq('org_id', orgId)
+      // Only an ACTIVE row may be superseded. A concurrent worker that got here
+      // first leaves superseded_at set, this update then matches nothing, and the
+      // refusal below stops the second worker from replacing a document that
+      // already has a successor.
+      .is('superseded_at', null)
+      .select('id')
+      .maybeSingle();
+    if (markError) {
+      return { ok: false, status: 500, error: `Could not mark the previous document superseded: ${markError.message}` };
+    }
+    if (!marked) {
+      return {
+        ok: false,
+        status: 409,
+        error: 'The targeted document is no longer the active copy for this source.',
+        documentId: supersede.documentId,
+      };
+    }
+  }
+
+  /** Put the old document back in charge. Used on every failure below. */
+  const unsupersede = async (): Promise<void> => {
+    if (!supersede) return;
+    await supabase
+      .from('documents')
+      .update({ superseded_at: null, superseded_by_document_id: null, supersede_reason: null })
+      .eq('id', supersede.documentId)
+      .eq('org_id', orgId);
+  };
+
   const insertResult = recoveringDocumentId
     ? { data: { id: recoveringDocumentId }, error: null }
     : await supabase
@@ -892,6 +1007,7 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
         ...(sourceAttachmentId ? { source_attachment_id: sourceAttachmentId } : {}),
         ...(sourceContentType ? { source_content_type: sourceContentType } : {}),
         ...(sourceType ? { source_type: sourceType } : {}),
+        ...(supersede ? { supersedes_document_id: supersede.documentId } : {}),
       })
       .select('id')
       .single();
@@ -903,10 +1019,15 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
       .eq('org_id', orgId)
       .eq('email_ingest_id', emailIngestId)
       .eq('source_attachment_id', sourceAttachmentId)
+      // Same predicate as the index that just rejected us: the winner of the
+      // race is the ACTIVE copy, never an archived one.
+      .is('superseded_at', null)
       .limit(1)
       .maybeSingle();
     if (winner) {
       const row = winner as { id: string; status: string; document_type: string | null };
+      // The insert lost; the old document must go back to being the live result.
+      await unsupersede();
       if (row.status === 'extracted' || row.status === 'approved') {
         return { ok: true, documentId: row.id, documentType: row.document_type, itemCount: 0 };
       }
@@ -919,9 +1040,33 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
     }
   }
   if (insErr || !inserted) {
+    // COMPENSATION. The replacement was never filed, so the document this run
+    // marked superseded is once again the active, reviewable result.
+    await unsupersede();
     return { ok: false, status: 500, error: `Could not file the document: ${insErr?.message ?? 'unknown error'}` };
   }
   const documentId = (inserted as { id: string }).id;
+
+  // The successor link, written only now that the successor exists. Between the
+  // insert and this update a crash leaves superseded_at set with a NULL
+  // superseded_by_document_id — the reclaim compensator treats "no successor row
+  // points at me" as the real test, so it restores that row rather than a row
+  // whose replacement genuinely landed.
+  if (supersede) {
+    const { error: linkError } = await supabase
+      .from('documents')
+      .update({ superseded_by_document_id: documentId })
+      .eq('id', supersede.documentId)
+      .eq('org_id', orgId);
+    if (linkError) {
+      return {
+        ok: false,
+        status: 500,
+        error: `Could not link the superseded document to its replacement: ${linkError.message}`,
+        documentId,
+      };
+    }
+  }
 
   // 4a. ORDER → read with the order reader, then build the OrderFlow order
   //     (auto-invoice when confident, else a draft to review).
@@ -1132,6 +1277,7 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
       customerName: order.customer_name,
       itemCount: order.line_items.length,
       orderSync,
+      supersededDocumentId: supersede?.documentId ?? null,
     };
   }
 
@@ -1278,5 +1424,6 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
     documentType,
     supplier: parties.supplierName ?? null,
     itemCount: cls.line_items.length,
+    supersededDocumentId: supersede?.documentId ?? null,
   };
 }

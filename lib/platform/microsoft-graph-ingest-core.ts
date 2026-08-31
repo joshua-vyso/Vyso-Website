@@ -594,11 +594,36 @@ export async function ingestMicrosoftGraphMessage(
     existingErrors?: readonly string[];
     /** Existing successful attachment order documents, used after a crash/retry. */
     existingOrderDocuments?: readonly { documentId: string; attachmentId: string }[];
+    /**
+     * The RE-RESOLVED provider locator, set ONLY by the controlled reprocess
+     * path after the resolver verified it (microsoft-graph-resolve.ts). When it
+     * is set the caller has already pointed every Graph read at this id, so the
+     * id-echo assertion below must expect THIS id — the assertion is re-pointed,
+     * never relaxed.
+     *
+     * The live webhook path never sets it: a notification carries its own fresh
+     * id and stays strict on it, so normal processing is byte-compatible.
+     */
+    resolvedMessageId?: string;
+    /**
+     * Sources whose completed marker is deliberately BYPASSED for this run —
+     * exactly one, named by an operator, on a controlled supersede.
+     *
+     * A SET-MEMBERSHIP CHECK, NOT A CLEARED LIST, and the difference matters.
+     * `processed_attachment_ids` is the write-once record of every source this
+     * email has already filed a document for; clearing it to "let one through"
+     * would unprotect every OTHER source at the same time, and a mid-run crash
+     * would leave the row permanently unable to say what had been done. Bypassing
+     * by membership keeps the record intact and narrows the exception to one id.
+     */
+    reprocessSources?: readonly string[];
   },
   dependencies: MicrosoftGraphIngestDependencies,
 ): Promise<MicrosoftGraphIngestResult> {
+  const expectedMessageId = input.resolvedMessageId ?? input.expectedMessageId;
+  const reprocessSources = new Set(input.reprocessSources ?? []);
   const message = await dependencies.fetchMessage();
-  if (message.id !== input.expectedMessageId) {
+  if (message.id !== expectedMessageId) {
     throw new Error('Microsoft Graph returned a different message id.');
   }
 
@@ -626,7 +651,12 @@ export async function ingestMicrosoftGraphMessage(
   const errors: string[] = [...(input.existingErrors ?? [])];
 
   for (const attachment of usable) {
-    if (alreadyDone.has(attachment.id)) continue;
+    // THE TARGETED BYPASS. Every source this email has already filed stays
+    // protected; only the single id an operator named may run again.
+    if (alreadyDone.has(attachment.id) && !reprocessSources.has(attachment.id)) continue;
+    // A superseding run REPLACES this source's document; it does not add one.
+    // Counting it again would report two documents for one live result.
+    const replacingSource = alreadyDone.has(attachment.id);
     const filename = (attachment.name ?? 'document').slice(0, 200);
     try {
       const bytes = await dependencies.downloadAttachment(attachment);
@@ -673,7 +703,7 @@ export async function ingestMicrosoftGraphMessage(
             },
           });
       if (result.documentId) {
-        if (result.ok) documentsCreated += 1;
+        if (result.ok && !replacingSource) documentsCreated += 1;
         alreadyDone.add(attachment.id);
         await dependencies.recordAttachmentProcessed({
           attachmentId: attachment.id,
@@ -721,7 +751,9 @@ export async function ingestMicrosoftGraphMessage(
       ].includes(entry))
     )
   );
-  if (bodyOrderEvidence && !alreadyDone.has('email-body')) {
+  // Same targeted bypass, same reasoning, for the body source part.
+  if (bodyOrderEvidence && (!alreadyDone.has('email-body') || reprocessSources.has('email-body'))) {
+    const replacingBody = alreadyDone.has('email-body');
     try {
       const distinctOrderDocuments = [...new Map(orderDocuments.map((entry) => [entry.documentId, entry])).values()];
       const bodyResult = distinctOrderDocuments.length > 0
@@ -733,7 +765,7 @@ export async function ingestMicrosoftGraphMessage(
           })
         : await dependencies.ingestBodyOrder({ message });
       if (bodyResult.ok && bodyResult.documentId) {
-        if (distinctOrderDocuments.length === 0) documentsCreated += 1;
+        if (distinctOrderDocuments.length === 0 && !replacingBody) documentsCreated += 1;
         alreadyDone.add('email-body');
         await dependencies.recordAttachmentProcessed({
           attachmentId: 'email-body',

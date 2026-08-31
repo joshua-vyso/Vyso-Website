@@ -286,10 +286,39 @@ async function persistBodySource(
   return storagePath;
 }
 
+/**
+ * The deterministic Storage part id for a REPLACEMENT copy of one source.
+ *
+ * Derived from the OLD document's id, so: the historical bytes are never
+ * overwritten (they are at the un-versioned path, and every upload is
+ * `upsert:false` anyway), and re-running the same supersede computes the same
+ * path — which turns a retry into an idempotent no-op rather than a second
+ * orphaned object.
+ */
+export function supersedeSourcePartId(sourcePartId: string, oldDocumentId: string): string {
+  return `${sourcePartId}:supersede:${oldDocumentId}`;
+}
+
+/** A controlled replacement of the existing document for this source. */
+export interface SupersedeIntent {
+  documentId: string;
+  reason: string;
+}
+
 export async function ingestMicrosoftEmailBodyOrder(
   supabase: SupabaseClient,
-  input: { orgId: string; emailIngestId: string; message: MicrosoftGraphMessageContent },
+  input: {
+    orgId: string;
+    emailIngestId: string;
+    message: MicrosoftGraphMessageContent;
+    /** Set only by the controlled reprocess path. */
+    supersede?: SupersedeIntent | null;
+  },
 ): Promise<IngestDocumentResult> {
+  // EXTRACTION FIRST, ALWAYS. On a supersede this read is what gates the swap:
+  // if the body cannot be read into a reviewable order, this throws or returns
+  // before a single supersede column has been written, and the existing document
+  // is still the active result with nothing to undo.
   const { order, assessment, prepared } = await readBodyOrder(supabase, input.orgId, input.message);
   // Before anything is filed: the sender's own bytes. If the read above was
   // wrong about this body, the evidence for saying so now exists.
@@ -323,6 +352,12 @@ export async function ingestMicrosoftEmailBodyOrder(
     sourceType: 'email_body',
     preExtractedOrder: order,
     extractionMetadata: { message_order_evidence: bodyOnlyOrderEvidence(order, assessment) },
+    ...(input.supersede
+      ? {
+          supersede: input.supersede,
+          storagePartId: supersedeSourcePartId(EMAIL_BODY_SOURCE_PART_ID, input.supersede.documentId),
+        }
+      : {}),
     deferCommit: true,
   });
   if (!result.ok || !result.documentId) return result;
@@ -378,6 +413,8 @@ export async function ingestMicrosoftHtmlAttachmentOrder(
     emailIngestId: string;
     message: MicrosoftGraphMessageContent;
     attachment: { id: string; name: string; contentType: string; bytes: Uint8Array };
+    /** Set only by the controlled reprocess path. */
+    supersede?: SupersedeIntent | null;
   },
 ): Promise<IngestDocumentResult> {
   const bytes = input.attachment.bytes;
@@ -436,6 +473,14 @@ export async function ingestMicrosoftHtmlAttachmentOrder(
     extractionMetadata: {
       message_order_evidence: attachmentOnlyOrderEvidence(usable, input.attachment.id, assessment),
     },
+    // Same ordering guarantee as the body lane: the reader above has already
+    // finished by the time any supersede column is written.
+    ...(input.supersede
+      ? {
+          supersede: input.supersede,
+          storagePartId: supersedeSourcePartId(input.attachment.id, input.supersede.documentId),
+        }
+      : {}),
     deferCommit: true,
   });
 }

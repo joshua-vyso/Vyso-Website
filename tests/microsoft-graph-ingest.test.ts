@@ -26,6 +26,7 @@ function message(overrides: Partial<MicrosoftGraphMessageContent> = {}): Microso
     receivedDateTime: '2026-08-28T08:38:57Z',
     hasAttachments: true,
     conversationId: 'conversation-1',
+    internetMessageId: '<AAMk-message-1@countrymushrooms.co.za>',
     body: { contentType: 'text', content: 'Tax Invoice IOA76937 from COUNTRY MUSHROOMS (PTY) LTD' },
     bodyPreview: 'Tax Invoice IOA76937 from COUNTRY MUSHROOMS (PTY) LTD',
     ...overrides,
@@ -610,6 +611,11 @@ test('database migration enforces Graph message and attachment idempotency', () 
   assert.match(sql, /body_source_storage_path text/i);
   assert.match(sql, /source_type text/i);
   assert.match(sql, /'pdf', 'image', 'spreadsheet', 'email_body'/i);
+  // The attachment index is now ACTIVE-copy-only, which is what allows a
+  // controlled replacement to exist without two live copies of one source. The
+  // original message idempotency key beside it is unchanged.
+  assert.match(sql, /and superseded_at is null;/i);
+  assert.match(sql, /drop index if exists documents_ingest_attachment_uidx;/i);
 });
 
 test('persisted Microsoft work is recoverable without after()', () => {
@@ -632,6 +638,18 @@ test('deferred document ingestion cannot create supplier or operational side eff
   assert.match(source, /parties\.supplierName && !deferCommit/);
   assert.match(source, /if \(!deferCommit\) \{[\s\S]*?runDocumentSideEffects/);
   assert.match(source, /Deferred \(email\): stop here/);
+  // THE SAME GUARANTEE, EXTENDED TO THE TWO NEW MODULES. A controlled reprocess
+  // is still unattended email ingestion: the resolver and the reprocess route
+  // reach no operational table and commit nothing, and the route's only writes
+  // are to the ingest row it was pointed at.
+  const resolver = readFileSync(new URL('../lib/platform/microsoft-graph-resolve.ts', import.meta.url), 'utf8');
+  const route = readFileSync(new URL('../app/api/email/reprocess/route.ts', import.meta.url), 'utf8');
+  for (const reprocessSource of [resolver, route]) {
+    assert.doesNotMatch(reprocessSource, /runDocumentSideEffects|syncOrderFromDocument|feedDocumentToProcurePulse/);
+    assert.doesNotMatch(reprocessSource, /from\('of_orders'\)|from\('of_invoices'\)|from\('pp_movements'\)|from\('pp_stock_items'\)/);
+  }
+  assert.doesNotMatch(resolver, /\.from\(/, 'the resolver touches no table at all');
+  assert.match(route, /deferCommit|processEmailIngest/);
 });
 
 test('email-body order source is private, deterministic, deferred and not a fake PDF', () => {

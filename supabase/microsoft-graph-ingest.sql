@@ -115,6 +115,66 @@ create unique index if not exists documents_ingest_attachment_uidx
   on documents (email_ingest_id, source_attachment_id)
   where email_ingest_id is not null and source_attachment_id is not null;
 
+-- ==========================================================================
+-- Re-resolution + controlled supersede.
+--
+-- BUSINESS IDENTITY IS NOT THE PROVIDER LOCATOR. A REST id encodes the folder a
+-- message is in, so an external actor moving processed mail to Deleted Items
+-- kills it — which is what happened to every historical ingest. graph_message_id
+-- is therefore FROZEN (it stays the idempotency key and the record of the id the
+-- notification carried), graph_message_id_resolved carries the current locator,
+-- and internet_message_id carries the RFC identity that survives a folder move.
+-- ==========================================================================
+alter table email_ingests add column if not exists internet_message_id text;
+alter table email_ingests add column if not exists graph_message_id_resolved text;
+-- Append-only audit of every controlled reprocess. Capped at 50 entries by the
+-- writer; never contains a body, a subject in clear, a token or a secret.
+alter table email_ingests add column if not exists reprocess_log jsonb not null default '[]'::jsonb;
+-- The single in-flight reprocess intent. Cleared when the worker consumes it.
+alter table email_ingests add column if not exists pending_reprocess jsonb;
+
+-- The four — and only four — columns a reprocess may write on an OLD document.
+-- Nothing is ever deleted or rewritten: a superseded document remains the honest
+-- record of what Vyso read at the time, reachable by direct id.
+alter table documents add column if not exists superseded_at timestamptz;
+alter table documents add column if not exists superseded_by_document_id uuid references documents(id);
+alter table documents add column if not exists supersedes_document_id uuid references documents(id);
+alter table documents add column if not exists supersede_reason text;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'email_ingests_reprocess_log_array_check'
+  ) then
+    alter table email_ingests add constraint email_ingests_reprocess_log_array_check
+      check (jsonb_typeof(reprocess_log) = 'array');
+  end if;
+end $$;
+
+-- THE INDEX THAT MAKES THE SWAP ORDER MANDATORY.
+--
+-- Adding `superseded_at is null` narrows one-document-per-source to one ACTIVE
+-- document per source. That is what lets a replacement exist at all — and it is
+-- also why document-ingest.ts must mark the old row superseded IMMEDIATELY
+-- BEFORE inserting the new one (and un-mark it if that insert fails): the two
+-- rows can never both occupy the active slot, not even for an instant.
+--
+-- AN EXISTING DATABASE MUST BE MIGRATED BY HAND. `create unique index if not
+-- exists` will NOT replace the older index of the same name, so the drop below
+-- is what actually widens it. This block is run once, by hand, before deploy —
+-- it is reproduced verbatim in the completion report.
+drop index if exists documents_ingest_attachment_uidx;
+create unique index if not exists documents_ingest_attachment_uidx
+  on documents (email_ingest_id, source_attachment_id)
+  where email_ingest_id is not null and source_attachment_id is not null and superseded_at is null;
+
+-- The audit surfaces read a document's successor by id; this keeps the reverse
+-- lookup ("what did this document replace") cheap on a table that is otherwise
+-- only ever queried by ingest.
+create index if not exists documents_supersedes_idx
+  on documents (supersedes_document_id)
+  where supersedes_document_id is not null;
+
 -- 'html' is a first-class source: a procurement portal emails the purchase order
 -- as a text/html file attachment (the Four Seasons PO — twelve tables, a full
 -- line grid — arrives exactly this way), and Vyso now parses it locally instead

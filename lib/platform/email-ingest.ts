@@ -5,6 +5,7 @@ import { ingestDocument } from '@/lib/platform/document-ingest';
 import { extractQuoteRequest } from '@/lib/ai/anthropic';
 import { isUniqueViolation } from '@/lib/platform/db-errors';
 import { processMicrosoftGraphEmailIngest } from '@/lib/platform/microsoft-graph-ingest';
+import type { EmailIngestPendingReprocess } from '@/lib/platform/types';
 import {
   INGEST_DOMAIN,
   MAX_ATTACHMENT_BYTES,
@@ -199,7 +200,11 @@ interface IngestRow {
   resend_email_id: string | null;
   mailbox: string | null;
   graph_message_id: string | null;
+  /** The re-resolved provider locator. Read by the Graph adapter as `resolved ?? original`. */
+  graph_message_id_resolved: string | null;
   graph_id_type: 'rest_id' | 'rest_immutable_entry_id' | null;
+  /** The single in-flight controlled-reprocess intent, or null. */
+  pending_reprocess: EmailIngestPendingReprocess | null;
   status: string;
   attempts: number;
   documents_created: number;
@@ -256,7 +261,7 @@ async function resolveSenderAuth(
 export async function processEmailIngest(supabase: SupabaseClient, ingestId: string): Promise<void> {
   const { data: row } = await supabase
     .from('email_ingests')
-    .select('id, org_id, source, resend_email_id, mailbox, graph_message_id, graph_id_type, status, attempts, documents_created, processed_attachment_ids, tag, created_at')
+    .select('id, org_id, source, resend_email_id, mailbox, graph_message_id, graph_message_id_resolved, graph_id_type, pending_reprocess, status, attempts, documents_created, processed_attachment_ids, tag, created_at')
     .eq('id', ingestId)
     .maybeSingle();
   const ingest = row as IngestRow | null;
@@ -300,10 +305,24 @@ export async function processEmailIngest(supabase: SupabaseClient, ingestId: str
   }
   if (!claimed) return; // someone else holds a live claim
 
+  // A CONTROLLED REPROCESS MAY NOT DOWNGRADE THE STATUS IT STARTED FROM.
+  //
+  // `pending_reprocess.prior_status` is written by /api/email/reprocess before it
+  // requeues a row that was already 'done', and it is the promise this closure
+  // keeps: an optional re-reading that fails puts the ingest back exactly where
+  // it was, with the reason in `error`, and the old document is still the live
+  // result. Without this, asking Vyso to try harder on a filed email would risk
+  // marking that email failed — which would make the whole feature unusable.
+  const priorStatus = ingest.pending_reprocess?.prior_status ?? null;
   const fail: FailFn = async (error, status = 'failed') => {
     await supabase
       .from('email_ingests')
-      .update({ status, error: error.slice(0, 500), processed_at: new Date().toISOString() })
+      .update({
+        status: priorStatus ?? status,
+        ...(priorStatus ? { pending_reprocess: null } : {}),
+        error: error.slice(0, 500),
+        processed_at: new Date().toISOString(),
+      })
       .eq('id', ingest.id);
   };
 

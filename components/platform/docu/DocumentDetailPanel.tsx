@@ -134,6 +134,61 @@ export function DocumentDetailPanel({
     </div>
   );
 
+  // ── SUPERSEDED ────────────────────────────────────────────────────────────
+  //
+  // This document was replaced by a controlled reprocess: the same email, the
+  // same source part, read again under a corrected interpretation. It is kept —
+  // never deleted, never rewritten — because it is the honest record of what
+  // Vyso read at the time, and because the replacement's whole justification is
+  // that this one can still be compared against it.
+  //
+  // What it is NOT is a document to act on. Every confirm action is withheld
+  // rather than disabled: an approve button that refuses is an invitation to
+  // wonder why, whereas a page that offers the successor and the original file
+  // says exactly what happened and where the live document is. This is the only
+  // place a superseded document appears in the product; every list excludes it.
+  if (doc.superseded_at) {
+    return (
+      <div>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <Link
+              href="/app/docu"
+              className="inline-flex h-[38px] shrink-0 items-center gap-1 rounded-full border border-[#E2E6EC] bg-white px-4 text-[13px] font-medium text-[#3E4A57] transition-all hover:border-[#C9DEF7] hover:bg-[#EAF2FC] hover:text-[#174C87]"
+            >
+              <span aria-hidden>‹</span> Documents
+            </Link>
+            <div className="min-w-0">
+              <h1 className="of-display truncate text-[18px] font-semibold text-[#171A17]">{doc.filename}</h1>
+              <div className="mt-0.5 text-[13px] text-[#6B6F68]">{supplierName}</div>
+            </div>
+          </div>
+          <StatusPill status={doc.status} />
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-[#E6DCC4] bg-[#FDF8EC] px-5 py-4">
+          <h2 className="of-display text-[15px] font-semibold text-[#5C4A16]">
+            Superseded — reprocessed from an updated source interpretation
+          </h2>
+          <p className="mt-1 text-[13px] text-[#6B5B2E]">
+            This reading has been replaced and is kept for reference only. No action can be taken on it.
+            {doc.supersede_reason ? ` Reason: ${doc.supersede_reason}` : ''}
+          </p>
+          {doc.superseded_by_document_id ? (
+            <Link
+              href={`/app/docu/${doc.superseded_by_document_id}`}
+              className="mt-3 inline-flex h-8 items-center rounded-[10px] border border-[#E2E6EC] bg-white px-3 text-[12px] font-medium text-[#3E4A57] transition-all hover:border-[#C9DEF7] hover:bg-[#EAF2FC] hover:text-[#174C87]"
+            >
+              Open the document that replaced it
+            </Link>
+          ) : null}
+        </div>
+
+        <div className="mt-6">{preview}</div>
+      </div>
+    );
+  }
+
   return (
     <div>
       {/* Header */}
