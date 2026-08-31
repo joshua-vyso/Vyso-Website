@@ -201,11 +201,24 @@ export async function POST(req: Request) {
       entry.target_source === targetSource &&
       entry.reason === reason,
     );
-    if (active?.supersedes_document_id && alreadyDone) {
+    // THE SAME REFUSAL FOR A SUPERSEDE THAT WENT THROUGH A RECONCILED DOCUMENT.
+    // That outcome leaves the targeted source with NO active document of its own
+    // — its evidence lives inside another source's canonical order (the Four
+    // Seasons case) — so the active-copy test above cannot be what stops the
+    // repeat: there is no active copy left to inspect. The completed audit entry
+    // for this exact source and reason is, and the absence of an active document
+    // for the source is precisely the state that entry describes.
+    const alreadyReconciled = log.some((entry) =>
+      entry.kind === 'supersede' &&
+      entry.outcome === 'superseded_via_reconciliation' &&
+      entry.target_source === targetSource &&
+      entry.reason === reason,
+    );
+    if ((active?.supersedes_document_id && alreadyDone) || (!active && alreadyReconciled)) {
       return NextResponse.json(
         {
           error: 'That source has already been superseded for this reason; nothing was changed.',
-          documentId: active.id,
+          ...(active ? { documentId: active.id } : {}),
         },
         { status: 409 },
       );

@@ -14,6 +14,10 @@ import type {
   EmailIngestPendingReprocess,
   EmailIngestReprocessLogEntry,
 } from './types';
+import {
+  selectReconciliationSupersedeTarget,
+  type SupersedeCandidateRow,
+} from './supersede-reconciliation-target';
 import { MAX_ATTACHMENT_BYTES } from './email-ingest-policy';
 import {
   downloadMicrosoftGraphFileAttachment,
@@ -124,6 +128,15 @@ interface SourceDocumentRow {
  * superseded_by_document_id set": the successor link is written after the insert,
  * so a null link proves nothing on its own.
  *
+ * A SUCCESSOR IS NOT ALWAYS A ROW OF THE SAME SOURCE. When the targeted source
+ * was absorbed into another source's canonical order — the Four Seasons case —
+ * the replacement carries a different `source_attachment_id` and so is absent
+ * from the query below entirely. Looking only there would read a COMPLETED
+ * supersede as an interrupted one and restore the document it archived, putting
+ * two active documents back on the email. Such a successor is therefore found
+ * through the archived row's own link, and only counts when the pair points
+ * both ways.
+ *
  * Nothing is ever deleted. A failed replacement is parked with the same four
  * supersede columns that archived the original — it stays readable by direct id,
  * which is what makes the failure auditable instead of invisible.
@@ -143,13 +156,34 @@ async function reclaimInterruptedSupersede(
   const archived = rows.filter((row) => row.superseded_at !== null);
   if (archived.length === 0) return 'none';
 
+  /** The bidirectionally-linked replacement filed against ANOTHER source part. */
+  const reconciledSuccessor = async (row: SourceDocumentRow): Promise<SourceDocumentRow | null> => {
+    if (!row.superseded_by_document_id) return null;
+    const { data: linked, error: linkedError } = await supabase
+      .from('documents')
+      .select('id, source_attachment_id, status, document_type, superseded_at, superseded_by_document_id, supersedes_document_id')
+      .eq('id', row.superseded_by_document_id)
+      .eq('org_id', input.orgId)
+      .maybeSingle();
+    if (linkedError) throw new Error(`Could not inspect the reconciled replacement: ${linkedError.message}`);
+    const successor = (linked ?? null) as SourceDocumentRow | null;
+    // BOTH WAYS OR NOT AT ALL. A half-written pair is an interrupted supersede,
+    // and an interrupted supersede is exactly what this function repairs.
+    return successor && successor.supersedes_document_id === row.id ? successor : null;
+  };
+
   let restored: 'none' | 'restored' = 'none';
   for (const row of archived) {
-    const successor = rows.find((entry) => entry.supersedes_document_id === row.id);
+    const sameSourceSuccessor = rows.find((entry) => entry.supersedes_document_id === row.id);
+    const successor = sameSourceSuccessor ?? (await reconciledSuccessor(row));
     // A replacement that landed AND is usable: this is a completed supersede,
     // and completed supersedes are permanent.
     if (successor && (successor.status === 'extracted' || successor.status === 'approved')) continue;
-    if (successor && successor.superseded_at === null) {
+    // Only a SAME-SOURCE replacement is ever parked. The park exists to free the
+    // index slot the original is about to reclaim, and a replacement on another
+    // source part never held that slot — archiving it would take a document this
+    // email still needs out of circulation for no reason at all.
+    if (sameSourceSuccessor && sameSourceSuccessor.superseded_at === null) {
       // Park the unusable replacement FIRST — that is what frees the index slot
       // the original is about to reclaim. Order matters; reversing these two
       // writes makes the second one fail on the unique index.
@@ -159,7 +193,7 @@ async function reclaimInterruptedSupersede(
           superseded_at: new Date().toISOString(),
           supersede_reason: 'Replacement abandoned before it became reviewable; the previous document was restored.',
         })
-        .eq('id', successor.id)
+        .eq('id', sameSourceSuccessor.id)
         .eq('org_id', input.orgId);
       if (parkError) throw new Error(`Could not park the abandoned replacement: ${parkError.message}`);
     }
@@ -172,6 +206,118 @@ async function reclaimInterruptedSupersede(
     restored = 'restored';
   }
   return restored;
+}
+
+/** Every outcome the supersede audit entry can carry, from the log's own type. */
+type SupersedeOutcome = Extract<EmailIngestReprocessLogEntry, { kind: 'supersede' }>['outcome'];
+
+type ReconciledSupersedeResult =
+  | { outcome: 'superseded_via_reconciliation'; documentId: string; why: null }
+  | { outcome: 'no_replacement' | 'ambiguous_replacement'; documentId: null; why: string };
+
+/**
+ * SUPERSEDE THROUGH THE DOCUMENT THAT ABSORBED THE TARGETED SOURCE.
+ *
+ * Reached only when a controlled `supersede_source` produced no successor of the
+ * targeted source's own — which, on a message whose order lives in an
+ * attachment, is the ORDINARY result of a body-targeted reprocess: Wave B
+ * reconciles the body INTO the attachment's canonical order rather than filing a
+ * second order for one message (the Four Seasons case, where the old zero-line
+ * body document was left active beside the attachment document).
+ *
+ * `reconciledDocumentId` comes from the run itself; the stored row is then
+ * checked against the five conditions in supersede-reconciliation-target.ts,
+ * which refuses on missing provenance, ambiguity and cross-ingest rows. NO
+ * DOCUMENT IS CREATED HERE — both rows already exist, and the whole operation is
+ * the two supersede links between them.
+ */
+async function supersedeThroughReconciledDocument(
+  supabase: SupabaseClient,
+  input: {
+    orgId: string;
+    emailIngestId: string;
+    targetSource: string;
+    oldDocumentId: string;
+    reason: string;
+    reconciledDocumentId: string | null;
+  },
+): Promise<ReconciledSupersedeResult> {
+  const refuse = (why: string): ReconciledSupersedeResult => ({ outcome: 'no_replacement', documentId: null, why });
+
+  const { data, error } = await supabase
+    .from('documents')
+    .select('id, email_ingest_id, source_attachment_id, status, superseded_at, supersedes_document_id, extracted_data')
+    .eq('org_id', input.orgId)
+    .eq('email_ingest_id', input.emailIngestId)
+    .is('superseded_at', null);
+  if (error) return refuse(`Could not inspect the reconciled documents: ${error.message}`);
+
+  const decision = selectReconciliationSupersedeTarget({
+    targetSource: input.targetSource,
+    emailIngestId: input.emailIngestId,
+    oldDocumentId: input.oldDocumentId,
+    reconciledDocumentId: input.reconciledDocumentId,
+    candidates: (data ?? []) as SupersedeCandidateRow[],
+  });
+  if (decision.outcome === 'no_replacement') return refuse(decision.why);
+  if (decision.outcome === 'ambiguous_replacement') {
+    return { outcome: 'ambiguous_replacement', documentId: null, why: decision.why };
+  }
+
+  // ── THE TWO WRITES, SUCCESSOR LINK FIRST ────────────────────────────────
+  // The opposite order to the direct-successor swap in document-ingest.ts, and
+  // for the same reason it is ordered at all. There the old row must be archived
+  // to free the partial unique index slot its replacement is about to take; here
+  // the replacement sits on a DIFFERENT source part, so the two rows never
+  // contend and the index imposes no order. What remains is the crash question,
+  // and only this order answers it safely: a process killed between the writes
+  // leaves the old document ACTIVE with an unused link on its replacement —
+  // today's state, which the next run simply redoes — instead of an archived
+  // document with no successor, the one state this feature must never leave.
+  const { data: linked, error: linkError } = await supabase
+    .from('documents')
+    .update({ supersedes_document_id: input.oldDocumentId })
+    .eq('id', decision.documentId)
+    .eq('org_id', input.orgId)
+    .is('superseded_at', null)
+    // One predecessor column, one predecessor: a link already written is another
+    // supersede's, and this one gives way rather than overwrite it.
+    .is('supersedes_document_id', null)
+    .select('id')
+    .maybeSingle();
+  if (linkError) return refuse(`Could not link the reconciled document to the one it replaces: ${linkError.message}`);
+  if (!linked) return refuse('The reconciled document is no longer an unlinked active document.');
+
+  const { data: archivedOld, error: archiveError } = await supabase
+    .from('documents')
+    .update({
+      superseded_at: new Date().toISOString(),
+      superseded_by_document_id: decision.documentId,
+      supersede_reason: input.reason.slice(0, 500),
+    })
+    .eq('id', input.oldDocumentId)
+    .eq('org_id', input.orgId)
+    // Only an ACTIVE row may be superseded — the same guard the direct path uses,
+    // so a worker that got here first is not overwritten.
+    .is('superseded_at', null)
+    .select('id')
+    .maybeSingle();
+  if (archiveError || !archivedOld) {
+    // COMPENSATION. The old document was never archived, so the link that says
+    // it was must go — and only the link this call wrote is cleared.
+    await supabase
+      .from('documents')
+      .update({ supersedes_document_id: null })
+      .eq('id', decision.documentId)
+      .eq('org_id', input.orgId)
+      .eq('supersedes_document_id', input.oldDocumentId);
+    return refuse(
+      archiveError
+        ? `Could not mark the previous document superseded: ${archiveError.message}`
+        : 'The targeted document is no longer the active copy for this source.',
+    );
+  }
+  return { outcome: 'superseded_via_reconciliation', documentId: decision.documentId, why: null };
 }
 
 /**
@@ -565,6 +711,39 @@ export async function processMicrosoftGraphEmailIngest(
     ? (priorStatus ?? 'done')
     : finalMicrosoftGraphIngestStatus(result);
 
+  // ── WHAT REPLACED THE OLD DOCUMENT ──────────────────────────────────────
+  // A successor of the targeted source's own is the direct answer and needs no
+  // further work. Failing that, the targeted source may have been absorbed into
+  // another source's canonical order this run — the Four Seasons case — and that
+  // document then becomes the replacement, under the five conditions in
+  // supersede-reconciliation-target.ts. Only if THAT also declines does the run
+  // keep the original fail-safe and leave the old document active.
+  let supersedeOutcome: SupersedeOutcome = supersedeNewDocumentId ? 'superseded' : 'no_replacement';
+  let supersedeReplacementId: string | null = supersedeNewDocumentId;
+  let supersedeDetail: string | null = null;
+  if (supersedeTarget && !supersedeNewDocumentId && supersedeOldDocumentId) {
+    try {
+      const viaReconciliation = await supersedeThroughReconciledDocument(supabase, {
+        orgId: ingest.org_id,
+        emailIngestId: ingest.id,
+        targetSource: supersedeTarget,
+        oldDocumentId: supersedeOldDocumentId,
+        reason: reprocessReason,
+        // THE RUN'S OWN ANSWER, not a re-query: the core reports the canonical
+        // document it reconciled this source into, and the conditions verify
+        // that row rather than going looking for a plausible one.
+        reconciledDocumentId: result.reconciledSourceDocumentIds[supersedeTarget] ?? null,
+      });
+      supersedeOutcome = viaReconciliation.outcome;
+      supersedeReplacementId = viaReconciliation.documentId;
+      supersedeDetail = viaReconciliation.why;
+    } catch (error) {
+      // An audit line is never worth a thrown finalisation: the old document is
+      // still active, which is the safe state, so the run reports it as such.
+      supersedeDetail = error instanceof Error ? error.message : 'The reconciled replacement could not be resolved.';
+    }
+  }
+
   if (supersedeTarget) {
     await appendReprocessLog(supabase, ingest, [{
       kind: 'supersede',
@@ -573,14 +752,14 @@ export async function processMicrosoftGraphEmailIngest(
       reason: reprocessReason,
       target_source: supersedeTarget,
       old_document_id: supersedeOldDocumentId,
-      new_document_id: supersedeNewDocumentId,
+      new_document_id: supersedeReplacementId,
       // "No replacement" is a real, reportable outcome — the source may no longer
-      // be triaged as processable, or the body may have reconciled into an
-      // existing attachment order instead of producing its own document.
-      outcome: supersedeNewDocumentId ? 'superseded' : 'no_replacement',
-      error: supersedeNewDocumentId
+      // be triaged as processable, or it may have reconciled into an existing
+      // attachment order that could not be verified as the replacement.
+      outcome: supersedeOutcome,
+      error: supersedeReplacementId
         ? null
-        : (processingError ?? 'The targeted source produced no replacement document.'),
+        : (supersedeDetail ?? processingError ?? 'The targeted source produced no replacement document.'),
     }]);
   }
 

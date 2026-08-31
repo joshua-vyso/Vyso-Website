@@ -9,6 +9,12 @@ import type {
   MicrosoftGraphAttachmentMetadata,
   MicrosoftGraphMessageContent,
 } from '../lib/platform/microsoft-graph-core.ts';
+import {
+  carriesTargetedSourceProvenance,
+  selectReconciliationSupersedeTarget,
+  type SupersedeCandidateRow,
+} from '../lib/platform/supersede-reconciliation-target.ts';
+import type { MessageOrderEvidence } from '../lib/platform/types.ts';
 
 /**
  * CONTROLLED SUPERSEDE / REPROCESS.
@@ -32,6 +38,7 @@ const CORE = readFileSync(new URL('../lib/platform/microsoft-graph-ingest-core.t
 const MESSAGE_ORDER = readFileSync(new URL('../lib/platform/microsoft-message-order.ts', import.meta.url), 'utf8');
 const WORKER = readFileSync(new URL('../lib/platform/email-ingest.ts', import.meta.url), 'utf8');
 const SQL = readFileSync(new URL('../supabase/microsoft-graph-ingest.sql', import.meta.url), 'utf8');
+const TYPES = readFileSync(new URL('../lib/platform/types.ts', import.meta.url), 'utf8');
 const DETAIL_PANEL = readFileSync(
   new URL('../components/platform/docu/DocumentDetailPanel.tsx', import.meta.url),
   'utf8',
@@ -128,7 +135,10 @@ test('16. extraction completes before a single supersede column is written', () 
 test('17. a crash between the two writes is repaired on reclaim, before anything else runs', () => {
   assert.match(ADAPTER, /async function reclaimInterruptedSupersede/);
   // The test is "does a usable successor exist", not "is the link column set".
-  assert.match(ADAPTER, /const successor = rows\.find\(\(entry\) => entry\.supersedes_document_id === row\.id\)/);
+  assert.match(
+    ADAPTER,
+    /const sameSourceSuccessor = rows\.find\(\(entry\) => entry\.supersedes_document_id === row\.id\)/,
+  );
   assert.match(ADAPTER, /successor\.status === 'extracted' \|\| successor\.status === 'approved'/);
   // Park the unusable replacement first — that is what frees the index slot.
   const park = ADAPTER.indexOf('Could not park the abandoned replacement');
@@ -309,7 +319,7 @@ test('24. the bypass is a set-membership check, never a cleared list', () => {
 test('25. a repeated supersede for the same source and reason is a recorded no-op', () => {
   assert.match(ROUTE, /entry\.kind === 'supersede' &&\s*\n\s*entry\.outcome === 'superseded' &&/);
   assert.match(ROUTE, /entry\.target_source === targetSource &&\s*\n\s*entry\.reason === reason,/);
-  assert.match(ROUTE, /if \(active\?\.supersedes_document_id && alreadyDone\) \{/);
+  assert.match(ROUTE, /if \(\(active\?\.supersedes_document_id && alreadyDone\) \|\| \(!active && alreadyReconciled\)\) \{/);
   assert.match(ROUTE, /That source has already been superseded for this reason; nothing was changed\./);
   assert.match(ROUTE, /status: 409/);
 });
@@ -573,4 +583,270 @@ test('45. nothing on the reprocess path fetches a URL, and no Graph write exists
   assert.match(ROUTE, /fetchMicrosoftGraphMessage/);
   assert.match(ROUTE, /findMicrosoftGraphMessagesByInternetMessageId/);
   assert.match(ROUTE, /findMicrosoftGraphMessagesByConversationId/);
+});
+
+/* ── 46–56: supersede through a RECONCILED canonical document ─────────────── */
+
+/**
+ * THE FOUR SEASONS CASE. A supersede targeting 'email-body' on a message whose
+ * order lives in an html attachment: Wave B reconciles the body INTO the
+ * attachment's canonical order, so the body never files a document of its own
+ * and the old body document has no same-source successor to be replaced by.
+ */
+const FOUR_SEASONS_INGEST = '9a22091f-0000-4000-8000-000000000001';
+const OLD_BODY_DOCUMENT = '2feea9da-0000-4000-8000-000000000002';
+const HTML_ORDER_DOCUMENT = '1823e3fd-0000-4000-8000-000000000003';
+
+const RECONCILIATION_TARGET = readFileSync(
+  new URL('../lib/platform/supersede-reconciliation-target.ts', import.meta.url),
+  'utf8',
+);
+
+function orderEvidence(overrides: Partial<MessageOrderEvidence> = {}): MessageOrderEvidence {
+  return {
+    primary_source: 'attachment',
+    body_source_part_id: 'email-body',
+    attachment_source_ids: ['html-1'],
+    fields: {},
+    lines: [],
+    conflicts: [],
+    requires_review: false,
+    multiple_order_sources: false,
+    ...overrides,
+  };
+}
+
+/** The html attachment's canonical order, AFTER the body reconciled into it. */
+function reconciledCandidate(overrides: Partial<SupersedeCandidateRow> = {}): SupersedeCandidateRow {
+  return {
+    id: HTML_ORDER_DOCUMENT,
+    email_ingest_id: FOUR_SEASONS_INGEST,
+    source_attachment_id: 'html-1',
+    status: 'extracted',
+    superseded_at: null,
+    supersedes_document_id: null,
+    extracted_data: { message_order_evidence: orderEvidence({ primary_source: 'combined' }) },
+    ...overrides,
+  };
+}
+
+function decide(
+  overrides: Partial<Parameters<typeof selectReconciliationSupersedeTarget>[0]> = {},
+) {
+  return selectReconciliationSupersedeTarget({
+    targetSource: 'email-body',
+    emailIngestId: FOUR_SEASONS_INGEST,
+    oldDocumentId: OLD_BODY_DOCUMENT,
+    reconciledDocumentId: HTML_ORDER_DOCUMENT,
+    candidates: [reconciledCandidate()],
+    ...overrides,
+  });
+}
+
+/** A message whose body carries the order AND which has an html attachment. */
+const reconcilingMessage = message({
+  hasAttachments: true,
+  subject: 'Order for Tuesday',
+  body: { contentType: 'text', content: 'Please deliver 6 kg carrots and 2 boxes tomatoes. PO 4471' },
+  bodyPreview: 'Please deliver 6 kg carrots',
+});
+
+test('46. the body reconciles into the attachment order, and the core reports which document', async () => {
+  let bodyDocuments = 0;
+  const result = await ingestMicrosoftGraphMessage(
+    {
+      expectedMessageId: MESSAGE_ID,
+      // Both sources are already filed — this is a controlled reprocess of one.
+      processedAttachmentIds: ['html-1', 'email-body'],
+      documentsCreated: 2,
+      existingOrderDocuments: [{ documentId: HTML_ORDER_DOCUMENT, attachmentId: 'html-1' }],
+      reprocessSources: ['email-body'],
+    },
+    dependencies({
+      fetchMessage: async () => reconcilingMessage,
+      ingestBodyOrder: async () => {
+        bodyDocuments += 1;
+        return { ok: true, documentId: 'body-document-2', documentType: 'order' };
+      },
+    }),
+  );
+  assert.equal(bodyDocuments, 0, 'the body files no document of its own');
+  assert.deepEqual(result.reconciledSourceDocumentIds, { 'email-body': HTML_ORDER_DOCUMENT });
+  // NO THIRD DOCUMENT: the count is exactly what it was.
+  assert.equal(result.documentsCreated, 2);
+  assert.deepEqual([...result.processedAttachmentIds].sort(), ['email-body', 'html-1']);
+});
+
+test('47. a body that files its OWN document reports no reconciliation at all', async () => {
+  const result = await ingestMicrosoftGraphMessage(
+    {
+      expectedMessageId: MESSAGE_ID,
+      processedAttachmentIds: ['email-body'],
+      documentsCreated: 1,
+      reprocessSources: ['email-body'],
+    },
+    dependencies({
+      fetchMessage: async () => message({
+        hasAttachments: false,
+        subject: 'Order for Tuesday',
+        body: { contentType: 'text', content: 'Please deliver 6 kg carrots and 2 boxes tomatoes. PO 4471' },
+        bodyPreview: 'Please deliver 6 kg carrots',
+      }),
+      listAttachments: async () => [],
+    }),
+  );
+  // The direct-successor lane is the one that ran; nothing was absorbed.
+  assert.deepEqual(result.reconciledSourceDocumentIds, {});
+});
+
+test('48. the reconciled document becomes the supersede target under all five conditions', () => {
+  assert.deepEqual(decide(), { outcome: 'reconciled', documentId: HTML_ORDER_DOCUMENT });
+});
+
+test('49. the replacement must EXPLICITLY carry the targeted source, or there is none', () => {
+  // An attachment-only reading is not evidence that the body was absorbed.
+  assert.deepEqual(
+    decide({ candidates: [reconciledCandidate({ extracted_data: { message_order_evidence: orderEvidence() } })] }),
+    {
+      outcome: 'no_replacement',
+      why: 'No active document on this email records the targeted source as contributing evidence.',
+    },
+  );
+  // Neither is a missing evidence object, or a missing extraction entirely.
+  for (const extracted of [{ message_order_evidence: null }, null]) {
+    assert.equal(decide({ candidates: [reconciledCandidate({ extracted_data: extracted })] }).outcome, 'no_replacement');
+  }
+  // `body_source_part_id` is the constant 'email-body' on EVERY evidence object
+  // ever written, so it can never be the marker.
+  assert.equal(carriesTargetedSourceProvenance(orderEvidence(), 'email-body'), false);
+  assert.equal(carriesTargetedSourceProvenance(orderEvidence({ primary_source: 'combined' }), 'email-body'), true);
+  assert.equal(carriesTargetedSourceProvenance(orderEvidence({ primary_source: 'email_body' }), 'email-body'), false);
+  // An attachment target is carried by the id list, not by primary_source.
+  assert.equal(carriesTargetedSourceProvenance(orderEvidence({ primary_source: 'combined' }), 'html-1'), true);
+  assert.equal(carriesTargetedSourceProvenance(orderEvidence(), 'html-9'), false);
+  assert.equal(carriesTargetedSourceProvenance(null, 'email-body'), false);
+});
+
+test('50. two plausible candidates are a fail-closed refusal with its own outcome', () => {
+  const second = reconciledCandidate({ id: 'doc-second-order', source_attachment_id: 'html-2' });
+  const decision = decide({ candidates: [reconciledCandidate(), second] });
+  assert.equal(decision.outcome, 'ambiguous_replacement');
+  assert.deepEqual(
+    decision.outcome === 'ambiguous_replacement' ? decision.candidateIds : [],
+    [HTML_ORDER_DOCUMENT, 'doc-second-order'],
+  );
+  // And it is NOT the reconciled outcome, so the old document is never archived.
+  assert.notEqual(decision.outcome, 'reconciled');
+});
+
+test('51. a candidate from another email ingest is rejected', () => {
+  assert.equal(
+    decide({ candidates: [reconciledCandidate({ email_ingest_id: 'some-other-ingest' })] }).outcome,
+    'no_replacement',
+  );
+  // Including when the id is simply absent.
+  assert.equal(
+    decide({ candidates: [reconciledCandidate({ email_ingest_id: null })] }).outcome,
+    'no_replacement',
+  );
+});
+
+test('52. without THIS run\'s reconciliation, nothing is superseded — no blind discovery', () => {
+  assert.deepEqual(decide({ reconciledDocumentId: null }), {
+    outcome: 'no_replacement',
+    why: 'The targeted source was not reconciled into another document in this run.',
+  });
+  // A perfect-looking candidate that is not the one the run reconciled into is
+  // still refused: the conditions verify the core's answer, they do not search.
+  assert.deepEqual(decide({ reconciledDocumentId: 'doc-some-other-order' }), {
+    outcome: 'no_replacement',
+    why: 'The document carrying the targeted source is not the one this run reconciled into.',
+  });
+});
+
+test('53. the old document, an archived one, an unusable one and the direct successor are never chosen', () => {
+  // The document being replaced can never replace itself.
+  assert.equal(decide({ candidates: [reconciledCandidate({ id: OLD_BODY_DOCUMENT })] }).outcome, 'no_replacement');
+  // An archived or not-yet-reviewable document is not a replacement.
+  assert.equal(decide({ candidates: [reconciledCandidate({ superseded_at: '2026-08-30T00:00:00Z' })] }).outcome, 'no_replacement');
+  for (const status of ['pending', 'error', 'ignored']) {
+    assert.equal(decide({ candidates: [reconciledCandidate({ status })] }).outcome, 'no_replacement');
+  }
+  assert.equal(decide({ candidates: [reconciledCandidate({ status: 'approved' })] }).outcome, 'reconciled');
+  // A document of the TARGETED source itself belongs to the direct-successor
+  // path (Belair), which this fallback never reaches into.
+  assert.equal(
+    decide({ candidates: [reconciledCandidate({ source_attachment_id: 'email-body' })] }).outcome,
+    'no_replacement',
+  );
+  // And a document that already records a predecessor keeps it.
+  assert.deepEqual(decide({ candidates: [reconciledCandidate({ supersedes_document_id: 'doc-earlier' })] }), {
+    outcome: 'no_replacement',
+    why: 'The reconciled document already records a superseded predecessor.',
+  });
+});
+
+test('54. the fallback runs only when the direct successor did not, and creates NO document', () => {
+  // The direct-successor path is untouched: the fallback is gated behind it.
+  assert.match(
+    ADAPTER,
+    /if \(supersedeTarget && !supersedeNewDocumentId && supersedeOldDocumentId\) \{/,
+  );
+  // The run's own answer is threaded through; there is no re-query for it.
+  assert.match(ADAPTER, /reconciledDocumentId: result\.reconciledSourceDocumentIds\[supersedeTarget\] \?\? null,/);
+  assert.match(CORE, /reconciledSourceDocumentIds\['email-body'\] = bodyResult\.documentId;/);
+  // NEVER A THIRD DOCUMENT: the fallback only ever updates supersede columns.
+  const fallback = ADAPTER.slice(
+    ADAPTER.indexOf('async function supersedeThroughReconciledDocument'),
+    ADAPTER.indexOf('Persist the provider event before acknowledging Graph'),
+  );
+  assert.ok(fallback.length > 500, 'the fallback was found');
+  assert.doesNotMatch(fallback, /\.insert\(|ingestDocument|ingestBodyOrder|ingestHtmlAttachmentOrder/);
+  assert.doesNotMatch(fallback, /\.delete\(/);
+  // Both rows already exist; the whole operation is the two links between them.
+  assert.match(fallback, /\.update\(\{ supersedes_document_id: input\.oldDocumentId \}\)/);
+  assert.match(fallback, /superseded_by_document_id: decision\.documentId,/);
+});
+
+test('55. the two writes are ordered link-first, guarded, and compensated', () => {
+  const fallback = ADAPTER.slice(
+    ADAPTER.indexOf('async function supersedeThroughReconciledDocument'),
+    ADAPTER.indexOf('Persist the provider event before acknowledging Graph'),
+  );
+  const link = fallback.indexOf('.update({ supersedes_document_id: input.oldDocumentId })');
+  const archive = fallback.indexOf('superseded_by_document_id: decision.documentId,');
+  const compensate = fallback.indexOf('.update({ supersedes_document_id: null })');
+  assert.ok(link > 0 && archive > link, 'the successor link is written before the old row is archived');
+  assert.ok(compensate > archive, 'and undone if the archive write does not land');
+  // The candidate read and both writes are guarded on the ACTIVE row, so a
+  // racing worker wins instead of being overwritten.
+  assert.equal(fallback.split(".is('superseded_at', null)").length - 1, 3);
+  assert.match(fallback, /\.is\('supersedes_document_id', null\)/);
+  assert.match(fallback, /\.eq\('supersedes_document_id', input\.oldDocumentId\)/);
+  // The compensation restores the state this feature protects: an ACTIVE old
+  // document, never an archived one with no successor.
+  assert.match(fallback, /COMPENSATION\. The old document was never archived/);
+  // A completed cross-source supersede is then permanent — the reclaim
+  // compensator recognises the replacement through the archived row's own link.
+  assert.match(ADAPTER, /const successor = sameSourceSuccessor \?\? \(await reconciledSuccessor\(row\)\);/);
+  assert.match(ADAPTER, /successor && successor\.supersedes_document_id === row\.id \? successor : null/);
+  assert.match(ADAPTER, /A SUCCESSOR IS NOT ALWAYS A ROW OF THE SAME SOURCE/);
+  // And only a same-source replacement is ever parked.
+  assert.match(ADAPTER, /if \(sameSourceSuccessor && sameSourceSuccessor\.superseded_at === null\) \{/);
+});
+
+test('56. the audit records the new outcomes with both ids, and the repeat is refused', () => {
+  assert.match(ADAPTER, /let supersedeOutcome: SupersedeOutcome = supersedeNewDocumentId \? 'superseded' : 'no_replacement';/);
+  assert.match(ADAPTER, /new_document_id: supersedeReplacementId,/);
+  assert.match(ADAPTER, /outcome: supersedeOutcome,/);
+  assert.match(TYPES, /\| 'superseded_via_reconciliation'/);
+  assert.match(TYPES, /\| 'ambiguous_replacement'/);
+  // A supersede that succeeded through a reconciled document leaves the targeted
+  // source with no active document of its own, so the repeat is refused on the
+  // completed audit entry instead of on the active copy.
+  assert.match(ROUTE, /entry\.outcome === 'superseded_via_reconciliation' &&/);
+  assert.match(ROUTE, /\(!active && alreadyReconciled\)/);
+  assert.match(ROUTE, /That source has already been superseded for this reason; nothing was changed\./);
+  // The decision module itself reaches nothing: no client, no clock, no I/O.
+  assert.doesNotMatch(RECONCILIATION_TARGET, /supabase|fetch\(|Date\.now|new Date\(/);
 });

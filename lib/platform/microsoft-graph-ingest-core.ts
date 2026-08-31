@@ -152,6 +152,20 @@ export interface MicrosoftGraphIngestResult {
   actionableUnsupportedAttachments: number;
   attachmentDiagnostics: MicrosoftGraphAttachmentDiagnostic[];
   errors: string[];
+  /**
+   * Source parts that were ABSORBED into an existing canonical order document
+   * instead of filing one of their own, mapped to the id of the document they
+   * were reconciled into. Empty on every run where that did not happen.
+   *
+   * This exists because the supersede completion in the adapter cannot
+   * otherwise know it. When a supersede targets 'email-body' on a message whose
+   * attachment already carries the order — the Four Seasons case — Wave B
+   * updates the attachment's document and no body document is ever created, so
+   * "which document replaces the old one" is a question only this loop can
+   * answer. Reported, never inferred downstream: a query run afterwards could
+   * not tell this run's reconciliation from one that happened a month ago.
+   */
+  reconciledSourceDocumentIds: Record<string, string>;
 }
 
 function boundedSignal(value: string | null | undefined, max: number): string {
@@ -649,6 +663,7 @@ export async function ingestMicrosoftGraphMessage(
   const orderDocuments = [...(input.existingOrderDocuments ?? [])];
   let documentsCreated = input.documentsCreated;
   const errors: string[] = [...(input.existingErrors ?? [])];
+  const reconciledSourceDocumentIds: Record<string, string> = {};
 
   for (const attachment of usable) {
     // THE TARGETED BYPASS. Every source this email has already filed stays
@@ -766,6 +781,12 @@ export async function ingestMicrosoftGraphMessage(
         : await dependencies.ingestBodyOrder({ message });
       if (bodyResult.ok && bodyResult.documentId) {
         if (distinctOrderDocuments.length === 0 && !replacingBody) documentsCreated += 1;
+        // THE ABSORPTION IS RECORDED HERE OR NOWHERE. The RECONCILE branch
+        // updates a document belonging to a different source part; the
+        // body-order branch below files the body's own. Only the first is a
+        // reconciliation, so only the first is reported — and the id reported
+        // is the one the sink says it wrote, not the one it was asked to write.
+        if (distinctOrderDocuments.length > 0) reconciledSourceDocumentIds['email-body'] = bodyResult.documentId;
         alreadyDone.add('email-body');
         await dependencies.recordAttachmentProcessed({
           attachmentId: 'email-body',
@@ -802,5 +823,6 @@ export async function ingestMicrosoftGraphMessage(
     actionableUnsupportedAttachments: unsupported.filter((entry) => entry.actionable).length,
     attachmentDiagnostics,
     errors,
+    reconciledSourceDocumentIds,
   };
 }

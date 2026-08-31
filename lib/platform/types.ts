@@ -663,7 +663,24 @@ export type EmailIngestReprocessLogEntry =
       target_source: string;
       old_document_id: string | null;
       new_document_id: string | null;
-      outcome: 'superseded' | 'no_replacement' | 'failed';
+      /**
+       * 'superseded_via_reconciliation' is the Four Seasons outcome: the
+       * targeted source filed no document of its own because Wave B absorbed it
+       * into another source's canonical order, and THAT document became the
+       * replacement. `new_document_id` then names a document of a different
+       * source — which is exactly why the outcome is named apart from a plain
+       * 'superseded' rather than folded into it.
+       *
+       * 'ambiguous_replacement' is a refusal, not a failure: more than one
+       * active document recorded the targeted source, so none was chosen and
+       * the old document stayed active.
+       */
+      outcome:
+        | 'superseded'
+        | 'superseded_via_reconciliation'
+        | 'no_replacement'
+        | 'ambiguous_replacement'
+        | 'failed';
       /** Bounded and redacted. Never a raw body, token or secret. */
       error?: string | null;
     }
