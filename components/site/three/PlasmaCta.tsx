@@ -22,7 +22,7 @@
 import dynamic from "next/dynamic";
 import { track } from "@/lib/analytics";
 import { useStaticMotion } from "@/components/site/motion-preference";
-import { useNearViewport, useWebGLAvailable } from "./lifecycle";
+import { useAfterIdle, useNearViewport, useWebGLAvailable } from "./lifecycle";
 
 const PlasmaButton = dynamic(
   () => import("@/src/shaders/neuform-isolated/NeuformIsolatedEffects").then((m) => m.PlasmaButton),
@@ -33,13 +33,14 @@ export function PlasmaCta() {
   const staticMotion = useStaticMotion();
   const webgl = useWebGLAvailable();
   const { ref, near } = useNearViewport<HTMLDivElement>("400px");
+  const idle = useAfterIdle();
 
-  const live = !staticMotion && webgl === true && near;
+  const live = !staticMotion && webgl === true && near && idle;
 
   return (
     <div ref={ref} className="vy-plasma">
       {live ? (
-        <div className="shader-frame vy-plasma-frame" aria-hidden="true">
+        <div className="shader-frame vy-plasma-frame" aria-hidden="true" inert>
           <PlasmaButton mode="dark" hue={0} saturation={1.0} brightness={1.0} />
         </div>
       ) : null}

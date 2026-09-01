@@ -1757,3 +1757,15 @@ textarea.vy-field { height: auto; min-height: 120px; padding: 14px 16px; resize:
   position: absolute;
   inset: 0;
 }
+
+/* On narrow viewports the hero copy spans the full flow — deepen the ground
+   behind it so every line stays readable. */
+@media (max-width: 719px) {
+  .vy-hero-scrim {
+    background:
+      linear-gradient(180deg, rgba(0, 0, 0, 0.72) 0%, rgba(0, 0, 0, 0.55) 46%, rgba(0, 0, 0, 0.28) 70%, rgba(0, 0, 0, 0.65) 100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vy-hero-cue { display: none; }
+}

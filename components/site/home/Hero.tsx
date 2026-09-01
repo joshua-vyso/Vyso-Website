@@ -75,7 +75,7 @@ export function Hero() {
           </div>
         </div>
         <p
-          className="vy-eyebrow pointer-events-none absolute bottom-7 left-1/2 hidden -translate-x-1/2 text-ondark-3 md:block"
+          className="vy-hero-cue vy-eyebrow pointer-events-none absolute bottom-7 left-1/2 hidden -translate-x-1/2 text-ondark-3 md:block"
           aria-hidden="true"
         >
           Scroll

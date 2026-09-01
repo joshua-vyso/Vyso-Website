@@ -79,7 +79,7 @@ function Stage({ step }: { step: StepId }) {
                 <tr
                   key={line.item}
                   className={`border-t border-line-2/60 transition-colors duration-300 ${
-                    reached("extract") ? "text-ink" : "text-ink-3/50 blur-[1.5px]"
+                    reached("extract") ? "text-ink" : "text-ink-3 blur-[1.5px]"
                   } ${flagged ? "bg-signal-tint/40" : ""}`}
                 >
                   <td className="py-2.5 pr-2">{line.item}</td>

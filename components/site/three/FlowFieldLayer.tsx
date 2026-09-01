@@ -18,6 +18,7 @@
 
 import dynamic from "next/dynamic";
 import { useStaticMotion } from "@/components/site/motion-preference";
+import { useMediaQuery } from "@/components/site/use-media-query";
 import { useNearViewport } from "./lifecycle";
 
 const FlowField = dynamic(
@@ -27,17 +28,20 @@ const FlowField = dynamic(
 
 export function FlowFieldLayer() {
   const staticMotion = useStaticMotion();
+  /* Wrapper-level configuration (supported props, source untouched): phones
+     get a thinner field — fewer particles to draw, same authored motion. */
+  const compact = useMediaQuery("(max-width: 719px)", false);
   const { ref, near } = useNearViewport<HTMLDivElement>("500px");
 
   return (
-    <div ref={ref} className="vy-flowfield" aria-hidden="true">
+    <div ref={ref} className="vy-flowfield" aria-hidden="true" inert>
       {!staticMotion && near ? (
         <div className="shader-frame absolute inset-0 vy-flowfield-frame">
           <FlowField
             speed={1.0}
             size={1.0}
             length={1.0}
-            density={1.0}
+            density={compact ? 0.55 : 1.0}
             opacity={1.0}
             hue={0}
             saturation={1.0}

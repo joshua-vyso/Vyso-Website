@@ -21,7 +21,7 @@ const scrolls = opt("scrolls", "0").split(",").map(Number);
 const browser = await puppeteer.launch({
   executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   headless: "new",
-  args: ["--hide-scrollbars", "--mute-audio"],
+  args: ["--hide-scrollbars", "--mute-audio", ...(flag("nogl") ? ["--disable-webgl", "--disable-webgl2"] : [])],
 });
 const page = await browser.newPage();
 await page.setViewport({ width, height, isMobile: flag("mobile"), hasTouch: flag("mobile"), deviceScaleFactor: flag("mobile") ? 2 : 1 });

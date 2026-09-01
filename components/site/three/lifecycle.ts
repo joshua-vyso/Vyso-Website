@@ -68,3 +68,32 @@ const noSubscription = () => () => {};
 export function useWebGLAvailable(): boolean | null {
   return useSyncExternalStore(noSubscription, probeWebGL, () => null);
 }
+
+/* Post-idle gate for hero-adjacent effects: the static ground paints with the
+   first frame, and the sandboxed renderer (whose srcDoc pulls its own script
+   dependencies) only mounts once the main thread has gone quiet — so the
+   effect never competes with LCP or hydration on a slow connection. */
+export function useAfterIdle(maxWaitMs = 1600): boolean {
+  const [idle, setIdle] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const arm = () => {
+      if (!cancelled) setIdle(true);
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      const handle = window.requestIdleCallback(arm, { timeout: maxWaitMs });
+      return () => {
+        cancelled = true;
+        window.cancelIdleCallback(handle);
+      };
+    }
+    const timer = window.setTimeout(arm, maxWaitMs);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [maxWaitMs]);
+
+  return idle;
+}

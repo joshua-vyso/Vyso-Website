@@ -15,7 +15,7 @@
 
 import dynamic from "next/dynamic";
 import { useStaticMotion } from "@/components/site/motion-preference";
-import { useNearViewport, useWebGLAvailable } from "./lifecycle";
+import { useAfterIdle, useNearViewport, useWebGLAvailable } from "./lifecycle";
 
 const HalftoneFlow = dynamic(
   () => import("@/src/shaders/neuform-isolated/NeuformCraftEffects").then((m) => m.HalftoneFlow),
@@ -58,12 +58,13 @@ export function HalftoneField() {
   const staticMotion = useStaticMotion();
   const webgl = useWebGLAvailable();
   const { ref, near } = useNearViewport<HTMLDivElement>("900px");
+  const idle = useAfterIdle();
 
-  const live = !staticMotion && webgl === true && near;
+  const live = !staticMotion && webgl === true && near && idle;
   const fallback = staticMotion || webgl === false;
 
   return (
-    <div ref={ref} className="vy-hero-field" aria-hidden="true">
+    <div ref={ref} className="vy-hero-field" aria-hidden="true" inert>
       <StaticGround poster={fallback} />
       {live ? (
         <div className="shader-frame absolute inset-0">

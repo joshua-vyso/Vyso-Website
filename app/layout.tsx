@@ -14,6 +14,9 @@ const barlowCondensed = Barlow_Condensed({
   subsets:  ["latin"],
   weight:   ["400", "500", "600", "700", "900"],
   display:  "swap",
+  // Platform/login only — keep the files out of the marketing pages' critical
+  // path (no preload links; the platform takes `swap` on first visit).
+  preload:  false,
 });
 
 /* ── Platform font: Inter (scoped to /login and /app via --font-inter) ─────── */
@@ -22,6 +25,7 @@ const inter = Inter({
   subsets:  ["latin"],
   weight:   ["400", "500", "600", "700"],
   display:  "swap",
+  preload:  false, // platform/login only — see Barlow note
 });
 
 /* ── OrderFlow font pair: Instrument Sans (UI) + Space Grotesk (numerals) ──── */
@@ -40,6 +44,7 @@ const spaceGrotesk = Space_Grotesk({
   subsets:  ["latin"],
   weight:   ["400", "500", "600"],
   display:  "swap",
+  preload:  false, // platform numerals only — see Barlow note
 });
 
 /* ── Finch marketing pair: STIX Two Text (editorial headings) + IBM Plex Mono ──
@@ -51,6 +56,7 @@ const stixTwoText = STIX_Two_Text({
   weight:   ["400", "500"],
   style:    ["normal", "italic"],
   display:  "swap",
+  preload:  false, // serif accents only — swap-in is acceptable, LCP is not
 });
 
 const ibmPlexMono = IBM_Plex_Mono({
@@ -58,6 +64,7 @@ const ibmPlexMono = IBM_Plex_Mono({
   subsets:  ["latin"],
   weight:   ["400", "500"],
   display:  "swap",
+  preload:  false, // eyebrow labels only — same trade as STIX
 });
 
 /* Root metadata for the whole site. `title.template` means every page's own
