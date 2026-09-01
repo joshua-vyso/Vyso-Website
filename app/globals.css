@@ -1096,7 +1096,11 @@ body:has(.finch-site),
    predating this fix; it is left in place rather than unwound here (out of
    scope for this wave — .ai/plan_brief_chat_v2.md §2.7/W0). */
 html:has([data-platform-shell]),
-body:has([data-platform-shell]) {
+body:has([data-platform-shell]),
+/* …and the agency surface (`components/site/**`): its hero stage and the
+   homepage's pinned sequences are all `position: sticky`. */
+html:has(.vy-site),
+body:has(.vy-site) {
   overflow-x: clip;
   overflow-y: visible;
 }
@@ -1768,4 +1772,14 @@ textarea.vy-field { height: auto; min-height: 120px; padding: 14px 16px; resize:
 }
 @media (prefers-reduced-motion: reduce) {
   .vy-hero-cue { display: none; }
+}
+
+/* ── Dark homepage (2026-09) ─────────────────────────────────────────────────
+   The sheet that scrolls over the hero goes near-black; the locked hero and
+   reviews sections keep their own grounds. Warm near-black, not pure #000, so
+   the hero's true black still reads as a distinct cinematic layer. */
+.vy-home-dark { background: #0A0908; }
+.vy-sheet-ink {
+  background: #0A0908;
+  box-shadow: 0 -18px 60px rgba(0, 0, 0, 0.6);
 }

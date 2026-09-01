@@ -111,7 +111,7 @@ export default function AboutPage() {
           </ol>
           <div className="mt-12">
             <Link href="/join" className="vy-btn vy-btn-primary">
-              Join the waitlist
+              Book a free audit
             </Link>
           </div>
         </div>

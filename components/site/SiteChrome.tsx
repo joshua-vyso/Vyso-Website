@@ -36,7 +36,7 @@ const FOOTER_COLUMNS: { title: string; links: [string, string][] }[] = [
   {
     title: "Company",
     links: [
-      ["Join the waitlist", "/join"],
+      ["Book a free audit", "/join"],
       ["Log in", "/login"],
     ],
   },

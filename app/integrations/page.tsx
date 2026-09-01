@@ -113,7 +113,7 @@ export default function IntegrationsPage() {
             begins.
           </p>
           <Link href="/join" className="vy-btn vy-btn-system mt-7 inline-flex">
-            Join the waitlist
+            Book a free audit
           </Link>
         </div>
       </section>

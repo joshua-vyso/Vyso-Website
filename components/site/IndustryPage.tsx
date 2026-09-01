@@ -95,7 +95,7 @@ export function IndustryPage({ industry }: { industry: IndustryContent }) {
               What changes
             </h2>
             <Link href="/join" className="vy-btn vy-btn-primary mt-8 inline-flex">
-              Join the waitlist
+              Book a free audit
             </Link>
           </div>
           <ul className="grid content-start gap-4 sm:grid-cols-2">

@@ -15,7 +15,7 @@
 import Link from "next/link";
 import { useEffect, useRef } from "react";
 import { HalftoneField } from "@/components/site/three/HalftoneField";
-import { PlasmaCta } from "@/components/site/three/PlasmaCta";
+import { track } from "@/lib/analytics";
 import { useStaticMotion } from "@/components/site/motion-preference";
 
 export function Hero() {
@@ -56,8 +56,8 @@ export function Hero() {
             Vyso · AI automation agency · Johannesburg
           </p>
           <h1 className="mt-6 text-balance text-[clamp(2.6rem,6.2vw,4.9rem)] font-semibold leading-[1.02] tracking-[-0.02em] text-ondark">
-            AI automation for the work that{" "}
-            <em className="vy-serif font-normal italic text-signal-ondark">slows your business down.</em>
+            Automate the work that keeps you{" "}
+            <em className="vy-serif font-normal italic text-signal-ondark">losing time and money.</em>
           </h1>
           <p className="mt-7 max-w-[560px] text-pretty text-lg leading-relaxed text-ondark-2">
             We design, build and run custom AI workflows around the tools you already use —
@@ -65,7 +65,13 @@ export function Hero() {
             morning. Your team stays in charge of every decision that matters.
           </p>
           <div className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-4">
-            <PlasmaCta />
+            <Link
+              href="/join"
+              className="vy-btn vy-btn-primary"
+              onClick={() => track("join_waitlist_click", { source: "hero_plasma" })}
+            >
+              Book a free audit
+            </Link>
             <Link
               href="/automations"
               className="text-sm font-medium text-ondark-2 underline decoration-ondark-3 underline-offset-4 transition-colors hover:text-ondark"

@@ -42,7 +42,7 @@ export function MobileNav() {
             className="rounded-full bg-signal-cta px-4 py-2 text-sm font-semibold text-[#FFF7F0]"
             onClick={() => track("join_waitlist_click", { source: "mobile_nav" })}
           >
-            Join waitlist
+            Book a free audit
           </Link>
           <button
             type="button"
@@ -88,7 +88,7 @@ export function MobileNav() {
               className="vy-btn vy-btn-primary w-full"
               onClick={() => track("join_waitlist_click", { source: "mobile_nav" })}
             >
-              Join the waitlist
+              Book a free audit
             </Link>
           </div>
         </div>

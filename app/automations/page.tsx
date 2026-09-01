@@ -140,7 +140,7 @@ export default function AutomationsPage() {
             </p>
             <p>
               <Link href="/join" className="font-medium text-signal-deep underline decoration-signal-tint underline-offset-4 hover:decoration-signal-deep">
-                Join the waitlist
+                Book a free audit
               </Link>{" "}
               and tell us which of these jobs is eating your team&rsquo;s week.
             </p>

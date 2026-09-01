@@ -29,7 +29,7 @@ export default function NotFound() {
               ["Home", "/"],
               ["What we automate", "/automations"],
               ["Industries", "/industries"],
-              ["Join the waitlist", "/join"],
+              ["Book a free audit", "/join"],
             ] as const
           ).map(([label, href]) => (
             <li key={href}>

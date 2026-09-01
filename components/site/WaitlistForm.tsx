@@ -294,7 +294,7 @@ export function WaitlistForm() {
       </p>
 
       <button type="submit" className="vy-btn vy-btn-primary w-full sm:w-auto" disabled={status === "submitting"}>
-        {status === "submitting" ? "Sending…" : "Join the waitlist"}
+        {status === "submitting" ? "Sending…" : "Book a free audit"}
       </button>
     </form>
   );

@@ -150,7 +150,7 @@ export function DockNav() {
               href="/join"
               onClick={() => track("join_waitlist_click", { source: "nav" })}
             >
-              <span>Join waitlist</span>
+              <span>Book a free audit</span>
               <svg viewBox="0 0 16 16" aria-hidden="true">
                 <path d="M3.2 8h9.1M8.6 4.3 12.4 8l-3.8 3.7" />
               </svg>
