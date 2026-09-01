@@ -33,4 +33,4 @@ Verification script: scratchpad `threeui/extract_verify.py` (session artifact; h
 ThreeUI Terms of Use ("Commercial use and licenses" → "Community materials"): *"Community package code is available under the license included with that code, currently the MIT License. Any item-specific attribution or third-party notice remains required."* The four bundles were served from the unauthenticated community `/source-code/` registry (the Pro API `/api/pro-components` requires auth and was **not** used). → The project may use, copy and ship these sources commercially under MIT. Third-party notices inside the registered files are preserved verbatim (files are unmodified by policy).
 
 ## Runtime arrangement (r128 / r134)
-Documented after integration in `.ai/threeui_runtime_arrangement.md`.
+Documented in `.ai/handoff_agency_redesign_2026.md` § "r128/r134 runtime arrangement".
