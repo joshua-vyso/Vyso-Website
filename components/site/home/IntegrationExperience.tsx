@@ -24,6 +24,8 @@ import { useStaticMotion } from "@/components/site/motion-preference";
 import { useMediaQuery } from "@/components/site/use-media-query";
 import { useStickyProgress } from "./scroll";
 
+import { TestimonialsHead } from "./Sections";
+
 const GatewayFlow = dynamic(
   () => import("@/src/shaders/neuform-isolated/NeuformBatchEffects").then((m) => m.GatewayFlow),
   { ssr: false },
@@ -78,62 +80,79 @@ function WheelTile({ item, distance }: { item: (typeof WHEEL)[number]; distance:
 /* ── Finale: exact-source Gateway Flow + environmental type ───────────────── */
 
 function FinaleStage({ progress, compact }: { progress: number; compact: boolean }) {
-  const enter = easeOut(span(progress, 0.5, 0.68));
-  const resolve = span(progress, 0.74, 0.9);
-  const mounted = progress > 0.38;
+  const enter = easeOut(span(progress, 0.42, 0.58));
+  const resolve = span(progress, 0.62, 0.76);
+  /* Extended-pin handoff: after a short hold, the whole brain composition
+     shrinks and lifts while the reviews header rises into the lower half —
+     the stage then releases straight into the (headerless) card grid. */
+  const handoff = easeOut(span(progress, 0.82, 0.97));
+  const mounted = progress > 0.32;
 
   return (
     <>
       <div
         className="absolute inset-0"
-        aria-hidden="true"
-        inert
-        style={{ opacity: enter }}
+        style={{
+          transform: `translateY(${-handoff * 27}svh) scale(${1 - handoff * 0.5})`,
+          opacity: 1 - handoff * 0.25,
+        }}
       >
-        {mounted ? (
-          <div className="shader-frame absolute inset-0 vy-gateway-frame">
-            <GatewayFlow
-              variant="gateway-flow"
-              mode="dark"
-              speed={1.0}
-              size={1.0}
-              length={1.0}
-              density={compact ? 0.55 : 1.0}
-              opacity={1.0}
-              hue={0}
-              saturation={1.0}
-              brightness={1.0}
-            />
-          </div>
-        ) : null}
-        {/* The Vyso node at the convergence point. */}
-        <span
-          className="vy-brain-node"
-          style={{ opacity: resolve }}
-        />
+        <div className="absolute inset-0" aria-hidden="true" inert style={{ opacity: enter }}>
+          {mounted ? (
+            <div className="shader-frame absolute inset-0 vy-gateway-frame">
+              <GatewayFlow
+                variant="gateway-flow"
+                mode="dark"
+                speed={1.0}
+                size={1.0}
+                length={1.0}
+                density={compact ? 0.55 : 1.0}
+                opacity={1.0}
+                hue={0}
+                saturation={1.0}
+                brightness={1.0}
+              />
+            </div>
+          ) : null}
+          {/* The Vyso node at the convergence point. */}
+          <span className="vy-brain-node" style={{ opacity: resolve }} />
+        </div>
+        <p
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 z-10 text-center text-[clamp(1.8rem,4.6vw,3.4rem)] font-semibold leading-none tracking-[0.14em] text-ondark"
+          style={{
+            bottom: "calc(50% + 74px)",
+            opacity: resolve * 0.95,
+            transform: `translateY(${(1 - resolve) * 12}px)`,
+          }}
+        >
+          ONE
+        </p>
+        <p
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 z-10 text-center text-[clamp(1.8rem,4.6vw,3.4rem)] font-semibold leading-none tracking-[0.14em] text-ondark"
+          style={{
+            top: "calc(50% + 74px)",
+            opacity: resolve * 0.95,
+            transform: `translateY(${(1 - resolve) * -12}px)`,
+          }}
+        >
+          BRAIN
+        </p>
       </div>
-      <p
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 z-10 text-center text-[clamp(1.8rem,4.6vw,3.4rem)] font-semibold leading-none tracking-[0.14em] text-ondark"
+      {/* The reviews header, rising to meet the release point. */}
+      <div
+        className="absolute inset-x-0 bottom-[7%] z-20 px-6"
         style={{
-          bottom: "calc(50% + 74px)",
-          opacity: resolve * 0.95,
-          transform: `translateY(${(1 - resolve) * 12}px)`,
+          opacity: handoff,
+          transform: `translateY(${(1 - handoff) * 44}px)`,
+          pointerEvents: handoff > 0.5 ? "auto" : "none",
         }}
       >
-        ONE
-      </p>
-      <p
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 z-10 text-center text-[clamp(1.8rem,4.6vw,3.4rem)] font-semibold leading-none tracking-[0.14em] text-ondark"
-        style={{
-          top: "calc(50% + 74px)",
-          opacity: resolve * 0.95,
-          transform: `translateY(${(1 - resolve) * -12}px)`,
-        }}
-      >
-        BRAIN
-      </p>
+        <div className="mx-auto max-w-[1200px]">
+          <TestimonialsHead />
+        </div>
+      </div>
       {/* The message, for readers and crawlers (the giant words are decoration). */}
       <p className="sr-only">Thirty-plus integrations, coordinated by one Vyso brain.</p>
     </>
@@ -145,12 +164,12 @@ function FinaleStage({ progress, compact }: { progress: number; compact: boolean
 function PinnedExperience({ compact }: { compact: boolean }) {
   const { ref, progress } = useStickyProgress<HTMLDivElement>();
 
-  const introFade = 1 - span(progress, 0.04, 0.12);
-  const wheelIndex = span(progress, 0.06, 0.5) * (WHEEL.length - 1);
-  const wheelFade = 1 - easeOut(span(progress, 0.52, 0.66));
+  const introFade = 1 - span(progress, 0.03, 0.1);
+  const wheelIndex = span(progress, 0.05, 0.42) * (WHEEL.length - 1);
+  const wheelFade = 1 - easeOut(span(progress, 0.44, 0.56));
 
   return (
-    <div ref={ref} className={compact ? "relative h-[320vh]" : "relative h-[420vh]"}>
+    <div ref={ref} className={compact ? "relative h-[420vh]" : "relative h-[560vh]"}>
       <div className="sticky top-0 h-svh overflow-hidden bg-[#050403]">
         <FinaleStage progress={progress} compact={compact} />
 
@@ -235,6 +254,11 @@ function StaticExperience() {
           BRAIN
         </p>
         <p className="sr-only">Thirty-plus integrations, coordinated by one Vyso brain.</p>
+      </div>
+      {/* The reviews header renders here in the static flow (the pinned
+          handoff carries it otherwise), so it exists exactly once. */}
+      <div className="mx-auto mt-20 max-w-[1200px]">
+        <TestimonialsHead />
       </div>
     </div>
   );

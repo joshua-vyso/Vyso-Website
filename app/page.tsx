@@ -33,7 +33,7 @@ export default function Home() {
           <OperationsSection />
           <AutomationScale />
           <IntegrationExperience />
-          <TestimonialsSection />
+          <TestimonialsSection withHeader={false} />
           <ClosingCta />
         </div>
       </main>

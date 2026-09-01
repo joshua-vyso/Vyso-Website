@@ -1766,7 +1766,12 @@ textarea.vy-field { height: auto; min-height: 120px; padding: 14px 16px; resize:
 
 /* Integration finale: the Gateway Flow frame fills its stage; the Vyso node
    glows at the convergence point above it. */
-.vy-gateway-frame { position: absolute; inset: 0; }
+.vy-gateway-frame {
+  position: absolute;
+  inset: 0;
+  -webkit-mask-image: radial-gradient(ellipse 72% 68% at 50% 50%, #000 55%, transparent 94%);
+  mask-image: radial-gradient(ellipse 72% 68% at 50% 50%, #000 55%, transparent 94%);
+}
 .vy-gateway-frame > iframe { width: 100%; height: 100%; }
 .vy-brain-node {
   position: absolute;

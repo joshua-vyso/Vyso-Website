@@ -38,7 +38,27 @@ const Wrap = ({ children, className = "" }: { children: React.ReactNode; classNa
   <div className={`mx-auto max-w-[1200px] px-6 ${className}`}>{children}</div>
 );
 
-/* ── 11. Testimonials (placeholders) over the Flow Field ───────────────────── */
+/* ── 11. Testimonials (placeholders) over the Flow Field ─────────────────────
+   The header is its own export so the homepage's integration finale can raise
+   it inside the pinned handoff (extended-pin merge, 2026-09); the grid itself
+   — cards, flow field, labels — is unchanged. Pages that want the classic
+   self-contained section keep the default `withHeader`. */
+
+export function TestimonialsHead() {
+  return (
+    <SectionHead
+      onDark
+      eyebrow="Client voices · drafts awaiting verification"
+      title={
+        <span id="testimonials-heading">
+          The kind of difference{" "}
+          <em className="vy-serif font-normal italic text-signal-ondark">clients describe.</em>
+        </span>
+      }
+      lead="These six voices are illustrative drafts, not verified endorsements — they show the shape of the feedback we build for. Real names, roles and businesses will replace them as clients go on record."
+    />
+  );
+}
 
 function PortraitPlaceholder({ name }: { name: string }) {
   /* Swappable portrait slot: when the six real photographs arrive they drop in
@@ -79,26 +99,16 @@ function TestimonialCard({ testimonial }: { testimonial: Testimonial }) {
   );
 }
 
-export function TestimonialsSection() {
+export function TestimonialsSection({ withHeader = true }: { withHeader?: boolean }) {
   return (
     <section
-      className="relative overflow-hidden bg-ink py-24 md:py-32"
+      className={`relative overflow-hidden bg-ink ${withHeader ? "py-24 md:py-32" : "pb-24 pt-14 md:pb-32"}`}
       aria-labelledby="testimonials-heading"
     >
       <FlowFieldLayer />
       <Wrap className="relative z-10">
-        <SectionHead
-          onDark
-          eyebrow="Client voices · drafts awaiting verification"
-          title={
-            <span id="testimonials-heading">
-              The kind of difference{" "}
-              <em className="vy-serif font-normal italic text-signal-ondark">clients describe.</em>
-            </span>
-          }
-          lead="These six voices are illustrative drafts, not verified endorsements — they show the shape of the feedback we build for. Real names, roles and businesses will replace them as clients go on record."
-        />
-        <ul className="mt-14 grid gap-5 md:grid-cols-2 lg:grid-cols-3" role="list">
+        {withHeader ? <TestimonialsHead /> : null}
+        <ul className={`grid gap-5 md:grid-cols-2 lg:grid-cols-3 ${withHeader ? "mt-14" : ""}`} role="list">
           {TESTIMONIAL_PLACEHOLDERS.map((testimonial, index) => (
             <Reveal as="li" key={testimonial.company + index} delay={(index % 3) * 80}>
               <TestimonialCard testimonial={testimonial} />
