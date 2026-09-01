@@ -1686,7 +1686,8 @@ textarea.vy-field { height: auto; min-height: 120px; padding: 14px 16px; resize:
 .vy-plasma-frame {
   width: min(420px, 88vw);
   height: 190px;
-  margin: -60px -40px;
+  margin: -64px -48px;
+  transform: scale(0.86);
   pointer-events: none;
   -webkit-mask-image: radial-gradient(ellipse 66% 62% at 50% 50%, #000 54%, transparent 84%);
   mask-image: radial-gradient(ellipse 66% 62% at 50% 50%, #000 54%, transparent 84%);
@@ -1696,10 +1697,10 @@ textarea.vy-field { height: auto; min-height: 120px; padding: 14px 16px; resize:
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 254px;
-  height: 74px;
+  width: 220px;
+  height: 64px;
   transform: translate(-50%, -50%);
-  border-radius: 18px;
+  border-radius: 16px;
 }
 .vy-plasma:has(.vy-plasma-link:hover) .vy-plasma-frame {
   filter: brightness(1.12);
@@ -1782,4 +1783,102 @@ textarea.vy-field { height: auto; min-height: 120px; padding: 14px 16px; resize:
     0 0 28px 10px rgba(255, 119, 39, 0.35),
     0 0 90px 40px rgba(189, 74, 14, 0.22);
   pointer-events: none;
+}
+
+/* ── Dock: signature gradient ring + scroll-collapse hamburger ────────────────
+   The orange→blue gradient is the site's long-standing pair (deployed as
+   --fn-grad: #FF7727 → #4B96DD). Drawn as a 1px ring on the SITE's composed
+   bar via a masked overlay — the authored atd-modern styles underneath are
+   untouched. */
+.vy-dockframe .atd-modern__bar::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 999px;
+  padding: 1px;
+  background: linear-gradient(90deg, rgba(255, 119, 39, 0.65), rgba(75, 150, 221, 0.65));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Collapse choreography: the bar folds toward the top-right into the burger;
+   scrolling up (or pressing the burger) unfolds it. Transform/opacity only. */
+.vy-dockframe .animated-top-dock-component.atd-modern {
+  transform-origin: calc(100% - clamp(16px, 3vw, 48px)) calc(clamp(16px, 2.6vw, 46px) + 24px);
+  transition:
+    opacity 0.4s var(--vy-ease),
+    transform 0.45s var(--vy-ease),
+    visibility 0s linear 0s;
+}
+.vy-dockframe[data-nav="collapsed"] .animated-top-dock-component.atd-modern {
+  opacity: 0;
+  transform: scale(0.42);
+  visibility: hidden;
+  transition:
+    opacity 0.32s var(--vy-ease),
+    transform 0.42s var(--vy-ease),
+    visibility 0s linear 0.42s;
+}
+
+.vy-navburger {
+  position: absolute;
+  top: clamp(16px, 2.6vw, 46px);
+  right: clamp(16px, 3vw, 48px);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(25, 27, 36, 0.92), rgba(12, 13, 18, 0.9)) padding-box,
+    linear-gradient(90deg, rgba(255, 119, 39, 0.65), rgba(75, 150, 221, 0.65)) border-box;
+  color: #E9EAF0;
+  box-shadow: 0 18px 40px -20px rgba(0, 0, 0, 0.9);
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: 0;
+  transform: scale(0.5);
+  visibility: hidden;
+  transition:
+    opacity 0.32s var(--vy-ease),
+    transform 0.42s var(--vy-ease),
+    visibility 0s linear 0.42s;
+}
+.vy-navburger svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+.vy-dockframe[data-nav="collapsed"] .vy-navburger {
+  opacity: 1;
+  transform: scale(1);
+  visibility: visible;
+  transition:
+    opacity 0.35s var(--vy-ease) 0.12s,
+    transform 0.45s var(--vy-ease) 0.12s,
+    visibility 0s linear 0s;
+}
+.vy-navburger:hover {
+  color: #fff;
+  box-shadow: 0 18px 44px -18px rgba(75, 150, 221, 0.45);
+}
+.vy-navburger:focus-visible {
+  outline: 2px solid var(--vy-focus-dark, #C9DEF7);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vy-dockframe .animated-top-dock-component.atd-modern,
+  .vy-navburger {
+    transition: none;
+  }
 }

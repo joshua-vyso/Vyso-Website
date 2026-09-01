@@ -23,7 +23,7 @@
    with no JS and no WebGL at all. Below 720px the site swaps to `MobileNav`. */
 
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { createTopDockController } from "@/src/shaders/animated-top-dock/topDockController";
 import { track } from "@/lib/analytics";
@@ -81,6 +81,33 @@ const NAV_LINKS: DockLink[] = [
 export function DockNav() {
   const dockRef = useRef<HTMLElement>(null);
   const pathname = usePathname();
+  /* Scroll-direction collapse: scrolling down folds the bar into a compact
+     hamburger at the top right; any upward scroll (or the hamburger itself)
+     unfolds it. Purely presentational on the SITE's wrapper — the registered
+     controller keeps running on the intact bar underneath. */
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    let lastY = window.scrollY;
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        const y = window.scrollY;
+        const delta = y - lastY;
+        if (Math.abs(delta) < 6) return;
+        if (delta > 0 && y > 180) setCollapsed(true);
+        else if (delta < 0 || y <= 180) setCollapsed(false);
+        lastY = y;
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
 
   useEffect(() => {
     const root = dockRef.current;
@@ -100,8 +127,24 @@ export function DockNav() {
   const onDark = pathname === "/";
 
   return (
-    <div className="vy-dockframe" data-ground={onDark ? "dark" : "paper"}>
-      <div className="animated-top-dock-component atd-modern">
+    <div
+      className="vy-dockframe"
+      data-ground={onDark ? "dark" : "paper"}
+      data-nav={collapsed ? "collapsed" : "expanded"}
+    >
+      <button
+        type="button"
+        className="vy-navburger"
+        aria-label="Show navigation"
+        aria-expanded={!collapsed}
+        onClick={() => setCollapsed(false)}
+        inert={!collapsed}
+      >
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3.5 6h13M3.5 10h13M3.5 14h13" />
+        </svg>
+      </button>
+      <div className="animated-top-dock-component atd-modern" inert={collapsed}>
         <header className="atd-modern__bar">
           <Link className="atd-modern__brand" href="/" aria-label="Vyso — home">
             {/* eslint-disable-next-line @next/next/no-img-element -- fixed-size

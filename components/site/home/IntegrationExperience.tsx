@@ -114,17 +114,25 @@ function FinaleStage({ progress, compact }: { progress: number; compact: boolean
       </div>
       <p
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-[9%] z-10 text-center text-[clamp(3.2rem,11vw,8.5rem)] font-semibold leading-none tracking-[0.04em] text-ondark"
-        style={{ opacity: resolve * 0.95, transform: `translateY(${(1 - resolve) * 16}px)` }}
+        className="pointer-events-none absolute inset-x-0 z-10 text-center text-[clamp(1.8rem,4.6vw,3.4rem)] font-semibold leading-none tracking-[0.14em] text-ondark"
+        style={{
+          bottom: "calc(50% + 74px)",
+          opacity: resolve * 0.95,
+          transform: `translateY(${(1 - resolve) * 12}px)`,
+        }}
       >
         ONE
       </p>
       <p
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 bottom-[8%] z-10 text-center text-[clamp(3.2rem,11vw,8.5rem)] font-semibold leading-none tracking-[0.04em] text-ondark"
-        style={{ opacity: resolve * 0.95, transform: `translateY(${(1 - resolve) * -16}px)` }}
+        className="pointer-events-none absolute inset-x-0 z-10 text-center text-[clamp(1.8rem,4.6vw,3.4rem)] font-semibold leading-none tracking-[0.14em] text-ondark"
+        style={{
+          top: "calc(50% + 74px)",
+          opacity: resolve * 0.95,
+          transform: `translateY(${(1 - resolve) * -12}px)`,
+        }}
       >
-        BRAIN.
+        BRAIN
       </p>
       {/* The message, for readers and crawlers (the giant words are decoration). */}
       <p className="sr-only">Thirty-plus integrations, coordinated by one Vyso brain.</p>
@@ -214,15 +222,17 @@ function StaticExperience() {
         <span className="vy-brain-node" style={{ opacity: 1 }} />
         <p
           aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 top-[9%] z-10 text-center text-[clamp(3.2rem,11vw,8.5rem)] font-semibold leading-none tracking-[0.04em] text-ondark"
+          className="pointer-events-none absolute inset-x-0 z-10 text-center text-[clamp(1.8rem,4.6vw,3.4rem)] font-semibold leading-none tracking-[0.14em] text-ondark"
+          style={{ bottom: "calc(50% + 74px)" }}
         >
           ONE
         </p>
         <p
           aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 bottom-[8%] z-10 text-center text-[clamp(3.2rem,11vw,8.5rem)] font-semibold leading-none tracking-[0.04em] text-ondark"
+          className="pointer-events-none absolute inset-x-0 z-10 text-center text-[clamp(1.8rem,4.6vw,3.4rem)] font-semibold leading-none tracking-[0.14em] text-ondark"
+          style={{ top: "calc(50% + 74px)" }}
         >
-          BRAIN.
+          BRAIN
         </p>
         <p className="sr-only">Thirty-plus integrations, coordinated by one Vyso brain.</p>
       </div>
