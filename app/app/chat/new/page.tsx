@@ -1,44 +1,27 @@
 import { redirect } from 'next/navigation';
-import { getPlatformSession } from '@/lib/platform/supabase-server';
-import { firstName, timeOfDayGreeting } from '@/components/platform/brief/brief-display';
-import { ChatDropZone } from '@/components/platform/chat/ChatDropZone';
-import { NewChatView } from '@/components/platform/chat/NewChatView';
 
 /**
- * A blank conversation (`.ai/plan_brief_chat_v2.md` §1.2, W2).
+ * The blank conversation, disconnected (`.ai/plan_phase0_teardown_shell.md`
+ * Task D).
  *
- * NOTHING IS CREATED HERE. There is no `finch_chats` row until the owner
- * actually sends something — `FinchChatProvider.send()` POSTs `/api/finch/chats`
- * on the first message and then moves to `/app/chat/<id>`. Creating a row on
- * arrival would fill the rail with empty "New chat" entries every time someone
- * clicked the button and thought better of it.
+ * THE CHAT CODE IS PRESERVED; ITS SURFACES ARE NOT. `NewChatView`,
+ * `ChatDropZone`, the composer, the provider and every `/api/finch|ai/agent`
+ * route are untouched and still compile — what changed is that nothing in the
+ * platform navigates to them. This wrapper was three lines of session guard
+ * and a view; it is now the redirect that catches the bookmarks and the stale
+ * links the rail used to hand out.
  *
- * The greeting is computed HERE, on the server, in SAST — the same
- * `timeOfDayGreeting`/`firstName` the Brief uses, so "Morning, Josh" says the
- * same thing on both screens and can't drift across a midnight boundary
- * between them.
+ * `/app` RATHER THAN A 404. Someone who lands here was reaching for "ask Vyso
+ * something", and the honest answer to that during Phase 0 is today's brief —
+ * not an error page for a screen that still exists in the repo.
  *
- * The composer is the shell's: `GlobalChatDock` renders on every /app/* route
- * and draws composer-only here (see its docblock). This page is the room, not
- * the microphone.
+ * `redirect()` throws NEXT_REDIRECT and serves a 307, replacing rather than
+ * pushing the history entry
+ * (node_modules/next/dist/docs/01-app/03-api-reference/04-functions/redirect.md).
+ * No session guard first: /app runs the same `getPlatformSession()` check one
+ * hop later, so an unauthenticated visitor still ends at /login, and this file
+ * has no reason to open a Supabase client to send someone one route sideways.
  */
-export default async function NewChatPage() {
-  const session = await getPlatformSession();
-  // The layout guards both already; repeating them narrows the types and keeps
-  // the page correct if it is ever rendered outside that layout.
-  if (!session) redirect('/login');
-  if (!session.org) redirect('/onboarding');
-
-  const name = firstName(session.profile?.full_name);
-  const greeting = `${timeOfDayGreeting(new Date())}${name ? `, ${name}` : ''}.`;
-
-  return (
-    <div className="flex min-h-full">
-      {/* The blank screen is a drop target: a conversation that starts with a
-          document is the shortest path this feature has (plan §1.3). */}
-      <ChatDropZone className="flex flex-1 flex-col">
-        <NewChatView greeting={greeting} />
-      </ChatDropZone>
-    </div>
-  );
+export default function NewChatRedirect() {
+  redirect('/app');
 }

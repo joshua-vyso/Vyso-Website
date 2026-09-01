@@ -3,8 +3,6 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { AI_GRADIENT_CHROME } from '@/components/platform/brief/brief-display';
-import { REVIEW_CHAT_ROUTE } from '@/lib/platform/review-queue-shared';
-import { RailReview } from './RailReview';
 
 /**
  * The conversations, in the rail — directly under "Today's brief" (design 1b,
@@ -28,16 +26,19 @@ import { RailReview } from './RailReview';
  * `useSearchParams` here, so — unlike RailNav — this needs no Suspense
  * boundary of its own.
  *
- * Reused verbatim inside MobileDrawer, exactly as RailNav is.
+ * It was reused verbatim inside MobileDrawer, exactly as RailNav still is.
  *
- * THE REVIEW ROW IS PINNED ABOVE "New chat" (`.ai/plan_review_chat.md`). It
- * belongs to this block rather than to RailNav because the plan puts it
- * directly under "Today's brief" — which is RailNav's last row before this
- * component — and because putting it here gives desktop and mobile the same
- * row from one mount point, exactly as the chat list already is. It draws
- * nothing when `reviewCount` is 0, so the rail is unchanged on a clear morning.
- * The review conversation itself is filtered out of `chats` upstream
- * (`splitChats`), so it can never appear twice.
+ * THE REVIEW ROW USED TO BE PINNED HERE, above "New chat"
+ * (`.ai/plan_review_chat.md`). It moved to RailNav in Phase 0
+ * (`.ai/plan_phase0_teardown_shell.md` Task C): Review is a queue of decisions
+ * at `/app/review`, not a conversation, so it belongs in the nav rather than in
+ * the chat list — and this component is UNMOUNTED from Task D on, which would
+ * otherwise have taken the Review row down with it.
+ *
+ * ── UNMOUNTED, NOT DELETED (Phase 0, Task D) ────────────────────────────────
+ * Nothing renders this today. The chat code is preserved intact — only its
+ * surfaces are disconnected — so the file stays, compiles, and is one import
+ * away from being the rail's chat list again.
  */
 
 export interface RailChat {
@@ -66,14 +67,12 @@ const ITEM_IDLE = 'text-[var(--pf-text-secondary)] hover:bg-[#F5F3EF] hover:text
  */
 const RAIL_LIMIT = 10;
 
-export function RailChats({ chats, reviewCount = 0 }: { chats: RailChat[]; reviewCount?: number }) {
+export function RailChats({ chats }: { chats: RailChat[] }) {
   const pathname = usePathname() ?? '';
   const isNew = pathname === '/app/chat/new';
 
   return (
     <div className="mt-1 flex flex-col gap-0.5">
-      <RailReview count={reviewCount} active={pathname === REVIEW_CHAT_ROUTE} />
-
       <Link href="/app/chat/new" className={`${ITEM} ${isNew ? ITEM_ACTIVE : ITEM_IDLE}`}>
         <svg
           width="14"

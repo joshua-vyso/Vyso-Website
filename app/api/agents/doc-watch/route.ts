@@ -13,8 +13,8 @@ export const maxDuration = 300;
  * app/api/ai/extract gets its card immediately, inside Next's `after()`, so the
  * Brief is current the moment the user looks at it. This cron is the catch-up
  * for everything that path cannot see — documents ingested by the inbound-email
- * and WhatsApp routes, and any extraction whose `after()` was cut short by a
- * serverless instance being reclaimed.
+ * route, and any extraction whose `after()` was cut short by a serverless
+ * instance being reclaimed.
  *
  * Runs at 03:40 UTC (see vercel.json), BEFORE Price Watch (03:45): the price
  * agent reads the same documents, and a Brief where "read overnight" appears
@@ -33,8 +33,8 @@ export const maxDuration = 300;
  * A SKIP COSTS MORE HERE THAN ELSEWHERE, and the honest version is: the window is
  * 26 hours, so an org skipped for a whole day has a gap tomorrow's run cannot
  * see. It is not a lost card for most documents — the PRIMARY trigger above
- * writes them at extraction time — but a document ingested by email or WhatsApp
- * on a skipped day would get no receipt. `orgsSkippedForTime` being non-empty on
+ * writes them at extraction time — but a document ingested by email on a
+ * skipped day would get no receipt. `orgsSkippedForTime` being non-empty on
  * THIS route is therefore the signal to fan out (see the Price Watch route's
  * note), not something to leave running.
  *

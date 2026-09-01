@@ -15,9 +15,6 @@
  *    layout of the same segment, so the real padding and the real SubNav are
  *    already on screen. Drawing them again would double the padding and stack a
  *    fake tab bar under the real one, so the module variant is content-only.
- *
- * Not to be confused with ModuleSkeleton, which is a permanent "this screen
- * isn't built yet" placeholder rather than a transient loading state.
  */
 
 /** Fixed widths so the placeholder bars look like real tabs without randomness

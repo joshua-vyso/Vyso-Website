@@ -10,9 +10,9 @@
  *    must never turn that into an error the user sees.
  *
  * 2. `runDocWatchSweep` — NIGHTLY. Catches everything the immediate path could
- *    not: documents ingested by the inbound-email and WhatsApp routes, an
- *    extraction whose `after()` was cut short by a cold serverless instance
- *    being reclaimed, a deploy mid-upload. It looks 26 hours back — an hour of
+ *    not: documents ingested by the inbound-email route, an extraction whose
+ *    `after()` was cut short by a cold serverless instance being reclaimed, a
+ *    deploy mid-upload. It looks 26 hours back — an hour of
  *    overlap on a daily cron, because a sweep that starts a minute late must not
  *    leave a gap.
  *

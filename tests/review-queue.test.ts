@@ -515,5 +515,10 @@ test('once it ages out it is an ordinary old conversation and DOES appear in His
 test('the route the rail links to is the route the provider preludes', () => {
   // Three files test against this string; a typo in any one of them is a chat
   // that answers without knowing what is in the queue.
-  assert.equal(REVIEW_CHAT_ROUTE, '/app/chat/review');
+  //
+  // Phase 0 moved the queue out of the chat tree to `/app/review`
+  // (`.ai/plan_phase0_teardown_shell.md` Task C). The constant's NAME is
+  // unchanged because FinchChatProvider imports it and that file is preserved
+  // byte-identical this phase.
+  assert.equal(REVIEW_CHAT_ROUTE, '/app/review');
 });

@@ -125,6 +125,44 @@ export default async function WorkspaceSettings() {
             ›
           </span>
         </Link>
+
+        {/* ── Rehomed from the rail (`.ai/plan_phase0_teardown_shell.md` E3) ───
+            Phase 0 replaced the module launcher with a fixed nav, and these two
+            are exactly the screens that were reachable only from it. Settings
+            is where PLAN.md Phase 6 puts them permanently; these pointers are
+            the interim, so nothing became unreachable the day the rail changed.
+            (Plugins keeps its own rail section for now, but a member never sees
+            that section — hence this link's `canSeeMoney` gate, matching the
+            plugin routes' own.) */}
+        {canSeeMoney(role) ? (
+          <Link
+            href="/app/plugins"
+            className="flex items-center justify-between gap-4 rounded-2xl border border-[#EAEDF2] bg-white p-5 shadow-[0_1px_2px_rgba(20,24,20,0.03)] transition-colors hover:border-[#C9DEF7] hover:bg-[#FBFCFE]"
+          >
+            <div className="min-w-0">
+              <div className="of-display text-[16px] font-semibold text-[#171A17]">Plugins</div>
+              <p className="mt-1 text-[13px] text-[#6B6F68]">Xero, Hubdoc and the rest of what Vyso connects to</p>
+            </div>
+            <span className="shrink-0 text-[18px] text-[#A0A49C]" aria-hidden>
+              ›
+            </span>
+          </Link>
+        ) : null}
+
+        <Link
+          href="/app/docu/databases"
+          className="flex items-center justify-between gap-4 rounded-2xl border border-[#EAEDF2] bg-white p-5 shadow-[0_1px_2px_rgba(20,24,20,0.03)] transition-colors hover:border-[#C9DEF7] hover:bg-[#FBFCFE]"
+        >
+          <div className="min-w-0">
+            <div className="of-display text-[16px] font-semibold text-[#171A17]">Databases</div>
+            <p className="mt-1 text-[13px] text-[#6B6F68]">
+              What Vyso has learned from your documents, table by table
+            </p>
+          </div>
+          <span className="shrink-0 text-[18px] text-[#A0A49C]" aria-hidden>
+            ›
+          </span>
+        </Link>
       </div>
     </div>
   );

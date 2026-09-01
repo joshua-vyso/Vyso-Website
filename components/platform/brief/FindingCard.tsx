@@ -11,23 +11,24 @@ import { rand } from '@/lib/platform/procurepulse';
 // here does NOT pull `supabase-server` (and `next/headers`) into the client bundle.
 import type { AgentFinding, EvidenceSummary, FindingStatus } from '@/lib/platform/agent-findings';
 import { AI_GRADIENT_BAR, AI_GRADIENT_TEXT, agentChip } from './brief-display';
-import { askBrief, findingPrompt } from './brief-chat';
 
 /**
  * One finding, as the owner reads it: who found it, what it says, what it costs
- * a year, what it was read from — Dismiss, a way in to the evidence, and a tap
- * to talk about it.
+ * a year, what it was read from — Dismiss, and a way in to the evidence.
  *
- * TAP TO OPEN, ✦ TO DISCUSS (changed in W3, .ai/plan_brief_chat_v2.md §4).
- * Tapping the card's body now OPENS the finding — `/app/finding/[id]`, the full
- * evidence view with its price history and its cited invoices. Up to this wave
- * a tap named the finding in the composer instead; that gesture is still here,
- * demoted to an explicit "✦ Discuss" button. The swap is deliberate: a card is
- * a headline and the obvious meaning of clicking a headline is "show me the
- * rest", whereas "put this into a chat" is a specific intent that deserves to
- * be asked for by name. Both affordances still gate on the same `finchEnabled`
- * flag where they need the chat; the detail route does not, so the body link is
- * always live.
+ * TAP TO OPEN (W3, .ai/plan_brief_chat_v2.md §4). Tapping the card's body OPENS
+ * the finding — `/app/finding/[id]`, the full evidence view with its price
+ * history and its cited invoices. A card is a headline and the obvious meaning
+ * of clicking a headline is "show me the rest".
+ *
+ * THE "✦ DISCUSS" BUTTON IS GONE (`.ai/plan_phase0_teardown_shell.md` Task D,
+ * follow-up). It sat beside Dismiss and called `askBrief()`, which names the
+ * finding in the shell's composer — and Phase 0 disconnected every composer,
+ * so the button had become a control that visibly did nothing. Only the RENDER
+ * went: `askBrief`/`findingPrompt` (brief-chat.ts) are untouched, and
+ * FinchChatProvider still subscribes to that channel, so restoring the button
+ * is restoring one <button>. The body link never needed the chat and is
+ * unchanged.
  *
  * The observation is a real `<Link>`, not a click handler on a div — so it is
  * keyboard-reachable, middle-clickable and openable in a new tab, and the
@@ -135,17 +136,10 @@ export function FindingCard({
   foundLabel: string;
 }) {
   const { write, done, busy, toastNode } = useStatusWrite(finding);
-  const { email, finchEnabled } = usePlatform();
   const router = useRouter();
   const chip = agentChip(finding.agent);
   const isNew = finding.status === 'new';
-  const canDiscuss = finchEnabled && !!email;
   const href = `/app/finding/${finding.id}`;
-
-  // The id rides along so the chat this becomes is filed against this finding
-  // (`finch_chats.finding_id`) — see askBrief: it is remembered until the owner
-  // sends, never acted on at tap time.
-  const discuss = () => askBrief(findingPrompt(finding), finding.id);
 
   return (
     <article
@@ -227,20 +221,9 @@ export function FindingCard({
         </div>
       ) : null}
 
+      {/* "✦ Discuss" stood here, left of Dismiss (see the docblock). Dismiss
+          keeps its `ml-auto` and now simply sits alone on the right. */}
       <div className="mt-4 flex items-center gap-1">
-        {/* Demoted from "the whole card" to a named button (W3). Still the same
-            one-line channel into the composer — see brief-chat.ts. */}
-        {canDiscuss ? (
-          <button
-            type="button"
-            onClick={discuss}
-            aria-label={`Ask Finch about this finding: ${finding.observation}`}
-            className="inline-flex items-center gap-1.5 rounded-[9px] px-2.5 py-2 text-[12.5px] font-semibold text-[var(--pf-text-control)] transition-colors hover:text-[var(--pf-accent-deep)]"
-          >
-            <AiMark />
-            Discuss
-          </button>
-        ) : null}
         <button
           type="button"
           disabled={busy}

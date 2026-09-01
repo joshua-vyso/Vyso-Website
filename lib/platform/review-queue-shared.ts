@@ -36,11 +36,22 @@ import { isOrderAmendmentDocument } from './docu/order-amendment.ts';
 // value itself lives where `splitChats` can reach it without a cycle.
 export { REVIEW_CHAT_MODULE };
 
-/** The one route the Review chat lives at. A constant rather than a literal
+/** The one route the Review queue lives at. A constant rather than a literal
  *  because three files test against it — the page, the rail row and the
  *  provider's prelude switch — and a typo in any one of them would be a chat
- *  that silently answers without knowing what is in the queue. */
-export const REVIEW_CHAT_ROUTE = '/app/chat/review';
+ *  that silently answers without knowing what is in the queue.
+ *
+ *  MOVED TO `/app/review` IN PHASE 0 (`.ai/plan_phase0_teardown_shell.md` Task
+ *  C): Review is a queue of decisions, not a conversation, so it left the
+ *  `/app/chat` tree along with the rest of the chat UI. `app/app/chat/review/
+ *  page.tsx` now redirects here.
+ *
+ *  THE NAME IS UNCHANGED ON PURPOSE. Renaming it to `REVIEW_ROUTE` would touch
+ *  `components/platform/shell/FinchChatProvider.tsx`, which Phase 0 keeps
+ *  byte-identical (the chat code is preserved, only its surfaces are
+ *  disconnected). The plan allows the rename only if every reference moves with
+ *  it; one of them may not be edited, so the value moved and the name stayed. */
+export const REVIEW_CHAT_ROUTE = '/app/review';
 
 /** A card, not an inbox. Past this the honest thing is a count and a link to
  *  the screen that lists them all — an opening card the owner has to scroll is

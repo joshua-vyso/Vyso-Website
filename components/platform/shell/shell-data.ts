@@ -9,9 +9,11 @@
 import { MODULES, type ModuleDefinition } from '@/lib/platform/modules';
 import type { FeatureKey } from '@/lib/platform/types';
 
-/** One "Under the hood" row. `key` rides along (not just label/href, unlike
- *  BriefRail's original RailModule) so the rail can check `lockedModules`
- *  without a second lookup — see UnderTheHood.tsx and MobileDrawer.tsx. */
+/** One module the org has. `key` rides along (not just label/href, unlike
+ *  BriefRail's original RailModule) so a caller can check `lockedModules`
+ *  without a second lookup — which is now `firstOpenableModuleHref` below
+ *  rather than a rail row: Phase 0 replaced the "Under the hood" launcher with
+ *  a fixed nav (nav-config.ts), so nothing RENDERS this list any more. */
 export interface RailModule {
   key: FeatureKey;
   label: string;
@@ -19,16 +21,17 @@ export interface RailModule {
 }
 
 /**
- * The modules the org can see in "Under the hood", in registry order. Mirrors
- * the filter app/app/page.tsx currently applies before handing modules to
- * BriefRail (`m.status === 'active' && session.features[m.key]`) — lifted here
- * so the layout and any future page can share one copy (plan §4.1).
+ * The modules the org has, in registry order (`m.status === 'active' &&
+ * features[m.key]`).
+ *
+ * IT NO LONGER FEEDS A RAIL. Phase 0 replaced the module launcher with a fixed
+ * nav, so the only callers left are the four routes that redirect someone away
+ * from a screen they may not see — always through `firstOpenableModuleHref`
+ * below, never by rendering this list.
  *
  * Locked modules (`lockedModules`, a separate per-org override — see
- * lib/platform/supabase-server.ts) are DELIBERATELY still included: the rail
- * renders them, just as a non-navigating row that opens ModuleLockNotice
- * instead of a <Link> (plan §8 E2). Callers read `usePlatform().lockedModules`
- * client-side to tell the two apart.
+ * lib/platform/supabase-server.ts) are DELIBERATELY still included, which is
+ * exactly why that helper exists rather than callers taking `[0]`.
  */
 export function railModules(features: Record<FeatureKey, boolean>): RailModule[] {
   return MODULES.filter((m) => m.status === 'active' && features[m.key]).map((m) => ({
@@ -48,18 +51,17 @@ export function railModules(features: Record<FeatureKey, boolean>): RailModule[]
  *
  * THE `lockedModules` FILTER IS THE WHOLE POINT of this function existing rather
  * than the call sites writing `railModules(features)[0].href`. `railModules`
- * deliberately KEEPS locked modules — the rail draws them as a row that opens
- * ModuleLockNotice — so its first entry can perfectly well be a module this org
- * has not bought. Redirecting someone we have just turned away from the Brief
- * onto a screen that says "this module is locked, email Joshua" would be two
- * refusals in a row, which is worse than the 403 we were avoiding. Hence "their
- * first UNLOCKED module", per plan §1.3.
+ * deliberately KEEPS locked modules, so its first entry can perfectly well be a
+ * module this org has not bought. Redirecting someone we have just turned away
+ * from the Brief onto a module they have not paid for would be two refusals in
+ * a row, which is worse than the 403 we were avoiding. Hence "their first
+ * UNLOCKED module", per plan §1.3.
  *
  * `/app/settings` is the floor: an org with every module off still has a
  * settings page, and it is the one route in the platform that is never gated by
  * features, locks or roles. It cannot bounce back here, so the redirect cannot
- * loop — nor can any module page, since ModuleLockGuard RENDERS a locked screen
- * rather than redirecting.
+ * loop — nor can any module page: since Phase 0 removed `ModuleLockGuard`
+ * nothing intercepts a module route at all, so the target simply renders.
  */
 export function firstOpenableModuleHref(
   modules: readonly RailModule[],
@@ -70,9 +72,9 @@ export function firstOpenableModuleHref(
 
 /**
  * The MODULES entry that owns `pathname`, by longest-matching `screens.desktop`
- * prefix — the same resolution ModuleLockGuard.tsx uses to decide what's
- * locked, and the shell's active-row / active-lock logic reuses it rather than
- * re-deriving it. Returns null for non-module routes (`/app`,
+ * prefix. It used to be shared with `ModuleLockGuard` (deleted in Phase 0); its
+ * one remaining caller is FinchBubble, which names the module in the chat
+ * bubble's header. Returns null for non-module routes (`/app`,
  * `/app/organisation`, `/app/settings`, `/app/notifications`,
  * `/app/serviceden` — none of these are MODULES entries).
  */

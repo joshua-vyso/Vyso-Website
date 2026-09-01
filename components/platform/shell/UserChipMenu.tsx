@@ -28,12 +28,11 @@ import { trialPillLabel } from './shell-data';
  * effects: clear the parsed-order draft, sign out of Supabase, redirect + hard
  * refresh so client component state doesn't leak into the next session).
  *
- * NOTE ON SCOPE: the plan's §4.2 table lists "Mounts FeedbackModal +
- * ModuleLockNotice" for this component. Only FeedbackModal has an actual
- * trigger here ("Send feedback"); nothing in this menu opens a locked module,
- * so ModuleLockNotice is NOT mounted here — it lives in UnderTheHood.tsx,
- * where the locked rows that open it actually are. Mounting an unreachable
- * modal here would be dead code.
+ * NOTE ON SCOPE: the plan's §4.2 table listed "Mounts FeedbackModal +
+ * ModuleLockNotice" for this component. Only FeedbackModal ever had a trigger
+ * here ("Send feedback") — nothing in this menu opened a locked module — and
+ * ModuleLockNotice no longer exists at all: Phase 0 removed the module launcher
+ * and the lock screens with it (`.ai/plan_phase0_teardown_shell.md` Task E).
  *
  * Mounted from Wave 2 on, inside AppRail (app/app/layout.tsx).
  */

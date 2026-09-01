@@ -5,17 +5,11 @@ import { PlatformProvider } from '@/lib/platform/session';
 import { canSeeBrief, canSeeMoney } from '@/lib/platform/access';
 import { fetchFindings } from '@/lib/platform/agent-findings';
 import { pluginRailRows } from '@/lib/platform/plugins-data';
-import { chatTimeLabel, listChats } from '@/lib/platform/finch-chats';
-import { loadReviewQueue, reviewChatContext } from '@/lib/platform/review-queue';
-import { suggestionsForOrg } from '@/lib/platform/finch-suggestions-data';
-import { ModuleLockGuard } from '@/components/platform/ModuleLockGuard';
+import { loadReviewQueue } from '@/lib/platform/review-queue';
 import { TrialGate } from '@/components/platform/TrialGate';
 import { AppRail } from '@/components/platform/shell/AppRail';
 import { FinchChatProvider } from '@/components/platform/shell/FinchChatProvider';
-import { GlobalChatDock } from '@/components/platform/shell/GlobalChatDock';
 import { MobileTopBar } from '@/components/platform/shell/MobileTopBar';
-import { railModules } from '@/components/platform/shell/shell-data';
-import { briefChatContext } from '@/components/platform/brief/brief-chat';
 
 export const metadata: Metadata = {
   title: 'Vyso — Platform',
@@ -44,8 +38,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // the onboarding RPC have the column present-but-null until they finish.
   if (!session.org || session.org.onboarding_completed_at === null) redirect('/onboarding');
 
-  // The rail's two badge counts AND the chat dock's findings prelude, off ONE
-  // read. Same read app/app/page.tsx does — one ordered
+  // The rail's badge count, off ONE read. Same read app/app/page.tsx does — one ordered
   // select over `agent_findings` through the caller's RLS-scoped client — and
   // the same tolerance for a table that doesn't exist yet: `fetchFindings`
   // turns a missing-relation error into an empty feed (`tableMissing`), so a
@@ -62,55 +55,40 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // is exactly what FindingCard already calls after a dismiss. Accepted by the
   // plan (§4.1, §12 D4).
   //
-  // W2 adds the second read: this user's own conversations for the rail.
-  // `listChats` is RLS-scoped AND
-  // filtered on org + user — chats are private to their author, unlike
-  // findings, which the whole org shares — and it degrades to an empty flagged
-  // list before the finch-chats migration is applied, exactly as
-  // `fetchFindings` does for `agent_findings`.
+  // W2's SECOND READ IS GONE (Phase 0, Task D). `listChats` fed the rail's chat
+  // list and nothing else; with the chat surfaces disconnected there is no list
+  // to draw, so the query is not made rather than made and discarded. The
+  // function, and every route that uses it, is untouched.
   //
-  // Plugins X1 adds a third read: the connection status behind the rail's
-  // Plugins rows. ONE read for both surfaces (desktop rail and mobile drawer),
-  // for the same reason the findings read serves both the badges and the chat
-  // prelude — two queries that could disagree about whether Xero is connected
-  // is one query too many. It is SKIPPED ENTIRELY for a member: plugins are
+  // Plugins X1 adds a second read: the connection status behind the rail's
+  // Plugins rows. ONE read for both surfaces (desktop rail and mobile drawer) —
+  // two queries that could disagree about whether Xero is connected is one
+  // query too many. It is SKIPPED ENTIRELY for a member: plugins are
   // finance-grade (`canSeeMoney`), the section is not rendered for them, and a
   // read whose result is thrown away is a read not worth making. The predicate
   // is called here as well as below because it is pure and free, and inlining
-  // it keeps this third read inside the same Promise.all rather than costing a
+  // it keeps this second read inside the same Promise.all rather than costing a
   // second round-trip after the access block.
-  // The Review wave adds a fourth read: what is waiting on a human decision.
-  // In the SAME Promise.all for the reason the others are — the rail's pinned
-  // "Review" row, the red dot's count and the review chat's own prelude are one
-  // fact, and two reads of it could disagree about whether the queue is empty.
+  // The Review wave adds a third read: what is waiting on a human decision.
+  // In the SAME Promise.all for the reason the others are — the rail's Review
+  // row and its red dot are one fact, and two reads of it could disagree about
+  // whether the queue is empty.
   // It is one small indexed query per enabled module (documents, quote
   // requests) and NONE at all for an org with neither, and it is deliberately
   // NOT behind `canSeeMoney`: filing an invoice and answering an enquiry are
   // operational work, so the gate is module access, which `loadReviewQueue`
   // applies from `features`/`lockedModules` itself (lib/platform/review-queue.ts).
   // Same staleness contract as the badges: it refreshes on a hard load and on
-  // `router.refresh()`, which the chat provider now fires after every turn taken
-  // on the review route so the opening card cannot outlive its own queue.
-  const [feed, chatList, pluginRows, reviewQueue] = await Promise.all([
+  // `router.refresh()`. `/app/review` re-reads the queue for itself for the same
+  // reason it always did — this copy is the rail's count, not the chain's list.
+  const [feed, pluginRows, reviewQueue] = await Promise.all([
     fetchFindings(session.org.id),
-    listChats(session.org.id, session.userId),
     canSeeMoney(session.profile?.role) ? pluginRailRows(session.org.id) : Promise.resolve([]),
     loadReviewQueue(session.org.id, {
       features: session.features,
       lockedModules: session.lockedModules,
     }),
   ]);
-
-  // ONE clock for the rail, resolved on the server. See RailChats: a client
-  // component recomputing "4m" during hydration can disagree with the HTML it
-  // is hydrating, so the label crosses the boundary as finished text.
-  const railNow = new Date();
-  const railChats = chatList.recent.map((c) => ({
-    id: c.id,
-    title: c.title,
-    module: c.module,
-    when: chatTimeLabel(c.updated_at, railNow),
-  }));
 
   /* ── Access (v2b) ──────────────────────────────────────────────────────────
    * ONE predicate, two names, one implementation — lib/platform/access.ts says
@@ -119,8 +97,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
    * cannot drift into disagreeing about who an admin is.
    *
    * WHAT THIS FLAG DOES AND DOES NOT DO HERE. It decides what the SHELL offers:
-   * the rail's two Brief rows, the findings prelude the chat sends, and whether
-   * the chip row may mention findings. It does NOT gate the routes — the
+   * the rail's Overview row. (It used to decide two more things — the findings
+   * prelude the chat sent and whether the suggestion chips could mention a
+   * finding — and both went with the chat surfaces in Phase 0, Task D.) It does
+   * NOT gate the routes — the
    * redirects live in app/app/page.tsx and app/app/finding/[id]/page.tsx,
    * because a Next 16 layout does not re-render on a client-side navigation
    * (Partial Rendering), so an auth check placed in one is not re-run on a route
@@ -130,59 +110,41 @@ export default async function AppLayout({ children }: { children: React.ReactNod
    * readable org-wide at the database level exactly as before, and this is UI
    * and route gating on top of the money gate that already existed. */
   const briefAccess = canSeeBrief(session.profile?.role);
-  const moneyAccess = canSeeMoney(session.profile?.role);
-
-  // The chips an empty conversation offers (plan §1.4). Built from the feed we
-  // already have plus two small reads, behind the same owner/admin money gate
-  // `/api/ai/agent` enforces — a member must not be offered a chip that can
-  // only ever come back "restricted". Never throws: see
-  // finch-suggestions-data.ts, rule 1.
-  //
-  // v2b: a user without brief access is handed NO findings, so their chips are
-  // the generic openers and the debtor/document ones. Passing `feed.open` here
-  // would put a finding's own words into a chip on a screen we have just
-  // decided they may not read — the chip's label IS the finding.
-  const suggestions = await suggestionsForOrg({
-    orgId: session.org.id,
-    findings: briefAccess ? feed.open : [],
-    canSeeMoney: moneyAccess,
-  });
-
-  // The prelude the chat sends to Finch on its first turn (plan §4.1: "do not
-  // duplicate the findings read — one fetch feeds badges AND prelude"). It is
-  // derived from `feed` above, not from a second query, and it is serialised
-  // HERE — on the server, from rows read through the caller's RLS-scoped
-  // client — so the chat can never see a finding this org couldn't. Same
-  // staleness contract as the badges: it refreshes on a hard load and on
-  // router.refresh().
-  //
-  // v2b: empty for a user without brief access. The prelude is the Brief in
-  // words — supplier names, rand figures, who is late — so shipping it to
-  // someone the Brief is closed to would hand them through the chat exactly
-  // what the redirect just refused them at the door.
-  const chatContext = briefAccess ? briefChatContext(feed.open, feed.evidence) : '';
-
-  // The same trick, for the Review chat: the queue as a prelude on that route's
-  // first turn, so "what's in the flagged invoice?" is a question about
-  // something the model has been named rather than something it has to go
-  // hunting for. Built from `reviewQueue` above — no second read — and NOT
-  // gated on `briefAccess`, for the reason the queue itself isn't. Empty string
-  // when there is nothing to review, which is also when the route says so.
-  const reviewContext = reviewChatContext(reviewQueue);
 
   return (
     <PlatformProvider value={session}>
-      {/* The conversation lives ABOVE the whole shell, not inside <main>: it
-          has to survive every client-side navigation (layouts don't re-render
-          on one), and both sign-out call sites — UserChipMenu in the rail and
-          MobileDrawer under the mobile header — must be able to reach its
-          reset() (plan §8 E7). Wrapping here is what puts them inside it. */}
-      <FinchChatProvider
-        context={chatContext}
-        reviewContext={reviewContext}
-        orgName={session.org.name}
-        suggestions={suggestions}
-      >
+      {/* ── The chat provider STAYS MOUNTED (Phase 0, Task D) ─────────────────
+          The dock, the rail's chat list and the chat pages are all gone; this
+          is not one of them. It is a CONTEXT PROVIDER, and two surfaces that
+          survive Phase 0 read from it: `ReviewChain` on /app/review calls
+          `setReviewFocus`, and `MobileDrawer`/`UserChipMenu` call `reset()` on
+          sign-out. `useFinchChat()` throws outside the provider, so unmounting
+          it would take the Review queue down with the chat.
+
+          It also has to sit ABOVE the whole shell rather than inside <main>:
+          layouts don't re-render on a client-side navigation, and both sign-out
+          call sites must be inside it (plan §8 E7).
+
+          THE PROPS ARE EMPTY, DELIBERATELY. Every one of them fed a model turn,
+          and nothing in this build can start one — there is no composer left to
+          call `send()` from. So:
+            - `context` — the Brief's findings prelude (`briefChatContext`) —
+              is ''. Serialising a page of supplier names and rand figures into
+              a client component that cannot send them is a data-exposure risk
+              paid for nothing.
+            - `reviewContext` is left at its default '' for the same reason.
+              /app/review consumes the QUEUE, not its prelude: the chain reads
+              `queue.items` server-side and `reviewChatContext` only ever fed
+              `send()`'s first turn (lib/platform/review-queue-shared.ts). It is
+              still exported and still tested, ready for the day a composer
+              comes back.
+            - `suggestions` is `[]`: `suggestionsForOrg` cost two reads per
+              /app/* load to build chips for a screen that no longer exists.
+          `orgName` stays because it is already in hand and costs nothing.
+
+          When chat returns, this is where its data comes back — one prop each,
+          from reads that were deleted from this file, not from the library. */}
+      <FinchChatProvider context="" orgName={session.org.name} suggestions={[]}>
         <div
           // Globals set --radius: 0 (sharp shadcn default), which zeroes the
           // rounded-sm/md/lg/xl scale and leaves buttons/inputs square. Give the
@@ -198,42 +160,39 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           // (.ai/plan_brief_chat_v2.md §2.7/W0).
           data-platform-shell
         >
-          {/* OUTSIDE TrialGate/ModuleLockGuard on purpose (plan §8 E1): when the
-              trial hard-locks and the gate replaces `children` with its expiry
+          {/* OUTSIDE TrialGate on purpose (plan §8 E1): when the trial
+              hard-locks and the gate replaces `children` with its expiry
               screen, the rail — and with it the user chip's Sign out — is still
               on screen. That is the guarantee TopBar used to give from above
               <main>; the rail gives it from beside <main>. ≥lg only (its own
-              `hidden lg:flex`). */}
+              `hidden lg:flex`).
+
+              THREE PROPS LEFT PHASE 0 (Task D/E): `chats` (the rail's chat
+              list), `historyCount` (the Brief's History row, not in the new IA)
+              and `modules` (the "Under the hood" launcher, now gone). The rail
+              takes the counts it still draws and nothing else. */}
           <AppRail
             openCount={feed.summary.openCount}
-            historyCount={feed.history.length}
-            chats={railChats}
             canSeeBrief={briefAccess}
-            modules={railModules(session.features)}
             plugins={pluginRows}
             reviewCount={reviewQueue.total}
           />
 
-          {/* `relative` for the dock below: it is the containing block the chat
-              dock pins its bottom edge to. Deliberately NOT <main> — <main> is
-              the scroll container, and an absolutely-positioned child of a
-              scroller is laid out against the scrolled padding box, which would
-              park the dock at the bottom of the DOCUMENT and scroll it out of
-              sight. This column's bottom edge is <main>'s bottom edge, so the
-              geometry the plan asked for (§4.3) is unchanged. */}
+          {/* `relative` STAYS. It was the containing block the chat dock pinned
+              its bottom edge to, and the dock is gone — but it is also what any
+              future overlay in this column (Phase 1's upload tray) will pin
+              against, and it costs nothing: a positioned ancestor with no
+              positioned children changes no layout. */}
           <div className="relative flex min-w-0 flex-1 flex-col">
             {/* W3: MobileTopBar + its MobileDrawer replace the old TopBar
                 below `lg`, same as AppRail does above it — mounted OUTSIDE
-                TrialGate / ModuleLockGuard so the drawer's Sign out row stays
-                reachable during a hard trial lock (plan §8 E1). TopBar.tsx
-                and ModulesOverlay.tsx were deleted in W5 — this shell has no
-                remaining reference to either. */}
+                TrialGate so the drawer's Sign out row stays reachable during a
+                hard trial lock (plan §8 E1). TopBar.tsx and ModulesOverlay.tsx
+                were deleted in W5 — this shell has no remaining reference to
+                either. */}
             <MobileTopBar
               openCount={feed.summary.openCount}
-              historyCount={feed.history.length}
-              chats={railChats}
               canSeeBrief={briefAccess}
-              modules={railModules(session.features)}
               plugins={pluginRows}
               reviewCount={reviewQueue.total}
             />
@@ -277,17 +236,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               style={{ background: 'var(--pf-wash)' }}
               data-lenis-prevent
             >
-              <TrialGate>
-                <ModuleLockGuard>{children}</ModuleLockGuard>
-              </TrialGate>
-            </main>
+              {/* ModuleLockGuard IS GONE (Phase 0, Task E). It rendered a
+                  "this module is locked" screen in place of any page owned by a
+                  MODULES entry in `lockedModules` — chrome for a module
+                  launcher that no longer exists, on routes the new rail no
+                  longer offers. The per-org `lockedModules` READ stays on the
+                  session (inert until Phase 6) and `loadReviewQueue` still
+                  honours it, so a locked module contributes nothing to the
+                  Review queue exactly as before.
 
-            {/* Chat everywhere (plan §4.3, W4). OUTSIDE the gates by position but
-                never a way around them: the dock hides itself when the trial has
-                expired (§8 E6), and it is a sibling of <main> rather than a child
-                for the containing-block reason spelled out above and in
-                GlobalChatDock's docblock. z-20, below module chrome and modals. */}
-            <GlobalChatDock />
+                  TrialGate stays: expiry is a fact about the account, not about
+                  the IA, and it gates every route the same way it always did. */}
+              <TrialGate>{children}</TrialGate>
+            </main>
           </div>
         </div>
       </FinchChatProvider>

@@ -1,57 +1,56 @@
-import { Suspense } from 'react';
 import { VysoMark } from '@/components/platform/VysoMark';
 import type { PluginRailRow } from '@/lib/platform/plugins';
 import { Plugins } from './Plugins';
 import { RailNav } from './RailNav';
-import type { RailChat } from './RailChats';
-import { UnderTheHood } from './UnderTheHood';
+import { UploadButton } from './UploadButton';
 import { UserChipMenu } from './UserChipMenu';
-import type { RailModule } from './shell-data';
 
 /**
  * The persistent 216px left rail — the platform's primary chrome from Wave 2
  * onward, replacing TopBar (.ai/plan_chat_first_shell.md §4.1, §4.2). A server
- * component: it lives in app/app/layout.tsx and only needs the data that
- * layout resolves server-side per request (findings counts, the modules list —
- * `railModules()` in shell-data.ts). Everything else a rail row needs to be
- * interactive — active pathname, org/trial/lockedModules from the session,
- * outside-click handling — is read client-side by its children
- * (RailNav/UnderTheHood/UserChipMenu) via usePathname()/usePlatform(), exactly
- * as TopBar read them directly rather than being handed them as props.
+ * component: it lives in app/app/layout.tsx and only needs the data that layout
+ * resolves server-side per request. Everything a rail row needs to be
+ * interactive — active pathname, org/trial from the session, outside-click
+ * handling — is read client-side by its children (RailNav/UserChipMenu) via
+ * usePathname()/usePlatform(), exactly as TopBar read them directly rather than
+ * being handed them as props.
  *
- * Own column, not a sticky child of <main> — BriefRail.tsx's
- * `h-[calc(100dvh-var(--pf-topbar-h))]` calc doesn't apply here; the target
- * layout (plan §4.1) makes this a `flex-row` sibling of <main>, so plain
- * `h-screen` is correct and there is no more --pf-topbar-h consumer on the
- * desktop rail.
+ * ── WHAT PHASE 0 TOOK OFF IT (`.ai/plan_phase0_teardown_shell.md`) ───────────
+ *   - `chats` / RailChats — the conversation list, with the rest of the chat
+ *     surfaces (Task D). The components are all still in the repo.
+ *   - `historyCount` — the Brief's History row is not in the new IA (Task E).
+ *   - `modules` / `UnderTheHood` — the module launcher. Nav is a fixed list now
+ *     (nav-config.ts), the old module routes still work by URL, and
+ *     UnderTheHood.tsx was deleted with its last mount.
+ *   - The `Suspense` boundary around RailNav. It existed because RailNav read
+ *     `?view=history` with `useSearchParams()`, which forces a prerendered
+ *     route to bail out to client rendering up to the nearest boundary and
+ *     fails a production build without one
+ *     (node_modules/next/dist/docs/01-app/03-api-reference/04-functions/
+ *     use-search-params.md). No row reads the query string any more, so the
+ *     boundary guards nothing.
+ * And what it added: the Upload button, top-right beside the mark — the shell's
+ * one primary action (Task E4).
  *
- * Mounted by app/app/layout.tsx from Wave 2 on.
+ * Own column, not a sticky child of <main>: the layout (plan §4.1) makes this a
+ * `flex-row` sibling of <main>, so plain `h-screen` is correct.
  */
 export function AppRail({
   openCount,
-  historyCount,
-  chats,
   canSeeBrief,
-  modules,
   plugins,
   reviewCount,
 }: {
   openCount: number;
-  historyCount: number;
-  /** This user's recent chats, resolved by the layout (W2). */
-  chats: RailChat[];
-  /** Owner/admin (v2b — lib/platform/access.ts). False hides "Today's brief"
-   *  and "History" inside RailNav; everything else on this rail stays, because
-   *  chats are this person's own and every money tool below is already gated. */
+  /** Owner/admin (v2b — lib/platform/access.ts). False hides the Overview row
+   *  inside RailNav, because `/app` redirects a member away. */
   canSeeBrief: boolean;
-  modules: RailModule[];
   /** The Plugins section's rows, resolved by the layout. EMPTY for a member —
    *  plugins are finance-grade (`canSeeMoney`), so the layout withholds the rows
    *  rather than this component learning a second access rule (Plugins X1). */
   plugins: PluginRailRow[];
   /** How many items are waiting on a decision, resolved by the layout in the
-   *  same Promise.all as the findings and chats. 0 hides the Review row
-   *  entirely (Review chat wave). */
+   *  same Promise.all as the findings. 0 hides the Review row entirely. */
   reviewCount: number;
 }) {
   return (
@@ -72,41 +71,23 @@ export function AppRail({
           bottom cluster still sits at the bottom, exactly as `mt-auto` did)
           and is the one that scrolls if a short viewport can't fit the rail. */}
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-        <div className="px-2 pb-[22px]">
+        {/* The mark and the shell's one primary action share a row: the rail is
+            216px wide and Upload has to be reachable from every screen without
+            costing a nav slot or pushing the ten rows down by 44px. `pl-2`
+            rather than `px-2` so the mark keeps its old left alignment while
+            the button sits flush with the rows' right edge. */}
+        <div className="flex items-center justify-between gap-2 pb-[22px] pl-2">
           <VysoMark width={64} color="#171A17" />
+          <UploadButton />
         </div>
 
-        {/* SUSPENSE, deliberately (plan §8 E4). RailNav reads `?view=history`
-          with useSearchParams(), and the Next docs' rule is: a PRERENDERED
-          route bails out to client-side rendering up to the nearest Suspense
-          boundary, and a production build of a static page that calls the hook
-          without one fails outright ("Missing Suspense boundary with
-          useSearchParams" —
-          node_modules/next/dist/docs/01-app/03-api-reference/04-functions/use-search-params.md).
-          Every /app/* route is dynamic today (the layout awaits
-          getPlatformSession() → cookies()), so the hook resolves during the
-          server render and this fallback never actually paints — the boundary
-          is here so the rail can't become the reason a build breaks if any
-          route below it ever turns static. The fallback reserves the two rows'
-          height so nothing would jump if it ever did. */}
-        <Suspense fallback={<div className="h-[82px]" aria-hidden />}>
-          <RailNav
-            openCount={openCount}
-            historyCount={historyCount}
-            chats={chats}
-            canSeeBrief={canSeeBrief}
-            reviewCount={reviewCount}
-          />
-        </Suspense>
+        <RailNav openCount={openCount} canSeeBrief={canSeeBrief} reviewCount={reviewCount} />
       </div>
 
       <div className="flex flex-col">
-        {/* ABOVE "Under the hood", per Josh's ask (2026-08-18). Both sections
-            grow upward from their own toggle, so stacking them in DOM order
-            puts Plugins' rows above Under the hood's eyebrow when both are
-            open and leaves the two eyebrows adjacent when neither is. */}
+        {/* Plugins is the only section left below the nav — "Under the hood"
+            was the other one, and it went with the module launcher (Task E). */}
         <Plugins plugins={plugins} />
-        <UnderTheHood modules={modules} />
         <UserChipMenu />
       </div>
     </nav>

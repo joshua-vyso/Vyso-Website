@@ -3,9 +3,7 @@ import { getPlatformSession } from '@/lib/platform/supabase-server';
 import { canSeeBrief } from '@/lib/platform/access';
 import { fetchFindings } from '@/lib/platform/agent-findings';
 import { splitForToday } from '@/lib/platform/brief-feed';
-import { listChats } from '@/lib/platform/finch-chats'; // W2 · "Older chats"
 import { rand } from '@/lib/platform/procurepulse';
-import { OlderChats } from '@/components/platform/chat/OlderChats'; // W2 · "Older chats"
 import { BriefEmpty } from '@/components/platform/brief/BriefEmpty';
 import { FindingCard, ResolvedFindingCard } from '@/components/platform/brief/FindingCard';
 import { FullBriefing } from '@/components/platform/brief/FullBriefing';
@@ -44,16 +42,15 @@ import {
  * app/app/layout.tsx as AppRail, so it persists across every /app/* route
  * (.ai/plan_chat_first_shell.md §4.1, W2) — which is also why the modules
  * filter and the findings counts the rail needs are derived up there instead
- * of here. W4 moved the chat pill the same way and for the same reason: it is
- * GlobalChatDock now, docked by the layout over every route, with its state in
- * FinchChatProvider so a conversation survives navigation. The findings prelude
- * it sends is built up there too, from the layout's own copy of this feed — so
- * this page no longer serialises anything for the chat, and the bottom of the
- * column is now just padding that keeps the last card clear of the dock.
- * TrialGate and ModuleLockGuard both let this page through: the guard
- * only locks paths owned by a MODULES entry and none of them is `/app`, and
- * the trial gate is a platform-wide expiry screen that /app should not be an
- * exception to.
+ * of here. W4 moved the chat pill the same way and for the same reason — and
+ * Phase 0 then unmounted it: there is no GlobalChatDock, no chat prelude and no
+ * "Older chats" section any more (`.ai/plan_phase0_teardown_shell.md` Task D),
+ * though every one of those components is still in the repo. The column's
+ * bottom padding is kept as it was, on the plan's instruction that the Brief
+ * change in exactly one way this phase.
+ * TrialGate lets this page through — it is a platform-wide expiry screen that
+ * /app should not be an exception to. ModuleLockGuard used to as well; it was
+ * deleted in Phase 0 (Task E) along with the module launcher it belonged to.
  *
  * THREE VIEWS, ONE ROUTE (v2b). `?view=history` is the closed pile; `?view=all`
  * is the FULL BRIEFING — every open finding, as a report; anything else
@@ -133,13 +130,12 @@ export default async function AppIndex({
   // usual no-param case — falls through to today's brief.
   const isAll = view === 'all';
 
-  /* ── W2 · "Older chats" (plan_brief_chat_v2 §1.2) ─────────────────────────
-   * Only on the History view: the archived half of `listChats` is the 14-day
-   * tail of the rail's list, and reading it on the open brief would cost every
-   * /app load a query nothing renders. Empty (and silent) before the
-   * finch-chats migration is applied. */
-  const olderChats = isHistory ? (await listChats(session.org.id, session.userId)).archived : [];
-  /* ── end W2 ─────────────────────────────────────────────────────────────── */
+  /* W2's "Older chats" section is GONE (`.ai/plan_phase0_teardown_shell.md`
+   * Task D). It listed the 14-day tail of `listChats` under History, every row
+   * a link to `/app/chat/<id>` — a route that now redirects to this page. The
+   * read went with it, so the History view is one query lighter. `OlderChats`
+   * itself is untouched in components/platform/chat/, like the rest of the chat
+   * code. */
 
   // One clock for the whole render: the greeting, the date line and every
   // card's "found" label must agree, even across a midnight boundary.
@@ -255,10 +251,6 @@ export default async function AppIndex({
             )}
           </div>
         )}
-
-        {/* ── W2 · "Older chats" ───────────────────────────────────────────── */}
-        {isHistory && olderChats.length > 0 ? <OlderChats chats={olderChats} /> : null}
-        {/* ── end W2 ───────────────────────────────────────────────────────── */}
 
         {/* Doc Watch's receipts — "Read this morning". Informational only, below
             the findings and counted in none of them; the band renders nothing
