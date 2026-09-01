@@ -17,7 +17,7 @@
    also works with WebGL disabled — no fallback needed beyond the ground. */
 
 import dynamic from "next/dynamic";
-import { useStaticMotion } from "@/components/finch/motion-preference";
+import { useStaticMotion } from "@/components/site/motion-preference";
 import { useNearViewport } from "./lifecycle";
 
 const FlowField = dynamic(

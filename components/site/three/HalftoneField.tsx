@@ -14,7 +14,7 @@
    Essential hero copy lives OUTSIDE this layer in semantic DOM. */
 
 import dynamic from "next/dynamic";
-import { useStaticMotion } from "@/components/finch/motion-preference";
+import { useStaticMotion } from "@/components/site/motion-preference";
 import { useNearViewport, useWebGLAvailable } from "./lifecycle";
 
 const HalftoneFlow = dynamic(
@@ -22,23 +22,14 @@ const HalftoneFlow = dynamic(
   { ssr: false },
 );
 
-/* Static ground shown before the field paints, under reduced motion, and when
-   WebGL is unavailable: a quiet ember gradient in the field's own palette so
-   the hero is never a flat void. (A captured poster of the authored frame can
-   replace the gradient by dropping `/site/halftone-poster.webp` in place —
-   the <img> below prefers it and falls back silently.) */
-function StaticGround() {
+/* Static ground: an ember gradient in the field's palette covers pre-paint;
+   the captured poster (`/site/halftone-poster.webp`, an authorised still of
+   the exact registered component) loads ONLY in the true fallback states —
+   reduced motion or no WebGL — so the ~400KB never rides along when the live
+   field is about to take over. */
+function StaticGround({ poster }: { poster: boolean }) {
   return (
     <div aria-hidden="true" className="absolute inset-0 bg-black">
-      {/* eslint-disable-next-line @next/next/no-img-element -- decorative
-          poster with graceful onError removal; next/image would render its
-          own error UI */}
-      <img
-        src="/site/halftone-poster.webp"
-        alt=""
-        className="absolute inset-0 h-full w-full object-cover"
-        onError={(event) => event.currentTarget.remove()}
-      />
       <div
         className="absolute inset-0"
         style={{
@@ -48,6 +39,17 @@ function StaticGround() {
             "#000",
         }}
       />
+      {poster ? (
+        /* eslint-disable-next-line @next/next/no-img-element -- decorative
+           fallback poster with graceful onError removal */
+        <img
+          src="/site/halftone-poster.webp"
+          alt=""
+          loading="lazy"
+          className="absolute inset-0 h-full w-full object-cover"
+          onError={(event) => event.currentTarget.remove()}
+        />
+      ) : null}
     </div>
   );
 }
@@ -58,10 +60,11 @@ export function HalftoneField() {
   const { ref, near } = useNearViewport<HTMLDivElement>("900px");
 
   const live = !staticMotion && webgl === true && near;
+  const fallback = staticMotion || webgl === false;
 
   return (
     <div ref={ref} className="vy-hero-field" aria-hidden="true">
-      <StaticGround />
+      <StaticGround poster={fallback} />
       {live ? (
         <div className="shader-frame absolute inset-0">
           <HalftoneFlow hue={0} saturation={1.0} brightness={1.0} className="vy-halftone-frame" />

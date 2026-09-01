@@ -329,9 +329,9 @@ export default function LoginPage() {
                   <label htmlFor="password" className="text-[12.5px] font-medium text-[#57524c]">
                     Password
                   </label>
-                  <Link href="/contact" className="text-[12px] text-[var(--pf-accent-strong)] transition hover:text-[var(--pf-accent-deep)]">
+                  <a href="mailto:joshua@vyso.co.za?subject=Password%20reset" className="text-[12px] text-[var(--pf-accent-strong)] transition hover:text-[var(--pf-accent-deep)]">
                     Forgot?
-                  </Link>
+                  </a>
                 </div>
                 <input
                   id="password"

@@ -12,7 +12,7 @@
    localStorage remembers this browser already joined — shown as a note, not a
    gate (someone signing up a second business is welcome). */
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import { track } from "@/lib/analytics";
 
 const INDUSTRIES = [
@@ -30,21 +30,26 @@ type Status = "idle" | "submitting" | "success" | "error";
 
 const JOINED_KEY = "vy:waitlist-joined";
 
+/* localStorage read as an external store: server snapshot false, so the
+   hydration render matches, then the real value applies. The value only
+   changes via this form's own success path, which triggers a re-render
+   anyway — no subscription needed. */
+const noSubscription = () => () => {};
+const readJoined = () => {
+  try {
+    return localStorage.getItem(JOINED_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+
 export function WaitlistForm() {
   const [status, setStatus] = useState<Status>("idle");
   const [serverError, setServerError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [alreadyJoined, setAlreadyJoined] = useState(false);
+  const alreadyJoined = useSyncExternalStore(noSubscription, readJoined, () => false);
   const startedRef = useRef(false);
   const errorRegionRef = useRef<HTMLParagraphElement>(null);
-
-  useEffect(() => {
-    try {
-      setAlreadyJoined(localStorage.getItem(JOINED_KEY) === "1");
-    } catch {
-      /* storage unavailable — treat as first visit */
-    }
-  }, []);
 
   const onFirstInput = () => {
     if (!startedRef.current) {

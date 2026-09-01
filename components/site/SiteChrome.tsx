@@ -5,11 +5,9 @@ import { MobileNav } from "@/components/site/nav/MobileNav";
 /* ── Site chrome: nav + footer for every agency page ───────────────────────── */
 
 export function SiteNav() {
+  /* The root layout already renders the site-wide SkipLink — no second one. */
   return (
     <>
-      <a className="vy-skip" href="#main">
-        Skip to content
-      </a>
       <DockNav />
       <MobileNav />
     </>

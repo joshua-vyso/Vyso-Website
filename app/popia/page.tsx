@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
-import { buildLegalSchema } from "@/components/finch/legal/legal-jsonld";
-import { DraftChip, LegalCrossLinks, LegalHeader, LegalSection, LegalShell } from "@/components/finch/legal/LegalReading";
+import { buildLegalSchema } from "@/components/site/legal/legal-jsonld";
+import { DraftChip, LegalCrossLinks, LegalHeader, LegalSection, LegalShell } from "@/components/site/legal/LegalReading";
 
 /* TODO(user): first draft, built only from facts already on `/privacy` (the
    POPIA compliance statement, the Information Regulator reference, the

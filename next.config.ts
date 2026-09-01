@@ -62,32 +62,46 @@ const nextConfig: NextConfig = {
         destination: "https://vyso.co.za/:path*",
         permanent: true,
       },
+      /* ── Agency redesign redirect map (2026-09) ──────────────────────────
+         `.ai/positioning_agency_2026.md`. Every removed route lands on the
+         closest surviving page; nothing 404s. Conversion-shaped pages → /join;
+         explanation-shaped pages → /automations; company-shaped → /about.
+         The Turn 'n Slice case study redirects to the food-business page per
+         the removal protocol (no current-case-study claims anywhere). */
+      { source: "/pricing", destination: "/join", permanent: true },
+      { source: "/operations-audit", destination: "/join", permanent: true },
+      { source: "/operations-audit/:path*", destination: "/join", permanent: true },
+      { source: "/founding-client", destination: "/join", permanent: true },
+      { source: "/academy", destination: "/join", permanent: true },
+      { source: "/contact", destination: "/about", permanent: true },
+      { source: "/south-africa", destination: "/about", permanent: true },
+      { source: "/faq", destination: "/automations", permanent: true },
+      { source: "/learn", destination: "/automations", permanent: true },
+      { source: "/learn/:path*", destination: "/automations", permanent: true },
+      { source: "/resources", destination: "/automations", permanent: true },
+      { source: "/resources/:path*", destination: "/automations", permanent: true },
+      { source: "/compare", destination: "/automations", permanent: true },
+      { source: "/compare/:path*", destination: "/automations", permanent: true },
+      { source: "/solutions", destination: "/industries", permanent: true },
+      { source: "/solutions/:path*", destination: "/industries", permanent: true },
+      { source: "/case-studies", destination: "/industries/food-hospitality", permanent: true },
+      { source: "/case-studies/:path*", destination: "/industries/food-hospitality", permanent: true },
+      { source: "/orbit/waitlist", destination: "/join", permanent: true },
+      { source: "/orbit", destination: "/", permanent: true },
+      { source: "/orbit/:path*", destination: "/", permanent: true },
+      // Old per-vertical industry pages → the three new pages (or the hub).
+      {
+        source: "/industries/:slug(food-suppliers|farms|restaurants|catering-companies|wholesale|hospitality)",
+        destination: "/industries/food-hospitality",
+        permanent: true,
+      },
+      { source: "/industries/insurance-brokers", destination: "/industries/insurance", permanent: true },
+      { source: "/industries/security-companies", destination: "/industries", permanent: true },
+      { source: "/design", destination: "/", permanent: true },
       // `/about` redirect removed (phase 3, Workstream C): the page is
       // rebuilt and returns again — see `app/about/page.tsx`.
-      // `/platform` and its old product sub-pages consolidate onto the
-      // homepage, which IS the product page (phase 1b). Exact-path sources
-      // only — `/platform/modules*` is untouched and keeps its own tree.
-      {
-        source: "/platform",
-        destination: "/",
-        permanent: true,
-      },
-      {
-        source: "/platform/finch",
-        destination: "/",
-        permanent: true,
-      },
-      {
-        source: "/platform/vyso-for-smes",
-        destination: "/",
-        permanent: true,
-      },
-      // Old product codename slug.
-      {
-        source: "/platform/vyso-ai",
-        destination: "/",
-        permanent: true,
-      },
+      { source: "/platform", destination: "/", permanent: true },
+      { source: "/platform/:path*", destination: "/automations", permanent: true },
       // `/finch` existed for one day in phase 1 and may have been shared; the
       // homepage absorbed it whole.
       {
@@ -97,19 +111,19 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/apps",
-        destination: "/platform/vyso-for-smes",
+        destination: "/",
         permanent: true,
       },
       {
         source: "/services",
-        destination: "/pricing",
+        destination: "/join",
         permanent: true,
       },
       // `/pricing-faq` content is absorbed into the "Pricing & terms" group
       // on `/faq` (group id `pricing` — see `lib/marketing/faq.ts`).
       {
         source: "/pricing-faq",
-        destination: "/faq#pricing",
+        destination: "/join",
         permanent: true,
       },
       // The margin/time calculator lives under the audit page now. 6b sent this
@@ -119,26 +133,27 @@ const nextConfig: NextConfig = {
       // on a real URL is also the only version a search engine can consolidate.
       {
         source: "/roi-calculator",
-        destination: "/operations-audit/calculator",
-        permanent: true,
-      },
-      // The comparisons are named after the product now, not the company —
-      // people search "Finch vs …", and Vyso is who invoices them. Content
-      // ported page-for-page, so these are true equivalents (§3).
-      {
-        source: "/compare/vyso-vs-erp-systems",
-        destination: "/compare/finch-vs-erp",
-        permanent: true,
-      },
-      {
-        source: "/compare/vyso-vs-spreadsheets",
-        destination: "/compare/finch-vs-spreadsheets",
+        destination: "/join",
         permanent: true,
       },
     ];
   },
+  // PostHog's SDK strips trailing slashes from its own calls; without this the
+  // host-level redirect breaks `/ingest` batching (PostHog reverse-proxy docs).
+  skipTrailingSlashRedirect: true,
   async rewrites() {
     return [
+      // PostHog EU reverse proxy — `instrumentation-client.ts` initialises the
+      // SDK with `api_host: "/ingest"`; these two rewrites are its server half
+      // (without them every capture 404s into the site's own routes).
+      {
+        source: "/ingest/static/:path*",
+        destination: "https://eu-assets.i.posthog.com/static/:path*",
+      },
+      {
+        source: "/ingest/:path*",
+        destination: "https://eu.i.posthog.com/:path*",
+      },
       // IndexNow key-file verification (`.ai/vyso_v2.md` §7.1): the protocol
       // requires the key published verbatim at `/{key}.txt`, which isn't a
       // real Next.js file convention and isn't knowable at build time (the

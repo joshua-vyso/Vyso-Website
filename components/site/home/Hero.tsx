@@ -16,7 +16,7 @@ import Link from "next/link";
 import { useEffect, useRef } from "react";
 import { HalftoneField } from "@/components/site/three/HalftoneField";
 import { PlasmaCta } from "@/components/site/three/PlasmaCta";
-import { useStaticMotion } from "@/components/finch/motion-preference";
+import { useStaticMotion } from "@/components/site/motion-preference";
 
 export function Hero() {
   const contentRef = useRef<HTMLDivElement>(null);

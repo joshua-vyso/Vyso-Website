@@ -21,7 +21,7 @@
 
 import dynamic from "next/dynamic";
 import { track } from "@/lib/analytics";
-import { useStaticMotion } from "@/components/finch/motion-preference";
+import { useStaticMotion } from "@/components/site/motion-preference";
 import { useNearViewport, useWebGLAvailable } from "./lifecycle";
 
 const PlasmaButton = dynamic(

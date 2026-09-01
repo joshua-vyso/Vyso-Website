@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
-import { Barlow_Condensed, DM_Sans, IBM_Plex_Mono, Inter, Instrument_Sans, Space_Grotesk, STIX_Two_Text } from "next/font/google";
+import { Barlow_Condensed, IBM_Plex_Mono, Inter, Instrument_Sans, Space_Grotesk, STIX_Two_Text } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
-import { NavGround } from "@/components/finch/NavGround";
-import { PRICE } from "@/components/finch/pricing/pricing-data";
-import { RouteFade } from "@/components/finch/RouteFade";
-import { SkipLink } from "@/components/finch/SkipLink";
-import { SmoothScroll } from "@/components/finch/SmoothScroll";
+import { RouteFade } from "@/components/site/RouteFade";
+import { SkipLink } from "@/components/site/SkipLink";
+import { SmoothScroll } from "@/components/site/SmoothScroll";
 import { SITE } from "@/lib/marketing/site";
 import "./globals.css";
 
@@ -15,14 +13,6 @@ const barlowCondensed = Barlow_Condensed({
   variable: "--font-sans",    // kept as --font-sans for existing component compat
   subsets:  ["latin"],
   weight:   ["400", "500", "600", "700", "900"],
-  display:  "swap",
-});
-
-/* ── Body font: DM Sans ───────────────────────────────────────────────────── */
-const dmSans = DM_Sans({
-  variable: "--font-body",
-  subsets:  ["latin"],
-  weight:   ["400", "500", "600", "700"],
   display:  "swap",
 });
 
@@ -78,7 +68,7 @@ const ibmPlexMono = IBM_Plex_Mono({
    here so the template doesn't double the suffix (see that file's comment). */
 export const metadata: Metadata = {
   title: {
-    default: "Vyso — Finch, your company's own COO at a tenth of the cost",
+    default: "Vyso — AI automation agency, Johannesburg",
     template: "%s | Vyso",
   },
   description: SITE.description,
@@ -91,7 +81,7 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: "Vyso — Finch, your company's own COO at a tenth of the cost",
+    title: "Vyso — AI automation agency, Johannesburg",
     description: SITE.description,
     url:      SITE.url,
     siteName: SITE.name,
@@ -106,7 +96,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Vyso — Finch, your company's own COO at a tenth of the cost",
+    title: "Vyso — AI automation agency, Johannesburg",
     description: SITE.description,
     /* Same reason: the file convention emits `twitter:image` too. */
   },
@@ -126,18 +116,12 @@ export const metadata: Metadata = {
 };
 
 /* ── Structured data graph ────────────────────────────────────────────────
-   Replaces the old two-node (Organization + WebSite) graph with the full
-   phase-1 set from `.ai/vyso_v2.md` §7.3: Organization (with its founder as
-   a Person), WebSite, the Finch SoftwareApplication and the Operations Audit
-   Service. Price figures come from `PRICE` in `components/finch/pricing/
-   pricing-data.ts` — the same constants `/pricing`'s own JSON-LD reads — so
-   this graph can never quote a number the pricing page doesn't. Pages that
-   emit their own graph (`/pricing`, `/operations-audit`) reference
-   `#organization` rather than redeclaring it; no `@id` collides with this
-   one. No address beyond Johannesburg/ZA (no street exists to publish) and
-   no ratings, per the phase-1 decision. `sameAs` is included only once
-   `SITE.sameAs` actually has entries — an empty array would misrepresent an
-   absence of public profiles as a checked-and-empty list. */
+   Agency repositioning (2026-09): Organization + WebSite + the agency's
+   Service. The old SoftwareApplication (#finch) and Operations Audit Service
+   nodes are gone with the product-first positioning — no prices are published
+   anywhere on the site, so no Offer nodes either. Pages that emit their own
+   graph reference `#organization` rather than redeclaring it. `sameAs` is
+   included only once `SITE.sameAs` actually has entries. */
 const siteSchema = {
   "@context": "https://schema.org",
   "@graph": [
@@ -145,6 +129,7 @@ const siteSchema = {
       "@type": "Organization",
       "@id": `${SITE.url}/#organization`,
       name: SITE.name,
+      description: SITE.description,
       url: SITE.url,
       logo: `${SITE.url}/icon.svg`,
       email: SITE.email,
@@ -168,7 +153,7 @@ const siteSchema = {
         "@type": "ContactPoint",
         contactType: "sales",
         email: SITE.email,
-        url: `${SITE.url}/contact`,
+        url: `${SITE.url}/about`,
         areaServed: "ZA",
         availableLanguage: "en-ZA",
       },
@@ -184,44 +169,14 @@ const siteSchema = {
       },
     },
     {
-      "@type": "SoftwareApplication",
-      "@id": `${SITE.url}/#finch`,
-      name: "Finch",
-      applicationCategory: "BusinessApplication",
-      operatingSystem: "Web",
-      // The homepage is the product page; there is no separate `/finch`.
-      url: `${SITE.url}/`,
-      provider: { "@id": `${SITE.url}/#organization` },
-      offers: {
-        "@type": "Offer",
-        price: String(PRICE.finch),
-        priceCurrency: PRICE.currency,
-        availability: "https://schema.org/InStock",
-        priceSpecification: {
-          "@type": "UnitPriceSpecification",
-          price: PRICE.finch,
-          priceCurrency: PRICE.currency,
-          unitCode: "MON",
-          referenceQuantity: {
-            "@type": "QuantitativeValue",
-            value: 1,
-            unitText: "location",
-          },
-        },
-      },
-    },
-    {
       "@type": "Service",
-      "@id": `${SITE.url}/#audit`,
-      name: "Operations Audit",
+      "@id": `${SITE.url}/#service`,
+      name: "Custom AI automation",
+      serviceType: "AI workflow automation",
       provider: { "@id": `${SITE.url}/#organization` },
       areaServed: "ZA",
-      offers: {
-        "@type": "Offer",
-        price: String(PRICE.audit),
-        priceCurrency: PRICE.currency,
-        availability: "https://schema.org/InStock",
-      },
+      description:
+        "Vyso maps a business's operation, finds the highest-value bottleneck, builds a custom AI workflow around the existing tools, and runs, monitors and improves it after launch — with human-approval steps on every outward action.",
     },
   ],
 };
@@ -233,7 +188,7 @@ export default function RootLayout({
     <html
       lang="en-ZA"
       data-scroll-behavior="smooth"
-      className={`${barlowCondensed.variable} ${dmSans.variable} ${inter.variable} ${instrumentSans.variable} ${spaceGrotesk.variable} ${stixTwoText.variable} ${ibmPlexMono.variable} h-full antialiased`}
+      className={`${barlowCondensed.variable} ${inter.variable} ${instrumentSans.variable} ${spaceGrotesk.variable} ${stixTwoText.variable} ${ibmPlexMono.variable} h-full antialiased`}
     >
       <body className="min-h-full">
         {/* First tab stop on every page: jumps keyboard/screen-reader users
@@ -259,7 +214,6 @@ export default function RootLayout({
               under `/app/*`: the platform's scroller is a nested `<main>`, and
               a document-level Lenis ate the wheel event there and scrolled
               nothing. See that file's "Marketing only" docblock. */}
-        <NavGround />
         <SmoothScroll />
         <RouteFade>{children}</RouteFade>
         {/* Phase 4, §7.7: Vercel Analytics + Speed Insights, site-wide. Both

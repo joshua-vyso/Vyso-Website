@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
-import { buildLegalSchema } from "@/components/finch/legal/legal-jsonld";
-import { LegalCrossLinks, LegalHeader, LegalSection, LegalShell } from "@/components/finch/legal/LegalReading";
+import { buildLegalSchema } from "@/components/site/legal/legal-jsonld";
+import { LegalCrossLinks, LegalHeader, LegalSection, LegalShell } from "@/components/site/legal/LegalReading";
 
 /* `/privacy` reskinned into the shared legal reading layout — the WebGL
    shader, glass panel and old typography are gone, but every sentence of the

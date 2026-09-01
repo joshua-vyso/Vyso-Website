@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 
-import { buildLegalSchema } from "@/components/finch/legal/legal-jsonld";
-import { DraftChip, LegalCrossLinks, LegalHeader, LegalSection, LegalShell } from "@/components/finch/legal/LegalReading";
-import { FOUNDING_TERMS, PRICE } from "@/components/finch/pricing/pricing-data";
+import { buildLegalSchema } from "@/components/site/legal/legal-jsonld";
+import { DraftChip, LegalCrossLinks, LegalHeader, LegalSection, LegalShell } from "@/components/site/legal/LegalReading";
 
 /* TODO(user): this page is a first draft, assembled only from facts already
    published elsewhere on the site (the R6,000/location/month offer, the
@@ -62,35 +61,35 @@ export default function TermsPage() {
 
       <LegalSection title="1. Who these terms are between">
         <p>
-          These are draft terms between Vyso, an operations software and implementation business
-          operated by Joshua Moreira as a sole proprietor in South Africa, and a business that
-          engages Vyso for the Finch service or the Operations Audit described below.
+          These are draft terms between Vyso, an AI automation agency operated by Joshua Moreira
+          as a sole proprietor in South Africa, and a business that engages Vyso to design, build
+          or operate the automation services described below.
         </p>
       </LegalSection>
 
       <LegalSection title="2. The service">
         <p>
-          Finch is Vyso&rsquo;s AI operations service: agents that watch a customer&rsquo;s invoices,
-          stock, suppliers, debtors and margins, and report on them. The published price is{" "}
-          {rand(PRICE.finch)} per location per month, everything included — every module and agent,
-          activated in priority order from the customer&rsquo;s operations audit, plus a monthly ops
-          review with their Vyso lead.
+          Vyso designs, builds and operates custom AI automations around a customer&rsquo;s
+          existing systems: document processing, reconciliation, monitoring and alerts,
+          follow-ups and operational reporting, with human-approval steps on outward actions.
+          The exact scope, deliverables and fees of each engagement are agreed in writing before
+          work begins; no prices are published on this site.
         </p>
       </LegalSection>
 
-      <LegalSection title="3. The Operations Audit">
+      <LegalSection title="3. The mapping phase">
         <p>
-          Engagements typically begin with a one-week Operations Audit, priced at {rand(PRICE.audit)}.
-          That amount is credited toward the customer&rsquo;s first month of Finch if they go on to
-          sign up. The audit is delivered whether or not the customer proceeds.
+          Engagements typically begin with a mapping phase in which Vyso documents the
+          customer&rsquo;s operation and identifies the highest-value bottleneck. Its output is
+          delivered whether or not the customer proceeds to a build.
         </p>
       </LegalSection>
 
-      <LegalSection title="4. Founding client terms">
+      <LegalSection title="4. Early-client terms">
         <p>
-          While Vyso is taking on its founding cohort, founding clients receive: {FOUNDING_TERMS.join(", ").toLowerCase()}.
-          These terms apply for as long as the customer remains on the service, on the basis published
-          on <a href="/founding-client">/founding-client</a> at the time they signed up.
+          Where Vyso agrees preferential terms with early clients, those terms are recorded in
+          the written engagement agreement at the time of signing and apply for as long as that
+          agreement provides.
         </p>
       </LegalSection>
 

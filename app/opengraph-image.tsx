@@ -9,15 +9,15 @@ import { renderOgImage, OG_CONTENT_TYPE, OG_SIZE } from "@/lib/og/render";
 import { FLAGSHIP } from "@/lib/marketing/findings";
 
 export const runtime = "nodejs";
-export const alt = "Meet Finch. Your company's own COO — at a tenth of the cost.";
+export const alt = "Vyso — AI automation for the work that slows your business down.";
 export const size = OG_SIZE;
 export const contentType = OG_CONTENT_TYPE;
 
 export default function Image() {
   return renderOgImage({
-    eyebrow: "FINCH BY VYSO",
-    /* The homepage H1 verbatim (`components/finch/HomeHero.tsx`). */
-    title: "Meet Finch. Your company’s own COO — at a tenth of the cost.",
+    eyebrow: "VYSO · AI AUTOMATION AGENCY",
+    /* The homepage H1 verbatim (`components/site/home/Hero.tsx`). */
+    title: "AI automation for the work that slows your business down.",
     /* The hero's card, read from the findings library rather than hand-copied.
        `lib/marketing/findings.ts` carries no `"use client"` directive precisely
        so a server route can read it — the previous copy of these five strings
@@ -29,6 +29,6 @@ export default function Image() {
       evidence: FLAGSHIP.evidence,
       meta: FLAGSHIP.meta,
     },
-    caption: "ILLUSTRATIVE EXAMPLE",
+    caption: "ILLUSTRATIVE DEMO DATA",
   });
 }

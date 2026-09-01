@@ -1,0 +1,10 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>ServiceDen fox den mark</title>
+  <rect width="512" height="512" rx="112" fill="#1F5FA8"/>
+  <!-- Den: an open, welcoming cave arch. -->
+  <path d="M104 390V278C104 174.17 188.17 90 292 90C395.83 90 480 174.17 480 278V390" stroke="#BE5D23" stroke-width="18" stroke-linecap="round"/>
+  <!-- Fox: a quiet, geometric outline held by the den. -->
+  <path d="M181 229L227 251L256 178L285 251L331 229L315 337L256 398L197 337L181 229Z" stroke="#BE5D23" stroke-width="18" stroke-linejoin="round"/>
+  <path d="M220 300L242 311M292 300L270 311" stroke="#BE5D23" stroke-width="18" stroke-linecap="round"/>
+  <path d="M241 338L256 353L271 338" stroke="#BE5D23" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

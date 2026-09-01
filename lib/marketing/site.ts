@@ -20,8 +20,10 @@ export const SITE = {
      produce SMEs, at R6,000 per location per month." → dropped "-based" and
      the "own COO" aside (carried elsewhere in the copy, e.g. the homepage H1)
      to land at 154 characters without changing any fact. */
+  /* Agency repositioning (2026-09, `.ai/positioning_agency_2026.md`): Vyso is
+     the AI automation agency; Finch is an example build, not the entity. */
   description:
-    "Vyso is a Johannesburg company whose product, Finch, is an AI operations assistant for South African food and produce SMEs. R6,000 per location per month.",
+    "Vyso is a Johannesburg AI automation agency. We design, build and run custom AI workflows around the tools a business already uses — with humans approving what matters.",
 
   locale: "en-ZA",
 

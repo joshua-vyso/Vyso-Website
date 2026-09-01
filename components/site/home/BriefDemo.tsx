@@ -14,7 +14,7 @@
    no client data, no claimed results. */
 
 import { useEffect, useRef, useState } from "react";
-import { useStaticMotion } from "@/components/finch/motion-preference";
+import { useStaticMotion } from "@/components/site/motion-preference";
 
 const STEPS = [
   { id: "arrive", k: "01", label: "Invoice arrives" },
