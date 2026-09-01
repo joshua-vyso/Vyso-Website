@@ -1887,3 +1887,14 @@ textarea.vy-field { height: auto; min-height: 120px; padding: 14px 16px; resize:
     transition: none;
   }
 }
+
+/* Reviews grid arriving out of the integration stage: same black at the seam,
+   easing into the ink ground — and the flow-field layer's edges feather so
+   the atmosphere emerges rather than starting at a rectangle. */
+.vy-reviews-blend {
+  background: linear-gradient(180deg, #050403 0%, #0E0C09 220px, #14120E 460px);
+}
+.vy-flowfield {
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 460px, #000 calc(100% - 140px), rgba(0, 0, 0, 0.4) 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, #000 460px, #000 calc(100% - 140px), rgba(0, 0, 0, 0.4) 100%);
+}

@@ -81,26 +81,53 @@ const NAV_LINKS: DockLink[] = [
 export function DockNav() {
   const dockRef = useRef<HTMLElement>(null);
   const pathname = usePathname();
-  /* Scroll-direction collapse: scrolling down folds the bar into a compact
-     hamburger at the top right; any upward scroll (or the hamburger itself)
-     unfolds it. Purely presentational on the SITE's wrapper — the registered
-     controller keeps running on the intact bar underneath. */
+  /* Collapse rules (Josh, 2026-09): the full bar is CONSTANT over the hero;
+     everywhere else it lives as the hamburger, opened by a press. The one
+     exception: an upward scroll while still in the problem section (just
+     after the hero) unfolds the bar — beyond that, scrolling up does nothing
+     and only the hamburger expands it. A manual expand gets ~120px of grace
+     before scroll-down folds it again. Presentation only, on the SITE's
+     wrapper — the registered controller keeps running underneath. */
   const [collapsed, setCollapsed] = useState(false);
+  const manualExpandYRef = useRef<number | null>(null);
 
   useEffect(() => {
     let lastY = window.scrollY;
     let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const y = window.scrollY;
+      const delta = y - lastY;
+      lastY = y;
+      const vh = window.innerHeight;
+
+      const heroWrap = document.querySelector<HTMLElement>(".vy-hero-wrap");
+      /* Hero zone: while the sticky hero stage is still what the wrapper is
+         paying out (its travel = wrapper height − one viewport). Pages
+         without a hero treat the top of the page the same way. */
+      const heroZone = heroWrap ? y < heroWrap.offsetHeight - vh : y < 180;
+      if (heroZone) {
+        manualExpandYRef.current = null;
+        setCollapsed(false);
+        return;
+      }
+      if (Math.abs(delta) < 6) return;
+      if (delta > 0) {
+        const grace = manualExpandYRef.current;
+        if (grace !== null && y < grace + 120) return;
+        manualExpandYRef.current = null;
+        setCollapsed(true);
+        return;
+      }
+      /* Scrolling up: only the problem section re-expands. */
+      const problem = document.getElementById("problem-heading")?.closest("section");
+      if (problem) {
+        const rect = problem.getBoundingClientRect();
+        if (rect.bottom > 0 && rect.top < vh) setCollapsed(false);
+      }
+    };
     const onScroll = () => {
-      if (frame) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        const y = window.scrollY;
-        const delta = y - lastY;
-        if (Math.abs(delta) < 6) return;
-        if (delta > 0 && y > 180) setCollapsed(true);
-        else if (delta < 0 || y <= 180) setCollapsed(false);
-        lastY = y;
-      });
+      if (!frame) frame = requestAnimationFrame(measure);
     };
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => {
@@ -137,7 +164,10 @@ export function DockNav() {
         className="vy-navburger"
         aria-label="Show navigation"
         aria-expanded={!collapsed}
-        onClick={() => setCollapsed(false)}
+        onClick={() => {
+          manualExpandYRef.current = window.scrollY;
+          setCollapsed(false);
+        }}
         inert={!collapsed}
       >
         <svg viewBox="0 0 20 20" aria-hidden="true">

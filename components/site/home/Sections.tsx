@@ -102,7 +102,7 @@ function TestimonialCard({ testimonial }: { testimonial: Testimonial }) {
 export function TestimonialsSection({ withHeader = true }: { withHeader?: boolean }) {
   return (
     <section
-      className={`relative overflow-hidden bg-ink ${withHeader ? "py-24 md:py-32" : "pb-24 pt-14 md:pb-32"}`}
+      className={`relative overflow-hidden ${withHeader ? "bg-ink py-24 md:py-32" : "vy-reviews-blend pb-24 pt-16 md:pb-32"}`}
       aria-labelledby="testimonials-heading"
     >
       <FlowFieldLayer />

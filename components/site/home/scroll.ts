@@ -45,6 +45,8 @@ export function useStickyProgress<T extends HTMLElement>() {
     );
     observer.observe(node);
     window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("wheel", onScroll, { passive: true });
+    window.addEventListener("touchmove", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
     onScroll();
 
@@ -52,6 +54,8 @@ export function useStickyProgress<T extends HTMLElement>() {
       if (frame) cancelAnimationFrame(frame);
       observer.disconnect();
       window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("wheel", onScroll);
+      window.removeEventListener("touchmove", onScroll);
       window.removeEventListener("resize", onScroll);
     };
   }, []);

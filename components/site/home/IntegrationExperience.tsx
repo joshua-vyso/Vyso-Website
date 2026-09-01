@@ -85,7 +85,7 @@ function FinaleStage({ progress, compact }: { progress: number; compact: boolean
   /* Extended-pin handoff: after a short hold, the whole brain composition
      shrinks and lifts while the reviews header rises into the lower half —
      the stage then releases straight into the (headerless) card grid. */
-  const handoff = easeOut(span(progress, 0.82, 0.97));
+  const handoff = easeOut(span(progress, 0.78, 0.95));
   const mounted = progress > 0.32;
 
   return (
