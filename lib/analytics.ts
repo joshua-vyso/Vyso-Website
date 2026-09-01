@@ -38,6 +38,14 @@ export type AnalyticsEvents = {
      from a data file this module otherwise has no reason to know about, and a
      `<select>` is the only thing that can produce the value. */
   orbit_waitlist_submit: { trade: string };
+  /* Agency redesign (2026-09): the one conversion goal. `source` is a closed
+     set of site placements, never visitor input. The form events mirror the
+     brief's start → submit → success/failure funnel. */
+  join_waitlist_click: { source: "hero_plasma" | "nav" | "mobile_nav" | "section_cta" | "footer" };
+  waitlist_form_start: Record<string, never>;
+  waitlist_form_submit: Record<string, never>;
+  waitlist_form_success: Record<string, never>;
+  waitlist_form_failure: { reason: "validation" | "network" | "server" };
 };
 
 export type AnalyticsEvent = keyof AnalyticsEvents;

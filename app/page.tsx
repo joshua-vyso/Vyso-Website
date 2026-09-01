@@ -1,44 +1,82 @@
 import type { Metadata } from "next";
-import { AuditBand } from "@/components/finch/AuditBand";
-import { FinchFooter } from "@/components/finch/FinchFooter";
-import { FinchNav } from "@/components/finch/FinchNav";
-import { FoundingQuote } from "@/components/finch/FoundingQuote";
-import { HomeHero } from "@/components/finch/HomeHero";
-import { PlatformShowcase } from "@/components/finch/PlatformShowcase";
-import { ScrollSequence } from "@/components/finch/ScrollSequence";
-import { Senses } from "@/components/finch/Senses";
-import { SequenceIntro } from "@/components/finch/SequenceIntro";
-import { UnderTheHood } from "@/components/finch/UnderTheHood";
-import { WhatFinchWatches } from "@/components/finch/WhatFinchWatches";
+import { SiteFooter, SiteNav } from "@/components/site/SiteChrome";
+import { Hero } from "@/components/site/home/Hero";
+import { BriefDemo } from "@/components/site/home/BriefDemo";
+import {
+  CapabilitiesSection,
+  FaqSection,
+  FinalCtaSection,
+  IndustriesSection,
+  IntegrationsSection,
+  ProblemSection,
+  ProcessSection,
+  SectionHead,
+  TestimonialsSection,
+} from "@/components/site/home/Sections";
+import { HOME_FAQ } from "@/components/site/content";
+import { SITE } from "@/lib/marketing/site";
 
 export const metadata: Metadata = {
-  title: "Finch by Vyso — your company's own COO, at a tenth of the cost",
+  title: { absolute: "Vyso — AI automation for the work that slows your business down" },
   description:
-    "Your business runs on WhatsApp, spreadsheets and gut feel. Finch's AI agents watch your invoices, stock, suppliers and margins — catch money leaking, and tell you what to do about it. Built by Vyso for South African food businesses.",
+    "Vyso is a Johannesburg AI automation agency. We design, build and run custom AI workflows around the tools you already use — documents read, numbers checked, follow-ups chased, and a daily brief your team approves.",
+  alternates: { canonical: "/" },
 };
 
-/* The homepage is a server component: only the finding card, the scroll
-   sequence and the pieces they own need the client. `.finch-site` scopes the
-   Finch tokens and opts the page out of the site-wide blend surface. */
+/* Visible-FAQ JSON-LD only — the questions rendered by FaqSection. */
+const faqSchema = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "@id": `${SITE.url}/#faq`,
+  mainEntity: HOME_FAQ.map((item) => ({
+    "@type": "Question",
+    name: item.q,
+    acceptedAnswer: { "@type": "Answer", text: item.a },
+  })),
+};
+
 export default function Home() {
   return (
-    <div className="finch-site min-h-screen bg-fn-bg font-fn-sans text-fn-ink antialiased">
-      <FinchNav />
+    <div className="vy-site">
+      <SiteNav />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema).replace(/</g, "\\u003c") }}
+      />
       <main id="main">
-        <HomeHero />
-        <SequenceIntro />
-        <ScrollSequence />
-        <PlatformShowcase />
-        <WhatFinchWatches />
-        <Senses />
-        <FoundingQuote />
-        <UnderTheHood />
-        {/* `home` is the only variant that renders the site's one
-            `GradientRibbon` (§3). Every other route gets the shared dark plate
-            on paper — see `AuditBand.tsx`. */}
-        <AuditBand variant="home" />
+        {/* Dark cinematic hero → the paper sheet slides over it (§ transition). */}
+        <div className="vy-hero-wrap">
+          <Hero />
+        </div>
+        <div className="vy-sheet vy-sheet-overlap">
+          <ProblemSection />
+          <CapabilitiesSection />
+          <section className="border-t border-line py-24 md:py-32" aria-labelledby="brief-heading">
+            <div className="mx-auto max-w-[1200px] px-6">
+              <SectionHead
+                eyebrow="Proof, not promises"
+                title={
+                  <span id="brief-heading">
+                    What a Vyso automation looks like{" "}
+                    <em className="vy-serif font-normal italic">inside your business.</em>
+                  </span>
+                }
+                lead="One document's journey through a build we run in production today — from a PDF in an inbox to an approved action in the morning brief."
+              />
+              <div className="mt-14">
+                <BriefDemo />
+              </div>
+            </div>
+          </section>
+          <ProcessSection />
+          <IntegrationsSection />
+          <IndustriesSection />
+          <TestimonialsSection />
+          <FaqSection />
+          <FinalCtaSection />
+        </div>
       </main>
-      <FinchFooter />
+      <SiteFooter />
     </div>
   );
 }

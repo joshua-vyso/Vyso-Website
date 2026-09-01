@@ -1,5 +1,10 @@
 @import "tailwindcss";
 @import "shadcn/tailwind.css";
+/* Verified ThreeUI registered stylesheet — imported once, globally, per the
+   integration protocol (`.ai/threeui_source_record.md`). Never edited; all
+   site-side adjustments live in the "Agency site" layer at the end of this
+   file and apply only to elements the site itself composes. */
+@import "../src/shaders/threeui.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -1345,3 +1350,410 @@ html.lenis, html.lenis body { height: auto; }
 .orbit-site main > [data-ground].bg-ob-bg-2 + [data-ground].bg-ob-bg-2 { --ob-fade-t: 0px; }
 /* …and none between the last band and the footer, which is the same fill. */
 .orbit-site main > [data-ground]:last-child { --ob-fade-b: 0px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Agency site (redesign/agency-2026)
+   ══════════════════════════════════════════════════════════════════════════
+   Vyso as an AI automation agency. Scoped to `.vy-site` (components/site/**).
+   The four brand colours are the EXACT values already deployed on vyso.co.za
+   (the `--fn-*` system above): ink #14120E, paper #FAF9F6, signal #FF7727,
+   system #4B96DD. Every tonal step below is either an existing deployed
+   variant or derived from one — no new hues. */
+
+@theme {
+  --color-ink: #14120E;
+  --color-ink-2: #4A463C;
+  --color-ink-3: #6B6659;
+  --color-paper: #FAF9F6;
+  --color-paper-2: #F2EEE6;
+  --color-line: #E7E3DA;
+  --color-line-2: #D8D3C6;
+  --color-signal: #FF7727;
+  --color-signal-cta: #BD4A0E;
+  --color-signal-deep: #A8410C;
+  --color-signal-tint: #F3D9C6;
+  --color-signal-ondark: #FFB27A;
+  --color-system: #4B96DD;
+  --color-system-deep: #2F6FAE;
+  --color-system-tint: #EDF4FB;
+  --color-system-stroke: #3E7BC4;
+  --color-inkline: #2A2722;
+  --color-ondark: #FAF9F6;
+  --color-ondark-2: #B9B3A3;
+  --color-ondark-3: #8A8474;
+}
+
+.vy-site {
+  --vy-focus: #14120E;
+  --vy-focus-dark: #C9DEF7;
+  --vy-shadow-card: 0 1px 2px rgba(20, 18, 14, 0.05), 0 8px 24px rgba(20, 18, 14, 0.06);
+  --vy-shadow-float: 0 14px 44px rgba(20, 18, 14, 0.10);
+  --vy-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-instrument), "Instrument Sans", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.vy-serif { font-family: var(--font-stix), "STIX Two Text", Georgia, serif; }
+.vy-mono  { font-family: var(--font-plex-mono), "IBM Plex Mono", ui-monospace, monospace; }
+
+/* Eyebrow labels — mono, tracked, uppercase; the site's system voice. */
+.vy-eyebrow {
+  font-family: var(--font-plex-mono), "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+/* Focus — visible on both grounds. */
+.vy-site :focus-visible {
+  outline: 2px solid var(--vy-focus);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+.vy-site [data-ground="dark"] :focus-visible,
+.vy-site .vy-on-dark :focus-visible {
+  outline-color: var(--vy-focus-dark);
+}
+
+/* Skip link */
+.vy-skip {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 200;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: var(--color-ink);
+  color: var(--color-paper);
+  transform: translateY(-64px);
+  opacity: 0;
+  transition: transform 0.2s var(--vy-ease), opacity 0.2s;
+}
+.vy-skip:focus-visible {
+  transform: translateY(0);
+  opacity: 1;
+  outline-color: var(--vy-focus-dark);
+}
+
+/* ── Dock header frame ────────────────────────────────────────────────────
+   Hosts the AnimatedTopDock command bar (registered controller + authored
+   `atd-modern` classes) as the real site navigation. The frame supplies the
+   container-query context the authored clamp() scale expects, and neutralises
+   only the demo-catalogue framing (`background`, `overflow`) on the element
+   the SITE composes — registered files untouched. */
+.vy-dockframe {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 100;
+  height: calc(clamp(16px, 2.6vw, 46px) + clamp(48px, 3.4vw, 68px) + 28px);
+  pointer-events: none;
+  container-type: inline-size;
+}
+.vy-dockframe .animated-top-dock-component.atd-modern {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  overflow: visible;
+}
+.vy-dockframe .atd-modern__bar {
+  pointer-events: auto;
+}
+/* Wordmark inside the authored brand slot. */
+.vy-dockframe .atd-modern__word {
+  letter-spacing: 0.14em;
+  font-weight: 700;
+}
+.vy-dockframe .atd-modern__item {
+  color: #a7abba;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  text-decoration: none;
+  font: 500 var(--atd-label) / 1 inherit;
+  transition: color 0.16s;
+}
+.vy-dockframe .atd-modern__item[data-dock-near="true"],
+.vy-dockframe .atd-modern__item:hover,
+.vy-dockframe .atd-modern__item:focus-visible,
+.vy-dockframe .atd-modern__item[aria-current="page"] {
+  color: #f0f1f6;
+}
+.vy-dockframe .atd-modern__ghost {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+.vy-dockframe .atd-modern__cta {
+  text-decoration: none;
+}
+/* On the paper ground the glass bar needs an ink base to stay legible. */
+.vy-dockframe[data-ground="paper"] .atd-modern__bar {
+  background: linear-gradient(180deg, rgba(22, 20, 16, 0.92), rgba(14, 13, 10, 0.88));
+}
+
+/* Mobile nav (authored dock is a pointer-proximity instrument; below 720px the
+   site swaps in its own plain header per the integration brief). */
+.vy-mobilebar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 100;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 10px 20px;
+  background: color-mix(in srgb, var(--color-ink) 92%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  color: var(--color-paper);
+}
+@media (max-width: 719px) {
+  .vy-dockframe { display: none; }
+  .vy-mobilebar { display: flex; }
+}
+@media (min-width: 720px) {
+  .vy-mobilebar { display: none; }
+}
+
+/* ── Shader frames ──────────────────────────────────────────────────────── */
+.shader-frame {
+  position: relative;
+  display: block;
+}
+.shader-frame > iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+/* Hero: the halftone field fills the sticky stage; content sits above. */
+.vy-hero-stage {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  overflow: hidden;
+  background: #000;
+}
+.vy-hero-field {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+.vy-hero-content {
+  position: relative;
+  z-index: 10;
+  height: 100%;
+  pointer-events: none;
+}
+.vy-hero-content a,
+.vy-hero-content button {
+  pointer-events: auto;
+}
+/* Text-safe region — the headline column carries its own vignette so copy
+   stays readable over the flow without boxing it in. */
+.vy-hero-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.62) 40%, rgba(0, 0, 0, 0.18) 62%, rgba(0, 0, 0, 0) 78%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0) 30%, rgba(0, 0, 0, 0) 62%, rgba(0, 0, 0, 0.6) 100%);
+}
+
+/* The paper sheet that slides over the dark hero. */
+.vy-sheet {
+  position: relative;
+  z-index: 20;
+  border-radius: 28px 28px 0 0;
+  background: var(--color-paper);
+  box-shadow: 0 -18px 60px rgba(0, 0, 0, 0.35);
+}
+
+/* ── Buttons (site-wide; hero primary is the Plasma component) ──────────── */
+.vy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 52px;
+  padding: 0 26px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-decoration: none;
+  transition: transform 0.18s var(--vy-ease), box-shadow 0.18s, background 0.18s;
+}
+.vy-btn:hover { transform: translateY(-1px); }
+.vy-btn:active { transform: translateY(0); }
+.vy-btn-primary {
+  background: var(--color-signal-cta);
+  color: #FFF7F0;
+  box-shadow: 0 10px 26px -12px rgba(189, 74, 14, 0.65);
+}
+.vy-btn-primary:hover { background: var(--color-signal-deep); }
+.vy-btn-quiet {
+  border: 1px solid var(--color-line-2);
+  color: var(--color-ink);
+  background: transparent;
+}
+.vy-btn-quiet:hover { border-color: var(--color-ink-3); }
+.vy-btn-ondark {
+  border: 1px solid var(--color-inkline);
+  color: var(--color-ondark);
+  background: rgba(250, 249, 246, 0.04);
+}
+.vy-btn-ondark:hover { background: rgba(250, 249, 246, 0.09); }
+/* System-blue supporting CTA — the lighter cousin of the Plasma control. */
+.vy-btn-system {
+  color: #EAF3FE;
+  background: linear-gradient(180deg, #2F6FAE, #1F4C7E);
+  box-shadow: 0 10px 30px -12px rgba(75, 150, 221, 0.75), inset 0 1px rgba(201, 222, 247, 0.35);
+}
+.vy-btn-system:hover {
+  box-shadow: 0 14px 34px -12px rgba(75, 150, 221, 0.9), inset 0 1px rgba(201, 222, 247, 0.35);
+}
+
+/* ── Reveal on scroll (opacity/transform only; disabled under reduced motion) */
+.vy-reveal {
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity 0.6s var(--vy-ease), transform 0.6s var(--vy-ease);
+}
+.vy-reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vy-reveal { opacity: 1; transform: none; transition: none; }
+  .vy-hero-stage { position: relative; height: auto; min-height: 88svh; }
+}
+
+/* ── Cards ──────────────────────────────────────────────────────────────── */
+.vy-card {
+  border: 1px solid var(--color-line);
+  border-radius: 18px;
+  background: #FFFFFF;
+  box-shadow: var(--vy-shadow-card);
+}
+.vy-card-dark {
+  border: 1px solid var(--color-inkline);
+  border-radius: 18px;
+  background: #1B1915;
+}
+
+/* ── Forms ──────────────────────────────────────────────────────────────── */
+.vy-field {
+  width: 100%;
+  height: 52px;
+  padding: 0 16px;
+  border: 1px solid var(--color-line-2);
+  border-radius: 12px;
+  background: #FFFFFF;
+  color: var(--color-ink);
+  font-size: 0.95rem;
+}
+.vy-field:focus-visible { outline-offset: 0; outline-width: 2px; }
+textarea.vy-field { height: auto; min-height: 120px; padding: 14px 16px; resize: vertical; }
+.vy-field[aria-invalid="true"] { border-color: #A32D2D; }
+.vy-error { color: #A32D2D; font-size: 0.85rem; }
+
+/* ── ThreeUI stage plumbing (site-composed wrappers only) ─────────────────── */
+.vy-halftone-frame,
+.vy-flowfield-frame > iframe {
+  opacity: 0;
+  animation: vy-frame-in 0.9s ease 0.15s forwards;
+}
+.vy-halftone-frame { position: absolute; inset: 0; width: 100%; height: 100%; }
+@keyframes vy-frame-in { to { opacity: 1; } }
+
+/* Plasma CTA module: the registered field in a clipped frame, with the site's
+   own action label as the accessible link content beneath the visual. */
+.vy-plasma {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+}
+.vy-plasma-frame {
+  width: min(340px, 78vw);
+  height: 150px;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(201, 222, 247, 0.18);
+  box-shadow: 0 24px 60px -20px rgba(8, 76, 142, 0.75);
+  pointer-events: none;
+  transition: transform 0.22s cubic-bezier(0.34, 1.4, 0.5, 1), box-shadow 0.22s;
+}
+.vy-plasma-link {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  text-decoration: none;
+  border-radius: 20px;
+}
+.vy-plasma-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  color: #E2F1FF;
+  background: rgba(5, 11, 26, 0.72);
+  border: 1px solid rgba(201, 222, 247, 0.22);
+  font-weight: 600;
+  font-size: 0.92rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  transition: background 0.2s, border-color 0.2s;
+}
+.vy-plasma { padding-bottom: 21px; }
+.vy-plasma-link:hover ~ .vy-plasma-frame,
+.vy-plasma:has(.vy-plasma-link:hover) .vy-plasma-frame {
+  transform: translateY(-2px);
+  box-shadow: 0 30px 70px -20px rgba(8, 96, 172, 0.85);
+}
+.vy-plasma:has(.vy-plasma-link:hover) .vy-plasma-label {
+  background: rgba(8, 30, 60, 0.85);
+  border-color: rgba(201, 222, 247, 0.5);
+}
+.vy-plasma-link:focus-visible {
+  outline: 2px solid var(--vy-focus-dark, #C9DEF7);
+  outline-offset: 4px;
+}
+
+/* Flow-field atmosphere layer for the testimonial band. */
+.vy-flowfield {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.vy-flowfield-frame { position: absolute; inset: 0; }
+
+/* Dock wordmark sizing inside the authored brand slot. */
+.vy-dock-wordmark { display: block; width: 54px; height: auto; }
+
+/* Mobile menu dialog */
+.vy-mobilemenu::backdrop { background: rgba(0, 0, 0, 0.5); }
+
+/* Hero scroll-over choreography: the wrap gives the sticky stage its travel,
+   the sheet overlaps the tail of that travel so it slides over the dark field.
+   Under reduced motion both collapse to plain stacked sections. */
+.vy-hero-wrap { height: 175svh; }
+.vy-sheet-overlap { margin-top: -75svh; }
+@media (prefers-reduced-motion: reduce) {
+  .vy-hero-wrap { height: auto; }
+  .vy-sheet-overlap { margin-top: 0; }
+}
+
+/* The hero's shader frame must fill the stage regardless of rule order
+   (.shader-frame's base `position: relative` follows the utility layer). */
+.vy-hero-field .shader-frame {
+  position: absolute;
+  inset: 0;
+}

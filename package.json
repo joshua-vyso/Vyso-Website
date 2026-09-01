@@ -30,7 +30,8 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "resend": "^6.12.4",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "three128": "npm:three@^0.128.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -39,8 +40,11 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.7",
+    "puppeteer-core": "^25.9.0",
+    "raw-loader": "^4.0.2",
     "shadcn": "^4.10.0",
     "tailwindcss": "^4",
+    "types-three128": "npm:@types/three@^0.128.0",
     "typescript": "^5"
   }
 }

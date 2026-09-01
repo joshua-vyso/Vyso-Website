@@ -1,118 +1,64 @@
 import type { Metadata } from "next";
-
-import { AuditBand } from "@/components/finch/AuditBand";
-import { FinchFooter } from "@/components/finch/FinchFooter";
-import { FinchNav } from "@/components/finch/FinchNav";
-import { Breadcrumb, Eyebrow } from "@/components/finch/industries/IndustryBits";
-import { ExperimentalCards, IndustryCards } from "@/components/finch/industries/IndustryCards";
-import { buildIndustriesHubSchema } from "@/components/finch/industries/industries-jsonld";
-import {
-  EXPERIMENTAL_INDUSTRY_ORDER,
-  HUB,
-  PRIMARY_INDUSTRY_ORDER,
-} from "@/lib/marketing/industries";
+import Link from "next/link";
+import { PageShell, PageHero, JsonLd, breadcrumbs } from "@/components/site/PageShell";
+import { INDUSTRY_PAGES } from "@/components/site/industries-content";
 import { SITE } from "@/lib/marketing/site";
 
-/* `/industries` — the vertical hub. Six primary operations, then a quiet "Also
-   watching" row for the two experimental verticals, which are linked from here
-   and the sitemap and nowhere else (`.ai/vyso_v2.md` §2.2).
-
-   Root layout supplies the `%s | Vyso` suffix, so the title here is the page
-   half only. `.finch-site` scopes the `--fn-*` tokens and opts the route out of
-   the site-wide blend surface, exactly as `/` and `/pricing` do. */
-
 export const metadata: Metadata = {
-  title: HUB.title,
-  description: HUB.description,
-  alternates: { canonical: `${SITE.url}/industries` },
-  robots: { index: true, follow: true },
-  openGraph: {
-    title: HUB.title,
-    description: HUB.description,
-    url: `${SITE.url}/industries`,
-    siteName: SITE.name,
-    locale: "en_ZA",
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: HUB.title,
-    description: HUB.description,
-  },
+  title: "Industries",
+  description:
+    "The operations Vyso knows well enough to be specific about: food & hospitality (where our production builds run today), construction, and insurance — each with the workflows we automate and what stays under human control.",
+  alternates: { canonical: "/industries" },
 };
 
 export default function IndustriesPage() {
   return (
-    <div className="finch-site min-h-screen bg-fn-bg font-fn-sans text-fn-ink antialiased">
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify(buildIndustriesHubSchema()).replace(/</g, "\\u003c"),
+    <PageShell>
+      <JsonLd data={breadcrumbs([["Home", "/"], ["Industries", "/industries"]])} />
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "ItemList",
+          "@id": `${SITE.url}/industries#list`,
+          itemListElement: INDUSTRY_PAGES.map((industry, index) => ({
+            "@type": "ListItem",
+            position: index + 1,
+            name: industry.name,
+            url: `${SITE.url}/industries/${industry.slug}`,
+          })),
         }}
       />
-      <FinchNav active="industries" />
-
-      <main id="main">
-        <section className="mx-auto max-w-[1160px] px-[20px] pt-[36px] lg:px-[40px] lg:pt-[56px]">
-          <Breadcrumb
-            trail={[
-              { label: "Home", href: "/" },
-              { label: "Industries", href: "/industries" },
-            ]}
-          />
-          <Eyebrow>{HUB.eyebrow}</Eyebrow>
-          <h1 className="m-0 mb-[18px] max-w-[820px] font-fn-serif text-[36px] font-medium leading-[1.1] tracking-[-0.02em] text-pretty lg:mb-[22px] lg:text-[54px] lg:leading-[1.06] lg:tracking-[-0.025em]">
-            {HUB.h1Plain} <span className="text-fn-ink-3">{HUB.h1Accent}</span>
-          </h1>
-          <p className="m-0 max-w-[620px] text-[15px] leading-[1.65] text-fn-ink-2 text-pretty lg:text-[17px]">
-            {HUB.lead}
-          </p>
-        </section>
-
-        <section
-          className="mx-auto max-w-[1160px] px-[20px] pt-[56px] lg:px-[40px] lg:pt-[84px]"
-          aria-labelledby="primary-heading"
-        >
-          <Eyebrow>{HUB.primaryEyebrow}</Eyebrow>
-          <h2
-            id="primary-heading"
-            className="m-0 mb-[16px] font-fn-serif text-[28px] font-medium leading-[1.15] tracking-[-0.02em] lg:text-[38px]"
+      <PageHero
+        eyebrow="Industries"
+        title={
+          <>
+            Operations we know well enough{" "}
+            <em className="vy-serif font-normal italic text-signal-deep">to be specific about.</em>
+          </>
+        }
+        lead="The automations don't change per industry — what changes is which workflows earn their place first, and in whose vocabulary. These are the three operations where we can be concrete rather than general."
+      />
+      <div className="mx-auto max-w-[1200px] space-y-5 px-6 pb-24">
+        {INDUSTRY_PAGES.map((industry, index) => (
+          <Link
+            key={industry.slug}
+            href={`/industries/${industry.slug}`}
+            className="group grid gap-6 rounded-2xl border border-line bg-white p-6 transition-shadow hover:shadow-[var(--vy-shadow-float)] md:grid-cols-[minmax(0,4fr)_minmax(0,7fr)_auto] md:items-center md:p-8"
           >
-            {HUB.primaryHeading}
-          </h2>
-          <p className="m-0 mb-[32px] max-w-[620px] text-[15px] leading-[1.65] text-fn-ink-3 text-pretty lg:mb-[44px] lg:text-[15.5px]">
-            {HUB.primaryLead}
-          </p>
-          <IndustryCards slugs={PRIMARY_INDUSTRY_ORDER} />
-        </section>
-
-        {/* "Also watching" — quieter by design: these two are experimental, and
-            the row's weight should say so before the chip does. */}
-        <section
-          className="mx-auto max-w-[1160px] px-[20px] pt-[72px] lg:px-[40px] lg:pt-[110px]"
-          aria-labelledby="also-heading"
-        >
-          <div className="border-t border-fn-line pt-[36px]">
-            <Eyebrow>{HUB.alsoEyebrow}</Eyebrow>
-            <h2
-              id="also-heading"
-              className="m-0 mb-[12px] font-fn-serif text-[22px] font-medium leading-[1.2] tracking-[-0.015em] lg:text-[26px]"
+            <div>
+              <p className="vy-mono text-sm text-signal-deep">0{index + 1}</p>
+              <h2 className="mt-1 text-2xl font-semibold tracking-[-0.01em]">{industry.name}</h2>
+            </div>
+            <p className="max-w-[560px] text-sm leading-relaxed text-ink-2">{industry.lead}</p>
+            <span
+              className="hidden text-signal-deep transition-transform group-hover:translate-x-1 md:block"
+              aria-hidden="true"
             >
-              {HUB.alsoHeading}
-            </h2>
-            <p className="m-0 mb-[28px] max-w-[560px] text-[14.5px] leading-[1.6] text-fn-ink-3 text-pretty">
-              {HUB.alsoLead}
-            </p>
-            <ExperimentalCards slugs={EXPERIMENTAL_INDUSTRY_ORDER} />
-          </div>
-        </section>
-
-        <AuditBand />
-      </main>
-
-      <div className="pt-[40px] lg:pt-[68px]">
-        <FinchFooter />
+              →
+            </span>
+          </Link>
+        ))}
       </div>
-    </div>
+    </PageShell>
   );
 }

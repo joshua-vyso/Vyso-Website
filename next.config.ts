@@ -6,6 +6,33 @@ const nextConfig: NextConfig = {
   // breaks module/path (@/*) resolution (see the "inferred workspace root" warning).
   turbopack: {
     root: __dirname,
+    // The verified ThreeUI sources (`src/shaders/**`, see
+    // `.ai/threeui_source_record.md`) import their sandboxed effect documents
+    // as `./sources/*.html?raw` (Vite idiom). Turbopack 16.2 resolves the same
+    // idiom natively via a `raw` module-type rule scoped to the `?raw` query.
+    rules: {
+      // Only the ThreeUI effect documents are ever imported as .html, always
+      // with `?raw`. Loader form (raw-loader → JS module) — the `type: "raw"`
+      // module-type form silently compiled these imports to `void 0` in
+      // 16.2.7. Both glob keys are registered because the matcher's treatment
+      // of the `?raw` query suffix differs across versions.
+      "*.html": {
+        loaders: ["raw-loader"],
+        as: "*.js",
+      },
+      "*.html?raw": {
+        loaders: ["raw-loader"],
+        as: "*.js",
+      },
+    },
+  },
+  webpack(config) {
+    // Same `?raw` support for the webpack fallback (`npm run dev:webpack`).
+    config.module.rules.push({
+      resourceQuery: /raw/,
+      type: "asset/source",
+    });
+    return config;
   },
   experimental: {
     // Only pull the modules actually used from this large barrel-export package
