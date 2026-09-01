@@ -15,7 +15,7 @@
 import Link from "next/link";
 import { useEffect, useRef } from "react";
 import { HalftoneField } from "@/components/site/three/HalftoneField";
-import { track } from "@/lib/analytics";
+import { PlasmaCta } from "@/components/site/three/PlasmaCta";
 import { useStaticMotion } from "@/components/site/motion-preference";
 
 export function Hero() {
@@ -65,13 +65,7 @@ export function Hero() {
             morning. Your team stays in charge of every decision that matters.
           </p>
           <div className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-4">
-            <Link
-              href="/join"
-              className="vy-btn vy-btn-primary"
-              onClick={() => track("join_waitlist_click", { source: "hero_plasma" })}
-            >
-              Book a free audit
-            </Link>
+            <PlasmaCta />
             <Link
               href="/automations"
               className="text-sm font-medium text-ondark-2 underline decoration-ondark-3 underline-offset-4 transition-colors hover:text-ondark"

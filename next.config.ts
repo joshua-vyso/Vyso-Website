@@ -16,21 +16,26 @@ const nextConfig: NextConfig = {
       // module-type form silently compiled these imports to `void 0` in
       // 16.2.7. Both glob keys are registered because the matcher's treatment
       // of the `?raw` query suffix differs across versions.
+      // The label loader applies the site's CTA text to the registered plasma
+      // source at build time (no-op for every other document) — see
+      // scripts/vyso-plasma-label.loader.cjs.
       "*.html": {
-        loaders: ["raw-loader"],
+        loaders: ["./scripts/vyso-plasma-label.loader.cjs", "raw-loader"],
         as: "*.js",
       },
       "*.html?raw": {
-        loaders: ["raw-loader"],
+        loaders: ["./scripts/vyso-plasma-label.loader.cjs", "raw-loader"],
         as: "*.js",
       },
     },
   },
   webpack(config) {
-    // Same `?raw` support for the webpack fallback (`npm run dev:webpack`).
+    // Same `?raw` support for the webpack fallback (`npm run dev:webpack`),
+    // including the plasma label transform.
     config.module.rules.push({
       resourceQuery: /raw/,
       type: "asset/source",
+      use: ["./scripts/vyso-plasma-label.loader.cjs"],
     });
     return config;
   },

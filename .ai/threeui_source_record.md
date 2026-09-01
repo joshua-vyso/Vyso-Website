@@ -26,8 +26,12 @@
 | src/shaders/neuform-isolated/sources/aetheris-labs.html | eea617fe0e37a79be7aee44f00a53ec3ae41e006e771a8aad53acce3648147e0 | ✅ |
 | src/shaders/neuform-isolated/NeuformBatchEffects.tsx | dc68c51bea26b922965de44b4fb8d6c432607508fb2b61e16ed60d245da1a69f | ✅ |
 | src/shaders/neuform-isolated/sources/flow-field.html | 78eaf8ce34317bb66c44b72069ff36c622987ef61d3e703e8ea5800e089eb0b2 | ✅ |
+| src/shaders/neuform-isolated/sources/gateway-flow.html (ConstellationField "gateway-flow", bundle https://threeui.com/source-code/gateway-flow.json, fetched 2026-09-01) | c5a1de43138ffba96b9f0ecdcf3c054ae251ec94344e88c6ad502bae362b17d0 | ✅ |
 
 Verification script: scratchpad `threeui/extract_verify.py` (session artifact; hashes re-checkable any time with `shasum -a 256` over the files above).
+
+## Label adapter (user-directed, 2026-09-01)
+The plasma control's on-screen label is changed to "BOOK A FREE AUDIT" at Josh's explicit direction. The registered `aetheris-labs.html` stays **byte-exact on disk** (hash above still passes); the swap happens in the module pipeline via `scripts/vyso-plasma-label.loader.cjs` (wired for both bundlers in `next.config.ts`), a no-op for every other source.
 
 ## Licence
 ThreeUI Terms of Use ("Commercial use and licenses" → "Community materials"): *"Community package code is available under the license included with that code, currently the MIT License. Any item-specific attribution or third-party notice remains required."* The four bundles were served from the unauthenticated community `/source-code/` registry (the Pro API `/api/pro-components` requires auth and was **not** used). → The project may use, copy and ship these sources commercially under MIT. Third-party notices inside the registered files are preserved verbatim (files are unmodified by policy).

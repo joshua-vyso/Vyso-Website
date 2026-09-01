@@ -203,9 +203,13 @@ function StackedScale() {
 
 function PinnedScale() {
   const { ref, progress } = useStickyProgress<HTMLDivElement>();
-  /* Three equal scroll bands; a stage is active while its band scrolls. */
+  /* Three equal scroll bands; a stage is active while its band scrolls. The
+     line's fill maps band-boundaries onto the stop positions (0 / 50 / 100%),
+     so the moment a stage activates the fill has just reached its dot —
+     never short of it. */
   const seg = Math.min(2.9999, progress * 3);
   const stage = Math.floor(seg);
+  const fill = Math.min(1, seg / 2);
 
   return (
     <div ref={ref} className="relative h-[300vh]">
@@ -248,7 +252,7 @@ function PinnedScale() {
             <span
               aria-hidden="true"
               className="absolute inset-y-0 left-0 bg-signal"
-              style={{ width: `${progress * 100}%`, transition: "width 0.15s linear" }}
+              style={{ width: `${fill * 100}%`, transition: "width 0.15s linear" }}
             />
             {STAGES.map((item, index) => {
               const reached = seg >= index;

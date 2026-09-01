@@ -1673,57 +1673,36 @@ textarea.vy-field { height: auto; min-height: 120px; padding: 14px 16px; resize:
 .vy-halftone-frame { position: absolute; inset: 0; width: 100%; height: 100%; }
 @keyframes vy-frame-in { to { opacity: 1; } }
 
-/* Plasma CTA module: the registered field in a clipped frame, with the site's
-   own action label as the accessible link content beneath the visual. */
+/* Plasma CTA module: the registered field feathered into the hero's black —
+   no border, no card chrome — with the accessible link sitting exactly over
+   the authored 250×70 control at the frame's centre. */
 .vy-plasma {
   position: relative;
   display: inline-flex;
-  flex-direction: column;
   align-items: center;
+  justify-content: center;
+  min-height: 52px;
 }
 .vy-plasma-frame {
-  width: min(340px, 78vw);
-  height: 150px;
-  border-radius: 20px;
-  overflow: hidden;
-  border: 1px solid rgba(201, 222, 247, 0.18);
-  box-shadow: 0 24px 60px -20px rgba(8, 76, 142, 0.75);
+  width: min(420px, 88vw);
+  height: 190px;
+  margin: -60px -40px;
   pointer-events: none;
-  transition: transform 0.22s cubic-bezier(0.34, 1.4, 0.5, 1), box-shadow 0.22s;
+  -webkit-mask-image: radial-gradient(ellipse 66% 62% at 50% 50%, #000 54%, transparent 84%);
+  mask-image: radial-gradient(ellipse 66% 62% at 50% 50%, #000 54%, transparent 84%);
+  transition: filter 0.22s cubic-bezier(0.34, 1.4, 0.5, 1);
 }
 .vy-plasma-link {
   position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  text-decoration: none;
-  border-radius: 20px;
+  left: 50%;
+  top: 50%;
+  width: 254px;
+  height: 74px;
+  transform: translate(-50%, -50%);
+  border-radius: 18px;
 }
-.vy-plasma-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 18px;
-  border-radius: 999px;
-  color: #E2F1FF;
-  background: rgba(5, 11, 26, 0.72);
-  border: 1px solid rgba(201, 222, 247, 0.22);
-  font-weight: 600;
-  font-size: 0.92rem;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  transition: background 0.2s, border-color 0.2s;
-}
-.vy-plasma { padding-bottom: 21px; }
-.vy-plasma-link:hover ~ .vy-plasma-frame,
 .vy-plasma:has(.vy-plasma-link:hover) .vy-plasma-frame {
-  transform: translateY(-2px);
-  box-shadow: 0 30px 70px -20px rgba(8, 96, 172, 0.85);
-}
-.vy-plasma:has(.vy-plasma-link:hover) .vy-plasma-label {
-  background: rgba(8, 30, 60, 0.85);
-  border-color: rgba(201, 222, 247, 0.5);
+  filter: brightness(1.12);
 }
 .vy-plasma-link:focus-visible {
   outline: 2px solid var(--vy-focus-dark, #C9DEF7);
@@ -1782,4 +1761,25 @@ textarea.vy-field { height: auto; min-height: 120px; padding: 14px 16px; resize:
 .vy-sheet-ink {
   background: #0A0908;
   box-shadow: 0 -18px 60px rgba(0, 0, 0, 0.6);
+}
+
+/* Integration finale: the Gateway Flow frame fills its stage; the Vyso node
+   glows at the convergence point above it. */
+.vy-gateway-frame { position: absolute; inset: 0; }
+.vy-gateway-frame > iframe { width: 100%; height: 100%; }
+.vy-brain-node {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 5;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--color-signal);
+  transform: translate(-50%, -50%);
+  box-shadow:
+    0 0 0 8px rgba(255, 119, 39, 0.12),
+    0 0 28px 10px rgba(255, 119, 39, 0.35),
+    0 0 90px 40px rgba(189, 74, 14, 0.22);
+  pointer-events: none;
 }
