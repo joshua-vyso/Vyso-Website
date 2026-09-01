@@ -419,7 +419,12 @@ async function resolveStockEvidence(
     into[findingId] = {
       count: 1,
       label: STOCK_EVIDENCE_LABEL,
-      href: `/app/procurepulse/stock/${stockItemId}`,
+      // `/app/stock/levels`, not the old `/app/procurepulse/stock/<id>`: the
+      // restructure gave the catalogue one searchable tab and no per-product
+      // screen (`.ai/plan_stock_suppliers_page.md`). The old URL still forwards
+      // here, but a Brief card should link where the reader is going, not
+      // through a redirect.
+      href: '/app/stock/levels',
     };
   }
 }

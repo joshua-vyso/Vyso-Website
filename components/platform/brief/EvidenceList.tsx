@@ -34,8 +34,8 @@ export type EvidenceMark = 'paper' | 'stock';
 export interface EvidenceItem {
   id: string;
   /** Where this row lives: `/app/docu/<id>`, `/app/orderflow/invoices/<id>`,
-   *  `/app/procurepulse/stock/<id>`. Built by the page, which is the only place
-   *  that knows the kind. */
+   *  `/app/stock/levels`. Built by the page, which is the only place that knows
+   *  the kind. */
   href: string;
   /** The filename, the invoice number, the stock line's name. */
   title: string;

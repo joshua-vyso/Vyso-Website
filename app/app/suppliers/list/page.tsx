@@ -1,5 +1,6 @@
-import { SuppliersTab } from '@/components/platform/supplysync/SuppliersTab';
+import { redirect } from 'next/navigation';
 
-export default function SuppliersListPage() {
-  return <SuppliersTab />;
+/** Redirect only: the supplier list is the Suppliers tab (`.ai/plan_stock_suppliers_page.md`). */
+export default function Page() {
+  redirect('/app/stock/suppliers');
 }

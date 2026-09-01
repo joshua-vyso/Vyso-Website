@@ -1,5 +1,6 @@
-import { PerformanceTab } from '@/components/platform/supplysync/Performance';
+import { redirect } from 'next/navigation';
 
-export default function SuppliersPerformancePage() {
-  return <PerformanceTab />;
+/** Redirect only: performance is a column and a profile section on the Suppliers tab, not a screen (`.ai/plan_stock_suppliers_page.md`). */
+export default function Page() {
+  redirect('/app/stock/suppliers');
 }

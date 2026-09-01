@@ -1,5 +1,6 @@
-import { CreditsTab } from '@/components/platform/supplysync/Credits';
+import { redirect } from 'next/navigation';
 
-export default function SuppliersCreditsPage() {
-  return <CreditsTab />;
+/** Redirect only: supplier credit notes are a section of the supplier profile on the Suppliers tab (`.ai/plan_stock_suppliers_page.md`). */
+export default function Page() {
+  redirect('/app/stock/suppliers');
 }

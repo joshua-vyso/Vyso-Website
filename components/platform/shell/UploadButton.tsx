@@ -7,8 +7,17 @@ import Link from 'next/link';
  * only ways to file paperwork were Doc-U's own upload page, the chat's
  * paperclip and the drop zone — and two of those three left with the chat
  * surfaces in Task D. This is the replacement, and it is deliberately a plain
- * link rather than a picker: Phase 1 swaps the destination for the upload tray
- * and `/api/ingest`, so anything clever built here would be built twice.
+ * link rather than a picker: a later task swaps the destination's plumbing for
+ * `/api/ingest`, so anything clever built here would be built twice.
+ *
+ * WHERE IT POINTS, AND WHY IT MOVED. `/app/stock/uploads` since the Stock &
+ * Suppliers restructure (`.ai/plan_stock_suppliers_page.md`) — not
+ * `/app/docu/upload`, which is still a live screen but is now the *narrower* of
+ * the two doors. The stock module is the one that is fed by paperwork: uploading
+ * there lands beside the products, prices and suppliers the document will
+ * change, and the row's review page hosts the same `DocumentDetailPanel`. Both
+ * routes still write the same Storage object and the same `documents` row, so
+ * this is a destination change, not a behaviour change.
  *
  * A LINK, NOT A BUTTON, and therefore no `'use client'`. It has no state and no
  * handler, so it is safe to import from AppRail (a server component) as well as
@@ -32,7 +41,7 @@ import Link from 'next/link';
 export function UploadButton({ className = '' }: { className?: string }) {
   return (
     <Link
-      href="/app/docu/upload"
+      href="/app/stock/uploads"
       title="Upload a document"
       className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[var(--pf-radius-control)] bg-[var(--pf-accent-strong)] px-3 text-[12.5px] font-semibold text-white transition-colors hover:bg-[var(--pf-accent-deep)] ${className}`}
       style={{ transitionDuration: 'var(--dur-hover)' }}

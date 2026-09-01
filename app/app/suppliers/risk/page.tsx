@@ -1,5 +1,6 @@
-import { RiskTab } from '@/components/platform/supplysync/Risk';
+import { redirect } from 'next/navigation';
 
-export default function SuppliersRiskPage() {
-  return <RiskTab />;
+/** Redirect only: risk is a status on the supplier row, not a screen (`.ai/plan_stock_suppliers_page.md`). */
+export default function Page() {
+  redirect('/app/stock/suppliers');
 }

@@ -1,16 +1,8 @@
-import { ManufacturingSubnav } from '@/components/platform/procurepulse/ManufacturingSubnav';
-
 /**
- * Scoped to the Manufacturing section only (Recipes + Batches) — the rest of
- * ProcurePulse (Dashboard, Products, Stock orders, …) doesn't get this
- * sub-nav. Smallest-blast-radius per the plan: existing recipe routes/URLs
- * are untouched, Batches just lives beside them under the same segment.
+ * Passthrough, for the same reason as the segment above it: the three recipe
+ * routes are redirects into `/app/stock/manufacturing` now, so the
+ * Recipes/Batches sub-nav this layout used to draw would point at itself.
  */
 export default function ManufacturingLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div>
-      <ManufacturingSubnav />
-      {children}
-    </div>
-  );
+  return children;
 }

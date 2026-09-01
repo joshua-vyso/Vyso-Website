@@ -1,5 +1,6 @@
-import { HistoryTab } from '@/components/platform/supplysync/History';
+import { redirect } from 'next/navigation';
 
-export default function SuppliersHistoryPage() {
-  return <HistoryTab />;
+/** Redirect only: relationship history is a section of the supplier profile (`.ai/plan_stock_suppliers_page.md`). */
+export default function Page() {
+  redirect('/app/stock/suppliers');
 }

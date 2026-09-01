@@ -194,7 +194,9 @@ function evidencePanel(evidence: FindingEvidence, series: FindingSeries | null):
         ? [
             {
               id: evidence.item.id,
-              href: `/app/procurepulse/stock/${evidence.item.id}`,
+              // The Stock tab, not the retired per-product screen — same target
+              // as the Brief card's own href (lib/platform/agent-findings.ts).
+              href: '/app/stock/levels',
               title: evidence.item.name,
               // Which of Stock Cover's two rules fired — the only other thing
               // the dedupe key records, and the difference between "you are
