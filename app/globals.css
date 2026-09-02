@@ -5,6 +5,10 @@
    site-side adjustments live in the "Agency site" layer at the end of this
    file and apply only to elements the site itself composes. */
 @import "../src/shaders/threeui.css";
+/* VX — "The Operating Layer" design system (worktree awwwards-2026), scoped
+   to `.vx`. Imported here so Tailwind's pipeline sees it; it never touches
+   the platform. */
+@import "./vx.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -1100,7 +1104,11 @@ body:has([data-platform-shell]),
 /* …and the agency surface (`components/site/**`): its hero stage and the
    homepage's pinned sequences are all `position: sticky`. */
 html:has(.vy-site),
-body:has(.vy-site) {
+body:has(.vy-site),
+/* …and the VX surface (worktree awwwards-2026, `components/vx/**`): the
+   pinned process stage is `position: sticky` and dies the same way. */
+html:has(.vx),
+body:has(.vx) {
   overflow-x: clip;
   overflow-y: visible;
 }

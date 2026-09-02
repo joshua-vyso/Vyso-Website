@@ -1,20 +1,28 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PageShell, PageHero, JsonLd, breadcrumbs } from "@/components/site/PageShell";
+import { JsonLd, PageHead, VxShell, breadcrumbs, webPage } from "@/components/vx/VxShell";
 import { INDUSTRY_PAGES } from "@/components/site/industries-content";
+import { INDUSTRY_ROWS } from "@/components/vx/content";
+import { Arrow, Reveal } from "@/components/vx/primitives";
 import { SITE } from "@/lib/marketing/site";
 
+const DESCRIPTION =
+  "The operations Vyso knows by name: food and hospitality, where its production systems run today, plus construction and insurance. Each page shows the workflows we automate and what stays under human control.";
+
 export const metadata: Metadata = {
-  title: "Industries",
-  description:
-    "The operations Vyso knows well enough to be specific about: food & hospitality (where our production builds run today), construction, and insurance — each with the workflows we automate and what stays under human control.",
+  title: "Industries — AI automation for food, construction and insurance",
+  description: DESCRIPTION,
   alternates: { canonical: "/industries" },
 };
 
+const ANSWER =
+  "Vyso builds AI automation systems for three kinds of operation: food and hospitality businesses (in production today), construction companies, and insurance brokerages. The systems are the same five; the workflow that goes first changes per industry.";
+
 export default function IndustriesPage() {
   return (
-    <PageShell>
+    <VxShell closing={{ line: "Your industry", em: "next." }}>
       <JsonLd data={breadcrumbs([["Home", "/"], ["Industries", "/industries"]])} />
+      <JsonLd data={webPage({ path: "/industries", name: "Industries", description: DESCRIPTION, type: "CollectionPage" })} />
       <JsonLd
         data={{
           "@context": "https://schema.org",
@@ -28,37 +36,31 @@ export default function IndustriesPage() {
           })),
         }}
       />
-      <PageHero
-        eyebrow="Industries"
-        title={
-          <>
-            Operations we know well enough{" "}
-            <em className="vy-serif font-normal italic text-signal-deep">to be specific about.</em>
-          </>
-        }
-        lead="The automations don't change per industry — what changes is which workflows earn their place first, and in whose vocabulary. These are the three operations where we can be concrete rather than general."
-      />
-      <div className="mx-auto max-w-[1200px] space-y-5 px-6 pb-24">
-        {INDUSTRY_PAGES.map((industry, index) => (
-          <Link
-            key={industry.slug}
-            href={`/industries/${industry.slug}`}
-            className="group grid gap-6 rounded-2xl border border-line bg-white p-6 transition-shadow hover:shadow-[var(--vy-shadow-float)] md:grid-cols-[minmax(0,4fr)_minmax(0,7fr)_auto] md:items-center md:p-8"
-          >
-            <div>
-              <p className="vy-mono text-sm text-signal-deep">0{index + 1}</p>
-              <h2 className="mt-1 text-2xl font-semibold tracking-[-0.01em]">{industry.name}</h2>
-            </div>
-            <p className="max-w-[560px] text-sm leading-relaxed text-ink-2">{industry.lead}</p>
-            <span
-              className="hidden text-signal-deep transition-transform group-hover:translate-x-1 md:block"
-              aria-hidden="true"
-            >
-              →
-            </span>
-          </Link>
-        ))}
-      </div>
-    </PageShell>
+      <PageHead eyebrow="Industries" title="Operations we know" em="by name." answer={ANSWER} />
+
+      <section className="vx-on-ink" style={{ padding: "clamp(40px, 6vw, 96px) 0" }} aria-label="Industries">
+        <div className="vx-wrap">
+          <ul className="vx-rows" role="list">
+            {INDUSTRY_ROWS.map((row, i) => {
+              const page = INDUSTRY_PAGES.find((p) => p.slug === row.slug)!;
+              return (
+                <Reveal as="li" key={row.slug} delay={i * 80}>
+                  <Link href={`/industries/${row.slug}`} className="vx-row" data-cursor-label="Open">
+                    <span className="n">
+                      {row.num} · {row.status}
+                    </span>
+                    <span className="t">{row.title}</span>
+                    <span className="p">{page.lead.split(". ")[0]}.</span>
+                    <span className="a" aria-hidden="true">
+                      <Arrow />
+                    </span>
+                  </Link>
+                </Reveal>
+              );
+            })}
+          </ul>
+        </div>
+      </section>
+    </VxShell>
   );
 }

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { IndustryPage } from "@/components/site/IndustryPage";
+import { IndustryPage } from "@/components/vx/IndustryPage";
 import { INDUSTRY_PAGES } from "@/components/site/industries-content";
 
 const industry = INDUSTRY_PAGES.find((entry) => entry.slug === "construction")!;

@@ -14,7 +14,7 @@ import type { MetadataRoute } from "next";
 const BASE_URL = "https://vyso.co.za";
 
 /* Bump when shipping meaningful content changes. */
-const CONTENT_LAST_MODIFIED = new Date("2026-09-01");
+const CONTENT_LAST_MODIFIED = new Date("2026-09-02");
 
 const ROUTES: { path: string; priority: number; changeFrequency: "weekly" | "monthly" | "yearly" }[] = [
   { path: "", priority: 1, changeFrequency: "weekly" },
@@ -26,6 +26,7 @@ const ROUTES: { path: string; priority: number; changeFrequency: "weekly" | "mon
   { path: "/integrations", priority: 0.7, changeFrequency: "monthly" },
   { path: "/about", priority: 0.6, changeFrequency: "monthly" },
   { path: "/join", priority: 0.9, changeFrequency: "monthly" },
+  { path: "/construction", priority: 0.8, changeFrequency: "monthly" },
   { path: "/privacy", priority: 0.2, changeFrequency: "yearly" },
   { path: "/terms", priority: 0.2, changeFrequency: "yearly" },
   { path: "/popia", priority: 0.2, changeFrequency: "yearly" },

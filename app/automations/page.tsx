@@ -1,152 +1,204 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { PageShell, PageHero, JsonLd, breadcrumbs } from "@/components/site/PageShell";
-import { CAPABILITY_GROUPS } from "@/components/site/content";
+import { JsonLd, PageHead, VxShell, breadcrumbs, webPage } from "@/components/vx/VxShell";
+import { Artifact } from "@/components/vx/artifacts";
+import { LeadEngineGraph } from "@/components/vx/cases/LeadEngineGraph";
+import { OrderCapture } from "@/components/vx/cases/OrderCapture";
+import { PlatformShowcase } from "@/components/vx/cases/PlatformShowcase";
+import { ServiceDenRender } from "@/components/vx/cases/ServiceDenRender";
+import { SYSTEMS } from "@/components/vx/content";
+import { Reveal, Words } from "@/components/vx/primitives";
 import { SITE } from "@/lib/marketing/site";
 
+const DESCRIPTION =
+  "What Vyso has actually built: a custom operating system for a Johannesburg wholesaler, an AI lead engine that drafts outreach and follow-ups, an invoicing and CRM tracker, and order capture straight from WhatsApp and Outlook. Plus the five systems behind every build.";
+
 export const metadata: Metadata = {
-  title: "What we automate",
-  description:
-    "The operational work Vyso automates: reading and organising documents, checking and reconciling numbers, monitoring and alerting, follow-ups and coordination, and daily briefs — with humans approving what matters.",
+  title: "Systems we've built — bespoke AI automation",
+  description: DESCRIPTION,
   alternates: { canonical: "/automations" },
 };
 
-/* The concrete task list from the capability system, grouped under the five
-   verbs — the specific jobs behind each group's summary. */
-const GROUP_TASKS: Record<string, string[]> = {
-  read: [
-    "Invoice and document processing",
-    "Data entry and synchronisation between systems",
-    "Compliance-document collection",
-    "Inbox triage and request routing",
-  ],
-  check: [
-    "Purchase-order, delivery-note and invoice reconciliation",
-    "Supplier price monitoring against invoice history",
-    "Exception detection across documents and systems",
-  ],
-  monitor: [
-    "Stock and purchasing alerts",
-    "Renewal and deadline monitoring",
-    "Supplier price-change alerts",
-    "Custom monitoring agents with human-approval steps",
-  ],
-  followup: [
-    "Debtor and payment follow-ups",
-    "Quote and lead follow-ups",
-    "Customer-enquiry handling and escalation",
-    "Internal approvals kept moving",
-  ],
-  brief: [
-    "Operational reporting and daily management briefs",
-    "Exception summaries ranked by financial impact",
-    "Weekly and month-end roll-ups",
-  ],
-};
+const ANSWER =
+  "Vyso builds bespoke AI automation systems. Built so far: a full operating system for a Johannesburg food wholesaler (stock, suppliers, documents, orders, invoicing), a scheduled lead engine that checks replies, drafts follow-ups and discovers new leads into Gmail drafts and Notion, an invoicing and CRM tracker, and order capture that turns WhatsApp messages and emails into confirmed orders. Every build keeps a person in charge of every outward action.";
 
-const serviceSchema = {
-  "@context": "https://schema.org",
-  "@type": "Service",
-  "@id": `${SITE.url}/automations#service`,
-  name: "Custom AI automation",
-  serviceType: "AI workflow automation",
-  provider: { "@id": `${SITE.url}/#organization` },
-  areaServed: "ZA",
-  description:
-    "Vyso designs, builds and operates custom AI automations around a business's existing tools: document processing, reconciliation, monitoring and alerts, follow-ups, and daily operational briefs with human approval steps.",
-};
+/* ── The four builds ─────────────────────────────────────────────────────────
+   Each case is a real thing that exists: the platform is screenshotted on
+   the demo organisation, the lead engine graph is read from the live n8n
+   workflow, the tracker and the order capture are drawn from the products
+   that run (ServiceDen is a single private account, so it is rendered, not
+   screenshotted). No results are claimed; illustrative values are labelled. */
+const CASES = [
+  {
+    num: "01",
+    title: "An operating system",
+    em: "for a wholesaler.",
+    line: "A Johannesburg food wholesaler ran on WhatsApp, email, paper and memory. We built the system that now runs it: stock and suppliers, every document read and filed, customer orders from draft to payment, a daily brief.",
+    meta: [
+      ["Client", "Food wholesaler, Johannesburg"],
+      ["Scope", "Stock · suppliers · documents · orders · invoicing · review queue"],
+      ["Runs on", "Outlook, WhatsApp, Xero, the Vyso platform"],
+      ["Evidence", "Product screenshots, demo organisation"],
+    ],
+    render: <PlatformShowcase />,
+  },
+  {
+    num: "02",
+    title: "A lead engine",
+    em: "that never sends.",
+    line: "Every weekday at 06:00 it checks the inbox for genuine replies and bounces, drafts stage-based follow-ups for leads due today, then discovers new leads with web search, scrapes and qualifies them, and drafts first outreach. Fifty nodes. Every email ends as a Gmail draft a person sends.",
+    meta: [
+      ["Client", "Vyso, internal"],
+      ["Scope", "Reply detection · follow-ups · discovery · qualification · CRM"],
+      ["Runs on", "n8n, GPT-5.5, Firecrawl, Gmail, Notion"],
+      ["Evidence", "Node map read from the live workflow"],
+    ],
+    render: <LeadEngineGraph />,
+  },
+  {
+    num: "03",
+    title: "Invoicing and a CRM",
+    em: "in one tracker.",
+    line: "Outreach, leads, customers, services, invoices and templates on one screen. Leads move through stages with a next action and a follow-up date; invoices go from draft to sent to paid and land in the books.",
+    meta: [
+      ["Client", "Vyso, internal (ServiceDen)"],
+      ["Scope", "Lead pipeline · customers · services · invoicing · templates"],
+      ["Runs on", "The Vyso platform, Xero"],
+      ["Evidence", "Rendered from the product; values illustrative"],
+    ],
+    render: <ServiceDenRender />,
+  },
+  {
+    num: "04",
+    title: "Orders captured from",
+    em: "WhatsApp and email.",
+    line: "Customers order the way they already do. A message or an email with a PO comes in; the system verifies the sender, matches the customer and the products, prices the lines and creates the order for a person to confirm. The invoice follows.",
+    meta: [
+      ["Client", "Food wholesaler, Johannesburg"],
+      ["Scope", "WhatsApp + Outlook intake · customer matching · order creation · invoicing"],
+      ["Runs on", "WhatsApp Business, Microsoft Graph, the Vyso platform"],
+      ["Evidence", "Rendered from the live ingest pattern; values illustrative"],
+    ],
+    render: <OrderCapture />,
+  },
+];
 
 export default function AutomationsPage() {
   return (
-    <PageShell>
-      <JsonLd data={breadcrumbs([["Home", "/"], ["What we automate", "/automations"]])} />
-      <JsonLd data={serviceSchema} />
-      <PageHero
-        eyebrow="What we automate"
-        title={
-          <>
-            The repetitive work,{" "}
-            <em className="vy-serif font-normal italic text-signal-deep">named.</em>
-          </>
-        }
-        lead="An AI automation agency finds the repetitive, error-prone work inside a business and builds workflows that do it automatically — connected to the software already in use, watched by people. Here is that work, grouped into the five jobs we build for."
+    <VxShell closing={{ line: "Yours", em: "next?" }}>
+      <JsonLd data={breadcrumbs([["Home", "/"], ["Systems", "/automations"]])} />
+      <JsonLd data={webPage({ path: "/automations", name: "Systems we've built", description: DESCRIPTION, type: "CollectionPage" })} />
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "ItemList",
+          "@id": `${SITE.url}/automations#built`,
+          name: "Systems Vyso has built",
+          itemListElement: CASES.map((c, i) => ({
+            "@type": "ListItem",
+            position: i + 1,
+            item: { "@type": "CreativeWork", name: `${c.title} ${c.em}`, description: c.line, creator: { "@id": `${SITE.url}/#organization` } },
+          })),
+        }}
+      />
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "Service",
+          "@id": `${SITE.url}/automations#service`,
+          name: "Bespoke AI automation systems",
+          serviceType: "AI workflow automation",
+          provider: { "@id": `${SITE.url}/#organization` },
+          areaServed: "ZA",
+          description: ANSWER,
+          hasOfferCatalog: {
+            "@type": "OfferCatalog",
+            name: "Systems",
+            itemListElement: SYSTEMS.map((s) => ({
+              "@type": "Offer",
+              itemOffered: { "@type": "Service", name: `${s.title} ${s.em}`.replace(".", ""), description: s.line },
+            })),
+          },
+        }}
       />
 
-      <div className="mx-auto max-w-[1200px] space-y-6 px-6">
-        {CAPABILITY_GROUPS.map((group, index) => (
-          <article key={group.id} id={group.id} className="vy-card p-6 md:p-10">
-            <div className="grid gap-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-              <div>
-                <p className="vy-mono text-sm text-signal-deep">0{index + 1}</p>
-                <h2 className="mt-2 text-3xl font-semibold tracking-[-0.015em]">{group.title}</h2>
-                <p className="mt-4 leading-relaxed text-ink-2">{group.problem}</p>
-                <ul className="mt-6 space-y-2">
-                  {GROUP_TASKS[group.id]?.map((task) => (
-                    <li key={task} className="flex gap-2.5 text-sm text-ink-2">
-                      <span className="mt-[7px] h-1.5 w-1.5 flex-none rounded-full bg-signal" aria-hidden="true" />
-                      {task}
+      <PageHead eyebrow="Systems" title="Built. Running." em="Not decks." answer={ANSWER} />
+
+      {/* ── What we built ── */}
+      <section className="vx-wrap" aria-labelledby="built-h" style={{ paddingBottom: "clamp(48px, 6vw, 96px)" }}>
+        <span id="built-h" className="sr-only">
+          What we have built
+        </span>
+        {CASES.map((c) => (
+          <Reveal as="article" key={c.num} className="vx-case" margin="-6% 0px">
+            <div>
+              <p className="vx-eyebrow">Build {c.num}</p>
+              <h2 className="vx-display vx-h2" style={{ marginTop: 18 }}>
+                {c.title} <em className="vx-em" style={{ color: "var(--vx-signal-text)", fontWeight: 300 }}>{c.em}</em>
+              </h2>
+              <p className="vx-lead" style={{ marginTop: 22 }}>
+                {c.line}
+              </p>
+              <dl className="vx-case-meta">
+                {c.meta.map(([k, v]) => (
+                  <div key={k}>
+                    <dt>{k}</dt>
+                    <dd>{v}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+            <div className="stage">{c.render}</div>
+          </Reveal>
+        ))}
+      </section>
+
+      {/* ── The five systems behind every build ── */}
+      <section className="vx-on-ink vx-section" aria-labelledby="five-h">
+        <div className="vx-wrap">
+          <div className="vx-section-head">
+            <div>
+              <Reveal>
+                <p className="vx-eyebrow">Behind every build</p>
+              </Reveal>
+              <Words as="h2" className="vx-display vx-h2" text="The same five" em="verbs." />
+              <span id="five-h" className="sr-only">
+                The five systems
+              </span>
+            </div>
+            <Reveal delay={100}>
+              <p className="vx-lead">Every system above is these five, arranged for one operation. Read, check, watch, follow, brief.</p>
+            </Reveal>
+          </div>
+          <ul className="vx-systems" role="list">
+            {SYSTEMS.map((s, i) => (
+              <Reveal as="li" key={s.id} className={`vx-plate vx-sys ${i < 2 ? "vx-sys-wide" : ""}`} delay={(i % 3) * 90}>
+                <div className="vx-sys-head">
+                  <div>
+                    <p className="vx-sys-num">{s.num}</p>
+                    <h3 className="vx-sys-title">
+                      {s.title} <em className="vx-em">{s.em}</em>
+                    </h3>
+                  </div>
+                </div>
+                <p className="vx-sys-body">{s.line}</p>
+                <div className="vx-sys-stage">
+                  <Artifact id={s.id} />
+                </div>
+                <ul className="tasks" style={{ marginTop: 16, display: "grid", gap: 6 }}>
+                  {s.tasks.map((t) => (
+                    <li key={t} className="vx-mono" style={{ fontSize: "0.66rem", letterSpacing: "0.08em", color: "var(--vx-ondark-2)" }}>
+                      · {t}
                     </li>
                   ))}
                 </ul>
-              </div>
-              <div className="grid content-start gap-x-10 gap-y-6 sm:grid-cols-2">
-                <div>
-                  <h3 className="vy-eyebrow text-ink-3">Vyso automates</h3>
-                  <p className="mt-2 text-sm leading-relaxed">{group.automates}</p>
-                </div>
-                <div>
-                  <h3 className="vy-eyebrow text-ink-3">Stays human</h3>
-                  <p className="mt-2 text-sm leading-relaxed">{group.human}</p>
-                </div>
-                <div className="sm:col-span-2">
-                  <h3 className="vy-eyebrow text-ink-3">The result</h3>
-                  <p className="mt-2 text-sm leading-relaxed">{group.result}</p>
-                </div>
-                <p className="vy-mono rounded-xl bg-paper-2 px-4 py-3 text-[13px] leading-relaxed text-ink-2 sm:col-span-2">
-                  {group.example}
+                <p className="vx-sys-human">
+                  <i aria-hidden="true" /> {s.human}
                 </p>
-              </div>
-            </div>
-          </article>
-        ))}
-      </div>
-
-      {/* Answer-first: how custom automation actually works. */}
-      <section className="mx-auto mt-24 max-w-[1200px] px-6" aria-labelledby="how-heading">
-        <div className="grid gap-10 border-t border-line pt-16 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-          <h2 id="how-heading" className="text-3xl font-semibold tracking-[-0.015em]">
-            How a custom automation works
-          </h2>
-          <div className="space-y-5 leading-relaxed text-ink-2">
-            <p>
-              Every build runs on the same engine — document reading, extraction with confidence
-              scoring, reconciliation, monitoring agents and a briefing layer — configured around
-              how your business already operates. Nothing is deployed as a take-it-or-leave-it
-              product: the workflow is shaped to your suppliers, your customers, your documents
-              and your vocabulary.
-            </p>
-            <p>
-              The dividing line is fixed: automations read, check, watch, draft and summarise;
-              people approve. A low-confidence document read goes to a review queue instead of
-              being committed. A drafted email waits for sign-off. A flagged discrepancy is
-              evidence for your team, not an automatic dispute. That line is what makes it safe
-              to hand real operational work to software.
-            </p>
-            <p>
-              This is also what separates a custom automation from generic software: off-the-shelf
-              tools ask your team to change how they work; a Vyso build wraps around the way they
-              already do — and we keep operating it after launch, watching accuracy, handling edge
-              cases and extending it as the operation changes.
-            </p>
-            <p>
-              <Link href="/join" className="font-medium text-signal-deep underline decoration-signal-tint underline-offset-4 hover:decoration-signal-deep">
-                Book a free audit
-              </Link>{" "}
-              and tell us which of these jobs is eating your team&rsquo;s week.
-            </p>
-          </div>
+              </Reveal>
+            ))}
+          </ul>
         </div>
       </section>
-    </PageShell>
+    </VxShell>
   );
 }

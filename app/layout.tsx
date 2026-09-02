@@ -1,5 +1,14 @@
 import type { Metadata } from "next";
-import { Barlow_Condensed, IBM_Plex_Mono, Inter, Instrument_Sans, Space_Grotesk, STIX_Two_Text } from "next/font/google";
+import {
+  Barlow_Condensed,
+  Bricolage_Grotesque,
+  Fraunces,
+  IBM_Plex_Mono,
+  Inter,
+  Instrument_Sans,
+  Space_Grotesk,
+  STIX_Two_Text,
+} from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { RouteFade } from "@/components/site/RouteFade";
@@ -65,6 +74,24 @@ const ibmPlexMono = IBM_Plex_Mono({
   weight:   ["400", "500"],
   display:  "swap",
   preload:  false, // eyebrow labels only — same trade as STIX
+});
+
+/* ── VX pair (worktree awwwards-2026): Bricolage Grotesque (display, variable
+   opsz/wdth/wght) + Fraunces (the one italic voice, variable SOFT/WONK). Both
+   preloaded: the display face IS the LCP element on every marketing page. */
+const bricolage = Bricolage_Grotesque({
+  variable: "--font-bricolage",
+  subsets: ["latin"],
+  axes: ["opsz", "wdth"],
+  display: "swap",
+});
+
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  style: ["italic"],
+  axes: ["SOFT", "WONK", "opsz"],
+  display: "swap",
 });
 
 /* Root metadata for the whole site. `title.template` means every page's own
@@ -133,13 +160,32 @@ const siteSchema = {
   "@context": "https://schema.org",
   "@graph": [
     {
-      "@type": "Organization",
+      "@type": ["Organization", "ProfessionalService"],
       "@id": `${SITE.url}/#organization`,
       name: SITE.name,
+      legalName: "Vyso (Pty) Ltd",
+      alternateName: "Vyso AI automation agency",
+      slogan: "We build the systems that run your business.",
       description: SITE.description,
       url: SITE.url,
       logo: `${SITE.url}/icon.svg`,
+      image: `${SITE.url}/opengraph-image`,
       email: SITE.email,
+      /* GEO/AEO: the entity's topical footprint, so answer engines can map
+         "AI automation agency South Africa" and neighbours to this node. */
+      knowsAbout: [
+        "AI automation",
+        "Business process automation",
+        "Invoice and document processing",
+        "Purchase order, delivery note and invoice reconciliation",
+        "Supplier price monitoring",
+        "Accounts receivable follow-up automation",
+        "Operational reporting and daily management briefs",
+        "Workflow automation for food and hospitality businesses",
+        "Workflow automation for construction companies",
+        "Workflow automation for insurance brokerages",
+      ],
+      priceRange: "Quoted per engagement",
       founder: {
         "@type": "Person",
         "@id": `${SITE.url}/#josh`,
@@ -178,12 +224,23 @@ const siteSchema = {
     {
       "@type": "Service",
       "@id": `${SITE.url}/#service`,
-      name: "Custom AI automation",
+      name: "Bespoke AI automation systems",
       serviceType: "AI workflow automation",
       provider: { "@id": `${SITE.url}/#organization` },
       areaServed: "ZA",
       description:
-        "Vyso maps a business's operation, finds the highest-value bottleneck, builds a custom AI workflow around the existing tools, and runs, monitors and improves it after launch — with human-approval steps on every outward action.",
+        "Vyso maps a business's operation, finds the highest-value bottleneck, builds a bespoke AI system around the existing tools, and runs, monitors and improves it after launch — with human-approval steps on every outward action.",
+      hasOfferCatalog: {
+        "@type": "OfferCatalog",
+        name: "Systems",
+        itemListElement: [
+          "Read everything: document reading and filing",
+          "Check the numbers: reconciliation and exception detection",
+          "Watch what moves: monitoring and alerts",
+          "Follow it through: drafted follow-ups with human approval",
+          "Brief every morning: daily management brief",
+        ].map((name) => ({ "@type": "Offer", itemOffered: { "@type": "Service", name } })),
+      },
     },
   ],
 };
@@ -195,7 +252,7 @@ export default function RootLayout({
     <html
       lang="en-ZA"
       data-scroll-behavior="smooth"
-      className={`${barlowCondensed.variable} ${inter.variable} ${instrumentSans.variable} ${spaceGrotesk.variable} ${stixTwoText.variable} ${ibmPlexMono.variable} h-full antialiased`}
+      className={`${barlowCondensed.variable} ${inter.variable} ${instrumentSans.variable} ${spaceGrotesk.variable} ${stixTwoText.variable} ${ibmPlexMono.variable} ${bricolage.variable} ${fraunces.variable} h-full antialiased`}
     >
       <body className="min-h-full">
         {/* First tab stop on every page: jumps keyboard/screen-reader users

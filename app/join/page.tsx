@@ -1,64 +1,59 @@
 import type { Metadata } from "next";
-import { PageShell, JsonLd, breadcrumbs } from "@/components/site/PageShell";
-import { WaitlistForm } from "@/components/site/WaitlistForm";
+import { JsonLd, VxShell, breadcrumbs, webPage } from "@/components/vx/VxShell";
+import { AuditForm } from "@/components/vx/AuditForm";
+import { Reveal, Words } from "@/components/vx/primitives";
+
+const DESCRIPTION =
+  "Book a free operations audit with Vyso. We map one operation, find the highest value bottleneck, and tell you honestly whether a bespoke automation system would pay for itself. No payment, nothing to install.";
 
 export const metadata: Metadata = {
-  title: "Join the waitlist",
-  description:
-    "Join the Vyso waitlist. We onboard a small number of businesses at a time so every automation build gets senior attention — tell us what repetitive work you want off your team's plate.",
+  title: "Book a free audit",
+  description: DESCRIPTION,
   alternates: { canonical: "/join" },
 };
 
 const STEPS = [
-  {
-    title: "You join",
-    body: "A minute of detail about your business and the work that eats its hours. No payment, no commitment.",
-  },
-  {
-    title: "We read it",
-    body: "Every submission is read by a person. When a build slot opens, we reach out — usually with a couple of sharp questions first.",
-  },
-  {
-    title: "We talk it through",
-    body: "A short conversation about your operation and whether an automation would genuinely pay for itself. If it wouldn't, we say so.",
-  },
+  { t: "You write", b: "A minute on the business and the work that eats its hours." },
+  { t: "A person reads", b: "Every submission, personally. Expect a couple of sharp questions back." },
+  { t: "We talk", b: "A short conversation about whether a system would genuinely pay for itself. If not, we say so." },
 ];
 
 export default function JoinPage() {
   return (
-    <PageShell>
-      <JsonLd data={breadcrumbs([["Home", "/"], ["Join the waitlist", "/join"]])} />
-      <div className="mx-auto max-w-[1200px] px-6 pb-24">
-        <div className="grid gap-14 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+    <VxShell closing={{ line: "Or just", em: "email.", hideCta: true }}>
+      <JsonLd data={breadcrumbs([["Home", "/"], ["Book a free audit", "/join"]])} />
+      <JsonLd data={webPage({ path: "/join", name: "Book a free audit", description: DESCRIPTION, type: "ContactPage" })} />
+      <div className="vx-wrap vx-page-head">
+        <div className="vx-join">
           <header>
-            <p className="vy-eyebrow text-ink-3">Join the waitlist</p>
-            <h1 className="mt-5 text-balance text-[clamp(2.2rem,4.6vw,3.4rem)] font-semibold leading-[1.05] tracking-[-0.02em]">
-              Tell us what{" "}
-              <em className="vy-serif font-normal italic text-signal-deep">slows you down.</em>
-            </h1>
-            <p className="mt-6 max-w-[460px] text-pretty leading-relaxed text-ink-2">
-              We onboard a small number of businesses at a time, so every build gets senior
-              attention through mapping, build and run-in. The waitlist keeps that honest —
-              there&rsquo;s no queue number theatre, just an ordered list we work through
-              properly.
+            <p className="vx-eyebrow">Free audit</p>
+            <Words as="h1" className="vx-display vx-h1" text="Tell us what" em="slows you down." immediate delay={100} />
+            <p className="vx-answer" style={{ marginTop: 28 }}>
+              {DESCRIPTION}
             </p>
-            <ol className="mt-10 space-y-6 border-t border-line pt-8">
-              {STEPS.map((step, index) => (
-                <li key={step.title} className="flex gap-4">
-                  <span className="vy-mono flex-none text-sm text-signal-deep">0{index + 1}</span>
-                  <div>
-                    <h2 className="font-semibold">{step.title}</h2>
-                    <p className="mt-1 text-sm leading-relaxed text-ink-2">{step.body}</p>
-                  </div>
-                </li>
+            <ol style={{ marginTop: 40, display: "grid", gap: 22, borderTop: "1px solid var(--vx-paper-line)", paddingTop: 28 }}>
+              {STEPS.map((s, i) => (
+                <Reveal as="li" key={s.t} delay={i * 80} className="vx-join-step">
+                  <span className="vx-mono" style={{ fontSize: "0.7rem", color: "var(--vx-signal-small)", letterSpacing: "0.14em" }}>
+                    0{i + 1}
+                  </span>
+                  <span>
+                    <span className="vx-h4" style={{ display: "block" }}>
+                      {s.t}
+                    </span>
+                    <span className="vx-small" style={{ display: "block", marginTop: 6 }}>
+                      {s.b}
+                    </span>
+                  </span>
+                </Reveal>
               ))}
             </ol>
           </header>
-          <div className="vy-card h-fit p-6 md:p-9">
-            <WaitlistForm />
-          </div>
+          <Reveal className="vx-card vx-join-card" delay={160}>
+            <AuditForm />
+          </Reveal>
         </div>
       </div>
-    </PageShell>
+    </VxShell>
   );
 }

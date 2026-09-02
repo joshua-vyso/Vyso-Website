@@ -12,24 +12,27 @@ import { SITE } from "./site";
 function pageIndex(): string {
   return [
     `- ${SITE.url}/ — Vyso, AI automation agency (Johannesburg): positioning, capability groups, process, illustrative operational-brief demo, FAQ`,
-    `- ${SITE.url}/automations — What we automate: the five capability groups with tasks, human-control boundaries and worked examples`,
+    `- ${SITE.url}/automations — Systems Vyso has built (an operating system for a Johannesburg food wholesaler; a lead engine that drafts but never sends; an invoicing + CRM tracker; order capture from WhatsApp and email) and the five capability groups behind every build`,
     `- ${SITE.url}/industries — Industry overview (food & hospitality, construction, insurance)`,
     ...INDUSTRY_PAGES.map(
       (industry) => `- ${SITE.url}/industries/${industry.slug} — ${industry.metaDescription}`,
     ),
     `- ${SITE.url}/integrations — Systems in production today and systems commonly connected, explained as workflows`,
     `- ${SITE.url}/about — What Vyso is, how engagements run, contact details`,
-    `- ${SITE.url}/join — Join the waitlist (the site's one conversion path)`,
+    `- ${SITE.url}/join — Book a free audit (the site's one conversion path)`,
+    `- ${SITE.url}/construction — Vyso Construction: an experimental AI commercial-control product for South African specialist subcontractors (instruction → variation → certification → payment), waitlist open`,
   ].join("\n");
 }
 
 const FACTS = [
   `Vyso is an AI automation agency in Johannesburg, South Africa, founded by ${SITE.founder.name}.`,
-  "Vyso designs, builds and operates custom AI workflows around the software a business already uses.",
+  "Vyso designs, builds and operates bespoke AI automation systems around the software a business already uses. Its positioning line is: we build the systems that run your business.",
+  "Vyso builds five kinds of system: reading documents, checking numbers (reconciliation), watching what moves (monitoring and alerts), following up (drafted reminders with approval), and a daily brief.",
   "Every outward action (client messages, disputes, payments) waits for human approval; low-confidence document reads queue for review.",
   `Systems wired into production workflows today: ${INTEGRATION_SYSTEMS.live.join(", ")}. Other systems connect depending on the workflow.`,
   "Vyso publishes no prices; scope and fees are agreed per engagement in writing.",
-  "The one public call to action is joining the waitlist at /join.",
+  "The one public call to action is booking a free audit at /join.",
+  "Vyso Construction (/construction) is an experimental product in validation: an AI commercial-control layer that follows the trail from site instruction to variation, certification and payment for specialist subcontractors, electrical contractors in Gauteng first. Its line is: stop doing work you never get paid for. No pricing is published and no recovery results are claimed.",
   `Contact: ${SITE.email}.`,
 ].join("\n");
 

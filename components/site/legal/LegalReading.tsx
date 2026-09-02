@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { SiteFooter, SiteNav } from "@/components/site/SiteChrome";
+import { VxShell } from "@/components/vx/VxShell";
 
 /* ── The legal reading layout ────────────────────────────────────────────────
    Shared by `/privacy`, `/terms` and `/popia` — a plain reading column (STIX
@@ -14,13 +14,15 @@ import { SiteFooter, SiteNav } from "@/components/site/SiteChrome";
 
 export function LegalShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="vy-site finch-site min-h-screen bg-fn-bg font-fn-sans text-fn-ink antialiased">
-      <SiteNav />
-      <main id="main" className="mx-auto max-w-[720px] px-[20px] pt-[120px] pb-[96px] lg:px-[40px] lg:pt-[150px] lg:pb-[130px]">
-        {children}
-      </main>
-      <SiteFooter />
-    </div>
+    /* VX chrome (worktree awwwards-2026): the reading column keeps its own
+       `fn-*` typography tokens; nav + closing plate come from the shell. */
+    <VxShell closing={{ line: "Questions?", em: "Ask a person.", hideCta: true }}>
+      <div className="finch-site font-fn-sans text-fn-ink antialiased" style={{ background: "transparent" }}>
+        <div className="mx-auto max-w-[720px] px-[20px] pt-[120px] pb-[96px] lg:px-[40px] lg:pt-[150px] lg:pb-[130px]">
+          {children}
+        </div>
+      </div>
+    </VxShell>
   );
 }
 

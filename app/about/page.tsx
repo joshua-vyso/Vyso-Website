@@ -1,121 +1,119 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { PageShell, PageHero, JsonLd, breadcrumbs } from "@/components/site/PageShell";
-import { PROCESS_STEPS } from "@/components/site/content";
+import { JsonLd, PageHead, VxShell, breadcrumbs, webPage } from "@/components/vx/VxShell";
+import { BRAND, PROCESS } from "@/components/vx/content";
+import { Reveal, Words } from "@/components/vx/primitives";
 import { SITE } from "@/lib/marketing/site";
 
+const DESCRIPTION =
+  "Vyso is a Johannesburg AI automation agency founded by Josh Moreira. We design, build and operate bespoke automation systems for operations-heavy businesses, and we run what we build.";
+
 export const metadata: Metadata = {
-  title: "About",
-  description:
-    "Vyso is a Johannesburg AI automation agency founded by Josh Moreira. We design, build and operate custom AI workflows for operations-heavy businesses — and we run what we build.",
+  title: "About — we build systems, then we run them",
+  description: DESCRIPTION,
   alternates: { canonical: "/about" },
 };
 
+const ANSWER =
+  "Vyso was founded in Johannesburg by Josh Moreira. It started inside one operations-heavy food business, reading its supplier invoices, watching its prices and reconciling its deliveries. The engine that survived contact with a real operation is what every Vyso system now runs on.";
+
+const BELIEFS = [
+  { t: "Start inside the problem", b: "Most AI pitches start with a technology and go looking for a problem. We started inside a warehouse." },
+  { t: "One leak at a time", b: "Map one operation, find the bottleneck that actually costs money, build the system there. Then the next." },
+  { t: "Say no early", b: "If a system wouldn't pay for itself, we say so before anything is built." },
+  { t: "People decide", b: "Software proposes. Messages wait for approval, uncertain reads wait for review, findings arrive with evidence." },
+];
+
 export default function AboutPage() {
   return (
-    <PageShell>
+    <VxShell closing={{ line: "Talk to", em: "a person." }}>
       <JsonLd data={breadcrumbs([["Home", "/"], ["About", "/about"]])} />
-      <PageHero
-        eyebrow="About Vyso"
-        title={
-          <>
-            We build automations, then{" "}
-            <em className="vy-serif font-normal italic text-signal-deep">we run them.</em>
-          </>
+      <JsonLd data={webPage({ path: "/about", name: "About Vyso", description: DESCRIPTION, type: "AboutPage" })} />
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "Person",
+          "@id": `${SITE.url}/#josh`,
+          name: SITE.founder.name,
+          jobTitle: SITE.founder.jobTitle,
+          worksFor: { "@id": `${SITE.url}/#organization` },
+          email: SITE.email,
+          address: { "@type": "PostalAddress", addressLocality: "Johannesburg", addressCountry: "ZA" },
+        }}
+      />
+      <PageHead
+        eyebrow="About"
+        title="We build systems. Then"
+        em="we run them."
+        answer={ANSWER}
+        aside={
+          <dl className="vx-mono" style={{ fontSize: "0.74rem", lineHeight: 1.9, color: "var(--vx-text-2)", display: "grid", gap: 2 }}>
+            <div style={{ display: "flex", gap: 12 }}>
+              <dt style={{ color: "var(--vx-text-3)", minWidth: 80 }}>Founder</dt>
+              <dd>{SITE.founder.name}</dd>
+            </div>
+            <div style={{ display: "flex", gap: 12 }}>
+              <dt style={{ color: "var(--vx-text-3)", minWidth: 80 }}>Based</dt>
+              <dd>
+                {BRAND.city}, {BRAND.country}
+              </dd>
+            </div>
+            <div style={{ display: "flex", gap: 12 }}>
+              <dt style={{ color: "var(--vx-text-3)", minWidth: 80 }}>Model</dt>
+              <dd>Design, build, operate</dd>
+            </div>
+            <div style={{ display: "flex", gap: 12 }}>
+              <dt style={{ color: "var(--vx-text-3)", minWidth: 80 }}>Contact</dt>
+              <dd>
+                <a href={`mailto:${BRAND.email}`} className="vx-link" style={{ textTransform: "none", letterSpacing: 0 }}>
+                  {BRAND.email}
+                </a>
+              </dd>
+            </div>
+          </dl>
         }
-        lead="Vyso is an AI automation agency in Johannesburg. We started by building for one operations-heavy food business — reading its supplier invoices, watching its prices, reconciling its deliveries — and grew the engine from what actually survives contact with a real operation."
       />
 
-      <section className="mx-auto max-w-[1200px] px-6" aria-labelledby="story-heading">
-        <div className="grid gap-10 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
-          <div className="space-y-5 leading-relaxed text-ink-2">
-            <h2 id="story-heading" className="sr-only">
-              The story
-            </h2>
-            <p>
-              Most AI pitches start with a technology and go looking for a problem. We started
-              inside the problem: a wholesale operation drowning in supplier documents, price
-              creep and WhatsApp threads. The automations we built there — extraction with
-              confidence scoring, price memory, reconciliation, a daily brief a human approves —
-              became the engine every Vyso build now runs on.
-            </p>
-            <p>
-              That history shapes how we work. We don&rsquo;t sell transformation decks. We map
-              one operation, find the bottleneck that actually costs money, build the workflow
-              around the tools already in use, and then operate it: watching accuracy, handling
-              the edge cases, improving it as the business changes. If an automation
-              wouldn&rsquo;t pay for itself, we say so before anything is built.
-            </p>
-            <p>
-              The hard line in every build: software proposes, people decide. Client-facing
-              messages wait for approval. Uncertain document reads queue for review. Findings
-              arrive with their evidence attached. That line is what makes it safe to hand real
-              operational work to automation.
-            </p>
-          </div>
-          <aside className="vy-card h-fit p-6 md:p-8">
-            <h2 className="vy-eyebrow text-ink-3">Company</h2>
-            <dl className="mt-4 space-y-4 text-sm">
-              <div>
-                <dt className="font-medium">Founded by</dt>
-                <dd className="text-ink-2">Josh Moreira, Johannesburg</dd>
-              </div>
-              <div>
-                <dt className="font-medium">What we are</dt>
-                <dd className="text-ink-2">
-                  An AI automation agency: custom workflows, designed, built and operated.
-                </dd>
-              </div>
-              <div>
-                <dt className="font-medium">Where we work</dt>
-                <dd className="text-ink-2">
-                  Built and run from Johannesburg, South Africa. Remote-friendly for the rest.
-                </dd>
-              </div>
-              <div>
-                <dt className="font-medium">Contact</dt>
-                <dd>
-                  <a
-                    href={`mailto:${SITE.email}`}
-                    className="text-signal-deep underline decoration-signal-tint underline-offset-4"
-                  >
-                    {SITE.email}
-                  </a>
-                </dd>
-              </div>
-              <div>
-                <dt className="font-medium">Data & access</dt>
-                <dd className="text-ink-2">
-                  Least-privilege access you grant per system and can revoke any time. POPIA
-                  applies; your data is never sold, shared or used to train public models.
-                </dd>
-              </div>
-            </dl>
-          </aside>
+      <section className="vx-wrap" aria-label="What we believe" style={{ paddingBottom: "clamp(56px, 8vw, 120px)" }}>
+        <div className="vx-spec">
+          {BELIEFS.map((b) => (
+            <Reveal key={b.t}>
+              <h2>{b.t}</h2>
+              <p>{b.b}</p>
+            </Reveal>
+          ))}
         </div>
       </section>
 
-      <section className="mx-auto mt-20 max-w-[1200px] px-6 pb-24" aria-labelledby="method-heading">
-        <div className="border-t border-line pt-14">
-          <h2 id="method-heading" className="text-2xl font-semibold tracking-[-0.01em]">
-            How every engagement runs
-          </h2>
-          <ol className="mt-10 grid gap-4 md:grid-cols-5">
-            {PROCESS_STEPS.map((step, index) => (
-              <li key={step.title} className="rounded-2xl border border-line bg-white p-5">
-                <p className="vy-mono text-sm text-signal-deep">0{index + 1}</p>
-                <h3 className="mt-2 font-semibold leading-snug">{step.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-ink-2">{step.body}</p>
-              </li>
+      <section className="vx-on-ink vx-section-tight" aria-labelledby="engagement-h">
+        <div className="vx-wrap">
+          <div className="vx-section-head">
+            <div>
+              <Reveal>
+                <p className="vx-eyebrow">An engagement</p>
+              </Reveal>
+              <Words as="h2" className="vx-display vx-h2" text="Five steps." em="No decks." />
+              <span id="engagement-h" className="sr-only">
+                How an engagement runs
+              </span>
+            </div>
+          </div>
+          <ol className="vx-systems" style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}>
+            {PROCESS.map((s, i) => (
+              <Reveal as="li" key={s.num} delay={i * 70} className="vx-card vx-card-ink" >
+                <p className="vx-display" style={{ fontSize: "2.6rem", color: "var(--vx-signal)" }}>
+                  {s.num}
+                </p>
+                <h3 className="vx-h4" style={{ marginTop: 18 }}>
+                  {s.title}
+                </h3>
+                <p className="vx-small" style={{ marginTop: 10, color: "var(--vx-ondark-2)" }}>
+                  {s.body}
+                </p>
+              </Reveal>
             ))}
           </ol>
-          <div className="mt-12">
-            <Link href="/join" className="vy-btn vy-btn-primary">
-              Book a free audit
-            </Link>
-          </div>
         </div>
       </section>
-    </PageShell>
+    </VxShell>
   );
 }

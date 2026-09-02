@@ -1,46 +1,28 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { SiteFooter, SiteNav } from "@/components/site/SiteChrome";
+import { VxShell } from "@/components/vx/VxShell";
+import { Btn, Words } from "@/components/vx/primitives";
 
 export const metadata: Metadata = {
   title: "Page not found",
   robots: { index: false },
 };
 
-/* Useful 404: says what happened, offers the four places people actually
-   want, and keeps the one conversion path in reach. */
 export default function NotFound() {
   return (
-    <div className="vy-site">
-      <SiteNav />
-      <main id="main" className="mx-auto flex min-h-[70svh] max-w-[1200px] flex-col justify-center px-6 pt-28">
-        <p className="vy-eyebrow text-ink-3">404 · Page not found</p>
-        <h1 className="mt-5 max-w-[700px] text-balance text-[clamp(2rem,4.6vw,3.4rem)] font-semibold leading-[1.05] tracking-[-0.02em]">
-          This page has been{" "}
-          <em className="vy-serif font-normal italic text-signal-deep">automated away.</em>
-        </h1>
-        <p className="mt-5 max-w-[520px] leading-relaxed text-ink-2">
-          The address doesn&rsquo;t exist any more — the site was recently restructured. These are
-          probably what you were after:
+    <VxShell closing={{ line: "Back to", em: "the start.", hideCta: true }}>
+      <div className="vx-wrap vx-page-head" style={{ minHeight: "70svh", display: "grid", alignContent: "center" }}>
+        <p className="vx-eyebrow">404</p>
+        <Words as="h1" className="vx-display vx-h1" text="This page was" em="automated away." immediate delay={100} />
+        <p className="vx-lead" style={{ marginTop: 28 }}>
+          The address doesn&rsquo;t exist any more. The site was recently restructured.
         </p>
-        <ul className="mt-8 flex flex-wrap gap-3">
-          {(
-            [
-              ["Home", "/"],
-              ["What we automate", "/automations"],
-              ["Industries", "/industries"],
-              ["Book a free audit", "/join"],
-            ] as const
-          ).map(([label, href]) => (
-            <li key={href}>
-              <Link href={href} className="vy-btn vy-btn-quiet">
-                {label}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </main>
-      <SiteFooter />
-    </div>
+        <div style={{ marginTop: 32, display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <Btn href="/">Home</Btn>
+          <Btn href="/automations" variant="vx-btn-ghost">
+            The systems
+          </Btn>
+        </div>
+      </div>
+    </VxShell>
   );
 }

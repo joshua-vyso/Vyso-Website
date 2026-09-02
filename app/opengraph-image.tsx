@@ -16,8 +16,8 @@ export const contentType = OG_CONTENT_TYPE;
 export default function Image() {
   return renderOgImage({
     eyebrow: "VYSO · AI AUTOMATION AGENCY",
-    /* The homepage H1 verbatim (`components/site/home/Hero.tsx`). */
-    title: "AI automation for the work that slows your business down.",
+    /* The homepage H1 verbatim (`components/vx/home/Hero.tsx`). */
+    title: "We build the systems that run your business.",
     /* The hero's card, read from the findings library rather than hand-copied.
        `lib/marketing/findings.ts` carries no `"use client"` directive precisely
        so a server route can read it — the previous copy of these five strings

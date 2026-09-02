@@ -1,43 +1,63 @@
 import type { Metadata } from "next";
-import { SiteFooter, SiteNav } from "@/components/site/SiteChrome";
-import { Hero } from "@/components/site/home/Hero";
-import { ProblemTable } from "@/components/site/home/ProblemTable";
-import { OperationsSection } from "@/components/site/home/OperationsSection";
-import { AutomationScale } from "@/components/site/home/AutomationScale";
-import { IntegrationExperience } from "@/components/site/home/IntegrationExperience";
-import { ClosingCta } from "@/components/site/home/ClosingCta";
-import { TestimonialsSection } from "@/components/site/home/Sections";
+import { JsonLd, VxShell, webPage } from "@/components/vx/VxShell";
+import { BRAND, FAQ } from "@/components/vx/content";
+import { Hero } from "@/components/vx/home/Hero";
+import { Ticker } from "@/components/vx/home/Ticker";
+import { Systems } from "@/components/vx/home/Systems";
+import { Process } from "@/components/vx/home/Process";
+import { Industries } from "@/components/vx/home/Industries";
+import { Integrations } from "@/components/vx/home/Integrations";
+import { Principle } from "@/components/vx/home/Principle";
+import { ReviewsHome } from "@/components/vx/home/Reviews";
+import { Faq } from "@/components/vx/home/Faq";
+import { SITE } from "@/lib/marketing/site";
 
 export const metadata: Metadata = {
-  title: { absolute: "Vyso — Automate the work that keeps you losing time and money" },
-  description:
-    "Vyso is a Johannesburg AI automation agency. From an automated inbox to custom systems that run entire operations — built around the tools you already use, with humans approving what matters.",
+  title: { absolute: "Vyso — AI automation agency, Johannesburg. We build the systems that run your business." },
+  description: BRAND.answer,
   alternates: { canonical: "/" },
+  keywords: [
+    "AI automation agency",
+    "AI automation agency South Africa",
+    "AI automation Johannesburg",
+    "bespoke automation systems",
+    "business process automation South Africa",
+    "invoice automation",
+    "AI workflow automation",
+  ],
 };
 
-/* Homepage (dark redesign, 2026-09 — `.ai/plan_home_dark_2026.md`):
-   hero → problem → capabilities → automation scale → integrations climax →
-   reviews → conversion. The hero and reviews sections are locked designs;
-   everything between them lives on the near-black sheet that scrolls over the
-   hero exactly as before. */
+/* Homepage — "The Operating Layer" (worktree awwwards-2026):
+   hero plate → ticker → five systems → pinned process → industries →
+   integration orbit → principle → reviews → FAQ → closing plate. */
 export default function Home() {
   return (
-    <div className="vy-site vy-home-dark">
-      <SiteNav />
-      <main id="main">
-        <div className="vy-hero-wrap">
-          <Hero />
-        </div>
-        <div className="vy-sheet vy-sheet-overlap vy-sheet-ink">
-          <ProblemTable />
-          <OperationsSection />
-          <AutomationScale />
-          <IntegrationExperience />
-          <TestimonialsSection withHeader={false} />
-          <ClosingCta />
-        </div>
-      </main>
-      <SiteFooter />
-    </div>
+    <VxShell preload>
+      <JsonLd data={webPage({ path: "/", name: BRAND.tagline, description: BRAND.answer })} />
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "FAQPage",
+          "@id": `${SITE.url}/#faq`,
+          mainEntity: FAQ.map((item) => ({
+            "@type": "Question",
+            name: item.q,
+            acceptedAnswer: { "@type": "Answer", text: item.a },
+          })),
+        }}
+      />
+      <Hero />
+      <p className="vx-wrap vx-answer" style={{ marginTop: 40 }}>
+        {BRAND.answer}
+      </p>
+      <Ticker />
+      <Systems />
+      <Process />
+      <Industries />
+      <Integrations />
+      <Principle />
+      <ReviewsHome />
+      <Faq />
+    </VxShell>
   );
 }
