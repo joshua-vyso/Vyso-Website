@@ -33,7 +33,36 @@ export interface ClassificationSignal {
   supplier?: string | null;
   bill_to?: string | null;
   fields?: Array<{ label?: string | null; value?: string | null }> | null;
-  structure_audit?: { status: 'ok' | 'needs_review' } | null;
+  structure_audit?: {
+    status: 'ok' | 'needs_review';
+    score?: number;
+    line_count?: number;
+    suspicious_description_rows?: number;
+    repeated_description_rows?: number;
+    repeated_reference_rows?: number;
+  } | null;
+}
+
+/**
+ * Did the audit fail for a reason that says "this may not be the document type
+ * the reader thinks it is"? A repeated ROW REFERENCE does not: it is the
+ * reader's duplicated-section failure on a document it read correctly
+ * otherwise (the rows are already dropped, the read is held for review). Paying
+ * for a second, order-lane read of a market statement because one section was
+ * listed twice would be a wasted Sonnet call at best and a mis-filed order at
+ * worst. So the escalation trigger is the audit's OTHER verdicts — the ones
+ * the orientation/fabrication incidents were caught by — reconstructed here
+ * from the fields the audit exposes, with the bare `status` as the fallback
+ * for callers that pass nothing more.
+ */
+function auditSuggestsMisread(audit: ClassificationSignal['structure_audit']): boolean {
+  if (!audit || audit.status !== 'needs_review') return false;
+  if ((audit.repeated_reference_rows ?? 0) === 0) return true;
+  if (audit.score == null) return true;
+  const count = audit.line_count ?? 0;
+  const suspicious = audit.suspicious_description_rows ?? 0;
+  const repeated = audit.repeated_description_rows ?? 0;
+  return audit.score < 70 || suspicious > 0 || (count >= 3 && repeated / count >= 0.5);
 }
 
 export type ClassificationRouting = 'accept' | 'escalate_order';
@@ -119,7 +148,7 @@ export function decideClassificationRouting(input: ClassificationSignal): Classi
   if (input.document_type === 'expense_receipt') {
     return hasOrderCue(input) ? 'escalate_order' : 'accept';
   }
-  const needsReview = input.structure_audit?.status === 'needs_review';
+  const needsReview = auditSuggestsMisread(input.structure_audit);
   // A MISSING confidence counts as the worst one. This gate only ever buys a
   // second read — cheap, and `document-ingest.ts` still makes that read earn
   // adoption on its own structural score — so the asymmetry is entirely in our

@@ -29,6 +29,7 @@ export const NOTIFICATION_KINDS: Record<PpNotificationKind, { bg: string; fg: st
   low_stock: { bg: '#FCEBEB', fg: '#A32D2D', label: 'Low stock' },
   new_direct_doc: { bg: '#E6F1FB', fg: '#0C447C', label: 'New document' },
   new_market_statement: { bg: '#E1F5EE', fg: '#0F6E56', label: 'Market statement' },
+  duplicate_statement: { bg: '#FBEEDA', fg: '#854F0B', label: 'Duplicate statement' },
   price_change: { bg: '#FBEEDA', fg: '#854F0B', label: 'Price change' },
   reorder: { bg: '#EAF2FC', fg: '#1F5FA8', label: 'Reorder' },
 };

@@ -4,6 +4,7 @@ import type { Document, ExtractedLineItem } from './types';
 import { isOutgoingDocument } from './docu/document-direction';
 import type { DocuExtractedData } from './docu/types';
 import { parseLocaleNumber, inferDecimalSeparator, type DecimalSeparator } from './locale-number';
+import { dedupeByReference } from './docu/market-line';
 
 /**
  * Doc-U → ProcurePulse feed.
@@ -29,6 +30,8 @@ export interface FeedResult {
   reason?: string;
   itemsAffected: number;
   movementsWritten: number;
+  /** Set with reason 'duplicate-statement': the document that already fed this statement. */
+  duplicateOf?: string;
 }
 
 /**
@@ -184,6 +187,59 @@ export async function orgHasProcurePulse(supabase: SupabaseClient, orgId: string
 }
 
 /**
+ * The id of an OLDER, still-active statement for the same date, market and
+ * total purchases that has already written stock movements — or null.
+ *
+ * "Already written movements" is the tie-breaker that makes this safe to call
+ * from every feed path: the first copy to feed wins whichever order they were
+ * uploaded in, a copy that failed extraction never blocks its sibling, and the
+ * older copy is never told it duplicates the newer one. Compared on the
+ * document's own summary block (what the paper says), not on filenames or
+ * bytes, because re-prints differ in both.
+ */
+async function findFedDuplicateStatement(
+  supabase: SupabaseClient,
+  doc: FedDoc,
+  supplierName: string | null,
+): Promise<string | null> {
+  const summary = (doc.extracted_data as DocuExtractedData | null)?.summary;
+  const date = (summary?.statement_date ?? '').trim();
+  const total = summary?.total_purchases;
+  if (!date || total == null) return null;
+
+  const { data: self } = await supabase.from('documents').select('created_at').eq('id', doc.id).maybeSingle();
+  const selfCreated = (self as { created_at?: string } | null)?.created_at ?? null;
+
+  const { data: rows } = await supabase
+    .from('documents')
+    .select('id, created_at, extracted_data')
+    .eq('org_id', doc.org_id)
+    .eq('document_type', 'statement')
+    .is('superseded_at', null)
+    .neq('id', doc.id)
+    .filter('extracted_data->summary->>statement_date', 'eq', date);
+  const wantSupplier = (supplierName ?? '').trim().toLowerCase();
+  const candidates = ((rows ?? []) as { id: string; created_at: string; extracted_data: DocuExtractedData | null }[])
+    .filter((r) => {
+      const s = r.extracted_data?.summary;
+      if (!s || s.total_purchases == null || Math.abs(Number(s.total_purchases) - Number(total)) > 0.005) return false;
+      const theirSupplier = (r.extracted_data?.supplier ?? '').trim().toLowerCase();
+      if (wantSupplier && theirSupplier && theirSupplier !== wantSupplier) return false;
+      return !selfCreated || r.created_at < selfCreated;
+    })
+    .map((r) => r.id);
+  if (candidates.length === 0) return null;
+
+  const { data: fed } = await supabase
+    .from('pp_movements')
+    .select('source_document_id')
+    .in('source_document_id', candidates)
+    .limit(1);
+  const first = (fed as { source_document_id: string }[] | null)?.[0];
+  return first?.source_document_id ?? null;
+}
+
+/**
  * Reverse a document's contribution to ProcurePulse — used when the document is
  * deleted. Removes its stock movements and subtracts their net effect from the
  * affected items' on-hand (clamped at 0). Supplier prices have no per-document
@@ -273,7 +329,11 @@ export async function feedDocumentToProcurePulse(
   if (isOutgoingDocument(doc.extracted_data as DocuExtractedData | null)) {
     return { ...base, reason: 'outgoing-document' };
   }
-  const lineItems: ExtractedLineItem[] = doc.extracted_data?.line_items ?? [];
+  // De-duplicated BY REFERENCE here as well as in the reader: documents
+  // extracted before the reader learned to (and any reviewer edit that pastes a
+  // row twice) still pass through this one choke point on Re-sync, review save
+  // and sync-all. See lib/platform/docu/market-line.ts for the rule.
+  const lineItems: ExtractedLineItem[] = dedupeByReference(doc.extracted_data?.line_items ?? []).lines;
   if (lineItems.length === 0) {
     return { ...base, reason: 'no-line-items' };
   }
@@ -295,6 +355,31 @@ export async function feedDocumentToProcurePulse(
       .eq('id', doc.supplier_id)
       .maybeSingle();
     supplierName = (sup as { name?: string } | null)?.name ?? null;
+  }
+
+  // A RE-PRINT OF A STATEMENT ALREADY IN STOCK MOVES NOTHING. Idempotency below
+  // is per `documents.id`, and nothing upstream hashes file bytes — and it could
+  // not help anyway: the market re-prints the same day's statement with a new
+  // "Printed on" time, so the two files never match byte-for-byte. Three of the
+  // 47 April/May 2026 statements were exactly such pairs. Identity here is what
+  // the paper itself says: same statement date, same market, same total
+  // purchases, and an OLDER active document that has already moved stock.
+  if (doc.document_type === 'statement') {
+    const duplicateOf = await findFedDuplicateStatement(supabase, doc, supplierName);
+    if (duplicateOf) {
+      await supabase
+        .from('pp_notifications')
+        .insert({
+          org_id: doc.org_id,
+          kind: 'duplicate_statement',
+          title: `${doc.filename} is a re-print of a statement already in stock`,
+          body: 'Same statement date, market and total purchases as an earlier document — no stock was moved. Delete one copy if it was uploaded by mistake.',
+          document_id: doc.id,
+          read: false,
+        })
+        .then(undefined, () => undefined);
+      return { ...base, reason: 'duplicate-statement', duplicateOf };
+    }
   }
 
   // 1. This document's PRIOR contribution (from a previous feed), to undo it.
@@ -348,6 +433,16 @@ export async function feedDocumentToProcurePulse(
     if (!name) continue;
 
     const price = parsePrice(li.unit_price, hint);
+    const qty = parseNum(li.quantity, hint) ?? 0;
+    // A NEGATIVE QUANTITY IS A REVERSAL, NOT NOISE. Market statements print a
+    // cancelled purchase as a second row with a negative QTY and a negative
+    // TOTAL ("-10 KIWIFRUIT ... - 6,500.00"). This loop used to skip anything
+    // ≤ 0, so the original +10 counted and the -10 never did: twelve such rows
+    // across two months of one customer's statements left 517 boxes on hand
+    // that were never delivered. The reversal now writes a negative movement;
+    // it never creates an item, sets a price, a unit or a supplier — a row
+    // that only takes stock away is not evidence of what the product costs.
+    const reversal = qty < 0;
     // Counting unit as captured/corrected in Doc-U review (boxes / punnets / …).
     const lineUnit = (li.unit ?? '').trim();
     // Per-line seller (a market statement's AGENT) — else the document supplier.
@@ -366,6 +461,10 @@ export async function feedDocumentToProcurePulse(
         .maybeSingle();
       itemId = (existing as { id?: string } | null)?.id ?? null;
     }
+    // Nothing on hand to reverse — the original row was never fed (or was
+    // named differently). Skipping is the honest answer; inventing an item at
+    // zero so it can go negative-then-clamp-to-zero would record nothing true.
+    if (!itemId && reversal) continue;
     if (!itemId) {
       const { data: created, error: createErr } = await supabase
         .from('pp_stock_items')
@@ -387,16 +486,15 @@ export async function feedDocumentToProcurePulse(
     }
 
     // The document is the authority on the counting unit it was received in.
-    if (lineUnit) unitByItem.set(itemId, lineUnit);
-    if (lineSupplier) supplierByItem.set(itemId, lineSupplier);
+    if (lineUnit && !reversal) unitByItem.set(itemId, lineUnit);
+    if (lineSupplier && !reversal) supplierByItem.set(itemId, lineSupplier);
 
-    const qty = parseNum(li.quantity, hint) ?? 0;
-    if (qty > 0) {
+    if (qty !== 0) {
       const { error: moveErr } = await supabase.from('pp_movements').insert({
         org_id: doc.org_id,
         stock_item_id: itemId,
         change: qty,
-        reason: 'received',
+        reason: reversal ? 'reversed' : 'received',
         source_label: lineSupplier ?? doc.filename,
         source_document_id: doc.id,
       });
@@ -406,7 +504,7 @@ export async function feedDocumentToProcurePulse(
       }
     }
 
-    if (price != null) priceByItem.set(itemId, price);
+    if (price != null && !reversal) priceByItem.set(itemId, price);
     itemsAffected += 1;
   }
 

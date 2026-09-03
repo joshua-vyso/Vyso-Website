@@ -14,6 +14,8 @@
 export interface StructuralLine {
   description?: string | null;
   raw_description?: string | null;
+  /** The row's own printed number (a market statement's per-row invoice id). */
+  reference?: string | null;
   unit?: string | null;
   unit_price?: string | null;
   amount?: string | null;
@@ -24,6 +26,14 @@ export interface StructuralLine {
 export interface StructuralExtraction {
   line_items?: StructuralLine[] | null;
   overall_confidence?: number | null;
+  /**
+   * Rows the reader ALREADY DROPPED as exact re-listings of an earlier
+   * reference (lib/platform/docu/market-line.ts). They are gone from
+   * `line_items`, so the audit cannot count them itself — but a read that
+   * listed a section twice is still a read a human must look at, which is why
+   * the count travels here instead of vanishing with the rows.
+   */
+  duplicate_reference_rows?: number | null;
 }
 
 export interface ExtractionStructureAudit {
@@ -36,6 +46,16 @@ export interface ExtractionStructureAudit {
   missing_amount_rows: number;
   unsupported_box_default_rows: number;
   repeated_description_rows: number;
+  /**
+   * Rows whose printed reference repeats another row's — the reader's
+   * duplicated-section failure (2026-09-03: one read in seven of a
+   * Johannesburg market statement re-emitted a whole "PURCHASES ON CARD ID"
+   * block, 12 phantom rows, and `repeated_description_rows` alone scored it
+   * "ok" because the same produce legitimately recurs across agents). A
+   * repeated REFERENCE is never legitimate; even one sends the document to
+   * review. Includes rows already dropped by the reader.
+   */
+  repeated_reference_rows: number;
 }
 
 const present = (value: string | null | undefined): boolean => Boolean(value?.trim());
@@ -83,6 +103,15 @@ export function auditExtractionStructure(input: StructuralExtraction): Extractio
   }
   const repeated = [...counts.values()].reduce((total, occurrences) => total + Math.max(0, occurrences - 1), 0);
 
+  const refCounts = new Map<string, number>();
+  for (const line of lines) {
+    const ref = (line.reference ?? '').trim().replace(/\s+/g, '');
+    if (ref) refCounts.set(ref, (refCounts.get(ref) ?? 0) + 1);
+  }
+  const repeatedReferences =
+    [...refCounts.values()].reduce((total, occurrences) => total + Math.max(0, occurrences - 1), 0) +
+    Math.max(0, input.duplicate_reference_rows ?? 0);
+
   const confidence = Math.max(0, Math.min(100, input.overall_confidence ?? 0));
   // Many genuine informal orders print no money columns at all. That is a
   // DOCUMENT SHAPE, not evidence loss, and penalizing it would rotate pages
@@ -102,6 +131,11 @@ export function auditExtractionStructure(input: StructuralExtraction): Extractio
     }
     structural -= (unsupportedBoxes / count) * 15;
     structural -= (repeated / count) * 25;
+    // Bounded so a duplicated section flags the read WITHOUT dragging the score
+    // under the orientation-retry line (`shouldRetryPdfOrientation`, < 70): the
+    // page is not rotated, it was read twice, and a rotation search would just
+    // read it twice again at three more angles.
+    structural -= Math.min(10, (repeatedReferences / count) * 25);
   }
 
   const score = Math.max(0, Math.min(100, Math.round(structural * 0.65 + confidence * 0.35)));
@@ -112,7 +146,9 @@ export function auditExtractionStructure(input: StructuralExtraction): Extractio
   // (and therefore `score`) under 70 — `score < 70` already catches every case
   // the old disjunct existed for.
   const status =
-    score < 70 || suspicious > 0 || (count >= 3 && repeated / count >= 0.5) ? 'needs_review' : 'ok';
+    score < 70 || suspicious > 0 || repeatedReferences > 0 || (count >= 3 && repeated / count >= 0.5)
+      ? 'needs_review'
+      : 'ok';
 
   return {
     status,
@@ -124,6 +160,7 @@ export function auditExtractionStructure(input: StructuralExtraction): Extractio
     missing_amount_rows: missingAmount,
     unsupported_box_default_rows: unsupportedBoxes,
     repeated_description_rows: repeated,
+    repeated_reference_rows: repeatedReferences,
   };
 }
 

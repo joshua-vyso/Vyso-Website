@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { AiSummary, StatementSummary } from '@/lib/platform/docu/types';
 import type { CreditDocument, FinancialDocument } from '@/lib/platform/types';
 import { auditLines, summariseAudit, type LineAuditSummary } from '@/lib/platform/docu/line-audit';
+import { canonicalMarketName, dedupeByReference } from '@/lib/platform/docu/market-line';
 import { coerceExpenseCategory } from '@/lib/platform/docu/expense-categories';
 import { deriveCashEffect, financialSeparatorHint } from '@/lib/platform/docu/financial-document';
 import {
@@ -91,6 +92,8 @@ export interface ExtractedField {
 
 export interface ExtractedLineItem {
   reference?: string;
+  /** The product cell exactly as printed — the identity source for market lines. */
+  raw_description?: string;
   description: string;
   weight?: string;
   quantity?: string;
@@ -176,6 +179,10 @@ export interface ExtractionResult {
   /** Evidence-loss gate. `needs_review` prevents a visually plausible but
    *  structurally empty table from being treated as a successful read. */
   structure_audit?: ExtractionStructureAudit;
+  /** Rows dropped by `extractDocumentOnce` as exact re-listings of an earlier
+   *  row's reference — see lib/platform/docu/market-line.ts. Read by the
+   *  structure audit so a duplicated section still lands in review. */
+  duplicate_reference_rows?: number;
   /** Present only when a low-quality single-page PDF triggered orientation
    *  recovery. Contains angles, never document bytes. */
   orientation_normalization?: PdfOrientationNormalization;
@@ -199,6 +206,8 @@ Respond with ONLY a JSON object (no prose, no markdown code fences) of exactly t
   "bill_to": string | null,
   "line_items": [
     {
+      "reference": string,
+      "raw_description": string,
       "description": string,
       "weight": string,
       "quantity": string,
@@ -258,7 +267,7 @@ Rules:
 - "supplier" (top level): the SELLING / ISSUING party — the business this document is FROM and that is owed the money. Read it dynamically from anywhere on the page; do not assume a fixed position. It is the letterhead / logo entity, typically the one printed with a VAT registration number and/or its own banking details. It is NOT the recipient: never return the party under "Bill To", "Ship To", "Sold To", "Customer", "Account", "Deliver To", or the account holder named in a statement header — that is the buyer. Return the cleaned trading name in Title Case, keeping a legal suffix if shown (e.g. "Bacca Valley (Pty) Ltd", "Country Mushrooms (Pty) Ltd"). For a fresh-produce MARKET statement, the document-level supplier is the MARKET named in the page header (e.g. "Johannesburg Fresh Produce Market"). Use null only if no issuing party appears anywhere.
 - "supplier_vat": the VAT / tax registration number printed against that SAME issuing party (usually directly under its name or in its footer), exactly as shown. Do NOT return a VAT number that belongs to the recipient, and do not return one you are unsure the issuer owns — null is the right answer when the page does not make ownership obvious.
 - "bill_to": the party being BILLED — the name under "Invoice To", "Bill To", "Sold To", "Customer", "Deliver To", or the account holder named in a statement header. It is the mirror image of "supplier": one is who the document is FROM, the other is who it is TO, and they are never the same business. Return the name only (no address lines, no account code), cleaned to Title Case with any legal suffix kept. Use null if the document names no recipient. KEEP A PRINTED TRADING-AS CONTINUATION, VERBATIM AND ON THE SAME LINE. Large groups are billed under a legal entity and known by their property: when the recipient block prints "t/a", "T/A" or "trading as" and a second name — whether on the same line or wrapped onto the next one — return BOTH, joined exactly as printed ("Tsogo Sun Casino's Pty Ltd t/a Montecasino", "Hospitality Holdings (Pty) Ltd trading as The Grand"). Do not drop the trading name, do not drop the legal name, and do not choose between them: the trading name is usually the only one the business's own records hold, and returning the legal name alone is how a correctly-read invoice ends up matched to nobody.
-- "summary": if the document has a TRANSACTION SUMMARY / account-totals block (opening balance, closing/system balance, total purchases, VAT, pallet refunds/usage, payments, audit error), extract those figures as plain NUMBERS — strip currency symbols and thousands separators, keep the sign as printed (money out may be negative). Map: opening_balance, payments (or "net financial transactions" if no explicit payments line → put it in net_financial_transactions), total_purchases, total_pallet_refunds (pallet refunds/deposits), total_pallet_usage (pallet usage fee), vat ("VAT included in above transactions"), total_charges, closing_balance ("system closing balance"), audit_error. statement_date = the date printed next to the closing balance / "as at" date, exactly as shown (e.g. "23/MAY/2026"). If there is NO totals block, set "summary" to null.
+- "summary": if the document has a TRANSACTION SUMMARY / account-totals block (opening balance, closing/system balance, total purchases, VAT, pallet refunds/usage, payments, audit error), extract those figures as plain NUMBERS — strip currency symbols and thousands separators, keep the sign EXACTLY as printed: a figure printed with a leading "-" ("- 203,123.00") is NEGATIVE, one printed without is positive — never flip a sign to make the block balance, and never make purchases positive because they are purchases. Map: opening_balance, payments (or "net financial transactions" if no explicit payments line → put it in net_financial_transactions), total_purchases, total_pallet_refunds (pallet refunds/deposits), total_pallet_usage (pallet usage fee), vat ("VAT included in above transactions"), total_charges, closing_balance ("system closing balance"), audit_error. statement_date = the date printed next to the closing balance / "as at" date, exactly as shown (e.g. "23/MAY/2026"). If there is NO totals block, set "summary" to null.
 - "document_type": choose "expense_receipt" for a TILL SLIP — a restaurant, bar, fuel, hotel, parking, toll or retail receipt recording something the business CONSUMED and paid for. Its marks are a merchant trading name rather than a supplier account, a settlement taken on the spot (card, cash, member account, room charge) rather than terms, and rows that are meals, drinks, litres or nights rather than stock to be sold on. A supplier's invoice for produce, meat, packaging or any goods bought for resale or production is NOT an expense receipt — it stays "invoice", even when it was paid immediately. WHEN IN DOUBT between "invoice" and "expense_receipt" on a document whose rows are products destined for resale or stock, choose "invoice".
 - A DOCUMENT THAT CALLS ITSELF A CREDIT IS NEVER AN INVOICE. If the page is headed "Credit Note", "Credit Memo", "Credit Request", "Credit Application", "CRN", or otherwise says on its face that it credits, refunds, returns or reverses a previous charge, it is one of the three credit types below and never "invoice" — not even when it is laid out exactly like an invoice, which it usually is, because it is the same stationery with a different heading. An invoice asks for money; a credit gives money back or asks for money back, and calling the second one the first files a refund as a purchase.
     - "supplier_credit_note" = a credit ISSUED TO US BY A SUPPLIER. Its letterhead is the supplier's, we are the party named under "Credit To" / "Customer" / "Account", and it reduces what we owe them. Same direction as a supplier invoice: it came from outside, addressed to us.
@@ -283,6 +292,9 @@ Rules:
     - notes = anything else printed that a reviewer would want quoted (a covers count, a table number, a voucher). "" if there is nothing.
   On an expense receipt the line_items are the ITEMS CONSUMED: one row per printed item, with description, quantity, unit_price and amount copied from the slip. Do not force produce fields onto them — weight, units_per_box, total_kg and unit stay "" unless the slip itself prints them.
 - Include EVERY product row across ALL pages and ALL "PURCHASES ON CARD ID" sections. Do not skip or summarise rows.
+- EACH PRINTED ROW APPEARS EXACTLY ONCE. Never list a row or a section a second time — not when a section continues onto the next page, not when a page repeats the column headings, not when the same product recurs. Before you answer, count the printed rows and make sure line_items has that many entries and no more.
+- reference = the row's own printed number, verbatim: on a market statement the 9-digit INVOICE number that starts the row ("162647555"); on an invoice its line/item number if one is printed. "" when the row prints none. Never reuse another row's number.
+- raw_description = the product/commodity cell EXACTLY as printed, character for character, including commas, asterisks and codes ("BABY BUTTERNUT,300G PUNNE,*,0,*,12,*"). Do not clean, reorder or complete it.
 - The commodity cell is often a messy comma-separated string like "BABY BUTTERNUT,300G PUNNE,*,0,*,12,*" or "ORANGES,6KG POCKET,NAVEL,2,M,*". From it derive:
     - description = the produce name, cleaned and Title Case (e.g. "Baby Butternut", "Oranges Navel"). Drop packaging words, grade codes, asterisks, and stray numeric codes.
     - weight = the pack/unit weight CONVERTED TO KILOGRAMS, as a plain decimal number with NO unit: "300G" -> "0.3", "500G" -> "0.5", "6KG" -> "6", "18KG" -> "18". "" if no weight is shown.
@@ -431,7 +443,27 @@ async function extractDocumentOnce(params: DocumentInput): Promise<ExtractionRes
 
   const parsed = JSON.parse(raw) as Partial<ExtractionResult>;
   const fields = Array.isArray(parsed.fields) ? parsed.fields : [];
-  const lines = Array.isArray(parsed.line_items) ? parsed.line_items : [];
+  const readLines = Array.isArray(parsed.line_items) ? parsed.line_items : [];
+  // MARKET LINES GET THEIR IDENTITY FROM THE PAPER, NOT FROM THE MODEL. The
+  // "cleaned, Title Case" name the prompt asks for is fine to read but was a
+  // disaster as a stock-item KEY: 47 Johannesburg market statements turned 441
+  // printed commodity strings into 255 items, 102 of them split across several
+  // names and 110 names swallowing several pack sizes. The commodity cell is a
+  // fixed record, so when the reader transcribed one, the name is derived here
+  // (commodity + variety + pack weight) and is the same on every statement.
+  // Non-market rows — no such cell — keep the model's description untouched.
+  for (const line of readLines) {
+    const canonical = canonicalMarketName(line.raw_description);
+    if (canonical) line.description = canonical;
+  }
+  // A section listed twice is dropped BY REFERENCE, not by description: the
+  // market prints a unique invoice number on every row, so an exact repeat of
+  // one is a re-listing (the reader's duplicated-section failure, ~1 read in 7),
+  // while the same produce at the same price from two invoices is a real second
+  // purchase and is kept. The dropped count reaches the structure audit so the
+  // document still goes to review — the rows are gone, the doubt is not.
+  const dedupe = dedupeByReference(readLines);
+  const lines = dedupe.lines;
   const summary = coerceSummary(parsed.summary);
   // Gated on the TYPE, not merely on the key being present: a reader that fills
   // a financial block on an invoice has told us something about its own
@@ -491,6 +523,7 @@ async function extractDocumentOnce(params: DocumentInput): Promise<ExtractionRes
     bill_to: cleanString(parsed.bill_to),
     fields,
     line_items: audit.repaired ?? lines,
+    duplicate_reference_rows: dedupe.dropped,
     summary,
     financial_document: financialDocument,
     credit_document: creditDocument,

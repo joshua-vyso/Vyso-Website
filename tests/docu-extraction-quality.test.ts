@@ -239,3 +239,58 @@ test('an order-shaped cue escalates on its own, even at high confidence with a c
     'escalate_order',
   );
 });
+
+// 2026-09-03: a Johannesburg market statement whose second "PURCHASES ON CARD ID"
+// section was emitted twice. 12 of 39 rows repeated — under the 50% repeated-
+// description line, so the old audit scored it "ok" at 90 and 553 phantom boxes
+// went into stock. The rows carry the market's per-row invoice number, and a
+// repeated one is never legitimate.
+test('a repeated row reference sends the read to review without triggering rotation retry', () => {
+  const row = (reference: string, description: string) => ({
+    reference,
+    description,
+    unit: 'boxes',
+    unit_price: '200.00',
+    amount: '26400.00',
+    confidence: 95,
+  });
+  const clean = { overall_confidence: 91, line_items: [row('162652334', 'Red Peppers 5kg'), row('162652345', 'Cabbage Sugar 30kg')] };
+  assert.equal(auditExtractionStructure(clean).status, 'ok');
+  assert.equal(auditExtractionStructure(clean).repeated_reference_rows, 0);
+
+  const duplicated = { ...clean, line_items: [...clean.line_items, row('162652334', 'Red Peppers 5kg')] };
+  const audit = auditExtractionStructure(duplicated);
+  assert.equal(audit.status, 'needs_review');
+  assert.equal(audit.repeated_reference_rows, 1);
+  assert.ok(audit.score >= 70, 'a duplicated section is not a rotated page');
+  assert.equal(shouldRetryPdfOrientation(duplicated), false);
+
+  // Rows the reader already dropped still count: the doubt outlives the rows.
+  const dropped = { ...clean, duplicate_reference_rows: 12 };
+  assert.equal(auditExtractionStructure(dropped).status, 'needs_review');
+  assert.equal(auditExtractionStructure(dropped).repeated_reference_rows, 12);
+});
+
+test('a repeated-reference-only review verdict does not escalate a statement to the order lane', () => {
+  const audit = {
+    status: 'needs_review' as const,
+    score: 88,
+    line_count: 39,
+    suspicious_description_rows: 0,
+    repeated_description_rows: 5,
+    repeated_reference_rows: 12,
+  };
+  assert.equal(
+    decideClassificationRouting({ document_type: 'statement', overall_confidence: 65, supplier: 'Johannesburg Fresh Produce Market', structure_audit: audit }),
+    'accept',
+  );
+  // The other review verdicts still escalate exactly as before.
+  assert.equal(
+    decideClassificationRouting({ document_type: 'statement', overall_confidence: 65, structure_audit: { ...audit, score: 40 } }),
+    'escalate_order',
+  );
+  assert.equal(
+    decideClassificationRouting({ document_type: 'statement', overall_confidence: 65, structure_audit: { status: 'needs_review' } }),
+    'escalate_order',
+  );
+});

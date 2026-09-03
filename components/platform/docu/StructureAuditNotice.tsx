@@ -53,6 +53,11 @@ export function StructureAuditNotice({
   if (audit.repeated_description_rows > 0) {
     issues.push(`${audit.repeated_description_rows} repeated description row(s)`);
   }
+  if ((audit.repeated_reference_rows ?? 0) > 0) {
+    issues.push(
+      `${audit.repeated_reference_rows} row(s) listed twice under the same invoice number (exact repeats were dropped)`,
+    );
+  }
 
   return (
     <>

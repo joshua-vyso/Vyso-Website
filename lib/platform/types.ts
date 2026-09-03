@@ -798,6 +798,8 @@ export interface ExtractedData {
     missing_amount_rows: number;
     unsupported_box_default_rows: number;
     repeated_description_rows: number;
+    /** Additive (2026-09-03); absent on rows audited before it existed. */
+    repeated_reference_rows?: number;
   } | null;
   /** Safe PDF orientation provenance. Contains angles only, never file data. */
   orientation_normalization?: {
@@ -981,6 +983,7 @@ export type PpNotificationKind =
   | 'low_stock'
   | 'new_direct_doc'
   | 'new_market_statement'
+  | 'duplicate_statement'
   | 'price_change'
   | 'reorder';
 
