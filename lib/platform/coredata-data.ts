@@ -17,6 +17,7 @@ import type {
   CdCompanyProfile,
   CdDocTemplate,
 } from './coredata';
+import { loadOrgStockItems } from './catalogue.ts';
 
 export interface CoreData {
   customers: OfCustomer[];
@@ -55,7 +56,7 @@ export async function getCoreData(orgId: string): Promise<CoreData> {
     sb.from('of_customers').select('*').eq('org_id', orgId).order('name'),
     sb.from('cd_contacts').select('*').eq('org_id', orgId).order('name'),
     sb.from('cd_delivery_addresses').select('*').eq('org_id', orgId).order('created_at'),
-    sb.from('pp_stock_items').select('*').eq('org_id', orgId).order('name'),
+    loadOrgStockItems(sb, orgId, '*').then((rows) => ({ data: rows })),
     sb.from('pl_price_lists').select('*').eq('org_id', orgId).order('created_at'),
     sb.from('pl_overrides').select('*').eq('org_id', orgId),
     sb.from('cd_payment_terms').select('*').eq('org_id', orgId).order('days'),

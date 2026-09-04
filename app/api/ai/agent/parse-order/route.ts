@@ -4,6 +4,7 @@ import { isFinchAllowed } from '@/lib/ai/finch/config';
 import { aiConfigured } from '@/lib/ai/anthropic';
 import { extractOrderDocument } from '@/lib/ai/order-reader';
 import { rateLimitAllowed } from '@/lib/platform/rate-limit';
+import { loadOrgProductNames } from '@/lib/platform/catalogue';
 
 // Reading an order document (PDF/photo) can take a few seconds.
 export const maxDuration = 45;
@@ -69,7 +70,7 @@ export async function POST(req: Request) {
   const orgId = profile?.org_id ?? null;
   let products: string[] = [];
   if (orgId) {
-    const { data } = await auth.supabase.from('pp_stock_items').select('name').eq('org_id', orgId).order('name');
+    const data = (await loadOrgProductNames(auth.supabase, orgId)).map((name) => ({ name }));
     products = ((data ?? []) as { name: string }[]).map((r) => r.name).filter(Boolean);
   }
 

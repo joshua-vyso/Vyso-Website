@@ -50,6 +50,7 @@ import {
 import { previewExistingCustomerInterpretation } from '@/lib/platform/docu/customer-interpretation-preview';
 import { assessmentAdmitsZeroLines } from '@/lib/platform/docu/body-source-assessment';
 import type { DocumentSourceType, DocumentType, ExtractedData } from '@/lib/platform/types';
+import { loadOrgProductNames } from './catalogue.ts';
 
 /**
  * The one document-ingest pipeline: classify → file into Doc-U → build the
@@ -981,12 +982,7 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
   // order/requisition. The order-lane read is REQUESTED cheaply here but only
   // KEPT if it actually scores better — never on its own say-so.
   if (cls && !isOrder && decideClassificationRouting(cls) === 'escalate_order') {
-    const { data: catalogueRows } = await supabase
-      .from('pp_stock_items')
-      .select('name')
-      .eq('org_id', orgId)
-      .order('name', { ascending: true });
-    const products = ((catalogueRows ?? []) as { name: string }[]).map((r) => r.name).filter(Boolean);
+    const products = await loadOrgProductNames(supabase, orgId);
     try {
       // orientationChecked: true ALWAYS on an escalation read (Part 2 item 5):
       // the classification read already ran the rotation search on these
@@ -1202,11 +1198,7 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
       // a decision that has already been made.
       order = escalatedOrder;
     } else {
-      const { data: catalogueRows } = await supabase
-        .from('pp_stock_items')
-        .select('name')
-        .eq('org_id', orgId)
-        .order('name', { ascending: true });
+      const catalogueRows = (await loadOrgProductNames(supabase, orgId)).map((name) => ({ name }));
       const products = ((catalogueRows ?? []) as { name: string }[]).map((r) => r.name).filter(Boolean);
 
       try {

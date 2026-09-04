@@ -26,6 +26,7 @@ import { resolveExistingCustomerForOrg } from '@/lib/platform/docu/customer-matc
 import { documentCounterpartyRole } from '@/lib/platform/docu/document-direction';
 import { imagePixelSize } from '@/lib/platform/docu/image-size';
 import type { Document } from '@/lib/platform/types';
+import { loadOrgProductNames } from '@/lib/platform/catalogue';
 
 // Multi-page statements with many line items can take a while to parse — and an
 // ORDER now takes THREE SEQUENTIAL MODEL CALLS, which is why 60 seconds stopped
@@ -152,12 +153,7 @@ export async function POST(req: Request) {
     // Give the order reader the org's catalogue so it resolves abbreviations and
     // varieties ("broc" → "Broccoli", "green apple" → "Apples Granny Smith") to the
     // exact product name — which the pricing match then prices.
-    const { data: catalogueRows } = await supabase
-      .from('pp_stock_items')
-      .select('name')
-      .eq('org_id', doc.org_id)
-      .order('name', { ascending: true });
-    const products = ((catalogueRows ?? []) as { name: string }[]).map((r) => r.name).filter(Boolean);
+    const products = await loadOrgProductNames(supabase, doc.org_id);
 
     let order;
     try {

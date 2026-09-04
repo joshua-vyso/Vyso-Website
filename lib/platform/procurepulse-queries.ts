@@ -18,6 +18,7 @@ import type {
   StockOrder,
   StockThreshold,
 } from './types';
+import { loadOrgStockItems } from './catalogue.ts';
 
 type DB = Awaited<ReturnType<typeof createServerSupabase>>;
 
@@ -38,13 +39,10 @@ const LIST_LIMIT = 200;
  * `*` degrades to `undefined` and the UI keeps working.
  */
 export async function fetchStock(db: DB, orgId: string): Promise<StockItem[]> {
-  const { data } = await db
-    .from('pp_stock_items')
-    .select('*')
-    .eq('org_id', orgId)
-    .order('category', { ascending: true })
-    .order('name', { ascending: true });
-  return (data ?? []) as StockItem[];
+  return loadOrgStockItems<StockItem>(db, orgId, '*', [
+    { column: 'category', ascending: true },
+    { column: 'name', ascending: true },
+  ]);
 }
 
 export async function fetchStockItem(db: DB, id: string): Promise<StockItem | null> {

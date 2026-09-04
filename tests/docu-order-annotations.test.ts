@@ -119,16 +119,23 @@ class FakeQuery {
   limit() {
     return this;
   }
+  /** PostgREST paging, as lib/platform/catalogue.ts uses it to read a catalogue whole. */
+  range(from: number, to: number) {
+    this.window = [from, to];
+    return this;
+  }
+  private window: [number, number] | null = null;
   returns() {
     return this;
   }
 
   private matched(): Row[] {
-    return this.db.rows(this.table).filter(
+    const rows = this.db.rows(this.table).filter(
       (r) =>
         this.filters.every(([c, v]) => r[c] === v) &&
         (!this.ins || this.ins[1].includes(r[this.ins[0]])),
     );
+    return this.window ? rows.slice(this.window[0], this.window[1] + 1) : rows;
   }
 
   private run(): { data: Row[]; error: null } {

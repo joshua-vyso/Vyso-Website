@@ -14,6 +14,7 @@ import {
   indexUomRulesForCustomer,
   type CustomerUomRuleLite,
 } from './customer-uom-rules.ts';
+import { loadOrgStockItems } from '../catalogue.ts';
 
 interface StockItemLite {
   id: string;
@@ -103,10 +104,9 @@ export async function previewExistingCustomerInterpretation(
       .eq('org_id', input.orgId)
       .eq('customer_id', input.customerId)
       .eq('active', true),
-    supabase
-      .from('pp_stock_items')
-      .select('id, org_id, name, unit')
-      .eq('org_id', input.orgId),
+    loadOrgStockItems<StockItemLite>(supabase, input.orgId, 'id, org_id, name, unit')
+      .then((rows) => ({ data: rows, error: null as null | { message: string } }))
+      .catch((err: unknown) => ({ data: null, error: { message: err instanceof Error ? err.message : String(err) } })),
   ]);
   const error = aliasResult.error ?? ruleResult.error ?? stockResult.error;
   if (error) throw new Error(`Could not read customer interpretation rules: ${error.message}`);

@@ -68,6 +68,7 @@ import {
   type UomCarryForwardRecord,
 } from './docu/customer-uom-rules.ts';
 import type { MatchAgentDecision, MatchAgentLine } from './docu/order-match-agent.ts';
+import { loadOrgStockItems } from './catalogue.ts';
 
 /**
  * The matching agent, as a function this module can be handed.
@@ -442,11 +443,10 @@ export async function syncOrderFromDocument(
   }
 
   // Catalogue (loaded once) for fuzzy product matching of each ordered line.
-  const { data: stockRows } = await db
-    .from('pp_stock_items')
-    .select('id, name, avg_unit_price, unit')
-    .eq('org_id', orgId);
-  const stockItems = (stockRows ?? []) as StockLite[];
+  // Paged, never a bare select: past 1,000 items PostgREST silently drops the
+  // rest, and a product the matcher cannot see is a product it "creates" again
+  // under a second row. See lib/platform/catalogue.ts.
+  const stockItems = await loadOrgStockItems<StockLite>(db, orgId, 'id, name, avg_unit_price, unit');
 
   const items: { stock_item_id: string | null; name: string; qty: number; unit: string | null; unit_price: number }[] = [];
   // The audit trail written back to the document — what the paper said, what we

@@ -4,6 +4,7 @@ import { AI_CORS_HEADERS } from '@/lib/ai/auth';
 import { aiConfigured, suggestProductMatches } from '@/lib/ai/anthropic';
 import { buildFuzzyTargets, normalizeName } from '@/lib/platform/procurepulse/matching';
 import type { ProductAlias, StockItem } from '@/lib/platform/types';
+import { loadOrgStockItems } from '@/lib/platform/catalogue';
 
 // Several Haiku batches over the unmatched catalogue — give it room.
 export const maxDuration = 60;
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
   const db = await createServerSupabase();
 
   const [{ data: itemRows }, { data: aliasRows }] = await Promise.all([
-    db.from('pp_stock_items').select('id, name, source_document_id').eq('org_id', orgId),
+    loadOrgStockItems(db, orgId, 'id, name, source_document_id').then((rows) => ({ data: rows })),
     db.from('pp_name_aliases').select('raw_name, status, discovered_item_id').eq('org_id', orgId),
   ]);
   const items = ((itemRows ?? []) as Pick<StockItem, 'id' | 'name' | 'source_document_id'>[]).map((i) => ({

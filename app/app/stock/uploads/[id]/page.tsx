@@ -11,6 +11,7 @@ import type { CdCompanyProfile } from '@/lib/platform/coredata';
 import type { ProductOption } from '@/lib/platform/docu/product-suggest';
 import type { DocuExtractedData } from '@/lib/platform/docu/types';
 import type { DocumentFolder, DocumentWithSupplier } from '@/lib/platform/types';
+import { loadOrgStockItems } from '@/lib/platform/catalogue';
 
 /**
  * Review one document, from inside Stock & Suppliers
@@ -121,12 +122,8 @@ export default async function StockDocumentReviewPage({
     supabase.from('of_orders').select('id, status, invoice_number, customer_id').eq('source_document_id', id).maybeSingle(),
     // The org's catalogue for the line-description typeahead. Fetched whole,
     // once, because the filtering is local (see docu/product-suggest.ts).
-    supabase
-      .from('pp_stock_items')
-      .select('id, name, unit, category')
-      .eq('org_id', doc.org_id)
-      .order('name', { ascending: true })
-      .limit(600),
+    // Whole catalogue, paged — the 600-row cap hid half of a 1,060-item catalogue.
+    loadOrgStockItems(supabase, doc.org_id, 'id, name, unit, category').then((rows) => ({ data: rows })),
     // Confirmed name rulings, so typing what a SUPPLIER prints finds the
     // product the org books it under. 'dismissed' rulings are excluded.
     supabase

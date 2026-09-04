@@ -31,6 +31,7 @@ import {
 } from '@/lib/platform/docu/email-html-normalizer';
 import type { ExtractedData, MessageOrderEvidence } from '@/lib/platform/types';
 import type { MicrosoftGraphMessageContent } from '@/lib/platform/microsoft-graph-core';
+import { loadOrgProductNames } from './catalogue.ts';
 
 const MAX_EMAIL_BODY_SOURCE_BYTES = 1_000_000;
 
@@ -139,13 +140,13 @@ function bodyFilename(subject: string | null): string {
 }
 
 async function catalogueNames(supabase: SupabaseClient, orgId: string): Promise<string[]> {
-  const { data, error } = await supabase
-    .from('pp_stock_items')
-    .select('name')
-    .eq('org_id', orgId)
-    .order('name', { ascending: true });
-  if (error) throw new Error(`Could not read the product catalogue: ${error.message}`);
-  return ((data ?? []) as { name: string | null }[]).map((row) => row.name?.trim() ?? '').filter(Boolean);
+  let names: string[];
+  try {
+    names = await loadOrgProductNames(supabase, orgId);
+  } catch (err) {
+    throw new Error(`Could not read the product catalogue: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return names.map((name) => name.trim()).filter(Boolean);
 }
 
 interface BodyOrderRead {

@@ -11,6 +11,7 @@ import type { CdCompanyProfile } from '@/lib/platform/coredata';
 import type { ProductOption } from '@/lib/platform/docu/product-suggest';
 import type { DocuExtractedData } from '@/lib/platform/docu/types';
 import type { DocumentFolder, DocumentWithSupplier } from '@/lib/platform/types';
+import { loadOrgStockItems } from '@/lib/platform/catalogue';
 
 export default async function DocumentReviewPage({
   params,
@@ -97,12 +98,11 @@ export default async function DocumentReviewPage({
     // The org's catalogue for the line-description typeahead. Fetched whole,
     // once, because the filtering is local (see docu/product-suggest.ts) — a
     // few hundred rows is cheaper than a request per keystroke would be.
-    supabase
-      .from('pp_stock_items')
-      .select('id, name, unit, category')
-      .eq('org_id', doc.org_id)
-      .order('name', { ascending: true })
-      .limit(600),
+    // WHOLE catalogue, paged (lib/platform/catalogue.ts). This used to be
+    // `.limit(600)` — on a 1,060-item catalogue the typeahead simply had no
+    // "Thyme", no "Tomato", nothing past the middle of the alphabet, and
+    // "Run matching" looked like it knew far fewer products than the catalogue.
+    loadOrgStockItems(supabase, doc.org_id, 'id, name, unit, category').then((rows) => ({ data: rows })),
     // Confirmed name rulings, so typing what a SUPPLIER prints finds the
     // product the org books it under. 'dismissed' rulings are excluded.
     supabase
